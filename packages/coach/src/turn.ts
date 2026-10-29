@@ -28,7 +28,7 @@ import { createReplyFilter, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem 
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { asksForPlan, asksLiveChange, asksToPausePlan, asksToPlanWeek, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
+import { asksForPlan, asksLiveChange, asksToPausePlan, asksToPlanWeek, declinesChange, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
 import { LIVE_TARGET_CORRECTION_LINES } from './corrections';
 import { parseToolCall } from './tool-call';
@@ -1222,7 +1222,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     if (parsed.call.tool === 'propose_week' || parsed.call.tool === 'pause_plan') {
       const tool = parsed.call.tool;
       const benWords = askInput.kind === 'words' ? askInput.text : words;
-      const verdict = verifyAsked({ tool, chip: false, acceptedOffer: false, words: benWords, claim: askClaimOf(parsed.call.args), ...(benRequested || (benWords !== null && weekOrPauseAsked(tool, benWords)) ? { benRequested: true } : {}), fallback: () => benWords !== null && weekOrPauseAsked(tool, benWords) });
+      // Code's reading of his words only (rule 3): a week or pause ask, not declined, and not the model saying it's its own idea.
+      const verdict = { asked: benWords !== null && weekOrPauseAsked(tool, benWords) && !declinesChange(benWords) && askClaimOf(parsed.call.args).benAsked !== false };
       if (!verdict.asked && tool === 'pause_plan') {
         logLine({ tool, outcome: 'proposed', text: 'Not asked, not applied.', actionId: null });
         input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: PAUSE_NOT_ASKED_LINE }) });

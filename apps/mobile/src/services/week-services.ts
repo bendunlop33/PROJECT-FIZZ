@@ -408,7 +408,28 @@ export function createWeekServices(deps: WeekServicesDeps) {
       const training = await repos()
         .trainingProfiles.get(p.id)
         .catch(() => null);
-      const suggestion = s.facts.needsReshape ? suggestWeek(s.facts) : null;
+      // ADR 0039 (Ben, 29 Oct: one split source): a paused plan is still his split, so the profile's split days are
+      // never shown in its place; there is nothing to reshape while it's paused.
+      const applied = await repos()
+        .planDrafts.applied(p.id)
+        .catch(() => null);
+      const pausedPlan = applied?.applied != null && activePause(applied, toMs(deps.now().utc), p.timezone) !== null;
+      const suggestion = s.facts.needsReshape && !pausedPlan ? suggestWeek(s.facts) : null;
+      if (pausedPlan) {
+        return {
+          today: s.today,
+          weekday: dateWeekdayShort(s.today),
+          aim: training?.daysPerWeek ?? null,
+          gymDaysDone: s.facts.gymDaysDone,
+          gymDaysLeft: s.facts.gymDaysLeft,
+          daysFrom: 'plan' as const,
+          remaining: [] as { id: string; name: string; bodyParts: string[] }[],
+          activities: s.activities.map((a) => [ACTIVITY_WORD[a.fields.kind], `${dateWeekdayShort(a.fields.date)} ${a.fields.date}`, activityStatusOn(a, s.today), activityDetail(a.fields).replaceAll(' ', ' ')].join(' · ')),
+          needsReshape: false,
+          suggestion: null,
+          applied: null,
+        };
+      }
       return {
         today: s.today,
         weekday: dateWeekdayShort(s.today),
@@ -417,6 +438,7 @@ export function createWeekServices(deps: WeekServicesDeps) {
         gymDaysLeft: s.facts.gymDaysLeft,
         daysFrom: s.basis.kind,
         remaining: s.facts.remaining.map((d) => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] })),
+        ...(s.days.some((d) => d.done) ? { done: s.days.filter((d) => d.done).map((d) => d.name) } : {}),
         activities: s.activities.map((a) => [ACTIVITY_WORD[a.fields.kind], `${dateWeekdayShort(a.fields.date)} ${a.fields.date}`, activityStatusOn(a, s.today), activityDetail(a.fields).replaceAll(' ', ' '), a.health === undefined ? '' : `from Apple Health (${a.health.label}, ${a.health.sourceName})`].filter((x) => x !== '').join(' · ')),
         ...(() => {
           const totals = activityGroupTotals(

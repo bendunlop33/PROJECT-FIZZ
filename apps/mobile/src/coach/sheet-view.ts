@@ -755,3 +755,26 @@ export function followOffset(s: { contentHeight: number; viewportHeight: number;
   if (s.turnTop === null) return end;
   return Math.min(end, Math.max(0, s.turnTop - FOLLOW_TOP_GAP));
 }
+
+/**
+ * (Ben, 29 Oct: "The mic [on Today] listens but doesn't do anything") Words from Today's bar (the mic's, or typed):
+ * the coach sheet opens with them sent as Ben's message at once, so the running turn shows straight away. No model
+ * call runs before the sheet opens; a failure is the sheet's own line. `id`: a re-render or remount sends once.
+ */
+export interface SheetAsk {
+  id: string;
+  text: string;
+  spoken: boolean;
+}
+
+export function todayAskParams(words: string, spoken: boolean, id: string): { entry: { kind: 'today' }; ask: SheetAsk } | null {
+  const text = words.trim();
+  return text === '' ? null : { entry: { kind: 'today' }, ask: { id, text, spoken } };
+}
+
+/** The message to send for `ask`, once per ID (`sent` remembers them while the app runs); null: none, or already sent. */
+export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<BenInput, { kind: 'words' }> | null {
+  if (ask === undefined || ask.text.trim() === '' || sent.has(ask.id)) return null;
+  sent.add(ask.id);
+  return { kind: 'words', text: ask.text.trim(), spoken: ask.spoken };
+}

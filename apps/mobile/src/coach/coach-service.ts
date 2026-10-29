@@ -47,7 +47,6 @@ import {
   createBuildExecutor,
   createPlanExecutor,
   asksForPlan,
-  asksToPausePlan,
   asksToPlanWeek,
   classifyBenRequest,
   isStructuralRequest,
@@ -55,6 +54,7 @@ import {
   createActivityExecutor,
   renderActionResult,
   createWeekExecutor,
+  coachSplit,
   acceptActivityOffer,
   acceptActivityOpId,
   type WeekContextView,
@@ -482,7 +482,12 @@ export interface CoachServiceDeps {
    * (Ben, 20 Oct) This week (week services; local reads only): YOUR DATA's `week` view and the facts
    * `propose_week` checks against. Absent: neither tool is wired (withheld, never offered).
    */
-  week?: { view(): Promise<WeekContextView | null>; tool(): Promise<WeekToolContext | null> };
+  week?: {
+    view(): Promise<WeekContextView | null>;
+    tool(): Promise<WeekToolContext | null>;
+    /** ADR 0039: Ben asked for the week change: applied at once (as his Apply), Undo on the card. Absent: a proposal. */
+    apply?(actionId: string, opId: string): Promise<{ ok: true } | { ok: false; stale: boolean }>;
+  };
   /**
    * (Ben, 23 Oct, D8) Where an applied next-workout change lands: the builder's open Your workout drafts. `revert`
    * takes it back off every one it landed on (`check`: only whether it can, while it is still each one's last change).
@@ -1108,7 +1113,9 @@ export function createCoachService(deps: CoachServiceDeps) {
       const activities = await repos().activities.listBetween(p.id, from, addDays(today, 1));
       const gyms = await repos().gyms.listByOwner(p.id).catch(() => []);
       const training = await repos().trainingProfiles.get(p.id).catch(() => null);
-      const splitDayNames = Object.fromEntries(splitInUse(training).days.map((d) => [d.id, d.name]));
+      // ADR 0039: with a plan in use its days are the split, so a workout carries its own title, never the profile's day name.
+      const planInUse = await repos().planDrafts.applied(p.id).catch(() => null);
+      const splitDayNames = planInUse?.applied != null ? {} : Object.fromEntries(splitInUse(training).days.map((d) => [d.id, d.name]));
       return lastDaysView({ workouts, activities, today, gymNames: Object.fromEntries(gyms.map((g) => [g.id, g.name])), splitDayNames });
     } catch {
       return null;
@@ -1133,7 +1140,9 @@ export function createCoachService(deps: CoachServiceDeps) {
   }
 
   /** Progress's window as dates in Ben's timezone, so the coach reads "this month" against what he sees. */
-  function openedFromOf(p: UserProfile, entry: CoachEntry): OpenedFrom | undefined {
+  function openedFromOf(p: UserProfile, entry: CoachEntry, finished: SessionAggregate | null = null): OpenedFrom | undefined {
+    // ADR 0039: a finished workout's thread with another workout live in context: the one it was opened from, by name.
+    if (finished !== null) return { screen: 'finished_workout', title: finished.session.routineName ?? 'Workout', date: localDateOf(toMs(finished.session.startedAt.utc), p.timezone) };
     if (entry.kind === 'progress_exercise') return { screen: 'progress_exercise', exercise: entry.exerciseName, series: entry.seriesLabel, range: { from: entry.from, to: entry.to } };
     if (entry.kind !== 'progress') return undefined;
     if (entry.range) return { screen: 'progress', window: { days: customProgressWindow(entry.range).days, from: entry.range.from, to: entry.range.to, label: rangeText(entry.range, localDateOf(toMs(deps.now().utc), p.timezone)) } };
@@ -1141,8 +1150,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     return { screen: 'progress', window: { days: w.days, from: w.from, to: w.to, label: `last ${progressPeriodPhrase(entry.period)}` } };
   }
 
-  async function contextInput(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null, entry: CoachEntry) {
-    const openedFrom = openedFromOf(p, entry);
+  async function contextInput(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null, entry: CoachEntry, finished: SessionAggregate | null = null) {
+    const openedFrom = openedFromOf(p, entry, finished);
     const gymName = await gymNameOf(session);
     const checkIn = await checkInOf(session);
     const builtIn = kind === 'summary' && session !== null ? await builtInNext(session) : null;
@@ -1404,7 +1413,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     const proposeHere = proposeDeps(p, pool);
     const doableIds = new Set(doable.map((e) => e.id));
     const findExecutors = createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(doable)), elsewhere: () => Promise.resolve(elsewherePool(p, pool, doableIds, gym, (e) => flagged(e.id))), ...(proposeHere === undefined ? {} : { propose: proposeHere }) });
-    const split = splitInUse(training?.profile ?? null);
+    // ADR 0039: the plan in use's days while there is one (one split source), else the profile's split.
+    const split = coachSplit(training);
     const dayObj = day !== null ? (split.days.find((d) => d.name === day.name) ?? null) : (split.days.find((d) => d.id === focus) ?? null);
     const ownMain = dayObj === null ? null : (training?.mainLifts[dayObj.id] ?? null);
     const mainEx = ownMain !== null && ownMain.source === 'yours' ? (byId.get(ownMain.exerciseId) ?? null) : null;
@@ -1740,63 +1750,71 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (model === undefined || a.model === null) throw new Error("The coach isn't connected.");
     const own = await sessionOf(req.entry);
     // ADR 0038 (Ben, 28 Oct: "It fails to make the changes I want"): Today, Progress and Plan open a general thread;
-    // while a workout is live, that workout is in context there too, with the same tools as its own sheet.
-    const liveHere = own === null && isGeneralEntry(req.entry) && req.summary !== true ? await repos().sessions.getActive(p.id).catch(() => null) : null;
-    const session = own ?? (liveHere?.session.status === 'active' ? liveHere : null);
+    // while a workout is live, that workout is in context there too, with the same tools as its own sheet. ADR 0039:
+    // a finished workout's thread (its Summary) too: the live workout is in context, the finished one named.
+    const ownLive = own?.session.status === 'active';
+    const fetched = !ownLive && req.summary !== true ? await repos().sessions.getActive(p.id).catch(() => null) : null;
+    const liveHere = fetched?.session.status === 'active' && fetched.session.id !== own?.session.id ? fetched : null;
+    const session = ownLive ? own : (liveHere ?? own);
     const kind = kindFor(req.entry, own, req.summary === true);
-    const ctx = await contextInput(p, kind, session, req.entry);
+    const ctx = await contextInput(p, kind, session, req.entry, liveHere !== null ? own : null);
     const offerScope = req.input.kind === 'chip' ? (req.input.sessionExerciseId ?? null) : null;
     const executors = await executorsFor(p, req.entry, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
     // workout-builder §8.2: a build turn (Ben asked for a workout, or to change the draft in context) gets its context and its one tool.
     const draftInContext = req.entry.kind === 'draft' ? await draftOf(p, req.entry.draftId) : null;
     // Build 131: a follow-up to a session the coach described in text ("yes add it"); the turn engine reads the same thread.
     // Review exlist S2: a workout's thread too, so its add list is ranked by Ben's recent words ("Try now" names nothing).
-    const thread = req.input.kind === 'words' && req.threadId !== null && (kind === 'general' || kind === 'workout') ? await coachStore().listMessages(req.threadId).catch(() => [] as CoachMessage[]) : [];
+    const thread = req.input.kind === 'words' && req.threadId !== null && kind !== 'summary' ? await coachStore().listMessages(req.threadId).catch(() => [] as CoachMessage[]) : [];
     // Review exlist B1: `Added <name>.` after Add on the coach's new-exercise card continues the request that led to the
     // card: read as it was then (that message, the thread before it), so a build keeps its length, focus, gym and loads.
     // The turn engine reads the same continuation (`addedContinuationOf`).
     const continued = req.input.kind === 'words' && thread.length > 0 ? await addedContinuationOf(thread, req.input.text, (id) => coachStore().listTurnActions(id)) : null;
-    const said = req.input.kind === 'words' ? (kind === 'general' ? (continued?.request ?? req.input.text) : req.input.text) : '';
-    const history = kind === 'general' ? (continued?.history ?? thread) : [];
+    const said = req.input.kind === 'words' ? (kind !== 'summary' ? (continued?.request ?? req.input.text) : req.input.text) : '';
+    const history = kind !== 'summary' ? (continued?.history ?? thread) : [];
     const refused = history.length === 0 ? new Set<string>() : await refusedBuildActionIds(history, (id) => coachStore().listTurnActions(id));
     // v2 (BD17): Ben answering the coach's question is a build follow-up with his request's words.
-    const chain = kind === 'general' && req.input.kind === 'words' && history.length > 0 ? await buildQuestionChain(history, said, (id) => coachStore().listTurnActions(id)) : null;
-    const followUp = kind === 'general' && req.input.kind === 'words' ? (chain?.followUp ?? buildFollowUpIn(history, said, refused)) : null;
+    const chain = kind !== 'summary' && req.input.kind === 'words' && history.length > 0 ? await buildQuestionChain(history, said, (id) => coachStore().listTurnActions(id)) : null;
+    const followUp = kind !== 'summary' && req.input.kind === 'words' ? (chain?.followUp ?? buildFollowUpIn(history, said, refused)) : null;
     // Coach v3: Ben's earlier words in this thread that belong to this build, newest first (the gym he named two messages ago; review S6: never an older request's).
     const benWordsOf = (list: readonly CoachMessage[]) => list.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [{ text: m.body.input.text, atMs: toMs(m.createdAt.utc) }] : [])).reverse();
     const earlierBen = benWordsOf(history);
     const earlierWords = req.input.kind === 'words' ? buildChainWords(said, earlierBen, toMs(deps.now().utc)) : [];
     // (19 Oct) A plan of several days: Ben asked for one, or his words change the open plan in this thread.
-    const planInThread = kind === 'general' && req.input.kind === 'words' ? await threadOpenPlan(p, req.threadId) : null;
+    const planInThread = kind !== 'summary' && req.input.kind === 'words' ? await threadOpenPlan(p, req.threadId) : null;
     const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
     // Review planview-19oct B1: no open plan here and Ben's words change "my plan" (Library's `Ask coach to change`): the plan in use is the basis.
-    const planInUse = kind === 'general' && req.input.kind === 'words' && planInThread === null && changesPlanInUse(said) ? await appliedPlanOf(p) : null;
+    const planInUse = kind !== 'summary' && req.input.kind === 'words' && planInThread === null && changesPlanInUse(said) ? await appliedPlanOf(p) : null;
     // ADR 0038: "change my plan to 4 days" with no plan in use and none open here builds one (the plan builder's proposal).
-    const planFromNothing = kind === 'general' && req.input.kind === 'words' && planInThread === null && planInUse === null && changesPlanInUse(said);
-    const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(said) || (planInThread !== null && (revisesPlan(said) || changesPlanInUse(said))) || planInUse !== null || planFromNothing);
-    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, said, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread, basedOn: planInUse } : null) : null;
+    const planFromNothing = kind !== 'summary' && req.input.kind === 'words' && planInThread === null && planInUse === null && changesPlanInUse(said);
+    const planWanted = kind !== 'summary' && req.input.kind === 'words' && (planFollowUp || asksForPlan(said) || (planInThread !== null && (revisesPlan(said) || changesPlanInUse(said))) || planInUse !== null || planFromNothing);
+    const build = kind !== 'summary' && req.input.kind === 'words' ? await buildTurn(p, said, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread, basedOn: planInUse } : null) : null;
     if (build !== null) Object.assign(executors, build.executors);
-    // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan": the plan in use and today's date, and the tool.
-    const pauseTurn = kind === 'general' && req.input.kind === 'words' && asksToPausePlan(said);
+    // ADR 0039 (Ben, 29 Oct): every chat (Today, Plan, Progress, a workout's sheet, a Summary's thread) has the same
+    // powers; the entry only decides what the coach sees first. The post-workout review is not a chat.
+    const chat = kind !== 'summary';
+    // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan": the plan in use and today's date, and
+    // the tool. ADR 0039: whenever a plan is in use (the turn applies it only when Ben asked).
     let planPause: PlanPauseView | undefined;
-    // (Ben, 20 Oct) This week on every general turn: today, gym days left, the days left, his activities; `log_activity`
-    // (logged when his words tell it, else an offer) and `propose_week` (a proposal; offered when he asks, or `weekOpen`).
-    const weekRead = kind === 'general' && deps.week !== undefined ? await deps.week.view().catch(() => null) : null;
+    // (Ben, 20 Oct) This week on every chat: today, gym days left, the days left, his activities; `log_activity`
+    // (logged when his words tell it, else an offer) and `propose_week` (applied at once when he asks, else a proposal).
+    const weekRead = chat && deps.week !== undefined ? await deps.week.view().catch(() => null) : null;
     // Review S1 (rule 3): code opens `propose_week` on its own only once for the week as it is now. An offer already made
     // for these facts (open, declined or ignored) keeps it shut until the week changes (a workout, an activity, the plan);
     // Ben's own ask still opens it.
     const benAsksWeek = req.input.kind === 'words' && (asksToPlanWeek(said) || isStructuralRequest(classifyBenRequest(said, 'general')));
     const offeredAlready = !benAsksWeek && weekRead?.needsReshape === true && deps.week !== undefined ? await weekOfferedFor(p, deps.week).catch(() => false) : false;
     const weekView = weekRead === null ? null : offeredAlready ? { ...weekRead, needsReshape: false, suggestion: null } : weekRead;
-    if (kind === 'general' && deps.week !== undefined) {
+    if (chat && deps.week !== undefined) {
       const w = deps.week;
-      Object.assign(executors, createActivityExecutor(activityDeps(p)), createWeekExecutor({ store: coachStore(), week: () => w.tool() }));
+      Object.assign(executors, createActivityExecutor(activityDeps(p)));
+      // ADR 0039: the week's tool while this week has days left (none while a plan is paused).
+      if (weekRead !== null && weekRead.remaining.length > 0) Object.assign(executors, createWeekExecutor({ store: coachStore(), week: () => w.tool(), ...(w.apply === undefined ? {} : { apply: (actionId: string, opId: string) => w.apply?.(actionId, opId) ?? Promise.resolve({ ok: false as const, stale: false }) }) }));
     }
-    if (pauseTurn) {
-      const inUse = await repos().planDrafts.applied(p.id).catch(() => null);
+    const inUse = chat ? await repos().planDrafts.applied(p.id).catch(() => null) : null;
+    if (inUse !== null) {
       const nowMs = toMs(deps.now().utc);
       const running = activePause(inUse, nowMs, p.timezone);
-      planPause = { today: localDateOf(nowMs, p.timezone), inUse: inUse === null ? null : { name: inUse.name, paused: running === null ? null : { until: running.untilDate } } };
+      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate } } };
       Object.assign(executors, createPausePlanExecutor({ store: coachStore(), loadPlan: () => repos().planDrafts.applied(p.id), tz: p.timezone }));
     }
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
@@ -1842,15 +1860,16 @@ export function createCoachService(deps: CoachServiceDeps) {
           context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(weekView === null ? {} : { week: weekView }) },
           structuralSignals: await structuralSignalsFor(p, own).catch(() => []),
           // ADR 0038: a general thread stays general when today's workout is in its context.
-          ...(liveHere !== null && own === null ? { threadSessionId: null } : {}),
+          ...(liveHere !== null ? { threadSessionId: own === null ? null : own.session.id } : {}),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),
           ...((await threadHasOpenDraft(p, req.threadId)) ? { draftInThread: true } : {}),
           // Review B1, S4: the coach is told the app builds a session only when it really can here.
-          ...(kind === 'general' && build !== null ? { buildAvailable: true } : {}),
+          ...(chat && build !== null ? { buildAvailable: true } : {}),
           ...(planInThread !== null || planInUse !== null || planFromNothing ? { planInContext: true } : {}),
           ...(liftTargetsOn ? { liftTargetsOn: true } : {}),
-          ...(weekView?.needsReshape === true ? { weekOpen: true } : {}),
+          ...(weekRead !== null && executors.propose_week !== undefined ? { week: true } : {}),
+          ...(inUse !== null ? { planInUse: true } : {}),
           signal: stop.signal,
           onProgress: (progress: CoachTurnProgress) => {
             turns.progress(req.turnId, progress);

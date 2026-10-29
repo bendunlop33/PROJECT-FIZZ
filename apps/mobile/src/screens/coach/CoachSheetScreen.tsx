@@ -40,6 +40,7 @@ import {
   type ThreadRow,
   type ViewIcon,
   type WorkoutOutOfContext,
+  takeAsk,
 } from '../../coach/sheet-view';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { newUuid } from '../../device/runtime';
@@ -80,7 +81,10 @@ export function CoachSheetScreen() {
   return <ThreadCoachSheet {...params} entry={params.entry} />;
 }
 
-function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draftParam }: Omit<RootStackParams['Coach'], 'entry'> & { entry: CoachEntry }) {
+/** (Ben, 29 Oct) Today's words already sent from this app run (`takeAsk`): a remount never sends them twice. */
+const sentAsks = new Set<string>();
+
+function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draftParam, ask: askParam }: Omit<RootStackParams['Coach'], 'entry'> & { entry: CoachEntry }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -310,6 +314,19 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
     }, [services, entry, threadId, loadRows, loadWorkout]),
   );
 
+  // (Ben, 29 Oct: "The mic listens but doesn't do anything") Words from Today's bar go as his message as soon as the
+  // sheet knows its thread: the running turn shows at once, and a failure is the sheet's own line (`Not sent.`).
+  const sendRef = useRef<(input: BenInput) => Promise<void>>(() => Promise.resolve());
+  useEffect(() => {
+    if (threadId === undefined || availability === null) return;
+    const input = takeAsk(sentAsks, askParam);
+    if (input === null) return;
+    sendRef.current(input).catch(() => {
+      setDraft(input.text);
+      setNotice('Not sent.');
+    });
+  }, [threadId, availability, askParam]);
+
   // One ticker for the elapsed label and the workout bar; no animation (check 22). The bar is
   // worked out from the loaded workout; it's read again on focus, after a change, and every 15 s.
   useEffect(() => {
@@ -341,6 +358,7 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
     else drafts.set(key, t);
   };
 
+  sendRef.current = send;
   async function send(input: BenInput) {
     // A double tap within the commit guard sends once; a turn running blocks another.
     if (live !== null || clockNow() - sendGuard.current < TIMING.commitGuard) return;

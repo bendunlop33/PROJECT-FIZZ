@@ -15,7 +15,7 @@ import {
   type HealthDailyValue,
 } from '@fizz/domain';
 import { trainingProfileId, type Store } from '@fizz/persistence';
-import type { Exercise, HealthWeightSample, TrainingChange, TrainingProfile, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, HealthWeightSample, SplitBodyPart, TrainingChange, TrainingProfile, TrainingSplit, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import type { TrainingInput } from '@fizz/coach';
 
 import { buildDayChips, type BuildDayChip } from '../coach/build-view';
@@ -36,6 +36,8 @@ export interface TrainingServiceDeps {
   profile: () => Promise<UserProfile | null>;
   now: () => ZonedTimestamp;
   catalogueExercises?: () => readonly Exercise[];
+  /** ADR 0039 (Ben, 29 Oct: one split source): the plan in use's days (paused too). Absent or null: the profile's split. */
+  planSplit?: () => Promise<{ days: readonly { id: string; name: string; bodyParts: readonly SplitBodyPart[] }[] } | null>;
 }
 
 export type TrainingWriteOutcome = { ok: true; profile: TrainingProfile } | { ok: false; reason: 'stale' | 'invalid' | 'no_profile' | 'failed'; profile: TrainingProfile | null };
@@ -241,7 +243,9 @@ export function createTrainingService(deps: TrainingServiceDeps) {
     async buildCard(): Promise<{ days: BuildDayChip[]; nextDayId: string | null; sessionMinutes: number; mainLifts: Record<string, MainLift> }> {
       // Building a workout never waits on this row: an unreadable one gives the default split.
       const s = await snapshot().catch(() => null);
-      const split = splitInUse(s?.profile ?? null);
+      // ADR 0039: while a plan is in use, its days are the chips (never the profile's split beside it).
+      const plan = (await deps.planSplit?.().catch(() => null)) ?? null;
+      const split: TrainingSplit = plan !== null && plan.days.length > 0 ? { kind: 'custom', days: plan.days.map((d) => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] })) } : splitInUse(s?.profile ?? null);
       return { days: buildDayChips(split), nextDayId: s?.nextDayId ?? split.days[0]?.id ?? null, sessionMinutes: s?.profile.sessionMinutes ?? 45, mainLifts: s?.mainLifts ?? {} };
     },
   };

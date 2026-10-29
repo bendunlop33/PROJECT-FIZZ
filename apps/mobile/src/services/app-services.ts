@@ -568,7 +568,8 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   /** Training details and split (Ben 13 Oct: D5, D7, D8; F19). Your data, local only. */
-  const training = createTrainingService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises });
+  // ADR 0039: `plans` is made below; read only when the Build card asks (after startup).
+  const training = createTrainingService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises, planSplit: () => plans.splitSource() });
   // (Ben, 27 Oct) Progress's bodyweight card: entries are training-profile changes (versioned, op IDs).
   const bodyweight = createBodyweightService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, change: (c, v, op) => training.change(c, v, op) });
 
@@ -617,7 +618,11 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.checkInSettings === undefined ? {} : { checkInSettings: deps.checkInSettings }),
     // (Ben, 20 Oct) Lift targets join the training details only while the setting is on.
     training: async () => {
-      const t = await training.coachInput();
+      const base = await training.coachInput();
+      // ADR 0039 (Ben, 29 Oct): while a plan is in use (paused too), its days are the coach's one split.
+      // `plans` is made below; this runs only on a coach turn (after startup).
+      const plan = base === null ? null : await plans.splitSource().catch(() => null);
+      const t = base === null || plan === null ? base : { ...base, plan };
       if (t === null || t.profile?.liftTargetsOn !== true) return t;
       const views = await liftTargets.coachViews().catch(() => []);
       return views.length === 0 ? t : { ...t, liftTargets: views };
@@ -628,6 +633,11 @@ export function createAppServices(deps: AppServicesDeps) {
       tool: async () => {
         const s = await weekly.week.state();
         return s === null ? null : { facts: s.facts, basis: s.basis, factsKey: s.factsKey };
+      },
+      // ADR 0039: a week change Ben asked the coach for is applied at once, exactly as his Apply on the card would.
+      apply: async (actionId, opId) => {
+        const r = await weekly.week.apply({ actionId, opId });
+        return r.ok ? { ok: true } : { ok: false, stale: r.reason === 'stale' };
       },
     },
     store: () => deps.manager.store,

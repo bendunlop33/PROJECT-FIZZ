@@ -33,7 +33,8 @@ import { LogPastWorkoutSheet } from './workout/LogPastWorkoutSheet';
 import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
 import { setTodaySetupDay } from '../builder/coach-ports';
 import type { NudgeResult } from '../coach/builder-coach-service';
-import { nudgeCardView, todayAskFirst, todayAskRoute } from '../coach/builder-coach-view';
+import { nudgeCardView } from '../coach/builder-coach-view';
+import { todayAskParams } from '../coach/sheet-view';
 import { CoachAskBar } from '../ui/coach-ask-bar';
 import { TimeDetailSheet } from '../ui/time-stepper';
 import { createOnDeviceSpeech } from '../voice/on-device-speech';
@@ -205,16 +206,14 @@ export function TodayScreen() {
   }, [services, session, selection, nudgeKey, reach]);
 
   /**
-   * Words from Today's bar: pain words go straight to the coach (rule 9); a set-up request opens Set up filled
-   * (`fill_setup`, Undo there); anything else opens the coach with the words, never a toast.
+   * (Ben, 29 Oct: "The mic listens but doesn't do anything") Words from Today's bar open the coach sheet at once, sent
+   * as his message: the turn shows running there, and a failure is the sheet's own line. Nothing waits on a model call
+   * before the sheet opens. The coach owns pain (rule 9) and every change from there (ADR 0039).
    */
-  async function askToday(words: string) {
-    const route = todayAskFirst(words) ?? todayAskRoute(words, await services.builderCoach.askSetup({ words, opId: newUuid(), from: 'today' }));
-    if (route.kind === 'setup') {
-      navigation.navigate('BuilderSetup', cardDayId === null ? undefined : { dayId: cardDayId });
-      return;
-    }
-    navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: route.draft });
+  function askToday(words: string, spoken: boolean) {
+    const params = todayAskParams(words, spoken, newUuid());
+    if (params === null) navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true });
+    else navigation.navigate('Coach', params);
   }
 
   /** The nudge's offer: Apply writes it to the card's draft (Undo puts it back); Skip leaves it. Both quiet the card today. */
@@ -1020,11 +1019,7 @@ export function TodayScreen() {
               reach={reach}
               speech={speech}
               onOpen={(heard) => {
-                if (heard !== undefined && heard.trim() !== '') {
-                  void askToday(heard.trim());
-                  return;
-                }
-                navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true });
+                askToday(heard ?? '', true);
               }}
             />
           }

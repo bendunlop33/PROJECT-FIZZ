@@ -282,7 +282,7 @@ describe('the coach pauses the plan when Ben asks (Ben, 20 Oct: "pause eg if go 
     expect((await s.plans.overview())?.paused).toBeNull();
     expect((await upNext(s, gymId)).plan).not.toBeNull();
 
-    // A message that isn't about pausing: no tool, nothing changes.
+    // ADR 0039: the tool is offered whenever a plan is in use; a message that isn't about pausing changes nothing.
     const seen2: string[][] = [];
     model = new StepModel([
       (req) => {
@@ -291,22 +291,24 @@ describe('the coach pauses the plan when Ben asks (Ben, 20 Oct: "pause eg if go 
       },
     ]);
     await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'How is my week looking?', spoken: false }, turnId: h.ids() });
-    expect(seen2[0]).not.toContain('pause_plan');
+    expect(seen2[0]).toContain('pause_plan');
     expect((await s.plans.overview())?.paused).toBeNull();
   });
 
-  it('a holiday still ahead, or "I\'m back to 100 kg", doesn\'t open the tool (review B2); of several dates Ben said, the model\'s pick stands (S4)', async () => {
+  it('a holiday still ahead, or "I\'m back to 100 kg", never pauses (review B2; ADR 0039: the tool is offered, the call isn\'t run); of several dates Ben said, the model\'s pick stands (S4)', async () => {
     const { s } = await benWithPlan();
     for (const text of ['Going on holiday next week, anything I should do before?', "I'm back to 100 kg on bench"]) {
       const tools: string[][] = [];
       model = new StepModel([
         (req) => {
           tools.push(req.tools.map((t) => t.name));
-          return replyWith('Noted.');
+          return toolCall('pause_plan', { action: text.includes('holiday') ? 'pause' : 'resume', until: null, reason: 'Holiday', benAsked: true, benQuote: text });
         },
+        () => replyWith('Noted.'),
       ]);
-      await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text, spoken: false }, turnId: h.ids() });
-      expect(tools[0]).not.toContain('pause_plan');
+      const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text, spoken: false }, turnId: h.ids() });
+      expect(tools[0]).toContain('pause_plan');
+      expect(r.cards.filter((c) => c.record.detail.kind === 'pause_plan')).toEqual([]);
       expect((await s.plans.overview())?.paused).toBeNull();
     }
     model = new StepModel([() => toolCall('pause_plan', { action: 'pause', until: '2026-11-04', reason: 'Holiday' }), () => replyWith('Enjoy.')]);
