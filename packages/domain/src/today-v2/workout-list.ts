@@ -39,8 +39,10 @@ export function compactEachText(text: string): string {
 }
 
 /** A target load as compact lists show it: `82.5`, `24 ea`, `assist 25`, `+10`, `BW`, `—`; another unit inline (`45 lb`). */
-export function compactLoadText(value: number | null, unit: WeightUnit, convention: LoadConvention, headerUnit: WeightUnit): string {
+export function compactLoadText(value: number | null, unit: WeightUnit, convention: LoadConvention, headerUnit: WeightUnit, platesAdded = false): string {
   if (convention === 'bodyweight') return 'BW';
+  // (Ben, 29 Oct: leg press read `BW`) Plates on a loaded machine (leg press, Smith): a kg target, never bodyweight.
+  if (convention === 'added' && platesAdded) return value === null ? '—' : `${formatNumber(value)}${unit === headerUnit ? '' : `${NBSP}${unit}`}`;
   if (value === null) return convention === 'added' ? 'BW' : '—';
   const n = `${formatNumber(value)}${unit === headerUnit ? '' : `${NBSP}${unit}`}`;
   switch (convention) {
@@ -57,8 +59,9 @@ export function compactLoadText(value: number | null, unit: WeightUnit, conventi
 }
 
 /** Spoken form: `24 kilograms each`, `assistance 25 kilograms`, `bodyweight plus 10 kilograms`. */
-export function compactLoadSpoken(value: number | null, unit: WeightUnit, convention: LoadConvention): string {
+export function compactLoadSpoken(value: number | null, unit: WeightUnit, convention: LoadConvention, platesAdded = false): string {
   if (convention === 'bodyweight') return 'bodyweight';
+  if (convention === 'added' && platesAdded) return value === null ? 'no load yet' : `${formatNumber(value)} ${unit === 'kg' ? 'kilograms' : 'pounds'}`;
   if (value === null) return convention === 'added' ? 'bodyweight' : 'no load yet';
   const u = unit === 'kg' ? 'kilograms' : 'pounds';
   const n = formatNumber(value);
@@ -166,10 +169,11 @@ export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit
     const ss = b.slots.length > 1;
     for (const s of b.slots) {
       const fullName = infoOrDefault(info, s.exerciseId).name;
+      const plates = info(s.exerciseId)?.platesAdded === true;
       const n = working(s).length;
       const value = topLoad(s);
       const coachValue = o.coach?.[s.key];
-      const coach = coachValue === undefined ? null : `✦${NBSP}${compactLoadText(coachValue, s.unit, s.convention, unit)}`;
+      const coach = coachValue === undefined ? null : `✦${NBSP}${compactLoadText(coachValue, s.unit, s.convention, unit, plates)}`;
       const held = o.pained?.(s.exerciseId) ?? false;
       out.push({
         key: s.key,
@@ -178,7 +182,7 @@ export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit
         fullName,
         main: s.main,
         sets: `${String(n)}${NBSP}×${NBSP}${slotRepsText(s)}`,
-        target: compactLoadText(value, s.unit, s.convention, unit),
+        target: compactLoadText(value, s.unit, s.convention, unit, plates),
         coach,
         superset: ss ? bi : null,
         held,
@@ -188,8 +192,8 @@ export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit
           ss ? 'superset' : null,
           held ? 'pain flag, held' : null,
           spokenSets(s),
-          `target ${compactLoadSpoken(value, s.unit, s.convention)}`,
-          coachValue === undefined ? null : `coach suggests ${compactLoadSpoken(coachValue, s.unit, s.convention)}, tap to review`,
+          `target ${compactLoadSpoken(value, s.unit, s.convention, plates)}`,
+          coachValue === undefined ? null : `coach suggests ${compactLoadSpoken(coachValue, s.unit, s.convention, plates)}, tap to review`,
         ]
           .filter((x): x is string => x !== null)
           .join(', '),

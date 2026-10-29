@@ -292,7 +292,9 @@ describe('V5: the screen', () => {
   it('no plan: `No plan` and `Set up a plan ›` on one row, then the card (redesign v3 option C: the days are in `Push ⌄`)', () => {
     const block = screen.slice(screen.indexOf('const cardBlock = '));
     expect(block.indexOf('TODAY_V2_COPY.noPlan')).toBeLessThan(block.indexOf('<TodayCard'));
-    expect(screen).toContain('todayDayRows({ days: session.days, nextKey:');
+    // (Ben, 29 Oct) With a plan, the week's days with weekday and status (`weekPickRows`); no plan, the split's.
+    expect(screen).toContain('weekPickRows(week, { nextKey');
+    expect(screen).toContain('todayDayRows({ days: session.days, nextKey,');
     // `Push ⌄` lists the days and the other workouts, then Build your own, Log a past workout and ＋ Activity.
     expect(screen).toContain('others={session === null ? [] : session.others.map(');
   });

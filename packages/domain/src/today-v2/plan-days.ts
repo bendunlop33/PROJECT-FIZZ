@@ -76,7 +76,17 @@ export function todayPlanDays(input: TodayPlanDaysInput): TodayDay[] {
     if (!entry.templates.some((t) => t.mainLiftExerciseId === template.mainLiftExerciseId)) entry.templates.push(template);
     days.set(dayKey, entry);
   }
-  return [...days.values()].map((d) => ({ ...d.day, templates: d.templates }));
+  const out = [...days.values()].map((d) => ({ ...d.day, templates: d.templates }));
+  // (Ben, 29 Oct) Two plan days on one split day (Legs and Legs B) read as the plan names them, never both `Legs`: the
+  // card, the tiles and the day sheet would mix up one day's name with the other's exercises.
+  const seen = new Map<string, number>();
+  for (const d of out) seen.set(d.name, (seen.get(d.name) ?? 0) + 1);
+  return out.map((d) => {
+    if ((seen.get(d.name) ?? 0) < 2) return d;
+    const r = input.templates.find((x) => x.id === d.templates[0]?.routineId);
+    const own = r === undefined ? '' : (r.name.split('·')[0]?.trim() ?? '');
+    return own === '' ? d : { ...d, name: own };
+  });
 }
 
 const REST_KIND_OF: Readonly<Record<SetType, RestKind>> = { warmup: 'warmup', working: 'working', top: 'top', backoff: 'backoff', drop: 'drop' };

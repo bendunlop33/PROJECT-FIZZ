@@ -16,7 +16,7 @@ import { AppText } from './Text';
 
 export const WORKOUT_LIST_LAYOUT = { rowMinHeight: 48, setsWidth: 72, targetWidth: 62, nameSize: 15, nameLine: 20, valueSize: 14, valueLine: 20, headerSize: 11, headerLine: 14 } as const;
 
-export function WorkoutList({ rows, target, onRow, onCoach }: { rows: readonly WorkoutListRow[]; /** `Target kg`. */ target: string; onRow?: (row: WorkoutListRow) => void; onCoach?: (row: WorkoutListRow) => void }) {
+export function WorkoutList({ rows, target, onRow, onCoach, changed }: { rows: readonly WorkoutListRow[]; /** `Target kg`. */ target: string; onRow?: (row: WorkoutListRow) => void; onCoach?: (row: WorkoutListRow) => void; /** (Ben, 29 Oct) Exercises a one-change edit put in: a small accent dot after the name. */ changed?: ReadonlySet<string> }) {
   const theme = useTheme();
   const L = WORKOUT_LIST_LAYOUT;
   const groups: WorkoutListRow[][] = [];
@@ -35,6 +35,7 @@ export function WorkoutList({ rows, target, onRow, onCoach }: { rows: readonly W
           <AppText variant="body" style={{ flexShrink: 1, fontSize: L.nameSize, lineHeight: L.nameLine, ...(r.main ? { fontWeight: '600' } : {}) }}>
             {r.name}
           </AppText>
+          {changed?.has(r.exerciseId) === true ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent }} /> : null}
         </View>
         <AppText variant="callout" color="text.secondary" numeric numberOfLines={1} align="right" style={{ width: L.setsWidth, ...value }}>
           {r.sets}
@@ -54,11 +55,11 @@ export function WorkoutList({ rows, target, onRow, onCoach }: { rows: readonly W
     );
     const style = { minHeight: L.rowMinHeight, flexDirection: 'row' as const, alignItems: 'center' as const, gap: theme.space['2'], borderTopWidth: first ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] };
     return onRow === undefined ? (
-      <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={style}>
+      <View key={r.key} accessible accessibilityLabel={changed?.has(r.exerciseId) === true ? `${r.accessibilityLabel}, changed` : r.accessibilityLabel} style={style}>
         {body}
       </View>
     ) : (
-      <Pressable key={r.key} accessibilityRole="button" accessibilityLabel={r.accessibilityLabel} onPress={() => { onRow(r); }} style={({ pressed }) => ({ ...style, opacity: pressed ? 0.7 : 1 })}>
+      <Pressable key={r.key} accessibilityRole="button" accessibilityLabel={changed?.has(r.exerciseId) === true ? `${r.accessibilityLabel}, changed` : r.accessibilityLabel} onPress={() => { onRow(r); }} style={({ pressed }) => ({ ...style, opacity: pressed ? 0.7 : 1 })}>
         {body}
       </Pressable>
     );

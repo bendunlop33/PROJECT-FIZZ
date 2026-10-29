@@ -1,5 +1,6 @@
 import { builderFocusOf, builderGroupOf, isBrowseOnlyFocus, worksLine, type Exercise } from '@fizz/schemas';
 import { builtInRepRange, ruleCategory } from '../default-rule';
+import { isPlatesAddedKind } from '../plates-added';
 import type { BuilderExerciseInfo, BuilderExtraInfo } from './types';
 
 /**
@@ -39,6 +40,7 @@ export function builderInfoOf(
     muscles,
     angle: focus,
     barbell: kinds.some((k) => BAR_KINDS.has(k)),
+    ...(e.defaultLoadConvention === 'added' && kinds.length > 0 && kinds.every((k) => isPlatesAddedKind(k)) ? { platesAdded: true } : {}),
     // (WU1–WU12) What the warm-up planner classifies by.
     warmup: {
       catalogueKey: e.catalogueKey ?? null,

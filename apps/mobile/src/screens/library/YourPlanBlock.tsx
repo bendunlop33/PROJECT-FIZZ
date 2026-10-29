@@ -38,6 +38,7 @@ import { AppText, Chip, Eyebrow, Icon, TextButton } from '../../ui';
 import { SwipeRow } from '../../ui/table-parts';
 import { ChangePlanSheet, EditPlanButton } from './ChangePlanSheet';
 import { LiftTargetsBlock } from './LiftTargetsBlock';
+import { DaySheetFlow } from '../today/DaySheet';
 import { WeekCircles } from './WeekCircles';
 
 /** `why`: a line behind the toast's `Why?` (End plan's `N workouts not restored`). */
@@ -63,6 +64,8 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
   // (Ben, 20 Oct) Pause: the in-place picker; null closed, else the picked `until` (null: until Resume).
   const [pausing, setPausing] = useState<{ until: string | null } | null>(null);
   const [sheet, setSheet] = useState(false);
+  // (Ben, 29 Oct) This week's day row: the day sheet.
+  const [daySheet, setDaySheet] = useState<{ key: string; routineId: string; name: string } | null>(null);
   const busy = useRef(false);
   // One op ID per confirm, so a retried tap is the same End (rule 5).
   const endOp = useRef<string | null>(null);
@@ -418,6 +421,11 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
             moving={moving !== null && moving === row.dayIndex}
             onPress={() => {
               if (row.routineId === null) return;
+              // (Ben, 29 Oct) This week's day: the day sheet (the same as Today's), Every week by default.
+              if (view.thisWeek && row.dayIndex !== null && plan.block != null) {
+                setDaySheet({ key: `plan:${plan.planId}:${String(row.dayIndex)}`, routineId: row.routineId, name: row.name });
+                return;
+              }
               const week = view.selected !== null && !view.thisWeek ? view.selected : undefined;
               stack.navigate('LibraryPlanDay', { routineId: row.routineId, name: row.name, ...(week === undefined ? {} : { week }) });
             }}
@@ -468,6 +476,36 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
           if (edit?.kind === 'next') navigation.dispatch(openNextBlock(plan.planId));
           else setSheet(true);
         }}
+      />
+      <DaySheetFlow
+        target={daySheet === null ? null : { dayKey: daySheet.key }}
+        from="library"
+        chosenKey={null}
+        doneRows={[]}
+        dateTitle={(d) => d}
+        onOpen={() => undefined}
+        onStart={(key) => {
+          setDaySheet(null);
+          navigation.dispatch(todayWithDay(key, newUuid()));
+        }}
+        onPick={(key) => {
+          setDaySheet(null);
+          navigation.dispatch(todayWithDay(key, newUuid()));
+        }}
+        onMore={
+          daySheet === null
+            ? undefined
+            : () => {
+                const d = daySheet;
+                setDaySheet(null);
+                stack.navigate('LibraryPlanDay', { routineId: d.routineId, name: d.name });
+              }
+        }
+        onClose={() => {
+          setDaySheet(null);
+        }}
+        onChanged={changed}
+        onToast={onToast}
       />
       <ChangePlanSheet
         visible={sheet}

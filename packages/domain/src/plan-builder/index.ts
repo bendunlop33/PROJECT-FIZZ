@@ -9,3 +9,4 @@ export * from './answers';
 export * from './inputs';
 export * from './block';
 export * from './edit';
+export * from './week-change';

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { DEFAULT_TODAY_HEALTH_SHOWS, deriveId, discardCommand, discardConfirmation, formatDuration, HISTORY_COPY, reasonsText, scoreText, sessionCheckInForSkip, TODAY_PICK_COPY, TODAY_V2_COPY, todayDayRows, todayRestDay, toMs, type ResumeRow, type TodayHealthLine, type TodayMain, type WeekTile } from '@fizz/domain';
+import { DEFAULT_TODAY_HEALTH_SHOWS, deriveId, discardCommand, discardConfirmation, formatDuration, HISTORY_COPY, reasonsText, scoreText, sessionCheckInForSkip, TODAY_PICK_COPY, TODAY_V2_COPY, todayDayRows, todayRestDay, weekPickRows, toMs, type ResumeRow, type TodayHealthLine, type TodayMain, type WeekTile } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -27,7 +27,8 @@ import { AppText, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, Se
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
-import { DaySheet, DoneCard, HealthLine, OfferSheet, RecentList, RestDayCard, SectionLabel, ShowOnTodaySheet, StartDock, TodayCard, TodayHeader, TodayPickSheet, TODAY_SPACING, WeekTiles } from './today/TodaySession';
+import { DaySheetFlow } from './today/DaySheet';
+import { DoneCard, HealthLine, OfferSheet, RecentList, RestDayCard, SectionLabel, ShowOnTodaySheet, StartDock, TodayCard, TodayHeader, TodayPickSheet, TODAY_SPACING, WeekTiles } from './today/TodaySession';
 import { useDevicePrefs } from '../device/DevicePrefsContext';
 import { LogPastWorkoutSheet } from './workout/LogPastWorkoutSheet';
 import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
@@ -703,10 +704,15 @@ export function TodayScreen() {
   const openWeek = useOpenWorkoutWeek(data.state === 'ready' ? data.value.active : null);
   const tiles = useMemo(() => (workoutOpen ? (openWeek?.tiles ?? []) : cardTiles), [workoutOpen, openWeek, cardTiles]);
   const blockLine = workoutOpen ? (openWeek?.block ?? null) : (session?.block ?? null);
-  const pickRows = useMemo(
-    () => (session === null ? [] : todayDayRows({ days: session.days, nextKey: session.status === 'paused' ? null : session.nextKey, selectedKey: restDay === null ? selectedKey : null, today: session.localDate, doneOn: session.week.doneOn, plannedOn: Object.fromEntries(session.week.planned.map((d) => [d.key, d.localDate])) })),
-    [session, selectedKey, restDay],
-  );
+  // (Ben, 29 Oct) `Push B ⌄` lists the week's plan days with weekday and status (no plan: Profile › Split's days).
+  const pickRows = useMemo(() => {
+    if (session === null) return [];
+    const nextKey = session.status === 'paused' ? null : session.nextKey;
+    const sel = restDay === null ? selectedKey : null;
+    const week = services.todaySession.planWeek(session, selectedKey ?? nextKey);
+    if (week.length > 0) return weekPickRows(week, { nextKey, selectedKey: sel, upNext: TODAY_PICK_COPY.upNext });
+    return todayDayRows({ days: session.days, nextKey, selectedKey: sel, today: session.localDate, doneOn: session.week.doneOn, plannedOn: Object.fromEntries(session.week.planned.map((d) => [d.key, d.localDate])) });
+  }, [services, session, selectedKey, restDay]);
 
   // (Redesign v3 §A2) The Health line: what Ben chose to show, read locally; hidden while Health is off or empty.
   const shown = prefs.todayHealth ?? DEFAULT_TODAY_HEALTH_SHOWS;
@@ -1000,7 +1006,8 @@ export function TodayScreen() {
     void startCard();
   };
   const recentRows = session === null || openWorkout ? [] : todayRecentRows(session.recent);
-  const sheetRows = daySheet === null || session === null ? [] : daySheetRows(daySheet, session.week.feed, (name) => plannedDetailOf(session, name));
+  // (Ben, 29 Oct) The day sheet shows the day's plan day itself; these are what was done on it (Summary, activity).
+  const sheetRows = daySheet === null || session === null ? [] : daySheetRows(daySheet, session.week.feed, (name) => plannedDetailOf(session, name)).filter((r) => r.open?.kind !== 'plan_day');
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
@@ -1141,21 +1148,45 @@ export function TodayScreen() {
         }}
         onSaved={activitySaved}
       />
-      <DaySheet
-        title={daySheet === null || sheetRows.length === 0 ? null : daySheetTitle(daySheet.date)}
-        rows={sheetRows}
-        onClose={() => {
-          setDaySheet(null);
-        }}
+      <DaySheetFlow
+        target={daySheet === null ? null : { date: daySheet.date }}
+        from="today"
+        chosenKey={selection?.dayKey ?? session?.nextKey ?? null}
+        doneRows={sheetRows}
+        dateTitle={daySheetTitle}
         onOpen={(o) => {
           setDaySheet(null);
           if (o.kind === 'summary') navigation.navigate('Summary', { sessionId: o.sessionId, back: true });
           else if (o.kind === 'activity') void openActivity(o.activityId);
-          else {
-            const routineId = session?.days.find((d) => d.name === o.dayName)?.templates[0]?.routineId ?? null;
-            if (routineId !== null) navigation.navigate('Tabs', { screen: 'Library', params: { screen: 'LibraryPlanDay', params: { routineId, name: o.dayName }, initial: false } });
-          }
         }}
+        onStart={(key) => {
+          setDaySheet(null);
+          const initial = session?.initial[key];
+          if (initial === undefined) return;
+          void startCard({ dayKey: key, controls: selection?.dayKey === key ? selection.controls : initial });
+        }}
+        onPick={(key) => {
+          setDaySheet(null);
+          const was = selection?.dayKey ?? session?.nextKey ?? null;
+          const name = session?.days.find((d) => d.key === key)?.name ?? '';
+          pickDay(key);
+          setToast({
+            text: TODAY_V2_COPY.doToday(name),
+            action: PB_COPY.undo,
+            onAction: () => {
+              setToast(null);
+              if (was !== null) pickDay(was);
+            },
+          });
+        }}
+        onClose={() => {
+          setDaySheet(null);
+        }}
+        onChanged={() => {
+          changed();
+          reloadSession();
+        }}
+        onToast={setToast}
       />
       <TodayPickSheet
         visible={pickSheet}

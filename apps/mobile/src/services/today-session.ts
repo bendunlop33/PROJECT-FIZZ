@@ -25,12 +25,19 @@ import {
   pbWarmupsOf,
   pbBlockOfPlan,
   pbMoveWeek,
+  pbWeekEditsOf,
+  pbDayWithEdits,
+  pbSkipsOf,
   linkRefs,
   linkedRoutineId,
   pbBlockLine,
   pbAppliedBuilder,
   pbWeekdaysOf,
   buildWeekTiles,
+  daySheetOf,
+  weekPlanDays,
+  type DaySheetView,
+  type WeekPlanDay,
   mondayOf,
   type WeekTile,
   type PbBlockWeek,
@@ -349,6 +356,8 @@ export interface TodaySessionData {
     ahead: { key: string; name: string }[];
     doneOn: Record<string, string>;
     setDays: boolean;
+    /** (Ben, 29 Oct) Plan days skipped this week, with the date they had (null on Any days). */
+    skippedOn: Record<string, string | null>;
     /** The week's done workouts and activities as History reads them (`52 min · 16 sets`, `5.2 km · 28 min`), for a day's sheet. */
     feed: FeedItem[];
   };
@@ -363,8 +372,35 @@ export interface TodaySessionData {
    * `Week 6 of 6 · Deload`, `Block done`. Null: no builder plan in use, or it's paused (the pause wins).
    */
   block: { text: string; accessibilityLabel: string; deload: boolean; done: boolean } | null;
+  /**
+   * (Ben, 29 Oct: day sheet) This week's one-change edits by plan day key: the exercises a swap or add put in (the
+   * small changed mark), the ones a remove left out, and weights Ben typed for them (kept as typed).
+   */
+  weekEdits: Readonly<Record<string, TodayWeekEdits>>;
+  /** (Ben, 29 Oct) Each plan day's template and its rows this week (row IDs for a one-change edit), by key. */
+  dayRows: Readonly<Record<string, { routineId: string; version: number; rows: readonly { rowId: string; exerciseId: string }[] }>>;
+  /** (Ben, 29 Oct) The plan's version as read (a day-sheet change writes against it, rule 5); null: no plan. */
+  planVersion: number | null;
+  /** (Ben, 29 Oct) Plan days skipped this week (`Skip this week`), by key. */
+  skipped: readonly string[];
   /** Compute context (pure functions over what `load` read). */
   internal: TodayInternal;
+}
+
+/** (Ben, 29 Oct) A day's sheet as Today and Library show it. */
+export interface TodayDaySheet extends DaySheetView {
+  planId: string | null;
+  list: WorkoutListRow[];
+  listTarget: string;
+  /** Exercises a this-week change put in (the small changed mark). */
+  changed: string[];
+  summary: string | null;
+}
+
+export interface TodayWeekEdits {
+  changed: string[];
+  removed: string[];
+  typed: Readonly<Record<string, { value: number; unit: 'kg' | 'lb'; convention: string }>>;
 }
 
 interface TodayInternal {
@@ -826,7 +862,29 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const n = r.createdFromPlan?.planId === plan.id ? r.createdFromPlan.versionN : plan.currentVersion;
       return (plan.versions.find((v) => v.n === n) ?? plan.versions.find((v) => v.n === plan.currentVersion))?.days.find((d) => d.index === dayIndex)?.minutes ?? null;
     };
-    const planDays = plan === null ? [] : todayPlanDays({ planId: plan.id, templates, split, mainLifts: training?.mainLifts, info, defaultMinutes: training?.sessionMinutes ?? 60, planMinutesOf });
+    // (Ben, 29 Oct: day sheet) This week's one-change edits (`This week only`) on each plan day's template, in memory:
+    // the stored template never changes, and nothing else on the day is recalculated.
+    const changeWeek = block === null || block.done ? null : pbMoveWeek(block);
+    const dayIndexOf = (r: Routine): number | null => plan?.applied?.made.find((m) => m.routineId === r.id)?.dayIndex ?? (planDayOf(r)?.planId === plan?.id ? (planDayOf(r)?.dayIndex ?? null) : null);
+    const weekEdits: Record<string, TodayWeekEdits> = {};
+    const weekTemplates =
+      plan === null || changeWeek === null
+        ? templates
+        : templates.map((r) => {
+            const i = dayIndexOf(r);
+            const edits = i === null ? [] : pbWeekEditsOf(plan, changeWeek, i);
+            if (i === null || edits.length === 0) return r;
+            const made = pbDayWithEdits(r.exercises, edits, (id) => exercises.get(id)?.measurement ?? 'reps');
+            const key = `plan:${plan.id}:${String(i)}`;
+            const was = weekEdits[key] ?? { changed: [], removed: [], typed: {} };
+            const changedIds = made.rows.filter((x) => made.changed.has(x.id)).map((x) => x.exerciseId);
+            const typed: Record<string, { value: number; unit: 'kg' | 'lb'; convention: string }> = { ...was.typed };
+            for (const e of edits) if (e.kind !== 'remove' && e.toExerciseId !== null && e.load != null) typed[e.toExerciseId] = e.load;
+            weekEdits[key] = { changed: [...new Set([...was.changed, ...changedIds])], removed: [...new Set([...was.removed, ...made.removed])], typed };
+            return { ...r, exercises: made.rows };
+          });
+    const skippedDays = plan === null || changeWeek === null ? new Set<number>() : pbSkipsOf(plan, changeWeek);
+    const planDays = plan === null ? [] : todayPlanDays({ planId: plan.id, templates: weekTemplates, split, mainLifts: training?.mainLifts, info, defaultMinutes: training?.sessionMinutes ?? 60, planMinutesOf });
     // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
     const status: TodaySessionStatus = plan === null || planDays.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan';
 
@@ -933,6 +991,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       days.flatMap((d) => d.templates),
       gymId,
     );
+    // (Ben, 29 Oct) A weight Ben typed for a this-week swap or add is the card's target for it, kept as typed.
+    for (const w of Object.values(weekEdits)) for (const [id, l] of Object.entries(w.typed)) anchors.set(id, { anchor: { value: l.value, reps: 8, rpe: 8 }, unit: l.unit, convention: l.convention, source: 'coach', planSetMs: null });
     const subAll = await deps.port.substituteCtx(p, planGymId, typical, ids);
     // (D4) Back-offs sit in the band for Ben's goal (as Your workout's); (S7) a builder plan in use: its focus's band.
     const mainFocus = pbMainFocus(plan, goal);
@@ -1099,7 +1159,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const at = d.templates.map((t) => (t.routineId === null ? undefined : weekDone.get(t.routineId))).find((x): x is string => x !== undefined);
       return at === undefined ? null : localDateOf(toMs(at), tz);
     };
-    const week = { ...weekOf(plan, block, planDays, weekWorkouts.map((w) => ({ ...w, dayName: dayNameOf.get(w.sessionId) ?? null })), weekActs, today, doneOnOf), feed: weekFeed };
+    const week = { ...weekOf(plan, block, planDays, weekWorkouts.map((w) => ({ ...w, dayName: dayNameOf.get(w.sessionId) ?? null })), weekActs, today, doneOnOf, skippedDays), feed: weekFeed };
     // The nudge's real signals (rule 6): finished sessions in the window, today's check-in, what Ben logged.
     const recentForNudge: NudgeSession[] = newest.slice(0, 10).map((a) => ({
       sessionId: a.session.id,
@@ -1174,6 +1234,15 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       strip: { workouts: stripWorkouts, activities: acts, firstUse: newest.length === 0 && refs.length === 0 && acts.length === 0 },
       week,
       recent,
+      weekEdits,
+      dayRows: Object.fromEntries(
+        planDays.flatMap((d) => {
+          const r = weekTemplates.find((x) => x.id === d.templates[0]?.routineId);
+          return r === undefined ? [] : [[d.key, { routineId: r.id, version: r.version, rows: [...r.exercises].sort((a, b) => a.order - b.order).map((e) => ({ rowId: e.id, exerciseId: e.exerciseId })) }] as const];
+        }),
+      ),
+      planVersion: plan?.version ?? null,
+      skipped: planDays.filter((d) => d.dayIndex !== null && skippedDays.has(d.dayIndex)).map((d) => d.key),
       doneToday: stripWorkouts.some((w) => w.localDate === today),
       nudgeInput,
       block: block === null ? null : pbBlockLine(block),
@@ -1308,7 +1377,6 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day), ...storedOpts(data) });
     if (d === null) return null;
     const unit = breakdownUnit(d.workout, data.unit);
-    const advice = d.advice[0]?.reason ?? null;
     const mainSlot = d.workout.blocks.flatMap((b) => b.slots).find((s) => s.main) ?? null;
     const slotName = (key: string) => nameOf(d.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === key)?.exerciseId ?? '');
     return {
@@ -1320,7 +1388,9 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       minutes: d.minutes,
       exerciseCount: d.exerciseCount,
       time: timeView(sel.controls.minutes, t.minutes, fitNoteOf(d.fit.steps, nameOf, slotName), d.minutes),
-      clashLine: clash ?? advice,
+      // (Ben, 29 Oct) The builder's pairing advice (`Both work your quads, so the second one suffers.`) is the editor's,
+      // never Today's card: only the run clash shows here.
+      clashLine: clash,
       controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: d.absOn, planOn: t.absPlan, differs: d.absOn !== t.absPlan }, supersets: sel.controls.supersets },
       unit,
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
@@ -1757,6 +1827,38 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return deps.nudge({ draftId: c.draftId, splitDayId: day?.kind === 'plan' || day?.kind === 'split' ? day.splitDayId : null, input: data.nudgeInput, opId: `${opId}:${c.draftId}` }).catch(() => null);
   }
 
+  /** (Ben, 29 Oct) This week's plan days with their date and status (the day sheet and the card picker read them). */
+  function planWeek(data: TodaySessionData, chosenKey: string | null): WeekPlanDay[] {
+    if (data.status === 'no_plan') return [];
+    return weekPlanDays({
+      today: data.localDate,
+      setDays: data.week.setDays,
+      days: data.days.map((d) => ({ key: d.key, name: d.name, dayIndex: d.dayIndex })),
+      doneOn: data.week.doneOn,
+      plannedOn: Object.fromEntries(data.week.planned.map((d) => [d.key, d.localDate])),
+      skippedOn: data.week.skippedOn,
+      ahead: data.week.ahead.map((d) => d.key),
+      chosenKey,
+    });
+  }
+
+  /**
+   * (Ben, 29 Oct) A day's sheet: a tile's date, or (Library › Plan) a plan day. Its plan day, status and this-week
+   * actions, and its exercises as Today's card lists them (sets × reps, target, `ea`), the rows a this-week change
+   * touched marked. Pure over `data`; nothing is written.
+   */
+  function daySheet(data: TodaySessionData, at: { date: string } | { dayKey: string }, chosenKey: string | null, dateTitle: (date: string) => string): TodayDaySheet {
+    const days = planWeek(data, chosenKey);
+    const doneHere = 'date' in at && data.week.workouts.some((w) => w.localDate === at.date);
+    const view = daySheetOf({ at, today: data.localDate, setDays: data.week.setDays, days, doneHere, dateTitle });
+    const key = view.day?.key ?? null;
+    const initial = key === null ? undefined : data.initial[key];
+    const c = key === null || initial === undefined || view.status === 'done' ? null : card(data, { dayKey: key, controls: initial });
+    const changed = key === null ? [] : (data.weekEdits[key]?.changed ?? []);
+    const planId = key === null ? null : (data.days.find((d) => d.key === key)?.planId ?? null);
+    return { ...view, planId, list: c?.list ?? [], listTarget: c?.listTarget ?? '', changed, summary: c === null ? null : c.summary };
+  }
+
   /** (Redesign v3) This week's seven tiles, Mon–Sun, with the card's day (`chosen`) as today's planned ring. */
   function weekTiles(data: TodaySessionData, chosen: string | null): WeekTile[] {
     return buildWeekTiles({
@@ -1784,6 +1886,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     review,
     mainLiftsFor,
     week: weekTiles,
+    planWeek,
+    daySheet,
     /**
      * (Ben, 28 Oct: "it wouldn't show up on the calendar") This week's tiles while a workout is open. Today's card is
      * hidden then and Today used not to read its session at all, so the week showed nothing (a relaunch mid-workout) or
@@ -1827,6 +1931,7 @@ function weekOf(
   activities: Activity[],
   today: string,
   doneOnOf: (d: TodayDay) => string | null,
+  skipped: ReadonlySet<number> = new Set(),
 ): Omit<TodaySessionData['week'], 'feed'> {
   const monday = mondayOf(today);
   const doneOn: Record<string, string> = {};
@@ -1837,6 +1942,7 @@ function weekOf(
   }
   const planned: TodaySessionData['week']['planned'] = [];
   const ahead: TodaySessionData['week']['ahead'] = [];
+  const skippedOn: Record<string, string | null> = {};
   const running = plan !== null && block !== null && !block.done;
   const setDays = builder !== null && builder.builder.answers.schedule === 'set' && running;
   if (setDays) {
@@ -1844,13 +1950,18 @@ function weekOf(
     const weekdays = pbWeekdaysOf(builder.builder.answers, plan.moves, pbMoveWeek(block), indexes);
     for (const d of planDays) {
       const wd = d.dayIndex === null ? undefined : weekdays?.get(d.dayIndex);
-      if (wd === undefined || doneOn[d.key] !== undefined) continue;
+      if (wd !== undefined && doneOn[d.key] === undefined && d.dayIndex !== null && skipped.has(d.dayIndex)) skippedOn[d.key] = addDays(monday, wd);
+      if (wd === undefined || doneOn[d.key] !== undefined || (d.dayIndex !== null && skipped.has(d.dayIndex))) continue;
       planned.push({ key: d.key, name: d.name, localDate: addDays(monday, wd) });
     }
   } else if (running) {
-    for (const d of planDays) if (doneOn[d.key] === undefined) ahead.push({ key: d.key, name: d.name });
+    for (const d of planDays) {
+      if (doneOn[d.key] !== undefined) continue;
+      if (d.dayIndex !== null && skipped.has(d.dayIndex)) skippedOn[d.key] = null;
+      else ahead.push({ key: d.key, name: d.name });
+    }
   }
-  return { workouts, activities, planned, ahead, doneOn, setDays };
+  return { workouts, activities, planned, ahead, doneOn, setDays, skippedOn };
 }
 
 /** A builder draft key's Today day: `plan:<planId>:<dayIndex>`, else `other:<splitDayId>` (a Profile split day or an Other session). */

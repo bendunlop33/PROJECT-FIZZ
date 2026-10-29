@@ -197,7 +197,9 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
   });
 
   it('(V5, D7; redesign v3 option C) the days (plan, or Profile › Split) are in `Push ⌄` → Today’s workout, with Build your own, Log a past workout and ＋ Activity', () => {
-    expect(screen).toContain('todayDayRows({ days: session.days, nextKey:');
+    // (Ben, 29 Oct) With a plan, the week's days with weekday and status (`weekPickRows`); no plan, the split's.
+    expect(screen).toContain('weekPickRows(week, { nextKey');
+    expect(screen).toContain('todayDayRows({ days: session.days, nextKey,');
     expect(screen).toContain('<TodayPickSheet');
     const sheet = parts.slice(parts.indexOf('export function TodayPickSheet('), parts.indexOf('// Cards:'));
     for (const t of ['TODAY_V2_COPY.buildYourOwn', 'PAST_LOG_COPY.entry', 'TODAY_SCREEN_COPY.addActivity']) expect(sheet).toContain(t);

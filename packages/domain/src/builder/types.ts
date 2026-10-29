@@ -48,6 +48,11 @@ export interface BuilderExerciseInfo {
   /** Loaded on a bar (barbell, EZ or trap bar). */
   barbell: boolean;
   /**
+   * (Ben, 29 Oct) Loaded with plates on a machine (leg press, Smith): its `added` load is the plates, a kg target, never
+   * bodyweight plus. Absent: false.
+   */
+  platesAdded?: boolean;
+  /**
    * (WU1–WU12) The catalogue facts the warm-up planner classifies by (category, pattern, family, primary muscles).
    * Absent: the planner falls back on `role`, `group` and `barbell`.
    */
