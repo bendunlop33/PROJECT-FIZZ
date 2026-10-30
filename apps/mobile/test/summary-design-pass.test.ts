@@ -51,15 +51,16 @@ describe('SummaryScreen layout (source checks)', () => {
     expect(src).toContain('titleLines={2}');
   });
 
-  it('exercise row: name on 2 lines with done of planned at the right, then the sets logged; no plan-header lines', () => {
-    expect(src).toContain('<AppText variant="headline" numberOfLines={2} style={{ flex: 1 }}>');
-    expect(src).toContain('{e.count}');
+  it('(Ben, 30 Oct) exercise row: one line, the name truncates first, then its sets said once; no plan-header lines', () => {
+    expect(src).toContain('<AppText variant="body" numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, flexShrink: 1 }}> {e.name}');
+    expect(src).toContain('{e.line}');
     expect(src).not.toContain('skipped`}</AppText>');
     expect(src).not.toContain('planVsDone.header');
   });
 
-  it('Next time actions wrap; no orphan Coach note label', () => {
-    expect(src).toMatch(/flexWrap: 'wrap', justifyContent: 'space-between'/);
+  it('(Ben, 30 Oct) a Next time row is one line: the name truncates, the value never shrinks; no orphan Coach note label', () => {
+    expect(src).toContain('<AppText variant="callout" numeric numberOfLines={1} style={{ flexShrink: 0 }}> {text}');
+    expect(src).not.toMatch(/flexWrap: 'wrap', justifyContent: 'space-between'/);
     expect(src).toContain('{coachNote !== null ? <SectionHeader title="Coach note" /> : null}');
   });
 });
