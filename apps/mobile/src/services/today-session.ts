@@ -1861,9 +1861,15 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return { ...view, planId, list: c?.list ?? [], listTarget: c?.listTarget ?? '', changed, summary: c === null ? null : c.summary };
   }
 
-  /** (Redesign v3) This week's seven tiles, Mon–Sun, with the card's day (`chosen`) as today's planned ring. */
-  function weekTiles(data: TodaySessionData, chosen: string | null): WeekTile[] {
+  /**
+   * (Redesign v3) This week's seven tiles, Mon–Sun, with the card's day (`chosen`) as today's planned ring. `picked`:
+   * Ben picked it for today himself; else a day moved, swapped or skipped off today is ringed on its own date only.
+   */
+  function weekTiles(data: TodaySessionData, chosen: string | null, picked = false): WeekTile[] {
+    const skipped = data.days.filter((d) => d.key in data.week.skippedOn).map((d) => d.name);
     return buildWeekTiles({
+      chosenPicked: picked,
+      skipped,
       today: data.localDate,
       workouts: data.week.workouts,
       activities: data.week.activities.map((a) => ({ activityId: a.id, localDate: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM, durationS: a.fields.durationS, effort: a.fields.effort })),

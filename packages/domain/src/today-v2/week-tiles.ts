@@ -71,6 +71,28 @@ export interface WeekTilesInput {
   ahead?: readonly string[];
   /** The workout on Today's card (`Push`); null: none (done today, rest day). */
   chosen: string | null;
+  /**
+   * (Ben, 29 Oct: "it stays up on the calendar on today and also moves to new day") Ben picked the card's day for today
+   * himself (the card picker, Any days `Do today instead`). Picked: today's ring, and its own date's ring goes (one
+   * ring a plan day). Not picked (the card as it was before a Move…, a swap or a Skip): a day dated later this week, or
+   * skipped this week, is never also ringed today.
+   */
+  chosenPicked?: boolean;
+  /** Plan days skipped this week (names): never ringed, today included, unless Ben picks one. */
+  skipped?: readonly string[];
+}
+
+/**
+ * Whether the card's day is ringed on today, and the planned days left to ring (a plan day once). Pure.
+ */
+export function todayRing(input: Pick<WeekTilesInput, 'today' | 'chosen' | 'chosenPicked' | 'skipped'>, planned: readonly StripPlannedDayInput[]): { chosen: string | null; planned: StripPlannedDayInput[] } {
+  const c = input.chosen;
+  if (c === null) return { chosen: null, planned: [...planned] };
+  if (input.chosenPicked === true) return { chosen: c, planned: planned.filter((d) => !(d.name === c && d.localDate > input.today)) };
+  const later = planned.some((d) => d.name === c && d.localDate > input.today);
+  const datedToday = planned.some((d) => d.name === c && d.localDate === input.today);
+  if ((later && !datedToday) || (input.skipped ?? []).includes(c)) return { chosen: null, planned: [...planned] };
+  return { chosen: c, planned: [...planned] };
 }
 
 function spokenActivity(a: StripActivityInput): string {
@@ -103,7 +125,9 @@ export function aheadDates(today: string, ahead: readonly string[], chosen: stri
 
 export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
   const monday = mondayOf(input.today);
-  const plannedDays = [...(input.plannedDays ?? []), ...aheadDates(input.today, input.ahead ?? [], input.chosen)];
+  const ring = todayRing(input, input.plannedDays ?? []);
+  const plannedDays = [...ring.planned, ...aheadDates(input.today, input.ahead ?? [], ring.chosen)];
+  const chosen = ring.chosen;
   return Array.from({ length: 7 }, (_, i) => {
     const date = addDays(monday, i);
     const isToday = date === input.today;
@@ -117,10 +141,10 @@ export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
       marks.push({ shape: 'dot', colour: planDayColourKey(w.dayName ?? w.title), planned: false });
       spoken.push(`${w.title}, done`);
     }
-    if (isToday && done.length === 0 && input.chosen !== null) {
-      items.push({ kind: 'today', text: input.chosen, planned: true });
-      marks.push({ shape: 'ring', colour: planDayColourKey(input.chosen), planned: true });
-      spoken.push(`${input.chosen}, today's workout`);
+    if (isToday && done.length === 0 && chosen !== null) {
+      items.push({ kind: 'today', text: chosen, planned: true });
+      marks.push({ shape: 'ring', colour: planDayColourKey(chosen), planned: true });
+      spoken.push(`${chosen}, today's workout`);
     }
     if (!past && !isToday) {
       for (const d of plannedDays.filter((x) => x.localDate === date)) {

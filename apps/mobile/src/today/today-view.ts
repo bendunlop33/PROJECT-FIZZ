@@ -139,12 +139,43 @@ export function followUpNext(
     /** The day's controls as the previous read opened it (null: unknown). */
     initialWas: TodayControls | null;
     initial: Readonly<Record<string, TodayControls>>;
+    /**
+     * (Ben, 29 Oct) The card's day was moved, swapped or skipped off today by a this-week change (`movedOffToday`):
+     * the card follows Up next even with a draft or changed controls (the draft stays with its day). Absent: false.
+     */
+    movedOff?: boolean;
   },
 ): TodayCardState {
+  if (i.movedOff === true && !i.picked && i.nextKey !== null && i.nextKey !== cur.dayKey) {
+    const next = i.initial[i.nextKey];
+    return next === undefined ? cur : { dayKey: i.nextKey, controls: next, open: cur.open, why: false };
+  }
   if (i.prevNextKey === null || i.nextKey === null || i.nextKey === i.prevNextKey || cur.dayKey !== i.prevNextKey) return cur;
   if (i.picked || i.hasOwnDraft || i.initialWas === null || JSON.stringify(cur.controls) !== JSON.stringify(i.initialWas)) return cur;
   const next = i.initial[i.nextKey];
   return next === undefined ? cur : { dayKey: i.nextKey, controls: next, open: cur.open, why: false };
+}
+
+/**
+ * (Ben, 29 Oct: "it stays up on the calendar on today and also moves to new day") A this-week change took the card's
+ * day `key` away from today: since the read before (the same day), it is newly dated later this week (Move…, `Do today
+ * instead`'s swap) or newly skipped. Pure.
+ */
+export function movedOffToday(
+  key: string,
+  before: { localDate: string; plannedOn: Readonly<Record<string, string>>; skippedOn: Readonly<Record<string, string | null>> } | null,
+  now: { localDate: string; plannedOn: Readonly<Record<string, string>>; skippedOn: Readonly<Record<string, string | null>> },
+): boolean {
+  if (before === null || before.localDate !== now.localDate) return false;
+  if (key in now.skippedOn) return !(key in before.skippedOn);
+  const was = before.plannedOn[key];
+  const is = now.plannedOn[key];
+  return is !== undefined && is > now.localDate && was !== is;
+}
+
+/** Each plan day's date this week (Set days), as the week read it. */
+export function plannedOnOf(s: { week: { planned: readonly { key: string; localDate: string }[] } }): Record<string, string> {
+  return Object.fromEntries(s.week.planned.map((d) => [d.key, d.localDate]));
 }
 
 /** A day has a draft Ben edited, or a coach offer he applied (`edited` / `nudged` are keyed `dayKey|mainLift`). */
