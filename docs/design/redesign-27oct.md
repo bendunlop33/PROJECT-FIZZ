@@ -49,7 +49,9 @@ Product rules in CLAUDE.md still win (minimal copy, rules 1–10). Where this fi
 
 ## E. Active workout, Summary
 1. Keypad: `Log ✓` replaces Done. Finish always in the top bar. Empty workout uses the same table.
-2. Summary order: Saved line, New best card, Time/Sets/Exercises, Next time (one list, Undo all, Why?/Undo per line, proposals Apply/Skip), Exercises done, Feel, Health line, `Ask about this workout`, Done. Edit times / Save as workout / Delete in ⋯.
+2. Summary order (Ben, 30 Oct): Saved line, New best card, Time/Sets/Exercises, **Exercises done**, **Next time**, Feel, Health line, `Ask about this workout`, Done. The plan-day ask row (`Count as …?`) stays where it was (before Feel). Edit times / Save as workout / Delete in ⋯.
+   - **Exercises done** (Ben, 30 Oct): one line per exercise, name then its sets said once: `3×8 @ 80 kg`, `8, 8, 7 @ 80 kg`, `4 sets · best 102.5×5 kg`, `2×15`; `3/4` beside it only when short of the plan. Sets with sides, flags, two gyms or mixed units keep the logged results on that one line.
+   - **Next time** (Ben, 30 Oct): one list, `Undo all` in the header. Each change is one row: name, from → to, a small `Why?`, then a compact `Undo` (or `Skip` / `Apply` for a proposal, `Redo` after an Undo, `Used` when a workout started from it). From → to names only what changes: `Bench press  100 → 102.5 kg`, `Lat pulldown  3×10 → 3×12`, `Incline DB press  24 → 26 kg ea`, load and reps together `100×5 → 102.5×6 kg`, sets `3 → 4 sets`; nothing moving reads `Same · 100×6–8 kg`. kg/lb always shown; `ea` per dumbbell, `assist` on assisted machines, `+` for added load. `Why?` opens one info line under the row: source and % (`Coach · +2.5%`), any note, the reasons. Structural offers are one line too (`Swap Leg extension → Leg press`, `+1` when more changed) with compact Skip / Apply. The name truncates first; the numbers never do. VoiceOver: "Bench press, 100 to 102.5 kilograms. Why? button. Undo button."
 3. Swap sheet mid-workout on the main lift: the plan's main-lift alternatives first, then the rest (Ben, 27 Oct).
 
 ## F. Training rules (Ben, 27 Oct)

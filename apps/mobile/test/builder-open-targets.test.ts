@@ -113,7 +113,7 @@ describe('(Ben, 23 Oct, D1) Keep for next time on a saved workout', () => {
     expect((await s.routines.list()).find((x) => x.id === pushA.id)?.version).toBe(pushA.version);
     await finish(s, r.sessionId);
 
-    expect(await s.builder.keepNextTimeOf(r.sessionId)).toEqual({ state: 'open', label: 'Push A', lines: [`Lateral raise → ${to.name}`, 'Bench press: 3 → 4 sets'] });
+    expect(await s.builder.keepNextTimeOf(r.sessionId)).toEqual({ state: 'open', label: 'Push A', lines: [`Lateral raise → ${to.name}`, 'Bench press: 3 → 4 sets'], short: [`Swap Lateral raise → ${to.name}`, 'Bench press 3 → 4 sets'] });
     expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toEqual({ ok: true });
     const after = (await s.routines.editor({ routineId: pushA.id, gymId: null }))?.routine;
     expect(after?.version).toBe(pushA.version + 1);

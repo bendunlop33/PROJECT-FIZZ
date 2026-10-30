@@ -151,7 +151,7 @@ describe('Keep for next time lists only Ben’s own structure edits (review batc
     const swapped = await swapIn(s, snap, 'Triceps pushdown');
     const sessionId = await startAndFinish(s, swapped.snap, gymId);
     const view = await s.builder.keepNextTimeOf(sessionId);
-    expect(view).toEqual({ state: 'open', label: expect.stringMatching(/^Push/) as string, lines: [`Triceps pushdown → ${swapped.to}`] });
+    expect(view).toEqual({ state: 'open', label: expect.stringMatching(/^Push/) as string, lines: [`Triceps pushdown → ${swapped.to}`], short: [`Swap Triceps pushdown → ${swapped.to}`] });
     expect(await s.builder.keepNextTime(sessionId, 'apply')).toEqual({ ok: true });
     const after = await template(s, push);
     expect(after?.version).toBe((before?.version ?? 0) + 1);
@@ -174,7 +174,7 @@ describe('Keep for next time lists only Ben’s own structure edits (review batc
     const more = ok(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'set-1', basis: { version: snap.version } }));
     expect(workingCount(slotNamed(more, 'Bench press'))).toBe(workingCount(bench) + 1);
     const sessionId = await startAndFinish(s, more, gymId);
-    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: ['Bench press: 3 → 4 sets'] });
+    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: ['Bench press: 3 → 4 sets'], short: ['Bench press 3 → 4 sets'] });
     expect(await s.builder.keepNextTime(sessionId, 'apply')).toEqual({ ok: true });
     const after = await template(s, push);
     const nameOf = (id: string) => snap.facts[id]?.name ?? '?';
@@ -190,7 +190,7 @@ describe('Keep for next time lists only Ben’s own structure edits (review batc
     if (accessory === undefined) throw new Error(`no accessory in ${names(snap).join(', ')}`);
     const swapped = await swapIn(s, snap, accessory);
     const sessionId = await startAndFinish(s, swapped.snap, gymId);
-    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`${accessory} → ${swapped.to}`] });
+    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`${accessory} → ${swapped.to}`], short: [`Swap ${accessory} → ${swapped.to}`] });
   });
 
   it('a set Today’s Time cut that Ben adds back is no change for the plan', async () => {
@@ -223,7 +223,7 @@ describe('Keep for next time lists only Ben’s own structure edits (review batc
     if (curl === undefined) throw new Error('no biceps exercise');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_exercise', exerciseId: curl.exerciseId }, { opId: 'add-1', basis: { version: snap.version } }));
     const sessionId = await startAndFinish(s, snap, gymId);
-    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`Add ${curl.name}`, 'Delete Cable fly'] });
+    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`Add ${curl.name}`, 'Delete Cable fly'], short: [`Add ${curl.name}`, 'Delete Cable fly'] });
     expect(await s.builder.keepNextTime(sessionId, 'apply')).toEqual({ ok: true });
     const after = await template(s, push);
     expect(after?.exercises.some((e) => e.exerciseId === fly.exerciseId)).toBe(false);
@@ -241,7 +241,7 @@ describe('Ben’s own Set up change is his structure edit', () => {
     const added = names(more).filter((n) => !names(snap).includes(n));
     expect(added).toHaveLength(1);
     const sessionId = await startAndFinish(s, more, gymId);
-    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`Add ${added[0] ?? ''}`] });
+    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`Add ${added[0] ?? ''}`], short: [`Add ${added[0] ?? ''}`] });
   });
 });
 
@@ -440,7 +440,7 @@ describe('the app’s own changes never ask (review batch23 B2)', () => {
     expect(names(snap)).toContain(toName);
     const mine = await swapIn(s, snap, 'Lateral raise', [toName]);
     const sessionId = await startAndFinish(s, mine.snap, gymId);
-    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`Lateral raise → ${mine.to}`] });
+    expect(await s.builder.keepNextTimeOf(sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`Lateral raise → ${mine.to}`], short: [`Swap Lateral raise → ${mine.to}`] });
   });
 
   it('a gym change alone (dumbbells only): the gym’s swaps are today’s, no row; Ben’s own swap before it stays his', async () => {

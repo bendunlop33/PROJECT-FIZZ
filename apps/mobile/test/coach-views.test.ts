@@ -191,7 +191,7 @@ describe('the workout coach slot (one item: pending > banner > outcome > offer)'
 });
 
 describe('Next time (D21): coach rows over the built-in rule', () => {
-  const builtInRow = (name: string, n: number): NextTimeRow => ({ exerciseId: ID(1000 + n), exerciseName: name, kind: 'change', target: `Target ${String(60 + n)} kg × 8–10`, summary: 'Hit the top of the range.', facts: ['All sets 10 reps.'], ruleName: 'Double progression', decision: 'increase_load' });
+  const builtInRow = (name: string, n: number): NextTimeRow => ({ exerciseId: ID(1000 + n), exerciseName: name, kind: 'change', target: `Target ${String(60 + n)} kg × 8–10`, summary: 'Hit the top of the range.', facts: ['All sets 10 reps.'], ruleName: 'Double progression', decision: 'increase_load', from: null, to: null });
   const coachRow = (n: number, status: NextSessionTargetRecord['status'], over: Partial<NextSessionTargetRecord> = {}): NextSessionTargetRecord => ({
     id: ID(500 + n),
     ownerId: ID(1),
@@ -254,7 +254,7 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
 
   it('undone → the built-in rule with Use coach target; proposed → Not now / Apply; used → no buttons', () => {
     const v = nextTimeView(input([coachRow(1, 'undone'), coachRow(2, 'proposed')]));
-    expect(v?.rows[0]).toMatchObject({ tag: 'Rule', target: 'Target 61 kg × 8–10', actions: [{ label: 'Use coach target' }] });
+    expect(v?.rows[0]).toMatchObject({ tag: 'Rule', target: 'Target 61 kg × 8–10', actions: [{ label: 'Redo', accessibilityLabel: 'Use coach target' }] });
     expect(v?.rows[1]).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Skip' }, { label: 'Apply' }] });
     expect(v?.undoAll).toBeNull();
     const used = nextTimeView(input([coachRow(1, 'saved', { usedBySessionId: ID(99) })]));

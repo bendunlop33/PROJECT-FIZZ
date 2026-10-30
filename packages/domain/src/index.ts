@@ -26,6 +26,7 @@ export * from './session/pending-values';
 export * from './session/carry';
 export * from './session/time-fit-today';
 export * from './session/summary';
+export * from './session/change-line';
 export * from './session/today';
 export * from './session/records';
 export * from './session/recovery';
