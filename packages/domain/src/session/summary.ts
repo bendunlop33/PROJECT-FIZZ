@@ -15,6 +15,9 @@ import { sessionRecords } from './records';
 import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
 import { isPastLog, latestHappenedMs } from './time-shift';
+import { doneLine, type ChangeSide } from './change-line';
+import { nextSessionBases } from '../coach/next-session';
+import { isPlatesAddedKind } from '../plates-added';
 
 /**
  * `buildWorkoutSummary` (workout-summary.md §6). Pure and local: facts,
@@ -91,6 +94,13 @@ export interface NextTimeRow {
   resetOffer?: NextTimeResetOffer;
   /** (Ben, 23 Oct) The row is the reset Ben applied (`reduce_load` with his Apply): `Undo` puts the hold back. */
   resetApplied?: true;
+  /**
+   * (Ben, 30 Oct) The one-line `from → to` (`fromToLine`): today's working target and the plan's set count, and the
+   * rule's next target with the same count (the rule never changes sets). Null: not a load/reps target (no load, no
+   * working set to read).
+   */
+  from: ChangeSide | null;
+  to: ChangeSide | null;
 }
 
 export interface WorkoutSummary {
@@ -122,8 +132,13 @@ export interface WorkoutSummary {
     | { kind: 'first_time'; text: string }
     | { kind: 'not_comparable'; text: string }
     | null;
-  exercises: { sessionExerciseId: string; exerciseId: string; name: string; setsText: string; results: string; skipped: number; sides: string | null; /** (20 Oct) The unit note alone, `(kg each)`, `(lb stack)`, `(per side)`, or ''; the Summary puts it on the results line. */ unitNote: string }[];
+  exercises: { sessionExerciseId: string; exerciseId: string; name: string; setsText: string; results: string; skipped: number; sides: string | null; /** (20 Oct) The unit note alone, `(kg each)`, `(lb stack)`, `(per side)`, or ''; the Summary puts it on the results line. */ unitNote: string; /** (Ben, 30 Oct) One line (`doneLine`): `3×8 @ 80 kg`, `4 sets · best 102.5×5 kg`; null: say `results`. */ line: { text: string; spoken: string } | null }[];
   nextTime: { sourceTag: string; rows: NextTimeRow[]; emptyText: string | null } | null;
+  /**
+   * (Ben, 30 Oct) Per exercise ID, what a coach change is measured from (`nextSessionBases`: today's working target,
+   * the working sets done): the `from` of a coach row's one line. The same basis as the coach row's `pctChange`.
+   */
+  nextFrom: Readonly<Record<string, ChangeSide>>;
   /** No working sets: the comparison and next-time sections are hidden; Discard is offered. */
   empty: boolean;
   /** One like-for-like highlight (`Heaviest Bench press set on Olympic bar: 102.5 kg × 6`), or null. Never invented. */
@@ -284,6 +299,10 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       partResults.push(gym ? `${text} (${gym})` : text);
     }
     const v = parts.length === 1 ? volume.get(first.id) : undefined;
+    // (Ben, 30 Oct) One line when the sets can be said that way: one gym, no sides, no flagged sets, one unit.
+    const plain = parts.length === 1 && blockDone.every((x) => x.side === null && (x.exclusions ?? []).length === 0);
+    const firstEq = equipmentOf(state, first);
+    const line = plain ? doneLine(blockDone.map((x) => ({ load: x.actual?.load ?? null, reps: x.actual?.reps ?? null })), { plates: isPlatesAddedKind(firstEq?.kind), direction: loadDirection(first.loadConvention) }) : null;
     // One unit for the whole row: the one logged (else the row's); none when the parts differ.
     const shared = mixed ? null : (blockDone.find((x) => x.actual?.load && loadKey(x.actual.load) !== null)?.actual?.load ?? null);
     const unit = shared?.unit ?? first.unit;
@@ -298,6 +317,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       setsText: `${String(n)} ${n === 1 ? 'set' : 'sets'}${unitNote}`,
       results: partResults.join(' · '),
       unitNote: unitNote.trim(),
+      line,
       skipped,
       sides: v?.bySide && (v.bySide.left.reps !== v.bySide.right.reps) ? `L ${String(v.bySide.left.reps)} reps · R ${String(v.bySide.right.reps)} reps` : null,
     };
@@ -367,6 +387,11 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   const blocksOf = new Map<string, number>();
   for (const b of targetBlocks) blocksOf.set(b.root.exerciseId, (blocksOf.get(b.root.exerciseId) ?? 0) + 1);
   const secondary = secondaryMainLifts(targetBlocks, (id) => input.exerciseInfo?.[id] ?? null);
+  // (Ben, 30 Oct) What each change is measured from: the coach's basis (today's working target), never recomputed.
+  const nextFrom: Record<string, ChangeSide> = {};
+  for (const b of imported ? [] : nextSessionBases(state, new Map())) {
+    nextFrom[b.exercise.exerciseId] = { target: b.last, sets: b.lastSets, ...(isPlatesAddedKind(b.equipment?.kind) ? { plates: true as const } : {}) };
+  }
   for (const block of targetBlocks) {
     if (block.prescribedSets === 0 || (blocksOf.get(block.root.exerciseId) ?? 0) > 1) continue;
     if (doneSince(block.root.exerciseId)) {
@@ -396,6 +421,10 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     if (kind === null) continue;
     const first = result.sets.find((x) => x.setType === 'working' || x.setType === 'top') ?? result.sets[0];
     const offer = result.resetOffer;
+    const basis = nextFrom[ex.exerciseId];
+    const plates = isPlatesAddedKind(eq?.kind) ? { plates: true as const } : {};
+    // The rule keeps the plan's set count: both sides say it, so only a load or rep change shows.
+    const loadTarget = kind !== 'no_load' && first !== undefined && (first.load !== null || ex.loadConvention === 'bodyweight' || ex.loadConvention === 'added');
     rows.push({
       exerciseId: ex.exerciseId,
       exerciseName: block.root.exerciseName,
@@ -407,6 +436,8 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       decision: result.decision,
       ...(offer !== undefined && first !== undefined ? { resetOffer: { text: `Reset to ${loadText(offer, ex.loadConvention, eq)}${NBSP}×${NBSP}${repRangeText(first.reps)}?`, load: offer, reps: first.reps, hold: { load: first.load, reps: first.reps } } } : {}),
       ...(result.decision === 'reduce_load' && input.acceptedResets?.has(ex.exerciseId) === true ? { resetApplied: true as const } : {}),
+      from: loadTarget && basis !== undefined ? { ...basis, sets: block.prescribedSets } : null,
+      to: loadTarget ? { target: { load: first.load, reps: first.reps }, sets: block.prescribedSets, ...plates } : null,
     });
   }
 
@@ -444,6 +475,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       : null,
     comparison: workingSets === 0 ? null : comparison,
     exercises: exerciseRows,
+    nextFrom,
     nextTime:
       workingSets === 0 || imported || (rows.length === 0 && skippedNewer > 0)
         ? null
