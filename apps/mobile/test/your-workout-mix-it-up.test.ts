@@ -128,6 +128,6 @@ describe('↻ Mix it up on Your workout (Ben, 23 Oct)', () => {
     expect(fin.ok).toBe(true);
     await h.settle(s);
     const keep = await s.builder.keepNextTimeOf(st.sessionId);
-    expect(keep).toEqual({ state: 'open', label: expect.any(String) as string, lines: [r.toast?.text ?? ''] });
+    expect(keep).toEqual({ state: 'open', label: expect.any(String) as string, lines: [r.toast?.text ?? ''], short: [`Swap ${r.toast?.text ?? ''}`] });
   });
 });

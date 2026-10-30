@@ -365,7 +365,7 @@ describe('plan-day templates: Start today only, Keep for next time on the Summar
     expect(await s.builder.keepNextTimeOf(r.sessionId)).toBeNull();
     await finish(s, r.sessionId);
     const keep = await s.builder.keepNextTimeOf(r.sessionId);
-    expect(keep).toEqual({ state: 'open', label: expect.stringMatching(/^Push · /) as string, lines: [`Triceps pushdown → ${swapped.to}`] });
+    expect(keep).toEqual({ state: 'open', label: expect.stringMatching(/^Push · /) as string, lines: [`Triceps pushdown → ${swapped.to}`], short: [`Swap Triceps pushdown → ${swapped.to}`] });
     // Nothing changes until Apply.
     expect((await template(s, push))?.version).toBe(before?.version);
   });
@@ -483,7 +483,7 @@ describe('plan-day templates: Start today only, Keep for next time on the Summar
     const r2 = await s.builder.start(again.draftId, { opId: 'start-2', expectedVersion: swapped.snap.version, gymId });
     if (!r2.ok) throw new Error(r2.message);
     await finish(s, r2.sessionId);
-    expect(await s.builder.keepNextTimeOf(r2.sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`${kept} → ${swapped.to}`] });
+    expect(await s.builder.keepNextTimeOf(r2.sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`${kept} → ${swapped.to}`], short: [`Swap ${kept} → ${swapped.to}`] });
   });
 });
 
