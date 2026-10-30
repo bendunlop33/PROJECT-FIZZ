@@ -129,28 +129,27 @@ export function fromToLine(from: ChangeSide | null, to: ChangeSide): FromToLine 
   // A range is said `6 to 8`, so the arrow is a pause then `to` when either side has one.
   const arrowSpoken = ranged ? ', to ' : ' to ';
   const setsPart: Num = { text: `${String(to.sets ?? 0)} sets`, spoken: `${String(to.sets ?? 0)} sets` };
-  let main: Num | null = null;
-  if (loadChanged && fl !== null && tl !== null) {
+  if (fl !== null && tl !== null && fl.value !== tl.value) {
     const a = num(fl, from.plates === true);
     const b = num(tl, plates);
     const u = unit(tl);
-    if (repsChanged && f.reps !== null && t.reps !== null) {
-      const ra = reps(f.reps);
-      const rb = reps(t.reps);
-      main = { text: `${a.text}×${ra.text}${ARROW}${b.text}×${rb.text} ${u.text}`, spoken: `${a.spoken} for ${ra.spoken}${arrowSpoken}${b.spoken} for ${rb.spoken} ${u.spoken}` };
-    } else main = { text: `${a.text}${ARROW}${b.text} ${u.text}`, spoken: `${a.spoken} to ${b.spoken} ${u.spoken}` };
+    const main: Num =
+      repsChanged && f.reps !== null && t.reps !== null
+        ? { text: `${a.text}×${reps(f.reps).text}${ARROW}${b.text}×${reps(t.reps).text} ${u.text}`, spoken: `${a.spoken} for ${reps(f.reps).spoken}${arrowSpoken}${b.spoken} for ${reps(t.reps).spoken} ${u.spoken}` }
+        : { text: `${a.text}${ARROW}${b.text} ${u.text}`, spoken: `${a.spoken} to ${b.spoken} ${u.spoken}` };
     return { ...join([main, setsChanged ? setsPart : null, effort]), same: false };
   }
   if (repsChanged && f.reps !== null && t.reps !== null) {
     const ra = reps(f.reps);
     const rb = reps(t.reps);
-    if (from.sets !== null && to.sets !== null) {
-      main = { text: `${String(from.sets)}×${ra.text}${ARROW}${String(to.sets)}×${rb.text}`, spoken: `${String(from.sets)} sets of ${ra.spoken}${arrowSpoken}${String(to.sets)} sets of ${rb.spoken}` };
-    } else main = { text: `${ra.text}${ARROW}${rb.text} reps`, spoken: `${ra.spoken}${arrowSpoken}${rb.spoken} reps` };
+    const main: Num =
+      from.sets !== null && to.sets !== null
+        ? { text: `${String(from.sets)}×${ra.text}${ARROW}${String(to.sets)}×${rb.text}`, spoken: `${String(from.sets)} sets of ${ra.spoken}${arrowSpoken}${String(to.sets)} sets of ${rb.spoken}` }
+        : { text: `${ra.text}${ARROW}${rb.text} reps`, spoken: `${ra.spoken}${arrowSpoken}${rb.spoken} reps` };
     return { ...join([main, effort]), same: false };
   }
   if (setsChanged && from.sets !== null && to.sets !== null) {
-    main = { text: `${String(from.sets)}${ARROW}${String(to.sets)} sets`, spoken: `${String(from.sets)} to ${String(to.sets)} sets` };
+    const main: Num = { text: `${String(from.sets)}${ARROW}${String(to.sets)} sets`, spoken: `${String(from.sets)} to ${String(to.sets)} sets` };
     return { ...join([main, effort]), same: false };
   }
   // Only the target RIR changed.
