@@ -861,9 +861,9 @@ export class SqliteCoachStore {
         return 'unsupported';
       // ADR 0039: a draft change's Apply and Undo are the builder's own writes (`workout_drafts`); Set up's fill has its
       // own Undo on Set up.
+      // (Ben, 30 Oct) A plan swap's Apply and Undo are Ben's own routine writes (`update_routine` records).
       case 'propose_workout_edit':
       case 'fill_setup':
-      // (Ben, 30 Oct) A plan swap's Apply and Undo are Ben's own routine writes (`update_routine` records).
       case 'propose_plan_swap':
         return 'unsupported';
       // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
