@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { TodayControls } from '@fizz/domain';
 
-import { followUpNext, hasOwnDraftFor, type TodayCardState } from '../src/today/today-view';
+import { followUpNext, hasOwnDraftFor, movedOffToday, type TodayCardState } from '../src/today/today-view';
 
 /**
  * (Ben, 28 Oct) Up next re-checks when history changes (an import committed, a past workout logged, edited or deleted,
@@ -52,5 +52,25 @@ describe('hasOwnDraftFor', () => {
     expect(hasOwnDraftFor('plan:p:1', { edited: { 'plan:p:1|row': {} }, nudged: {} })).toBe(true);
     expect(hasOwnDraftFor('plan:p:1', { edited: {}, nudged: { 'plan:p:1|-': {} } })).toBe(true);
     expect(hasOwnDraftFor('plan:p:1', { edited: { 'plan:p:10|x': {} }, nudged: {} })).toBe(false);
+  });
+});
+
+describe('movedOffToday and followUpNext’s movedOff (Ben, 29 Oct)', () => {
+  const today = '2026-10-29';
+  const now = (plannedOn: Record<string, string>, skippedOn: Record<string, string | null> = {}) => ({ localDate: today, plannedOn, skippedOn });
+  it('newly dated later this week, or newly skipped: moved off; same date, earlier, or another day: not', () => {
+    expect(movedOffToday('a', now({ a: today }), now({ a: '2026-11-01' }))).toBe(true);
+    expect(movedOffToday('a', now({ a: '2026-10-28' }), now({ a: '2026-10-31' }))).toBe(true);
+    expect(movedOffToday('a', now({ a: today }), now({}, { a: today }))).toBe(true);
+    expect(movedOffToday('a', now({}, { a: today }), now({}, { a: today }))).toBe(false);
+    expect(movedOffToday('a', now({ a: '2026-10-31' }), now({ a: '2026-10-31' }))).toBe(false);
+    expect(movedOffToday('a', now({ a: '2026-11-01' }), now({ a: today }))).toBe(false);
+    expect(movedOffToday('a', null, now({ a: '2026-11-01' }))).toBe(false);
+    expect(movedOffToday('a', { ...now({ a: today }), localDate: '2026-10-28' }, now({ a: '2026-11-01' }))).toBe(false);
+  });
+  it('moved off: the card follows Up next even with his draft or changed controls; never a day he picked', () => {
+    const cur = card('plan:p:1', controls('row', 45));
+    expect(followUpNext(cur, { ...base, hasOwnDraft: true, movedOff: true })).toEqual(card('plan:p:2', controls('squat')));
+    expect(followUpNext(cur, { ...base, picked: true, movedOff: true })).toBe(cur);
   });
 });

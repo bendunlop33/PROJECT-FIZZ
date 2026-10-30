@@ -5,6 +5,7 @@ import { DAY_SHEET_COPY, TODAY_V2_COPY, type WorkoutListRow } from '@fizz/domain
 import type { PlanWeekExerciseEdit } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
+import { HEALTH_COPY, NO_DAY_PAIRS, type DayPairsView } from '../../health/health-view';
 import type { TodayDaySheet, TodaySessionData } from '../../services/today-session';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -15,7 +16,7 @@ import type { ChoiceSection } from '../../ui/swap-sheet-model';
 import { useExercisePicker, usePickerView } from '../../ui/use-exercise-picker';
 import { WorkoutList } from '../../ui/workout-list';
 import { Chip } from '../../ui/workout';
-import type { DaySheetOpen, DaySheetRow } from '../../today/today-view';
+import { pairedDaySheetRows, type DaySheetOpen, type DaySheetRow, type PairedDaySheetRow } from '../../today/today-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 
 /**
@@ -96,7 +97,26 @@ export function DaySheetFlow({
       alive = false;
     };
   }, [services, open, readN]);
+  // (Ben, 29 Oct) The day's Health pairs: read with the sheet (and after each write), local only.
+  const [pairs, setPairs] = useState<DayPairsView>(NO_DAY_PAIRS);
+  const [choosing, setChoosing] = useState<string | null>(null);
+  const pairDate = target !== null && 'date' in target ? target.date : null;
   useEffect(() => {
+    setPairs(NO_DAY_PAIRS);
+    if (pairDate === null) return;
+    let alive = true;
+    void services.health.dayPairs(pairDate).then(
+      (p) => {
+        if (alive) setPairs(p);
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [services, pairDate, readN]);
+  useEffect(() => {
+    setChoosing(null);
     setMode('day');
     setMoving(false);
     setRow(null);
@@ -185,6 +205,73 @@ export function DaySheetFlow({
     }
   }
 
+  /** `Pair`: one versioned link (the workout's sets never change, rule 2), its toast with Undo (unlink on what it wrote). */
+  async function pair(healthUuid: string, sessionId: string) {
+    if (busy.current) return;
+    busy.current = true;
+    setChoosing(null);
+    try {
+      const r = await services.health.link({ healthUuid, sessionId, opId: newUuid() });
+      reread();
+      if (!r.ok) {
+        onToast({ text: r.message });
+        return;
+      }
+      onToast({
+        text: HEALTH_COPY.paired,
+        action: DAY_SHEET_COPY.undo,
+        onAction: () => {
+          onToast(null);
+          void services.health.unlink({ healthUuid: r.healthUuid, expectedVersion: r.version, opId: newUuid() }).then((u) => {
+            reread();
+            if (!u.ok) onToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
+
+  /** `Unpair`, on the version the row showed; Undo pairs them again. */
+  async function unpair(healthUuid: string, linkVersion: number, sessionId: string) {
+    if (busy.current) return;
+    busy.current = true;
+    try {
+      const r = await services.health.unlink({ healthUuid, expectedVersion: linkVersion, opId: newUuid() });
+      reread();
+      if (!r.ok) {
+        onToast({ text: r.message });
+        return;
+      }
+      onToast({
+        text: HEALTH_COPY.unpaired,
+        action: DAY_SHEET_COPY.undo,
+        onAction: () => {
+          onToast(null);
+          void services.health.link({ healthUuid, sessionId, opId: newUuid() }).then((u) => {
+            reread();
+            if (!u.ok) onToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
+
+  /** A row's own page: a Health activity's sheet opens once this one has gone (one sheet at a time on iOS). */
+  function openRow(o: NonNullable<DaySheetOpen>) {
+    if (o.kind !== 'activity') {
+      onOpen(o);
+      return;
+    }
+    afterDismiss.arm(() => {
+      onOpen(o);
+    });
+    onClose();
+  }
+
   // One sheet at a time on iOS: the day sheet closes, then Swap / Add opens once it has gone (and back the same way).
   async function openSwap(rowId: string | null, exerciseId: string | null) {
     const gymId = data?.gymId ?? null;
@@ -228,6 +315,7 @@ export function DaySheetFlow({
   }
 
   const changed = new Set(sheet?.changed ?? []);
+  const shownRows = pairedDaySheetRows(doneRows, pairs);
   const rowIdOf = (exerciseId: string) => rows?.rows.find((x) => x.exerciseId === exerciseId)?.rowId ?? null;
   const a = sheet?.actions;
   const status = sheet === null ? null : (
@@ -246,20 +334,22 @@ export function DaySheetFlow({
           {status}
         </View>
         {sheet.list.length > 0 ? <WorkoutList rows={sheet.list} target={sheet.listTarget} changed={changed} /> : null}
-        {doneRows.length > 0 ? (
+        {shownRows.length > 0 ? (
           <Group>
-            {doneRows.map((r) => (
-              <Pressable key={r.key} accessibilityRole={r.open === null ? 'text' : 'button'} accessibilityLabel={r.accessibilityLabel} disabled={r.open === null} onPress={() => { if (r.open !== null) onOpen(r.open); }} style={({ pressed }) => ({ minHeight: 52, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], opacity: pressed ? 0.7 : 1 })}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <AppText variant="body">{r.title}</AppText>
-                  {r.detail !== null ? (
-                    <AppText variant="callout" color="text.secondary" numeric>
-                      {r.detail}
-                    </AppText>
-                  ) : null}
-                </View>
-                {r.open !== null ? <Icon name="chevron.right" size={14} color="text.tertiary" /> : null}
-              </Pressable>
+            {shownRows.map((r) => (
+              <DoneRow
+                key={r.key}
+                row={r}
+                choosing={choosing === r.pair?.healthUuid}
+                onOpen={openRow}
+                onPair={(p) => {
+                  const [only] = p.choices;
+                  if (p.choices.length === 1 && only !== undefined) void pair(p.healthUuid, only.sessionId);
+                  else setChoosing((c) => (c === p.healthUuid ? null : p.healthUuid));
+                }}
+                onChoose={(healthUuid, sessionId) => void pair(healthUuid, sessionId)}
+                onUnpair={(u, sessionId) => void unpair(u.healthUuid, u.linkVersion, sessionId)}
+              />
             ))}
           </Group>
         ) : null}
@@ -380,5 +470,61 @@ export function DaySheetFlow({
         }}
       />
     </>
+  );
+}
+
+/**
+ * One done row on the day sheet: its title and values (opens its Summary or page), and its pairing (Ben, 29 Oct):
+ * `Pair` on a Health strength workout (a choice of the day's workouts when there are several), or on a paired workout
+ * the Health facts after its own, the source small, and `Unpair`.
+ */
+export function DoneRow({
+  row: r,
+  choosing,
+  onOpen,
+  onPair,
+  onChoose,
+  onUnpair,
+}: {
+  row: PairedDaySheetRow;
+  choosing: boolean;
+  onOpen: (o: NonNullable<DaySheetOpen>) => void;
+  onPair: (p: NonNullable<PairedDaySheetRow['pair']>) => void;
+  onChoose: (healthUuid: string, sessionId: string) => void;
+  onUnpair: (u: NonNullable<PairedDaySheetRow['unpair']>, sessionId: string) => void;
+}) {
+  const theme = useTheme();
+  const open = r.open;
+  const sessionId = open?.kind === 'summary' ? open.sessionId : null;
+  return (
+    <View>
+      <View style={{ minHeight: 52, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'] }}>
+        <Pressable accessibilityRole={open === null ? 'text' : 'button'} accessibilityLabel={r.accessibilityLabel} disabled={open === null} onPress={() => { if (open !== null) onOpen(open); }} style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], opacity: pressed ? 0.7 : 1 })}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AppText variant="body">{r.title}</AppText>
+            {r.detail !== null ? (
+              <AppText variant="callout" color="text.secondary" numeric>
+                {r.detail}
+              </AppText>
+            ) : null}
+            {r.source !== null ? (
+              <AppText variant="callout" color="text.tertiary">
+                {r.source}
+              </AppText>
+            ) : null}
+          </View>
+          {open !== null && r.pair === null && r.unpair === null ? <Icon name="chevron.right" size={14} color="text.tertiary" /> : null}
+        </Pressable>
+        {r.pair !== null ? <TextButton label={HEALTH_COPY.pair} accessibilityLabel={r.pair.choices.length === 1 ? `${HEALTH_COPY.pair} with ${r.pair.choices[0]?.label ?? ''}` : HEALTH_COPY.pair} onPress={() => { if (r.pair !== null) onPair(r.pair); }} /> : null}
+        {r.unpair !== null && sessionId !== null ? <TextButton label={HEALTH_COPY.unpair} tone="secondary" onPress={() => { if (r.unpair !== null) onUnpair(r.unpair, sessionId); }} /> : null}
+      </View>
+      {choosing && r.pair !== null ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'], paddingHorizontal: theme.space['4'], paddingBottom: theme.space['2'] }}>
+          {r.pair.choices.map((c) => (
+            <Chip key={c.sessionId} size="min" label={c.label} selected={false} onPress={() => { if (r.pair !== null) onChoose(r.pair.healthUuid, c.sessionId); }} />
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }

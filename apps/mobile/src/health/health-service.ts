@@ -1,6 +1,8 @@
 import {
   localMidnightUtcMs,
   autoLinkPairs,
+  dayPairs,
+  linkableSamples,
   classifyHealthWorkout,
   dismissHealthLink,
   healthActivityOf,
@@ -43,7 +45,8 @@ import type { LinkedActivityContext } from '@fizz/coach';
 import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthLink, type HealthReadWindow, type HealthSettings, type HealthWorkoutSample, type SessionCommand, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 
 import { NATIVE_PAUSED_COPY, type NativePause } from '../diagnostics/launch-guard';
-import { HEALTH_COPY, healthScreenView, linkCandidateLine, linkedActivityView, type HealthScreenView, type HealthSwitch, type LinkCandidateView, type WorkoutHealthView } from './health-view';
+import { HEALTH_COPY, healthScreenView, linkCandidateLine, linkedActivityView, NO_DAY_PAIRS, pairedFacts, type DayPairsView, type HealthScreenView, type HealthSwitch, type LinkCandidateView, type WorkoutHealthView } from './health-view';
+import { formatTime } from '../format/dates';
 
 /**
  * Apple Health (Ben, 27 Oct; ADR 0035; apple-health.md). Local only, never waits on the network (rule 1), and
@@ -302,13 +305,29 @@ export function createHealthService(deps: HealthServiceDeps) {
     const first = samples.reduce((m, x) => Math.min(m, toMs(x.startUtc)), nowMs);
     const workouts = await repo().linkableWorkouts(p.id, toIso(first - 2 * 86_400_000), toIso(nowMs + 86_400_000));
     const links = await repo().links(p.id);
-    for (const pair of autoLinkPairs({ samples, workouts, links })) {
+    // Never the app's own copies (an older build's source passes the bundle check): one Garmin workout is then one.
+    const own = await ownCopies(p.id, samples);
+    for (const pair of autoLinkPairs({ samples: linkableSamples(samples, own.written, own.sessions), workouts, links })) {
       await repo()
         .changeLink(p.id, pair.healthUuid, async (cur, elsewhere) =>
           linkHealthActivity(cur, { ownerId: p.id, healthUuid: pair.healthUuid, sessionId: pair.sessionId, by: 'auto', opId: `health-autolink:${pair.healthUuid}`, atUtc: deps.now().utc, expectedVersion: null, sessionLinkedElsewhere: await elsewhere(pair.sessionId) }),
         )
         .catch(() => null);
     }
+  }
+
+  /** The app's own Health copies among `samples`: UUIDs it wrote, and external IDs that are its workouts. */
+  async function ownCopies(ownerId: string, samples: readonly HealthWorkoutSample[]): Promise<{ written: Set<string>; sessions: Set<string> }> {
+    const written = new Set((await repo().writes(ownerId).catch(() => [])).map((x) => x.healthUuid));
+    const sessions = new Set<string>();
+    for (const id of new Set(samples.map((x) => x.externalId?.toLowerCase()).filter((x): x is string => x !== undefined))) {
+      const a = await deps
+        .store()
+        .repos.sessions.get(id)
+        .catch(() => null);
+      if (a !== null) sessions.add(id);
+    }
+    return { written, sessions };
   }
 
   function readNow(force = true): Promise<void> {
@@ -338,8 +357,17 @@ export function createHealthService(deps: HealthServiceDeps) {
       .store()
       .repos.sessions.get(sessionId)
       .catch(() => null);
-    if (a === null || a.session.endedAt === null) return null;
-    const workout: LinkableWorkout = { sessionId, startUtc: a.session.startedAt.utc, endUtc: a.session.endedAt.utc, tz: a.session.startedAt.tz, title: a.session.routineName ?? 'Workout', ...(a.session.pastLog === undefined ? {} : { pastLogged: true }) };
+    // A date-only workout (a FitNotes import) has no end: it links on its date (Ben, 29 Oct).
+    if (a === null || (a.session.endedAt === null && a.session.localDate === undefined)) return null;
+    const workout: LinkableWorkout = {
+      sessionId,
+      startUtc: a.session.startedAt.utc,
+      endUtc: a.session.endedAt?.utc ?? a.session.startedAt.utc,
+      tz: a.session.startedAt.tz,
+      title: a.session.routineName ?? 'Workout',
+      ...(a.session.pastLog === undefined ? {} : { pastLogged: true }),
+      ...(a.session.localDate === undefined ? {} : { localDate: a.session.localDate }),
+    };
     const ms = toMs(workout.startUtc);
     const all = await repo()
       .workoutSamples(ownerId, toIso(ms - 2 * 86_400_000), toIso(ms + 2 * 86_400_000))
@@ -623,6 +651,40 @@ export function createHealthService(deps: HealthServiceDeps) {
       // One tap (Ben, 27 Oct): the near match, else the day's only workout.
       const suggestion = linkSuggestion(sample, workouts, links) ?? (sameDay.length === 1 ? (sameDay[0] ?? null) : null);
       return { activity, suggestion, nearby, showHeartRate: s?.readHeartRate === true };
+    },
+
+    /**
+     * (Ben, 29 Oct: "Why no option to pair workouts together") The day sheet's pairs on `date` (a local date): each
+     * Health strength workout not linked with the day's app workouts it can pair with, and each paired workout's
+     * Health facts. Same day only, never across days. Local reads only.
+     */
+    async dayPairs(date: string): Promise<DayPairsView> {
+      const p = await owner();
+      if (p === null || paused() !== null || (await cap()) !== 'available') return NO_DAY_PAIRS;
+      const s = await settings(p.id);
+      if (s === null || !s.readActivities) return NO_DAY_PAIRS;
+      const from = toIso(localMidnightUtcMs(date, p.timezone) - 86_400_000);
+      const to = toIso(localMidnightUtcMs(date, p.timezone) + 2 * 86_400_000);
+      try {
+        const all = await repo().workoutSamples(p.id, from, to);
+        const own = await ownCopies(p.id, all);
+        const samples = linkableSamples(all, own.written, own.sessions);
+        const workouts = await repo().linkableWorkouts(p.id, from, to);
+        const links = await repo().links(p.id);
+        const d = dayPairs({ date, samples, workouts, links });
+        const time = (w: LinkableWorkout) => (w.localDate !== undefined ? null : formatTime(toMs(w.startUtc), p.timezone));
+        return {
+          unpaired: Object.fromEntries(d.unpaired.map((u) => [u.sample.uuid, u.choices.map((w) => ({ sessionId: w.sessionId, time: time(w) }))])),
+          paired: Object.fromEntries(
+            d.paired.map((x) => {
+              const prov = healthProvenanceOf(x.sample);
+              return [x.workout.sessionId, { healthUuid: x.sample.uuid, linkVersion: x.link.version, facts: pairedFacts(prov, s.readHeartRate), source: prov.sourceName }];
+            }),
+          ),
+        };
+      } catch {
+        return NO_DAY_PAIRS;
+      }
     },
 
     /** Ben's `Link`: on the version he saw (null: no record yet). */

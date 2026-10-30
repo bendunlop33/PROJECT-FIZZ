@@ -310,6 +310,25 @@ export interface LinkableWorkout {
   title: string;
   /** Entered after the fact (`Log a past workout`): its times are rough, so a match a day either side is offered. */
   pastLogged?: boolean;
+  /**
+   * (Ben, 29 Oct) A date-only workout (a FitNotes import: no time of day, no end), on this local date. Paired by hand
+   * on its own date only, never automatically (its start is only an ordering anchor).
+   */
+  localDate?: string;
+}
+
+/** A workout's local date: its own date-only date, else its start's. */
+export function linkableDate(w: LinkableWorkout): string {
+  return w.localDate ?? localDateOf(toMs(w.startUtc), w.tz);
+}
+
+/**
+ * (Ben, 29 Oct) The Health workouts that can be linked at all: never the app's own copies, by a UUID it wrote or an
+ * external ID that is one of its workouts (a copy from an older build's bundle passes the source check; counted as a
+ * second strength workout that day, it blocked the auto-link).
+ */
+export function linkableSamples(samples: readonly HealthWorkoutSample[], writtenUuids: ReadonlySet<string>, appSessionIds: ReadonlySet<string>): HealthWorkoutSample[] {
+  return samples.filter((s) => !writtenUuids.has(s.uuid) && (s.externalId === null || !appSessionIds.has(s.externalId.toLowerCase())));
 }
 
 /** Overlap as a share of the shorter of the two (0–1). */
@@ -331,7 +350,7 @@ export function healthLinkId(healthUuid: string): string {
 }
 
 function sameDay(sample: HealthWorkoutSample, w: LinkableWorkout): boolean {
-  return localDateOf(toMs(sample.startUtc), w.tz) === localDateOf(toMs(w.startUtc), w.tz);
+  return localDateOf(toMs(sample.startUtc), w.tz) === linkableDate(w);
 }
 
 function linkedSessions(links: readonly HealthLink[]): Set<string> {
@@ -367,7 +386,7 @@ export function autoLinkPairs(input: { samples: readonly HealthWorkoutSample[]; 
     }
     return d;
   };
-  for (const w of input.workouts) day(localDateOf(toMs(w.startUtc), w.tz)).workouts.push(w);
+  for (const w of input.workouts) day(linkableDate(w)).workouts.push(w);
   for (const s of input.samples) {
     if (!HK_STRENGTH_TYPES.has(s.activityType) || recorded.has(s.uuid)) continue;
     day(localDateOf(toMs(s.startUtc), s.tz)).samples.push(s);
@@ -376,7 +395,8 @@ export function autoLinkPairs(input: { samples: readonly HealthWorkoutSample[]; 
   for (const d of byDay.values()) {
     const [s] = d.samples;
     const [w] = d.workouts;
-    if (d.samples.length !== 1 || d.workouts.length !== 1 || s === undefined || w === undefined || taken.has(w.sessionId)) continue;
+    // A date-only workout has no times to match: it counts (the day is ambiguous) but is only paired by hand.
+    if (d.samples.length !== 1 || d.workouts.length !== 1 || s === undefined || w === undefined || taken.has(w.sessionId) || w.localDate !== undefined) continue;
     if (nearInTime(s, w)) out.push({ healthUuid: s.uuid, sessionId: w.sessionId });
   }
   return out;
@@ -392,7 +412,8 @@ export const ASK_WITHIN_MS = 60 * 60_000;
  * are linked on reading). Two or more: the Summary offers a list. Nearest first.
  */
 export function linkQuestions(workout: LinkableWorkout, samples: readonly HealthWorkoutSample[], links: readonly HealthLink[]): HealthWorkoutSample[] {
-  if (linkedSessions(links).has(workout.sessionId)) return [];
+  // A date-only workout has no times to be near: only the one-tap same-day Link offers it.
+  if (linkedSessions(links).has(workout.sessionId) || workout.localDate !== undefined) return [];
   const recorded = new Set(links.map((l) => l.healthUuid));
   const ws = toMs(workout.startUtc);
   const we = toMs(workout.endUtc);
@@ -428,6 +449,7 @@ export function sameDayLinkCandidates(workout: LinkableWorkout, samples: readonl
  * before 02:00 or from 22:00, or ends on another day) or was logged after the fact with rough times (Ben, 27 Oct).
  */
 export function linkDays(w: LinkableWorkout): Set<string> {
+  if (w.localDate !== undefined) return new Set([w.localDate]);
   const start = toMs(w.startUtc);
   const date = localDateOf(start, w.tz);
   const hour = (start - localMidnightUtcMs(date, w.tz)) / 3_600_000;
@@ -463,6 +485,42 @@ export function nearbyWorkouts(sample: HealthWorkoutSample, workouts: readonly L
   return workouts
     .filter((w) => !taken.has(w.sessionId) && Math.abs(toMs(w.startUtc) - at) <= 36 * 3_600_000)
     .sort((a, b) => Math.abs(toMs(a.startUtc) - at) - Math.abs(toMs(b.startUtc) - at));
+}
+
+/**
+ * (Ben, 29 Oct: "These two strength sessions should be linkable? Why no option to pair workouts together") A day's
+ * pairs for the day sheet, on `date` only (never across days, Ben). `unpaired`: each Health strength (or `other`)
+ * workout with no link to a workout, with the day's app workouts not linked yet, nearest in time first (a `Not it` or
+ * an unlinked one included: pairing by hand is always allowed). `paired`: the day's workouts with their linked Health
+ * workout. Pure.
+ */
+export function dayPairs(input: { date: string; samples: readonly HealthWorkoutSample[]; workouts: readonly LinkableWorkout[]; links: readonly HealthLink[] }): {
+  unpaired: { sample: HealthWorkoutSample; choices: LinkableWorkout[] }[];
+  paired: { workout: LinkableWorkout; sample: HealthWorkoutSample; link: HealthLink }[];
+} {
+  const live = input.links.filter((l) => l.status === 'linked');
+  const linkOf = new Map(live.map((l) => [l.healthUuid, l]));
+  const dayWorkouts = input.workouts.filter((w) => linkableDate(w) === input.date);
+  const byId = new Map(dayWorkouts.map((w) => [w.sessionId, w]));
+  const sampleDate = (s: HealthWorkoutSample) => localDateOf(toMs(s.startUtc), s.tz);
+  const pairable = (s: HealthWorkoutSample) => HK_STRENGTH_TYPES.has(s.activityType) || s.activityType === HK_OTHER_TYPE;
+  const taken = new Set(live.map((l) => l.sessionId));
+  const free = dayWorkouts.filter((w) => !taken.has(w.sessionId));
+  const unpaired: { sample: HealthWorkoutSample; choices: LinkableWorkout[] }[] = [];
+  const paired: { workout: LinkableWorkout; sample: HealthWorkoutSample; link: HealthLink }[] = [];
+  for (const s of input.samples) {
+    const link = linkOf.get(s.uuid);
+    if (link !== undefined) {
+      const w = byId.get(link.sessionId);
+      if (w !== undefined) paired.push({ workout: w, sample: s, link });
+      continue;
+    }
+    if (!pairable(s) || sampleDate(s) !== input.date || free.length === 0) continue;
+    const at = toMs(s.startUtc);
+    const choices = [...free].sort((a, b) => Math.abs(toMs(a.startUtc) - at) - Math.abs(toMs(b.startUtc) - at) || a.sessionId.localeCompare(b.sessionId));
+    unpaired.push({ sample: s, choices });
+  }
+  return { unpaired: unpaired.sort((a, b) => toMs(a.sample.startUtc) - toMs(b.sample.startUtc)), paired };
 }
 
 export type HealthLinkChange =

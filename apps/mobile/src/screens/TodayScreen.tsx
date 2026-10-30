@@ -22,7 +22,7 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import { daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, followUpNext, hasOwnDraftFor, plannedDayDetail, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, followUpNext, hasOwnDraftFor, movedOffToday, plannedDayDetail, plannedOnOf, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
@@ -129,6 +129,8 @@ export function TodayScreen() {
   // (Ben, 28 Oct) The read before this one (Up next then, and each day's controls), and the day Ben picked himself.
   const lastRead = useRef<TodaySessionData | null>(null);
   const pickedKey = useRef<string | null>(null);
+  // (Ben, 29 Oct) The day the card moved to when a this-week change took its day off today (its Undo follows back).
+  const followedKey = useRef<string | null>(null);
   useEffect(() => {
     if (session === null) return;
     const justDone = wasDone.current === false && session.doneToday;
@@ -141,15 +143,23 @@ export function TodayScreen() {
       if (justDone) return null;
       if (cur !== null && session.initial[cur.dayKey] !== undefined) {
         // (Ben, 28 Oct) History changed Up next: an untouched Up next card follows it; Ben's own choice stays.
+        // (Ben, 29 Oct) Moved, swapped or skipped off today: the card (and today's ring) follow, even a day he picked.
+        const movedOff = movedOffToday(cur.dayKey, before === null ? null : { localDate: before.localDate, plannedOn: plannedOnOf(before), skippedOn: before.week.skippedOn }, { localDate: session.localDate, plannedOn: plannedOnOf(session), skippedOn: session.week.skippedOn });
+        if (movedOff && pickedKey.current === cur.dayKey) pickedKey.current = null;
         const moved = followUpNext(cur, {
           prevNextKey: session.doneToday ? null : (before?.nextKey ?? null),
           nextKey: session.nextKey,
           picked: pickedKey.current === cur.dayKey,
-          hasOwnDraft: hasOwnDraftFor(cur.dayKey, session),
+          // A card that followed a this-week change follows its Undo back the same way.
+          hasOwnDraft: hasOwnDraftFor(cur.dayKey, session) && followedKey.current !== cur.dayKey,
           initialWas: before?.initial[cur.dayKey] ?? null,
           initial: session.initial,
+          movedOff,
         });
-        if (moved !== cur) return moved;
+        if (moved !== cur) {
+          followedKey.current = movedOff || followedKey.current === cur.dayKey ? moved.dayKey : null;
+          return moved;
+        }
         return followLatestDraft(cur, session.latestDraft[cur.dayKey], seen[cur.dayKey], session.initial[cur.dayKey]?.mainLiftExerciseId);
       }
       const key = session.doneToday ? null : (session.nextKey ?? (session.status === 'no_plan' ? null : (session.days[0]?.key ?? null)));
@@ -166,6 +176,7 @@ export function TodayScreen() {
     if (initial === undefined) return;
     setPicked(true);
     pickedKey.current = key;
+    followedKey.current = null;
     setSelection((cur) => todayCardReducer(cur ?? { dayKey: key, controls: initial, open: false, why: false }, { kind: 'day', dayKey: key, initial }));
   };
 
@@ -698,7 +709,7 @@ export function TodayScreen() {
     [session, picked],
   );
   const chosenName = view === null || restDay !== null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
-  const cardTiles = useMemo(() => (session === null ? [] : services.todaySession.week(session, mainKind === 'done_today' ? null : chosenName)), [services, session, mainKind, chosenName]);
+  const cardTiles = useMemo(() => (session === null ? [] : services.todaySession.week(session, mainKind === 'done_today' ? null : chosenName, picked && pickedKey.current === selectedKey)), [services, session, mainKind, chosenName, picked, selectedKey]);
   // (Ben, 28 Oct) While a workout is open the card's session isn't read, but the week still is (the open workout ringed).
   const openWeek = useOpenWorkoutWeek(data.state === 'ready' ? data.value.active : null);
   const tiles = useMemo(() => (workoutOpen ? (openWeek?.tiles ?? []) : cardTiles), [workoutOpen, openWeek, cardTiles]);

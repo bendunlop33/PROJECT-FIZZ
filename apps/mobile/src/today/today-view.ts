@@ -139,12 +139,43 @@ export function followUpNext(
     /** The day's controls as the previous read opened it (null: unknown). */
     initialWas: TodayControls | null;
     initial: Readonly<Record<string, TodayControls>>;
+    /**
+     * (Ben, 29 Oct) The card's day was moved, swapped or skipped off today by a this-week change (`movedOffToday`):
+     * the card follows Up next even with a draft or changed controls (the draft stays with its day). Absent: false.
+     */
+    movedOff?: boolean;
   },
 ): TodayCardState {
+  if (i.movedOff === true && !i.picked && i.nextKey !== null && i.nextKey !== cur.dayKey) {
+    const next = i.initial[i.nextKey];
+    return next === undefined ? cur : { dayKey: i.nextKey, controls: next, open: cur.open, why: false };
+  }
   if (i.prevNextKey === null || i.nextKey === null || i.nextKey === i.prevNextKey || cur.dayKey !== i.prevNextKey) return cur;
   if (i.picked || i.hasOwnDraft || i.initialWas === null || JSON.stringify(cur.controls) !== JSON.stringify(i.initialWas)) return cur;
   const next = i.initial[i.nextKey];
   return next === undefined ? cur : { dayKey: i.nextKey, controls: next, open: cur.open, why: false };
+}
+
+/**
+ * (Ben, 29 Oct: "it stays up on the calendar on today and also moves to new day") A this-week change took the card's
+ * day `key` away from today: since the read before (the same day), it is newly dated later this week (Move…, `Do today
+ * instead`'s swap) or newly skipped. Pure.
+ */
+export function movedOffToday(
+  key: string,
+  before: { localDate: string; plannedOn: Readonly<Record<string, string>>; skippedOn: Readonly<Record<string, string | null>> } | null,
+  now: { localDate: string; plannedOn: Readonly<Record<string, string>>; skippedOn: Readonly<Record<string, string | null>> },
+): boolean {
+  if (before === null || before.localDate !== now.localDate) return false;
+  if (key in now.skippedOn) return !(key in before.skippedOn);
+  const was = before.plannedOn[key];
+  const is = now.plannedOn[key];
+  return is !== undefined && is > now.localDate && was !== is;
+}
+
+/** Each plan day's date this week (Set days), as the week read it. */
+export function plannedOnOf(s: { week: { planned: readonly { key: string; localDate: string }[] } }): Record<string, string> {
+  return Object.fromEntries(s.week.planned.map((d) => [d.key, d.localDate]));
 }
 
 /** A day has a draft Ben edited, or a coach offer he applied (`edited` / `nudged` are keyed `dayKey|mainLift`). */
@@ -348,6 +379,40 @@ export function daySheetRows(tile: Pick<WeekTile, 'items' | 'marks'>, feed: read
       case 'rest':
         return { key: `r:${String(i)}`, mark, title: it.text, health: false, detail: null, open: null, accessibilityLabel: it.text };
     }
+  });
+}
+
+/**
+ * (Ben, 29 Oct: "These two strength sessions should be linkable? Why no option to pair workouts together") A day sheet
+ * row with its pairing: a Health strength workout not paired yet gets `Pair` (one workout that day: one tap; several: a
+ * choice of the day's workouts by title and time); a paired workout reads as one row, the app's values with Health's
+ * after (`59 min · 22 sets · avg 128 bpm`), its source small (`Garmin`), and `Unpair`. Pure.
+ */
+export interface PairedDaySheetRow extends DaySheetRow {
+  /** The source of a paired workout's Health facts (`Garmin`), shown small; null: not paired. */
+  source: string | null;
+  pair: { healthUuid: string; choices: { sessionId: string; label: string }[] } | null;
+  unpair: { healthUuid: string; linkVersion: number } | null;
+}
+
+export function pairedDaySheetRows(rows: readonly DaySheetRow[], pairs: { unpaired: Readonly<Record<string, readonly { sessionId: string; time: string | null }[]>>; paired: Readonly<Record<string, { healthUuid: string; linkVersion: number; facts: string | null; source: string }>> }): PairedDaySheetRow[] {
+  const titleOf = new Map(rows.flatMap((r) => (r.open?.kind === 'summary' ? [[r.open.sessionId, r.title] as const] : [])));
+  return rows.flatMap((r): PairedDaySheetRow[] => {
+    const o = r.open;
+    if (o?.kind === 'activity') {
+      const choices = (pairs.unpaired[o.activityId] ?? []).filter((c) => titleOf.has(c.sessionId));
+      // A paired Health workout shows on its workout's row only.
+      if (Object.values(pairs.paired).some((x) => x.healthUuid === o.activityId)) return [];
+      const pair = choices.length === 0 ? null : { healthUuid: o.activityId, choices: choices.map((c) => ({ sessionId: c.sessionId, label: [titleOf.get(c.sessionId) ?? 'Workout', c.time].filter((x): x is string => x !== null).join(' · ') })) };
+      return [{ ...r, source: null, pair, unpair: null }];
+    }
+    if (o?.kind === 'summary') {
+      const p = pairs.paired[o.sessionId];
+      if (p === undefined) return [{ ...r, source: null, pair: null, unpair: null }];
+      const detail = [r.detail, p.facts].filter((x): x is string => x !== null && x !== '').join(' · ') || null;
+      return [{ ...r, detail, source: p.source, pair: null, unpair: { healthUuid: p.healthUuid, linkVersion: p.linkVersion }, accessibilityLabel: [r.accessibilityLabel, p.facts, `paired with ${p.source}`].filter((x): x is string => x !== null).join(', ') }];
+    }
+    return [{ ...r, source: null, pair: null, unpair: null }];
   });
 }
 

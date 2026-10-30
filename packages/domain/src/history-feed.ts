@@ -246,7 +246,8 @@ export function mergeFeed(input: { workouts: readonly FeedWorkoutInput[]; activi
       accessibilityLabel: label(w.localDate, w.title, value) + (linked === null ? '' : `, linked to ${linked} activity`),
     });
   }
-  const freeWorkouts = input.workouts.filter((w) => (w.linkedSource ?? null) === null && w.durationMs !== null);
+  // (Ben, 29 Oct) A date-only (imported) workout can be paired by hand too, on its own date.
+  const freeWorkouts = input.workouts.filter((w) => (w.linkedSource ?? null) === null);
   for (const a of input.activities) {
     if (a.status !== 'done') continue;
     if (a.linkedSessionId !== null && ids.has(a.linkedSessionId)) continue;
