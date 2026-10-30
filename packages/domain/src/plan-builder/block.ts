@@ -1,9 +1,11 @@
 import { supersetLabels } from '../superset-labels';
+import { PLAN_LIMITS } from '@fizz/schemas';
 import type { DraftSlot, PlanBuilderAnswers, PlanBuilderRecord, PlanDraft, PlanDraftVersion, PlanPause, SessionDeload } from '@fizz/schemas';
 import { addDays, localDateOf, localWeekBounds } from '../calendar';
 import { pausedInWeek } from '../progress/plan-tracker';
 import { weekdayDayMonth, weekdayDayMonthLong } from '../progress/text';
 import { activePause, pausedDates } from '../session/plan-adapt';
+import { deriveId } from '../stable';
 import { toMs } from '../time';
 import type { PbExercise, PbLoad } from './engine';
 import { fmt, type PlanKit } from './loads';
@@ -177,9 +179,12 @@ export interface PbFinishedRef {
 export function pbBlockOfPlan(plan: Pick<PlanDraft, 'id' | 'status' | 'versions' | 'currentVersion' | 'applied' | 'pauses'> | null, refs: readonly PbFinishedRef[], nowMs: number, tz: string): PbBlockWeek | null {
   const b = pbAppliedBuilder(plan);
   if (plan === null || plan.applied === null || b === null) return null;
-  const made = new Map(plan.applied.made.map((x) => [x.routineId, x.dayIndex] as const));
+  // (Ben, 30 Oct) A block continued across plan documents (`applied.block`): the earlier documents' workouts count too.
+  const earlier = plan.applied.block?.plans ?? [];
+  const made = new Map([...earlier.flatMap((p) => p.made), ...plan.applied.made].map((x) => [x.routineId, x.dayIndex] as const));
+  const planIds = new Set([plan.id, ...earlier.map((p) => p.planId)]);
   const workouts: PbBlockWorkout[] = refs.flatMap((r) => {
-    if (r.planDay !== undefined && r.planDay.planId === plan.id) return [{ startedAtUtc: r.startedAtUtc, dayIndex: r.planDay.dayIndex }];
+    if (r.planDay !== undefined && planIds.has(r.planDay.planId)) return [{ startedAtUtc: r.startedAtUtc, dayIndex: r.planDay.dayIndex }];
     const day = r.routineId === null ? undefined : made.get(r.routineId);
     const variants = (r.variantRoutineIds ?? []).flatMap((id) => {
       const i = made.get(id);
@@ -187,7 +192,43 @@ export function pbBlockOfPlan(plan: Pick<PlanDraft, 'id' | 'status' | 'versions'
     });
     return day === undefined ? [] : [{ startedAtUtc: r.startedAtUtc, dayIndex: day, ...(variants.length > 1 ? { dayIndexes: variants } : {}) }];
   });
-  return pbBlockWeekOf({ answers: b.builder.answers, appliedAtUtc: plan.applied.atUtc, pauses: plan.pauses, workouts, nowMs, tz });
+  return pbBlockWeekOf({ answers: b.builder.answers, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc, pauses: plan.pauses, workouts, nowMs, tz });
+}
+
+/**
+ * (Ben, 30 Oct: edits never restart the block) When the plan's block started: its first Apply. A re-apply that
+ * continued the block (`applied.block`) keeps the block's start; else this Apply's time. Null: not applied.
+ */
+export function pbBlockStartUtc(plan: Pick<PlanDraft, 'applied'> | null): string | null {
+  if (plan?.applied == null) return null;
+  return plan.applied.block?.startedAtUtc ?? plan.applied.atUtc;
+}
+
+/**
+ * (Ben, 30 Oct) Whether `next`'s Apply at `atUtc`, superseding `prior` (the builder plan in use), continues `prior`'s
+ * block, and if so the block it continues. Only a genuinely new plan restarts: a copy from `Start again`
+ * (`restartedFrom`), or a block that may be finished (`Start next block`). A block can only be finished once as many
+ * whole weeks as its length have passed since it started, so an Apply before then always continues it. Null: a new
+ * block (a coach plan on either side, or the block may be done). Pure.
+ */
+export function pbContinuedBlock(
+  next: Pick<PlanDraft, 'versions' | 'currentVersion' | 'restartedFrom'>,
+  prior: Pick<PlanDraft, 'id' | 'status' | 'versions' | 'currentVersion' | 'applied'>,
+  atUtc: string,
+  tz: string,
+): NonNullable<NonNullable<PlanDraft['applied']>['block']> | null {
+  if (next.restartedFrom != null) return null;
+  if (next.versions.find((v) => v.n === next.currentVersion)?.builder === undefined) return null;
+  const pb = pbAppliedBuilder(prior);
+  const start = pbBlockStartUtc(prior);
+  if (pb === null || start === null || prior.applied === null) return null;
+  const startMs = toMs(start);
+  const applyMonday = localWeekBounds(startMs, tz).mondayLocalDate;
+  const startMonday = localDateOf(startMs, tz) === applyMonday ? applyMonday : addDays(applyMonday, 7);
+  const atMonday = localWeekBounds(toMs(atUtc), tz).mondayLocalDate;
+  if (atMonday >= addDays(startMonday, 7 * pb.builder.answers.weeks)) return null;
+  const plans = [...(prior.applied.block?.plans ?? []), { planId: prior.id, made: prior.applied.made.map((m) => ({ dayIndex: m.dayIndex, routineId: m.routineId })) }];
+  return { startedAtUtc: start, plans: plans.slice(-8) };
 }
 
 /**
@@ -386,4 +427,38 @@ export function pbBlockView(input: PbBlockViewInput): PbBlockView {
 /** Every week's view (1…N), for a strip that switches weeks without another read. */
 export function pbBlockViews(input: Omit<PbBlockViewInput, 'viewed'>): PbBlockView[] {
   return Array.from({ length: input.builder.answers.weeks }, (_, i) => pbBlockView({ ...input, viewed: i + 1 }));
+}
+
+/**
+ * (Ben, 30 Oct) A plan in use that was applied over a builder plan whose block was running (a re-apply before
+ * 30 Oct made a new plan document) gets back its block's start: derived from the plans it superseded (each one's own
+ * block first, so a chain of re-applies goes back to the block's first Apply), stamped once as `applied.block`.
+ * `plans`: Ben's plans (any status). Nothing to do: null (no earlier plan, already stamped, or a new block). Pure; the
+ * op ID is derived, so a second open writes nothing.
+ */
+export function pbKeepBlockOf(current: PlanDraft, plans: readonly PlanDraft[], tz: string, atUtc: string): { next: PlanDraft; expectedVersion: number; opId: string } | null {
+  if (current.status !== 'applied' || current.applied === null || current.applied.block !== undefined) return null;
+  const byId = new Map(plans.map((p) => [p.id, p] as const));
+  const blockOf = (p: PlanDraft, depth: number): PlanDraft => {
+    if (p.applied === null || p.applied.block !== undefined || depth >= 8) return p;
+    for (const s of p.applied.superseded ?? []) {
+      const prior = byId.get(s.planId);
+      if (prior?.status !== 'superseded' || prior.supersededBy?.planId !== p.id || prior.applied === null) continue;
+      // The prior plan as it was when this Apply ended it: in use, with its own block derived first.
+      const was = blockOf({ ...prior, status: 'applied' }, depth + 1);
+      const b = pbContinuedBlock(p, was, p.applied.atUtc, tz);
+      if (b !== null) return { ...p, applied: { ...p.applied, block: b } };
+    }
+    return p;
+  };
+  const kept = blockOf(current, 0);
+  const block = kept.applied?.block;
+  if (block === undefined) return null;
+  const opId = deriveId(`plan-block-keep:${current.id}:${current.applied.opId}`);
+  if (current.opIds.includes(opId)) return null;
+  return {
+    next: { ...current, applied: { ...current.applied, block }, opIds: [...current.opIds, opId].slice(-PLAN_LIMITS.maxOps), version: current.version + 1, updatedAtUtc: atUtc },
+    expectedVersion: current.version,
+    opId,
+  };
 }

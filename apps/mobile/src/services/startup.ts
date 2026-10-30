@@ -144,6 +144,8 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     await services.coachDrafts.expire().catch(() => 0);
     // (Ben, 20 Oct) A paused plan whose `until` date has come is in use again from the first open on or after it.
     await services.plans.autoResume().catch(() => false);
+    // (Ben, 30 Oct) A plan re-applied over its own running block (before the fix) gets the block's start back, once.
+    await services.plans.keepBlock().catch(() => false);
     // (Ben, 26 Oct: Edit plan) A new block week: the plan's workouts follow that week's version (a change scoped to
     // `from week N` or `only week N`). Idempotent; nothing to do writes nothing.
     await services.plans.syncWeek().catch(() => false);

@@ -81,6 +81,8 @@ import {
   pbVersionOf,
   type HistoryWorkout,
   type GymEdit,
+  pbBlockStartUtc,
+  pbKeepBlockOf,
 } from '@fizz/domain';
 import type { PlanSplitView } from '@fizz/coach';
 import type { PlanWrite, Store } from '@fizz/persistence';
@@ -435,7 +437,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     if (plan === null || plan.applied === null) return null;
     const days = planRoutines(plan, await live(p.id));
     if (days.length === 0) return null;
-    return { planId: plan.id, name: plan.name, appliedAtUtc: plan.applied.atUtc, days: days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null })) };
+    return { planId: plan.id, name: plan.name, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc, days: days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null })) };
   }
 
   async function endWrite(planId: string, make: (current: PlanDraft, routines: ReadonlyMap<string, Routine | null>, otherApplied: boolean) => PlanEndChange): Promise<PlanWriteOutcome> {
@@ -739,12 +741,12 @@ export function createPlanServices(deps: PlanServicesDeps) {
         paused: pause === null ? null : { untilDate: pause.untilDate },
         pausedDaysThisWeek: pausedInWeek(monday, pausedDates(plan.pauses, monday, addDays(monday, 7), tz)),
         skippedThisWeek: skippedNow(plan, pbBlockOfPlan(plan, workouts, nowMs, tz), dayRefs),
-        plan: { id: plan.id, name: plan.name, status: plan.status, version: plan.version, appliedAtUtc: plan.applied.atUtc },
+        plan: { id: plan.id, name: plan.name, status: plan.status, version: plan.version, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc },
         days: dayRefs,
         workouts,
         nextRoutineId,
         training: training === null ? null : { goal: training.goal, daysPerWeek: training.daysPerWeek, sessionMinutes: training.sessionMinutes },
-        sets: plannedSetsThisWeek({ sessions: week.sessions, days: dayRefs, appliedAtUtc: plan.applied.atUtc, nowMs, tz }),
+        sets: plannedSetsThisWeek({ sessions: week.sessions, days: dayRefs, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc, nowMs, tz }),
         weekdays: planWeekdaysNow(plan, pbBlockOfPlan(plan, workouts, nowMs, tz), dayRefs),
         nowMs,
         tz,
@@ -884,6 +886,26 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const due = autoResumeDue(plan, toMs(at.utc), p.timezone);
       if (plan === null || due === null) return false;
       const r = await controlWrite(plan.id, (c) => resumePlan(c, { expectedVersion: c.version, opId: `plan-auto-resume:${due.opId}`, at, tz: p.timezone, auto: true }));
+      return r.ok && !r.duplicate;
+    },
+
+    /**
+     * (Ben, 30 Oct: edits never restart the block) On app open: a plan in use that a re-apply made before 30 Oct (a new
+     * plan document over the builder plan whose block was running) gets its block's start back, derived from the plans
+     * it superseded (`pbKeepBlockOf`). Idempotent (derived op ID); nothing to derive writes nothing. Returns whether it wrote.
+     */
+    async keepBlock(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan?.applied == null || plan.applied.block !== undefined || (plan.applied.superseded ?? []).length === 0) return false;
+      const all = await repo().listByOwner(p.id).catch(() => [] as PlanDraft[]);
+      const at = deps.now();
+      if (pbKeepBlockOf(plan, all, p.timezone, at.utc) === null) return false;
+      const r = await controlWrite(plan.id, (c) => {
+        const k = pbKeepBlockOf(c, all, p.timezone, at.utc);
+        return k === null ? { kind: 'duplicate', current: c } : { kind: 'write', next: k.next, expectedVersion: k.expectedVersion };
+      });
       return r.ok && !r.duplicate;
     },
 
