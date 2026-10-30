@@ -1,4 +1,4 @@
-import { liveRoutines, linkPlanDaysOf, linkRefs, planLinksFor, planRoutines, SPLIT_WINDOW_DAYS, toIso, toMs, type HistoryWorkout, type PlanLinkEntry } from '@fizz/domain';
+import { liveRoutines, pbBlockStartUtc, linkPlanDaysOf, linkRefs, planLinksFor, planRoutines, SPLIT_WINDOW_DAYS, toIso, toMs, type HistoryWorkout, type PlanLinkEntry } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { Exercise, PlanDraft, Routine } from '@fizz/schemas';
 
@@ -34,7 +34,7 @@ export async function readPlanLinks(store: PlanLinksStore, input: PlanLinksInput
     const templates = input.templates ?? planRoutines(plan, liveRoutines(await store.repos.routines.listByOwner(input.ownerId)));
     const days = linkPlanDaysOf(plan, templates);
     if (days.length === 0) return new Map();
-    const fromMs = Math.min(toMs(plan.applied.atUtc), input.nowMs - SPLIT_WINDOW_DAYS * DAY) - 7 * DAY;
+    const fromMs = Math.min(toMs(pbBlockStartUtc(plan) ?? plan.applied.atUtc), input.nowMs - SPLIT_WINDOW_DAYS * DAY) - 7 * DAY;
     const read = async (): Promise<ReadonlyMap<string, PlanLinkEntry>> => {
       const sessions = input.sessions ?? (await store.repos.sessions.listFinishedBetweenReadable(input.ownerId, toIso(fromMs), toIso(input.nowMs + 1))).sessions;
       let exerciseOf = input.exerciseOf;

@@ -5,6 +5,10 @@ import type { PlanControlChange } from './plan-adapt';
 import { planDayOf } from './coach-plan';
 import { deriveWorkoutTitle, storedWorkoutName } from './first-run';
 import { isPastLog } from './time-shift';
+import { localDateOf, weekdayIndexOfDate } from '../calendar';
+import { toMs } from '../time';
+import { pbAppliedBuilder } from '../plan-builder/block';
+import { pbWeekdaysOf } from '../plan-builder/edit';
 
 /**
  * (Ben, 28 Oct) Imported and past-logged workouts count towards the plan. Ben imported Tue 27 Oct "Pull · Barbell row"
@@ -17,6 +21,10 @@ import { isPastLog } from './time-shift';
  *    name exactly. Several days of that name (Pull A, Pull B) and no variant: (Ben, 28 Oct) the one whose main lift it
  *    led with, else the only one whose main lift it did; else it counts as the first of them not done that week, in
  *    plan order (`variants`; this week's count picks, `assignPlanWeek`). Never asked: the split is sure.
+ *    (Ben, 30 Oct: his Tue 27 pull, led by rows, ticked Pull B and the day sheet called Pull A "Missed") On a Set days
+ *    plan the variant scheduled on the workout's own weekday comes first: an explicit `A`/`B` or the day's exact
+ *    name, then that weekday's day, then the main lift it led with, then the only main lift it did, then the first
+ *    free one. Links are derived on every read (only Ben's own answers are stored), so past weeks follow the rule.
  * 2. **Else by lifts**: the plan day whose main lift it did, sharing at least 40% of the two lists (Jaccard), clearly
  *    ahead of any other day with its main lift (0.15). Something in common but not that clear: unclear.
  * 3. **Unclear: never guessed silently.** A one-time `Count as Pull?` (Count / Not a plan day) on that workout's
@@ -45,6 +53,8 @@ export interface LinkWorkout {
   exerciseIds: readonly string[];
   /** (28 Oct) The lift it led with (`leadLiftOf`); absent: its first exercise. */
   leadExerciseId?: string | null | undefined;
+  /** (Ben, 30 Oct) Its local weekday (Mon = 0) where it was done; absent: unknown. */
+  weekday?: number | null | undefined;
 }
 
 export type PlanDayLinkView =
@@ -137,7 +147,7 @@ export function linkAnswerOf(links: readonly PlanDayLink[] | undefined, sessionI
 }
 
 /** How a workout counts towards the plan (see the module comment). `days` in plan order. */
-export function planDayLinkOf(w: LinkWorkout, days: readonly LinkPlanDay[], answer: PlanDayLink | null = null): PlanDayLinkView {
+export function planDayLinkOf(w: LinkWorkout, days: readonly LinkPlanDay[], answer: PlanDayLink | null = null, weekdays: ReadonlyMap<number, number> | null = null): PlanDayLinkView {
   if (answer !== null) {
     if (answer.answer === 'not_plan_day') return { kind: 'not_plan_day' };
     const day = days.find((d) => d.routineId === answer.routineId) ?? days.find((d) => d.dayIndex === answer.dayIndex);
@@ -157,6 +167,10 @@ export function planDayLinkOf(w: LinkWorkout, days: readonly LinkPlanDay[], answ
     // only one whose main lift it did. A share of accessories alone never picks a variant.
     const lead = w.leadExerciseId ?? w.exerciseIds[0] ?? null;
     const one = (ds: readonly LinkPlanDay[]): LinkPlanDay | null => (new Set(ds.map((d) => d.dayIndex)).size === 1 ? (ds[0] ?? null) : null);
+    // (Ben, 30 Oct) Set days: the variant scheduled on the workout's own weekday (a Tuesday pull is Tuesday's Pull A).
+    const wd = w.weekday ?? null;
+    const scheduled = weekdays === null || wd === null ? null : one(named.filter((d) => weekdays.get(d.dayIndex) === wd));
+    if (scheduled !== null) return { kind: 'linked', day: scheduled, by: 'name' };
     const led = one(named.filter((d) => lead !== null && d.mainLiftExerciseId === lead));
     if (led !== null) return { kind: 'linked', day: led, by: 'name' };
     const did = one(named.filter((d) => d.mainLiftExerciseId !== null && w.exerciseIds.includes(d.mainLiftExerciseId)));
@@ -265,21 +279,31 @@ export function linkWorkoutOf(a: HistoryLike, exerciseOf: (id: string) => Pick<E
   const ids = [...a.exercises].filter((e) => e.removed === undefined && done.has(e.id)).sort((x, y) => x.order - y.order).map((e) => e.exerciseId);
   const infos = ids.map(exerciseOf).filter((x): x is Pick<Exercise, 'movementPattern' | 'primaryMuscles'> => x !== null);
   const derived = infos.length === 0 ? null : deriveWorkoutTitle(infos);
-  return { sessionId: a.session.id, title: storedWorkoutName(a.session) ?? (derived === 'Workout' ? null : derived), exerciseIds: ids, leadExerciseId: leadLiftOf(a) };
+  const at = a.session.startedAt;
+  return { sessionId: a.session.id, title: storedWorkoutName(a.session) ?? (derived === 'Workout' ? null : derived), exerciseIds: ids, leadExerciseId: leadLiftOf(a), weekday: weekdayIndexOfDate(localDateOf(toMs(at.utc), at.tz)) };
 }
 
 /** A candidate workout's link, and whether it was imported (an unlinked import reads as before: from no routine). */
 export type PlanLinkEntry = PlanDayLinkView & { imported: boolean };
 
 /** Every candidate workout's link (`planDayLinkOf`, Ben's answers first); workouts that aren't candidates are absent. */
-export function planLinksFor(input: { plan: Pick<PlanDraft, 'id' | 'applied' | 'dayLinks'>; days: readonly LinkPlanDay[]; workouts: readonly HistoryLike[]; exerciseOf: (id: string) => Pick<Exercise, 'movementPattern' | 'primaryMuscles'> | null }): Map<string, PlanLinkEntry> {
+export function planLinksFor(input: { plan: Pick<PlanDraft, 'id' | 'applied' | 'dayLinks'> & Partial<Pick<PlanDraft, 'status' | 'versions' | 'currentVersion'>>; days: readonly LinkPlanDay[]; workouts: readonly HistoryLike[]; exerciseOf: (id: string) => Pick<Exercise, 'movementPattern' | 'primaryMuscles'> | null }): Map<string, PlanLinkEntry> {
   const ids = new Set(input.days.map((d) => d.routineId));
+  const weekdays = planSetWeekdays(input.plan);
   const out = new Map<string, PlanLinkEntry>();
   for (const a of input.workouts) {
     if (!linkCandidate(a, ids)) continue;
-    out.set(a.session.id, { ...planDayLinkOf(linkWorkoutOf(a, input.exerciseOf), input.days, linkAnswerOf(input.plan.dayLinks, a.session.id)), imported: a.session.source === 'import' });
+    out.set(a.session.id, { ...planDayLinkOf(linkWorkoutOf(a, input.exerciseOf), input.days, linkAnswerOf(input.plan.dayLinks, a.session.id), weekdays), imported: a.session.source === 'import' });
   }
   return out;
+}
+
+/** (Ben, 30 Oct) A Set days builder plan's weekday per plan day (Mon = 0; its schedule, before any one-week move); else null. */
+export function planSetWeekdays(plan: Pick<PlanDraft, 'applied'> & Partial<Pick<PlanDraft, 'status' | 'versions' | 'currentVersion'>>): ReadonlyMap<number, number> | null {
+  if (plan.status === undefined || plan.versions === undefined || plan.currentVersion === undefined) return null;
+  const b = pbAppliedBuilder({ status: plan.status, versions: plan.versions, currentVersion: plan.currentVersion, applied: plan.applied });
+  if (b === null) return null;
+  return pbWeekdaysOf(b.builder.answers, undefined, 0, b.version.days.map((d) => d.index));
 }
 
 /**

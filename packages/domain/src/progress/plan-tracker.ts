@@ -1,5 +1,5 @@
 import type { Load, MuscleGroup, SessionAggregate, SessionExercise, SplitBodyPart, WorkoutSet } from '@fizz/schemas';
-import { addDays, localDateOf, localWeekBounds } from '../calendar';
+import { addDays, localDateOf, localWeekBounds, weekdayIndexOfDate } from '../calendar';
 import { aimWithPause, assignPlanWeek, type PlanDayKey, type PlanWeekMerge } from '../session/plan-adapt';
 import { formatDuration, loadText, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
@@ -312,6 +312,8 @@ export interface PlanWeekDay {
   name?: string | undefined;
   mainLiftExerciseId?: string | null | undefined;
   planKey?: PlanDayKey | null | undefined;
+  /** (Ben, 30 Oct) Set days: its scheduled weekday (Mon = 0); a variant done on its own weekday is that one. */
+  weekday?: number | null | undefined;
 }
 
 export interface PlanWeekWorkout {
@@ -359,13 +361,13 @@ export function planDaysDoneThisWeek(input: { days: readonly PlanWeekDay[]; appl
 /** `planDaysDoneThisWeek` with the workout that filled each plan day's template (its session ID too). */
 export function planWeekFills<W extends PlanWeekWorkout>(input: { days: readonly PlanWeekDay[]; workouts: readonly W[]; nowMs: number; tz: string; merges?: readonly PlanWeekMerge[] | undefined }): Map<string, W> {
   const from = planWeekStartMs(input);
-  const days = input.days.map((d) => ({ routineId: d.routineId, name: d.name ?? d.routineId, bodyParts: d.bodyParts ?? [], createdFromSessionId: d.createdFromSessionId ?? null, mainLiftExerciseId: d.mainLiftExerciseId ?? null, planKey: d.planKey ?? null }));
+  const days = input.days.map((d) => ({ routineId: d.routineId, name: d.name ?? d.routineId, bodyParts: d.bodyParts ?? [], createdFromSessionId: d.createdFromSessionId ?? null, mainLiftExerciseId: d.mainLiftExerciseId ?? null, planKey: d.planKey ?? null, weekday: d.weekday ?? null }));
   const week = input.workouts
     .filter((w) => {
       const ms = toMs(w.startedAtUtc);
       return ms >= from && ms <= input.nowMs;
     })
-    .map((w) => ({ sessionId: w.sessionId, routineId: w.routineId, startedAtUtc: w.startedAtUtc, groups: w.groups ?? new Map<MuscleGroup, number>(), planDay: w.planDay ?? null, leadExerciseId: w.leadExerciseId ?? null, variants: w.variants ?? null, source: w }));
+    .map((w) => ({ sessionId: w.sessionId, routineId: w.routineId, startedAtUtc: w.startedAtUtc, groups: w.groups ?? new Map<MuscleGroup, number>(), planDay: w.planDay ?? null, leadExerciseId: w.leadExerciseId ?? null, variants: w.variants ?? null, weekday: weekdayIndexOfDate(localDateOf(toMs(w.startedAtUtc), input.tz)), source: w }));
   const out = new Map<string, W>();
   for (const [id, w] of assignPlanWeek(days, week, input.merges ?? [])) out.set(id, w.source);
   return out;

@@ -49,6 +49,8 @@ export interface PlanDueDay {
   planKey?: PlanDayKey | null | undefined;
   /** (28 Oct) Its main lift: tells variants (Pull A / Pull B) apart for a workout off the plan. */
   mainLiftExerciseId?: string | null | undefined;
+  /** (Ben, 30 Oct) Set days: its scheduled weekday (Mon = 0); absent: none. */
+  weekday?: number | null | undefined;
 }
 
 /** A plan day's identity: (planId, dayIndex), as `PlanDayRef`. */
@@ -184,6 +186,8 @@ export interface PlanWeekSlotWorkout extends PlanDueWorkout {
    * apart: those days' templates in plan order; it fills the first one not filled yet this week.
    */
   variants?: readonly string[] | null | undefined;
+  /** (Ben, 30 Oct) Its local weekday (Mon = 0); absent: unknown. */
+  weekday?: number | null | undefined;
 }
 
 /**
@@ -231,8 +235,10 @@ export function assignPlanWeek<W extends PlanWeekSlotWorkout>(days: readonly Pla
     }
     if (free(own.routineId)) take(own.routineId, w);
   }
+  // (Ben, 30 Oct) Set days: a variant scheduled on the workout's own weekday first.
+  const onItsDay = (w: W, ids: readonly string[]): string | undefined => (w.weekday == null ? undefined : ids.find((id) => byId.get(id)?.weekday === w.weekday));
   for (const w of flexible) {
-    const id = (w.variants ?? []).find(free);
+    const id = onItsDay(w, (w.variants ?? []).filter(free)) ?? (w.variants ?? []).find(free);
     if (id !== undefined) take(id, w);
   }
   const split = planSplit(days);
@@ -245,7 +251,7 @@ export function assignPlanWeek<W extends PlanWeekSlotWorkout>(days: readonly Pla
     const rank = (id: string): number => (same(byId.get(id)) ? 0 : 1000) + (order.get(id) ?? 0);
     const cands = [...trained].sort((a, b) => rank(a) - rank(b)).filter(free);
     const lead = w.leadExerciseId ?? null;
-    const id = cands.find((x) => lead !== null && byId.get(x)?.mainLiftExerciseId === lead) ?? cands[0];
+    const id = onItsDay(w, cands.filter((x) => same(byId.get(x)))) ?? cands.find((x) => lead !== null && byId.get(x)?.mainLiftExerciseId === lead) ?? cands[0];
     if (id !== undefined) take(id, w);
   }
   return filled;

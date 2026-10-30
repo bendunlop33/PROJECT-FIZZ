@@ -145,6 +145,20 @@ export const PlanAppliedSchema = z.object({
    * them back as the plan in use (review plans-19oct S3). Absent: none.
    */
   superseded: z.array(z.object({ planId: IdSchema, versionAfter: z.int().min(2) })).max(8).optional(),
+  /**
+   * (Ben, 30 Oct: edits never restart the block) This Apply continued the block of the builder plan it superseded
+   * (a re-apply of the plan in use, not `Start next block`): the block's start (its first Apply, which decides the
+   * lead-in, week numbers and deload) and the earlier plan documents of the block, whose workouts count for it.
+   * Absent: the block starts at this Apply (`atUtc`). Optional, so old rows and backups parse.
+   */
+  block: z
+    .object({
+      startedAtUtc: UtcTimestampSchema,
+      plans: z
+        .array(z.object({ planId: IdSchema, made: z.array(z.object({ dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1), routineId: IdSchema })).max(PLAN_LIMITS.maxDays * PLAN_LIMITS.maxTemplatesPerDay) }))
+        .max(8),
+    })
+    .optional(),
 });
 export type PlanApplied = z.infer<typeof PlanAppliedSchema>;
 

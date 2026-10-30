@@ -50,6 +50,7 @@ import {
   type HistoryWorkout,
   activityGroupText,
   activityGroupTotals,
+  pbBlockStartUtc,
 } from '@fizz/domain';
 import type { ActivityWrite, Store } from '@fizz/persistence';
 import { readPlanLinks } from './plan-day-links';
@@ -249,7 +250,7 @@ export function createWeekServices(deps: WeekServicesDeps) {
     let days: WeekDay[];
     if (basis.kind === 'plan' && plan?.applied != null) {
       const refs = planDays.map((r) => planWeekDayOf(plan, r, planDayBodyParts(r, of, split)));
-      const done = planDaysDoneThisWeek({ days: refs, appliedAtUtc: plan.applied.atUtc, workouts, nowMs, tz });
+      const done = planDaysDoneThisWeek({ days: refs, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc, workouts, nowMs, tz });
       days = planDays.map((r, i) => ({ id: r.id, name: r.name, bodyParts: refs[i]?.bodyParts ?? [], done: done.has(r.id), routine: r, splitDay: null }));
     } else {
       const done = new Set(workouts.flatMap((w) => splitDaysTrained(split, w.groups)));

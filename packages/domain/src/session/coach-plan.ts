@@ -28,6 +28,7 @@ import { loadText } from '../display';
 import { checkWorkoutProposal, draftSchemeText, draftWorkingSets, painHoldFor, recheckDraftSlot, type WorkoutProposalContext } from './coach-draft';
 import { setRoutineRotation } from './library';
 import { closePausesAt, reopenPausesClosedAt } from './plan-adapt';
+import { pbContinuedBlock } from '../plan-builder/block';
 import { deleteRoutine, isDeleted, isFromRoutine, isInRotation, type FinishedRef, type RoutineChange } from './routines';
 import type { SubstituteContext } from './substitutes';
 
@@ -347,6 +348,11 @@ export function applyPlan(
       next: bump(o, `${input.opId}:supersede:${o.id}`, input.at.utc, { status: 'superseded', supersededBy: { planId: current.id, opId: input.opId, atUtc: input.at.utc }, ...pausesClosed(o, input.at) }),
       expectedVersion: o.version,
     }));
+  // (Ben, 30 Oct: edits never restart the block) Re-applying while a builder plan's block runs continues that block.
+  const block = (input.applied ?? [])
+    .filter((o) => o.id !== current.id && o.ownerId === current.ownerId && o.status === 'applied' && o.applied !== null)
+    .map((o) => pbContinuedBlock(current, o, input.at.utc, input.at.tz))
+    .find((b) => b !== null);
   const applied: PlanApplied = {
     mode: input.mode,
     versionN: v.n,
@@ -355,6 +361,7 @@ export function applyPlan(
     made: create.map((r, i) => ({ dayIndex: v.days[i]?.index ?? i, routineId: r.id, version: r.version })),
     rotationOff,
     ...(supersede.length > 0 ? { superseded: supersede.map((x) => ({ planId: x.next.id, versionAfter: x.next.version })) } : {}),
+    ...(block == null ? {} : { block }),
   };
   return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', applied }), expectedVersion: current.version, create, update, supersede };
 }
