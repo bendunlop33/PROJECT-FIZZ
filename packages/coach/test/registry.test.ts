@@ -432,6 +432,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Log a run, ride, swim or sport you tell it about, with Undo",
               "Reshape this week (rest a day, skip or merge days), with Undo",
               "Build a multi-day plan you ask for, as a proposal you apply or undo",
+              "Swap one exercise in every day of your plan, as a proposal you apply or undo",
               "Set a lift target you ask for, with Undo",
               "Change your workout before you start it, as a change you apply or skip",
               "Set up today’s workout from what you say (day, length, main lift), with Undo on Set up",
