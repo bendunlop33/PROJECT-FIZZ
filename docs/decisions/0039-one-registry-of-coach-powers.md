@@ -89,3 +89,24 @@ Entries: **T** Today, Plan (opens Today's thread), Progress, an exercise chart; 
   (Undo first). Moving a Set days plan day to another weekday is still Library's `Move day`, not the coach.
 - Builder Set up's day chips still list body-part days (the builder's own design), not the plan's days.
 - Migration 39 rebuilds `coach_actions` (rows kept). Not yet run on Ben's iPhone.
+
+## Amendment (30 Oct 2026, Ben's build 486 report)
+
+From a live workout's chat Ben asked to swap leg press and leg extension across his plan and got `Want me to change
+this week?` three times ("Yes" and "full plan" ran nothing). Decision 6's replacement assumed every hidden "can't"
+sentence was about the week, and no tool changed the plan's days one exercise at a time.
+
+- **`propose_plan_swap`** joins the registry with target `planInUse` (no word gate): one exercise out (`remove`) and one
+  in (`add`) in every plan day where it appears, always a proposal (structural, rule 3) with each day's change, Apply
+  and Undo. Apply is the day sheet's `plans.editDayEveryWeek` per day (versioned, op IDs derived from the proposal),
+  Undo each day's routine revert. `Today too` on the card is a separate today change with Undo.
+- **Decision 6 amended:** the replacement offer matches what Ben asked (`threadPlanScope`): `Want me to change your
+  plan?` when his words aim at the plan and the plan tool is offered; `Want me to change this week?` only when this week
+  is the target (or his words name none and the sentence is about the week). With no plan in use, a "can't change your
+  plan" sentence is true and kept.
+- **An offer answered:** "Yes" (or a short scope answer) to the coach's own `Want me to …?` is read with the words that
+  led to it, and the coach is told to act in this turn.
+- **Not preferred:** YOUR DATA carries `notPreferred` (Any preferences on the plan in use) and the plan days' exercises.
+  The plan swap's checks never put a not-preferred exercise in (turned round when the coach had it the wrong way, else
+  refused with one line on a `Not changed` card).
+- Migration 40 adds `propose_plan_swap` to `coach_actions` (rows kept). Not yet run on Ben's iPhone.
