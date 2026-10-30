@@ -412,6 +412,22 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Build a plan of several different days at once (1 to 7 days), only when Ben asks for a plan, a split or a week of workouts, or asks to change the plan in context. Never a multi-week block or deloads, and never for one session (use propose_workout). Follow his split in plan.splitDays unless he asks for another: give each day its `splitDayId` (null for a day that is none of them) and a short `dayName`. Spread the muscles sensibly across the days and keep each day within plan.setBudget working sets. Each day\'s exercises are exactly like propose_workout\'s: catalogueIds from YOUR DATA build.usable or find_exercises only, working sets, a rep range (or workSeconds), targetRpe, warm-ups null (the app plans them; a number only when Ben asked for one), one optional top set, rest, supersets, and a working `load` (and `topSet.load`) from build.loadReferences in the unit and convention listed, with a short `basis` in words (no numbers); null when you have no opinion. Give `minutes` (15–180) for every day when Ben asked for a length ("60 min each"), or a day\'s own `minutes` when he asked for one for that day; null otherwise. `gymName`: one of build.gyms when he named one. The app checks every day, bounds and fits every load to the equipment, and shows the plan as a proposal: nothing changes until Ben taps Apply.',
   },
   {
+    // (Ben, 30 Oct, build 486: "won't change full plan") One exercise out and another in, in every day of the plan in
+    // use. Offered whenever a plan is in use, in every chat (`planInUse`, no word gate: the gate is what made a live
+    // workout's chat say it couldn't). Always a proposal with each day's before/after, Apply and Undo (rule 3); the app
+    // checks the direction against what Ben marked not preferred and never puts one in.
+    name: 'propose_plan_swap',
+    effect: 'propose',
+    writes: ['proposal'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Swap one exercise in every day of your plan, as a proposal you apply or undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Swap one exercise for another in every day of the plan in use where it appears, from now on, when Ben asks ("swap leg press for leg extension in my plan", "across the full plan", "every week"). remove: the catalogueId going out; add: the catalogueId coming in (YOUR DATA plan.inUse.days or find_exercises). Only that exercise changes in each day: its sets, reps, rest, place and superset stay. Never add an exercise listed in YOUR DATA notPreferred; when Ben says "swap A and B" and one of them is not preferred, that one is `remove`. Ben sees each day before and after and taps Apply; never say it changed. reason: one short line.',
+  },
+  {
     // (Ben, 20 Oct) Offered only while Lift targets is on (the app wires the executor then). Applies with Undo
     // only when Ben asked; code decides from his words (`liftTargetAsked` in the turn), else nothing is saved.
     name: 'set_lift_target',
@@ -593,6 +609,7 @@ export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   correct_set: 'liveWorkout',
   propose_week: 'week',
   pause_plan: 'planInUse',
+  propose_plan_swap: 'planInUse',
   think_harder: 'lightTurn',
   set_lift_target: 'liftTargetsOn',
   propose_workout_edit: 'builderDraft',

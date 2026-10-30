@@ -117,6 +117,11 @@ export interface CoachContextInput {
    */
   plan?: PlanPauseView;
   /**
+   * (Ben, 30 Oct) Exercises Ben marked not preferred on his plan's Any preferences (the option he didn't pick, or
+   * never): the coach never puts one in his plan or a workout. Your data. Absent or empty: none.
+   */
+  notPreferred?: readonly { catalogueId: string; name: string }[];
+  /**
    * (Ben, 20 Oct) This week on a general turn: today's date, gym days done and left, the days left
    * (plan or split), Ben's activities this week and the last two, code's reshape idea. Your data;
    * only what he logged (rule 6). Absent when there is nothing to say.
@@ -244,7 +249,11 @@ export interface BuilderDraftView {
 /** The plan in use as `pause_plan` reads it (Your data). `inUse: null`: no plan is in use. */
 export interface PlanPauseView {
   today: string;
-  inUse: { name: string; paused: { until: string | null } | null } | null;
+  /**
+   * (Ben, 30 Oct) `days`: each plan day's exercises as its template has them now (catalogueIds), what
+   * `propose_plan_swap` swaps in every day. Absent on views made without it.
+   */
+  inUse: { name: string; paused: { until: string | null } | null; days?: { name: string; exercises: { catalogueId: string; name: string }[] }[] } | null;
 }
 
 export interface TrainingInput {
@@ -473,6 +482,8 @@ export interface YourData {
   training?: TrainingDetailsView;
   /** (20 Oct) Pause turns only: the plan in use and today's date. */
   plan?: PlanPauseView;
+  /** (Ben, 30 Oct) Not preferred on his plan's Any preferences: never put in. */
+  notPreferred?: { catalogueId: string; name: string; use: 'never put this in his plan or a workout' }[];
   /** (Ben, 20 Oct) General turns: this week, his activities and the days left. */
   week?: WeekContextView;
   /** ADR 0039: a Your workout draft before Start (Today's, or the builder sheet's). */
@@ -625,7 +636,8 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
     ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),
-    ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until } } } }),
+    ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until }, ...(input.plan.inUse.days === undefined ? {} : { days: input.plan.inUse.days.map((d) => ({ name: d.name, exercises: d.exercises.map((e) => ({ ...e })) })) }) } } }),
+    ...(input.notPreferred === undefined || input.notPreferred.length === 0 ? {} : { notPreferred: input.notPreferred.map((e) => ({ catalogueId: e.catalogueId, name: e.name, use: 'never put this in his plan or a workout' as const })) }),
   };
 }
 

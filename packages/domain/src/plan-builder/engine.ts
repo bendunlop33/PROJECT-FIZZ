@@ -232,7 +232,7 @@ export function pbChartMuscles(a: PlanBuilderAnswers): PbMuscle[] {
 // ---------------------------------------------------------------------------
 // Preferences
 
-export function pbPrefLikes(a: PlanBuilderAnswers): string[] {
+export function pbPrefLikes(a: Pick<PlanBuilderAnswers, 'likes' | 'prefs'>): string[] {
   const out = [...a.likes];
   for (const [id, ans] of Object.entries(a.prefs)) {
     const q = PB_PREF_QUESTIONS.find((x) => x.id === id);

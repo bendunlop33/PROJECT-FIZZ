@@ -232,6 +232,8 @@ export interface CardView {
   draftEdit?: ActionRecord;
   /** ADR 0039: today's Set up filled from Ben's words: `Open` (Undo is on Set up). */
   setupFill?: ActionRecord;
+  /** (Ben, 30 Oct) One exercise swapped in every plan day: each day's change, Apply / Skip, Undo, `Today too`. */
+  planSwap?: ActionRecord;
 }
 
 const GYM_STATUS: Record<GymProposalState['state'], CardView['status']> = {
@@ -414,6 +416,7 @@ export function cardView(r: ActionRecord): CardView {
     ...(r.detail.kind === 'log_activity' && r.status === 'proposed' ? { activityOffer: r } : {}),
     ...(r.detail.kind === 'propose_workout_edit' && r.status === 'proposed' ? { draftEdit: r } : {}),
     ...(r.detail.kind === 'fill_setup' && r.status === 'committed' ? { setupFill: r } : {}),
+    ...(r.detail.kind === 'propose_plan_swap' && r.status === 'proposed' ? { planSwap: r } : {}),
   };
 }
 
@@ -788,4 +791,14 @@ export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<B
 }
 
 /** ADR 0039: the words on a Your workout change card. Minimal copy. */
+/**
+ * (Ben, 30 Oct) A plan swap's lines from its record: `Leg extension → Leg press`, then each day (`Legs B: − Leg
+ * extension` where the day already has the exercise coming in). App text only.
+ */
+export function planSwapLines(r: ActionRecord): { head: string; days: string[] } | null {
+  if (r.detail.kind !== 'propose_plan_swap') return null;
+  const d = r.detail;
+  return { head: `${d.removeName} → ${d.addName}`, days: d.days.map((x) => (x.edits.every((e) => e.kind === 'remove') ? `${x.routineName}: − ${d.removeName}` : x.routineName)) };
+}
+
 export const DRAFT_EDIT_COPY = { apply: 'Apply', skip: 'Skip', undo: 'Undo', applied: 'Applied', skipped: 'Skipped', undone: 'Undone', openSetup: 'Open Set up' } as const;

@@ -8,6 +8,7 @@ import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
 import { SentenceBuffer, splitSentences } from './sentences';
 import { resolveActionTokens } from './tokens';
+import { NO_PLAN_TOOL_DETAIL, PLAN_ASK_LINE, type PlanScope } from './plan-swap';
 
 /**
  * The backstop for the coach's `message` (coach-contract CC3–CC9, PM
@@ -66,6 +67,9 @@ export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: R
   if (hiddenCount === 0) return numberHidden === 0 ? null : { text: linesSaid(numberHidden), spoken: null };
   hiddenCount += numberHidden;
   const live = liveThisTurn(ledger);
+  // (Ben, 30 Oct, build 486) A plan swap's card this turn (a proposal, or the one line saying why not) already says
+  // where things stand: the note only counts the hidden lines, never a second "Nothing changed" beside it.
+  if (live.length === 0 && ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'propose_plan_swap')) return { text: linesSaid(hiddenCount), spoken: null };
   if (live.length === 0) return { text: `Nothing changed · ${linesSaid(hiddenCount)}`, spoken: 'Nothing changed.' };
   if (surface === 'summary') return { text: `Only the changes shown were made · ${linesSaid(hiddenCount)}`, spoken: null };
   if (surface === 'slot') {
@@ -202,6 +206,19 @@ export function claimsNoWeekTool(sentence: string): boolean {
   return claimsNoTodayTool(t) || NOT_AVAILABLE_HERE.test(t) || (IN_THIS_CHAT.test(t) && new RegExp(NO_TOOL_LEAD).test(t));
 }
 
+const WEEK_AIM = /\b(?:this|the) week\b|\bweekly\b|\bweek'?s\b|\brest day\b|\bthis week'?s days\b/;
+
+/**
+ * (Ben, 30 Oct) What a hidden "can't change it here" sentence was about: Ben's own scope wins (after "full plan" it is
+ * the plan, whatever the sentence says); with none, the sentence's own words (the week, else his plan). Pure.
+ */
+export function noToolAim(sentence: string, scope: PlanScope | null): 'week' | 'plan' {
+  if (scope === 'plan') return 'plan';
+  if (scope === 'week') return 'week';
+  const t = sentence.toLowerCase().replace(/[‘’]/g, "'");
+  return WEEK_AIM.test(t) || !/\bplan\b/.test(t) ? 'week' : 'plan';
+}
+
 /** `Why?` → `Not shown` for a sentence saying a change failed when nothing this turn says so (21 Oct). */
 export const FAILURE_CLAIM_DETAIL = 'It said a change didn’t go through; no tool result this turn says so.';
 
@@ -289,6 +306,17 @@ export interface ReplyFilterOptions {
    */
   weekToolOffered?: boolean;
   /**
+   * (Ben, 30 Oct, build 486) `propose_plan_swap` was offered (a plan in use). A sentence saying the coach can't change
+   * his plan is then false: hidden, and `PLAN_ASK_LINE` shown once in its place (never the week's line for a plan ask).
+   */
+  planToolOffered?: boolean;
+  /**
+   * (Ben, 30 Oct) What Ben's words (now, else his last in the thread with one) aim at (`threadPlanScope`). The hidden
+   * "can't" sentence is replaced by the offer that matches: the week's line only when this week is the target or his
+   * words name none and the sentence is about the week; never after "full plan" or "every week".
+   */
+  planScope?: PlanScope | null;
+  /**
    * Coach v3 (ADR 0027): the numbers the coach was given (context, tool outputs, Ben's words),
    * read again for every sentence. A sentence with a number not among them (or in this turn's
    * cards) is hidden (`unverified_number`). Absent: numbers aren't checked.
@@ -334,16 +362,22 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
       return out;
     }
-    // ADR 0039: the week tool is in every chat with a week; "not in this chat" is false.
-    if (options.weekToolOffered === true && claimsNoWeekTool(tokens.plainText)) {
-      hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_WEEK_TOOL_DETAIL });
-      const changed = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'propose_week');
-      if (!changed && !weekAskShown) out.push({ kind: 'sentence', text: WEEK_ASK_LINE });
+    // ADR 0039: the week tool is in every chat with a week; "not in this chat" is false. (Ben, 30 Oct) The offer that
+    // replaces it matches what he asked: his plan (every week) or this week. A plan ask never gets the week's line, and
+    // with no plan tool (no plan in use) a "can't change your plan" sentence is true and kept.
+    const aim = claimsNoWeekTool(tokens.plainText) ? noToolAim(tokens.plainText, options.planScope ?? null) : null;
+    const weekOffered = options.weekToolOffered === true && aim === 'week';
+    const planOffered = options.planToolOffered === true && aim === 'plan';
+    if (weekOffered || planOffered) {
+      hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: planOffered ? NO_PLAN_TOOL_DETAIL : NO_WEEK_TOOL_DETAIL });
+      const kinds = planOffered ? ['propose_plan_swap', 'build_plan'] : ['propose_week'];
+      const changed = ledger.entries.some((e) => e.origin === 'this_turn' && kinds.includes(e.record.detail.kind));
+      if (!changed && !weekAskShown) out.push({ kind: 'sentence', text: planOffered ? PLAN_ASK_LINE : WEEK_ASK_LINE });
       weekAskShown = true;
       for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
       return out;
     }
-    if (options.todayToolsOffered === true && claimsNoTodayTool(tokens.plainText)) {
+    if (options.todayToolsOffered === true && aim !== 'plan' && claimsNoTodayTool(tokens.plainText)) {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_TODAY_TOOL_DETAIL });
       const changed = ledger.entries.some((e) => e.origin === 'this_turn' && todayKinds.has(e.record.detail.kind) && e.record.status === 'committed' && e.record.undoneBy === null);
       if (!changed && !noTodayToolHidden) out.push({ kind: 'sentence', text: TODAY_ASK_LINE });

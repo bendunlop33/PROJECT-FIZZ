@@ -445,6 +445,8 @@ function undoWhat(target: ActionRecord): string {
       return `the change to ${d.draftName === '' ? 'your workout' : d.draftName}`;
     case 'fill_setup':
       return 'today’s Set up';
+    case 'propose_plan_swap':
+      return `${d.removeName} → ${d.addName} in your plan`;
   }
 }
 

@@ -286,6 +286,19 @@ export type ProposeWeekArgs = z.infer<typeof ProposeWeekArgsSchema>;
 export const ProposeDraftEditArgsSchema = z.strictObject({ reason });
 export type ProposeDraftEditArgs = z.infer<typeof ProposeDraftEditArgsSchema>;
 
+/**
+ * (Ben, 30 Oct, build 486: "won't change full plan") One exercise swapped in every plan day of the plan in use where it
+ * appears, from now on: `remove` goes out, `add` comes in (catalogueIds), so the direction is explicit. Always a
+ * proposal with the before and after per day, Apply and Undo (rule 3: a structural future change). Only that exercise
+ * changes; its sets, reps, rest, place and superset stay.
+ */
+export const ProposePlanSwapArgsSchema = z.strictObject({
+  remove: z.string().min(1).max(80),
+  add: z.string().min(1).max(80),
+  reason,
+});
+export type ProposePlanSwapArgs = z.infer<typeof ProposePlanSwapArgsSchema>;
+
 /** ADR 0039: today's Set up filled from Ben's own words this turn (the builder reads them); `reason` is the coach's one line. */
 export const FillSetupTodayArgsSchema = z.strictObject({ reason });
 export type FillSetupTodayArgs = z.infer<typeof FillSetupTodayArgsSchema>;
@@ -623,6 +636,8 @@ export const CoachToolNameSchema = z.enum([
   'propose_workout_edit',
   /** ADR 0039: today's Set up filled from Ben's words (a day, a length, a main lift); he opens it to build. */
   'fill_setup',
+  /** (Ben, 30 Oct) One exercise out and another in, in every day of the plan in use: a proposal he applies, with Undo. */
+  'propose_plan_swap',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -663,6 +678,7 @@ export const COACH_TOOL_ARGS = {
   propose_week: ProposeWeekArgsSchema,
   propose_workout_edit: ProposeDraftEditArgsSchema,
   fill_setup: FillSetupTodayArgsSchema,
+  propose_plan_swap: ProposePlanSwapArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -1134,6 +1150,34 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     draftId: z.string().min(1).max(64),
     draftName: z.string().max(120),
     proposal: BuilderProposalSchema,
+  }),
+  /**
+   * (Ben, 30 Oct) One exercise swapped in every day of the plan in use (`propose_plan_swap`, or Settings' `Replace` on a
+   * not-preferred exercise): always a proposal. `days`: each plan day's change against its version as read (rule 5);
+   * Apply writes each day's one change (`plans.editDayEveryWeek`, opIds from this record) and Undo reverts them.
+   * `flipped`: the coach had it the other way round and the exercise it would have put in is not preferred. `today`: the
+   * live workout's row of `removeId`, not started, for `Today too` (its own change, with Undo).
+   */
+  z.object({
+    kind: z.literal('propose_plan_swap'),
+    planId: IdSchema,
+    planName: z.string().max(120),
+    removeId: z.string().min(1).max(64),
+    removeName: z.string().min(1).max(120),
+    addId: z.string().min(1).max(64),
+    addName: z.string().min(1).max(120),
+    days: z
+      .array(
+        z.object({
+          routineId: IdSchema,
+          routineName: z.string().max(120),
+          versionBefore: z.int().min(1),
+          edits: z.array(z.object({ kind: z.enum(['swap', 'remove']), rowId: IdSchema })).min(1).max(6),
+        }),
+      )
+      .max(28),
+    flipped: z.boolean().optional(),
+    today: z.object({ sessionId: IdSchema, sessionExerciseId: IdSchema }).nullable().optional(),
   }),
   /** ADR 0039: today's Set up filled from Ben's words (`toast`: what it says; Undo is on Set up). */
   z.object({

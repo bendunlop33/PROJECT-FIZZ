@@ -40,6 +40,7 @@ import { mentionsGymSetup } from './gym-update';
 import { editOfferIn } from './edit-today';
 import { addedContinuationOf } from './find-exercises';
 import { collectFacts, type FactText, type NumberFacts, EFFORT_WORDS_LINE } from './numbers';
+import { isBareAccept, offerAcceptedLine, offerContinuationOf, PLAN_SWAP_LINE, threadPlanScope } from './plan-swap';
 import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
 
 /**
@@ -261,12 +262,8 @@ export interface CoachTurnResult {
   replayed: boolean;
 }
 
-/** A bare acceptance of the coach's last offer ("yes", "do it"). Anything longer is classified on its own. */
-const BARE_ACCEPT = /^(?:yes|yeah|yep|yup|sure|ok|okay|please|do it|go on|go ahead|go for it|sounds good|yes please|ok do it|ok go|let'?s do it)[.!\s]*$/i;
-
-export function isBareAccept(text: string): boolean {
-  return BARE_ACCEPT.test(text.trim().replace(/[’]/g, "'"));
-}
+/** A bare acceptance of the coach's last offer ("yes", "do it"); kept in `plan-swap.ts` (offers are read there too). */
+export { isBareAccept } from './plan-swap';
 
 export interface GateInput {
   kind: CoachTurnKind;
@@ -805,7 +802,9 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // ADR 0039: every chat reads Ben's request the same way (a workout's sheet can build or plan too).
   const chatTurn = req.kind !== 'summary';
   const askHistory = chatTurn && continued !== null ? continued.history : history;
-  const saidWords = chatTurn && req.input.kind === 'words' ? (continued?.request ?? req.input.text) : null;
+  // (Ben, 30 Oct, build 486) "Yes" (or "full plan") to the coach's own offer is his request: read with the words that led to it.
+  const offerReply = chatTurn && req.input.kind === 'words' && continued === null && previousOffer === null ? offerContinuationOf(history, req.input.text) : null;
+  const saidWords = chatTurn && req.input.kind === 'words' ? (continued?.request ?? offerReply?.request ?? req.input.text) : null;
   // v2 (BD17): Ben answering the coach's clarifying question is a build follow-up carrying his request's words.
   const chain = saidWords === null ? null : await buildQuestionChain(askHistory, saidWords, (id) => ports.store.listTurnActions(id));
   const followUp = saidWords === null ? null : (chain?.followUp ?? buildFollowUpIn(askHistory, saidWords, await refusedBuildActionIds(askHistory, (id) => ports.store.listTurnActions(id))));
@@ -819,7 +818,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const askedBuild = saidWords !== null && (askedPlan || requestHas(classifyBenRequest(saidWords, 'general'), 'build') || (req.draftInContext === true && revisesDraft(saidWords)));
   // At most 2 questions per build request, none in a draft revision, none after Skip (BD17).
   const questionOpen = chain !== null && req.draftInContext !== true && !chain.skipped && chain.asked < MAX_BUILD_QUESTIONS && (askedBuild || chain.open !== null);
-  const askInput: BenInput = continued !== null && req.input.kind === 'words' ? { ...req.input, text: continued.text } : req.input;
+  const askInput: BenInput = continued !== null && req.input.kind === 'words' ? { ...req.input, text: continued.text } : offerReply !== null && req.input.kind === 'words' ? { ...req.input, text: offerReply.request } : req.input;
   const gated = gateFor({
     kind: req.kind,
     input: askInput,
@@ -947,7 +946,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
   const findLine = (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
-  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '');
+  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine + weekLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
@@ -1010,7 +1009,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // after a text answer, "only one call at a time", think_harder, read limits) never back it, and once a change
   // to today committed this turn, nothing does.
   const notAppliedThisTurn = (): boolean => failureBackedBy(toolLog, registry.tools);
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange || liveChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, todayToolsOffered: todayOffered, weekToolOffered: registry.tools.some((t) => t.name === 'propose_week'), facts, failureBacked: notAppliedThisTurn });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange || liveChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, todayToolsOffered: todayOffered, weekToolOffered: registry.tools.some((t) => t.name === 'propose_week'), planToolOffered: registry.tools.some((t) => t.name === 'propose_plan_swap'), planScope: threadPlanScope(words, history.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [m.body.input.text] : [])).slice(-4)), facts, failureBacked: notAppliedThisTurn });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {

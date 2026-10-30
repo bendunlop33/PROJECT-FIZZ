@@ -12,6 +12,7 @@ import { CHANGE_PLAN_COPY } from '../../library/change-plan-view';
 import { libraryAfterPlanChange, todayAfterPlanApplied } from '../../navigation/actions';
 import { PlanWeeksBlock } from '../library/PlanWeeksBlock';
 import { PlanChangesCard, type PlanEditScopeKind } from './PlanChangesCard';
+import { NotPreferredInPlanLines } from './NotPreferredInPlan';
 import type { RootStackParams } from '../../navigation/types';
 import {
   PB_ABS_OPTIONS,
@@ -522,6 +523,7 @@ export function PlanSetupScreen() {
     body = (
       <>
         {title(C.prefs)}
+        {run !== null ? <NotPreferredInPlanLines answers={answers} /> : null}
         {prefQuestions(answers).map((g) => (
           <View key={g.group} style={{ gap: theme.space['3'] }}>
             <AppText variant="title2">{g.group}</AppText>

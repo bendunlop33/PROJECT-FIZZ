@@ -269,7 +269,8 @@ describe('the coach pauses the plan when Ben asks (Ben, 20 Oct: "pause eg if go 
     ]);
     const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: "I'm on holiday till 3 Nov", spoken: false }, turnId: h.ids() });
     expect(seen[0]?.tools).toContain('pause_plan');
-    expect(seen[0]?.plan).toEqual({ today: '2026-10-15', inUse: { name: '4-day plan', paused: null } });
+    // (Ben, 30 Oct) The plan days' exercises come with it (what `propose_plan_swap` swaps).
+    expect(seen[0]?.plan).toEqual({ today: '2026-10-15', inUse: { name: '4-day plan', paused: null, days: expect.any(Array) as unknown } });
     const card = r.cards.find((c) => c.record.detail.kind === 'pause_plan')?.record;
     expect(card).toMatchObject({ status: 'committed', detail: { kind: 'pause_plan', action: 'pause', untilDate: '2026-11-03' } });
     expect(nbsp((await s.plans.overview())?.paused?.text)).toBe('Paused · until 3 Nov');
