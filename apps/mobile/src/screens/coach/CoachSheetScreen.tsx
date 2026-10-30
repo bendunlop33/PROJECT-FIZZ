@@ -52,6 +52,7 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SecondaryButton, SheetKeyboardAvoidingView, TEXT_PRESSED_OPACITY, TextButton, TextField, useKeyboardVisible } from '../../ui';
+import { PlanSwapCard } from './PlanSwapCard';
 import { DraftEditCard, SetupFillCard, useOpenSetup } from './DraftCards';
 import { CoachCard } from './CoachCard';
 import { HeaderButton, SendButton } from './SheetButtons';
@@ -995,6 +996,7 @@ function Row({
       }
       if (row.card.week !== undefined && onDraft !== undefined) return <WeekProposalCard record={row.card.week} onChanged={onDraft.changed} />;
       if (row.card.draftEdit !== undefined && onDraft !== undefined) return <DraftEditCard record={row.card.draftEdit} onChanged={onDraft.changed} />;
+      if (row.card.planSwap !== undefined) return <PlanSwapCard record={row.card.planSwap} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
       if (row.card.setupFill !== undefined && onDraft !== undefined) return <SetupFillCard record={row.card.setupFill} onOpen={onDraft.openSetup} />;
       if (row.card.activityOffer !== undefined && onDraft !== undefined) return <ActivityOfferCard record={row.card.activityOffer} onChanged={onDraft.changed} />;
       if (row.card.plan !== undefined && onDraft !== undefined) return <PlanCard record={row.card.plan} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;

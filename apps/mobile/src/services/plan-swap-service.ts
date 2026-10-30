@@ -256,12 +256,20 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
       return saved.status === 'conflict' ? { ok: false, line: PLAN_SWAP_COPY.failed } : { ok: true, actionId };
     },
 
+    /** The proposal's record (Settings shows its card after Replace). */
+    async record(actionId: string): Promise<ActionRecord | null> {
+      return (await proposal(actionId))?.record ?? null;
+    },
+
     async card(actionId: string): Promise<PlanSwapCardState> {
       const x = await proposal(actionId);
       if (x === null) return { kind: 'gone' };
       const w = await writes(actionId, x.d);
       const live = await repos().sessions.get(x.d.today?.sessionId ?? NO_SESSION).catch(() => null);
-      const today = x.d.today == null ? null : live?.processedOps[todayOpId(actionId)] !== undefined ? 'done' : live?.session.status === 'active' ? 'open' : null;
+      // Today too: done while the swap it made is in effect (Undo puts the row back); open while the row is still all to do.
+      const row = live?.session.status === 'active' ? live.exercises.find((e) => e.id === x.d.today?.sessionExerciseId) : undefined;
+      const rowSets = row === undefined ? [] : (live?.sets ?? []).filter((t) => t.sessionExerciseId === row.id && t.status !== 'deleted');
+      const today = row === undefined ? null : row.removed?.opId === todayOpId(actionId) ? 'done' : row.removed === undefined && rowSets.length > 0 && rowSets.every((t) => t.status === 'pending') ? 'open' : null;
       const kind = w.length > 0 && w.every((a) => a.there && !a.undone) ? 'applied' : w.length > 0 && w.every((a) => a.there) ? 'undone' : 'open';
       return { kind, today };
     },

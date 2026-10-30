@@ -171,6 +171,7 @@ describe('Ben’s live-workout chat (build 486): "swap leg press and leg extensi
     expect(await s.planSwap.card(rec.actionId)).toMatchObject({ today: 'done' });
     expect(await s.planSwap.undoToday(rec.actionId)).toBe(true);
     expect((await s.workout.load(live))?.aggregate.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId)).toContain(le);
+    expect(await s.planSwap.card(rec.actionId)).toMatchObject({ today: 'open' });
 
     // Undo: every day's template exactly as before.
     expect(await s.planSwap.undo(rec.actionId, 'undo-swap')).toBe(true);
