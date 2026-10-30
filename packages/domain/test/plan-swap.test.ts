@@ -72,7 +72,7 @@ describe('planSwapPreview: every plan day with it, only that exercise', () => {
     expect(planSwapPreview(BENS_PLAN, 'cable-fly', LP)).toEqual({ kind: 'not_in_plan' });
     expect(planSwapPreview(BENS_PLAN, LP, LP)).toEqual({ kind: 'same' });
   });
-  it('a day whose only exercise is going out and the new one already there is never emptied', () => {
+  it('a day whose only exercise is going out is swapped, never emptied', () => {
     const days: PlanSwapDayInput[] = [{ routineId: 'x', name: 'X', version: 1, rows: [row('x1', LE, 0)] }];
     expect(planSwapPreview(days, LE, LP)).toEqual({ kind: 'ok', days: [{ routineId: 'x', routineName: 'X', versionBefore: 1, edits: [{ kind: 'swap', rowId: 'x1' }] }] });
   });

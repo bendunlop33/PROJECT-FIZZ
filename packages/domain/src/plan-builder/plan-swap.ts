@@ -83,9 +83,9 @@ export function planSwapPreview(days: readonly PlanSwapDayInput[], remove: strin
     const hits = rows.filter((r) => r.exerciseId === remove);
     if (hits.length === 0) continue;
     const hasAdd = rows.some((r) => r.exerciseId === add);
-    // A day with nothing but the exercise going out and the one coming in already there: removing leaves it whole.
+    // The day already has the exercise coming in: the row going out goes (never a second copy). A day is never emptied:
+    // the exercise coming in is still there.
     const edits: PlanSwapEdit[] = hits.map((r) => ({ kind: hasAdd ? 'remove' : 'swap', rowId: r.id }));
-    if (edits.every((e) => e.kind === 'remove') && rows.length - hits.length === 0) continue;
     out.push({ routineId: d.routineId, routineName: d.name, versionBefore: d.version, edits });
   }
   return out.length === 0 ? { kind: 'not_in_plan' } : { kind: 'ok', days: out };
