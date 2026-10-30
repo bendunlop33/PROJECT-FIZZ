@@ -51,6 +51,8 @@ import {
   classifyBenRequest,
   isStructuralRequest,
   createPausePlanExecutor,
+  createPlanSwapExecutor,
+  type PlanSwapPrepared,
   createActivityExecutor,
   renderActionResult,
   createWeekExecutor,
@@ -503,6 +505,14 @@ export interface CoachServiceDeps {
    * Absent: nothing landed, so nothing to take back.
    */
   nextWorkout?: { revert(applyActionId: string, check: boolean): Promise<boolean> };
+  /**
+   * (Ben, 30 Oct, build 486) The plan-wide swap: what the coach sees of the plan in use (each day's exercises, his
+   * not-preferred ones) and `propose_plan_swap`'s checks. Absent: the tool isn't wired.
+   */
+  planSwap?: {
+    context(): Promise<{ days: { name: string; exercises: { catalogueId: string; name: string }[] }[]; notPreferred: { catalogueId: string; name: string }[] } | null>;
+    prepare(req: { remove: string; add: string }): Promise<PlanSwapPrepared>;
+  };
   /**
    * (Ben, 28 Oct) The app's foreground state (`AppState`): time in the background doesn't count towards a turn's
    * time limits, and a stream lost there is retried once on return. Absent: plain timers.
@@ -1824,6 +1834,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan": the plan in use and today's date, and
     // the tool. ADR 0039: whenever a plan is in use (the turn applies it only when Ben asked).
     let planPause: PlanPauseView | undefined;
+    let swapView: Awaited<ReturnType<NonNullable<CoachServiceDeps['planSwap']>['context']>> = null;
     // (Ben, 20 Oct) This week on every chat: today, gym days left, the days left, his activities; `log_activity`
     // (logged when his words tell it, else an offer) and `propose_week` (applied at once when he asks, else a proposal).
     const weekRead = chat && deps.week !== undefined ? await deps.week.view().catch(() => null) : null;
@@ -1843,8 +1854,12 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (inUse !== null) {
       const nowMs = toMs(deps.now().utc);
       const running = activePause(inUse, nowMs, p.timezone);
-      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate } } };
+      swapView = deps.planSwap === undefined ? null : await deps.planSwap.context().catch(() => null);
+      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate }, ...(swapView === null ? {} : { days: swapView.days }) } };
       Object.assign(executors, createPausePlanExecutor({ store: coachStore(), loadPlan: () => repos().planDrafts.applied(p.id), tz: p.timezone }));
+      // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat while a plan is in use.
+      const swap = deps.planSwap;
+      if (swap !== undefined) Object.assign(executors, createPlanSwapExecutor({ store: coachStore(), prepare: (r) => swap.prepare(r) }));
     }
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first. Review exlist
@@ -1902,7 +1917,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           // Coach v3 (Ben 18 Oct): his lighter mid-workout model, if he chose one; `think_harder` returns to the main one.
           ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
-          context: { ...ctx.input, ...(draftHere !== null && draftSummary !== null ? { builderDraft: { name: draftHere.name, ...draftSummary, started: false as const } } : {}), ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(weekView === null ? {} : { week: weekView }) },
+          context: { ...ctx.input, ...(draftHere !== null && draftSummary !== null ? { builderDraft: { name: draftHere.name, ...draftSummary, started: false as const } } : {}), ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(swapView === null || swapView.notPreferred.length === 0 ? {} : { notPreferred: swapView.notPreferred }), ...(weekView === null ? {} : { week: weekView }) },
           structuralSignals: await structuralSignalsFor(p, own).catch(() => []),
           // ADR 0038: a general thread stays general when today's workout is in its context.
           ...(liveHere !== null ? { threadSessionId: own === null ? null : own.session.id } : {}),

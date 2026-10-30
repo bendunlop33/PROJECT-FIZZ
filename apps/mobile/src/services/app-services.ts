@@ -28,6 +28,7 @@ import {
   type StartOutcome,
   DEFAULT_CHECK_IN_SETTINGS,
   gymLearnFor,
+  doableHere,
   todayDraftState,
   currentDraftVersion,
   type BuilderEditOp,
@@ -66,6 +67,7 @@ import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
 import { createLiftTargetService } from './lift-target-service';
 import { createPlanServices } from './plan-services';
+import { createPlanSwapService } from './plan-swap-service';
 import { createPlanBuilderService } from './plan-builder-service';
 import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
@@ -666,6 +668,8 @@ export function createAppServices(deps: AppServicesDeps) {
     // (Ben, 23 Oct, D8) An applied next-workout change lands on Your workout; its chat Undo takes it back off there.
     // `builder` is made below and only called after startup.
     nextWorkout: { revert: (applyActionId, check) => builder.revertCoachLanding(applyActionId, check) },
+    // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat. `planSwap` is made below.
+    planSwap: { context: () => planSwap.context(), prepare: (r) => planSwap.prepare(r) },
     // ADR 0039 (Ben, 29 Oct): the builder's powers in every chat. `builder`, `builderCoach` and `builderPorts` are made
     // below; these run only on a coach turn or a card tap (after startup).
     builder: {
@@ -1049,6 +1053,28 @@ export function createAppServices(deps: AppServicesDeps) {
     },
   });
 
+  /**
+   * (Ben, 30 Oct, build 486) A plan-wide swap of one exercise: the coach's proposal and Settings' `Replace` on a
+   * not-preferred exercise. Apply is the day sheet's `Every week` write per plan day; Undo its revert.
+   */
+  const planSwap = createPlanSwapService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    catalogueExercises,
+    catalogueSubstitutions,
+    usableHere: async (exercise) => {
+      const gym = await yourData.currentGym().catch(() => null);
+      if (gym === null) return true;
+      const equipment = await repos().equipment.listByGym(gym.id).catch(() => [] as EquipmentInstance[]);
+      return doableHere(exercise, { id: gym.id, name: gym.name, equipment });
+    },
+    editDayEveryWeek: (req) => plans.editDayEveryWeek({ ...req, edit: { ...req.edit, afterRowId: null } }),
+    revertRoutine: async (req) => ({ ok: (await loop.routines.revert(req)).ok }),
+    swapToday: async (req) => ({ ok: (await loop.workout.swapExercise(req)).ok }),
+    undoToday: async (req) => ({ ok: (await loop.workout.undoOp(req)).ok }),
+  });
+
   /** (Plan builder, 23 Oct) Gym goals → Your week → Your plan, offline: the deterministic engine, Apply / Undo through `plans`. */
   const planBuilder = createPlanBuilderService({
     store: () => deps.manager.store,
@@ -1329,6 +1355,8 @@ export function createAppServices(deps: AppServicesDeps) {
     coachDrafts,
     plans: plansWithDrafts,
     planBuilder,
+    /** (Ben, 30 Oct) One exercise swapped in every plan day: the proposal card, Apply, Undo, Today too; Settings' Replace. */
+    planSwap,
     /** (Ben, 20 Oct) Runs, rides, swims and sport: add, edit, delete, Undo; Recent and calendar rows. */
     activities: weekly.activities,
     /** (Ben, 20 Oct) This week's shape: the coach's proposal card, Apply, Undo. */
