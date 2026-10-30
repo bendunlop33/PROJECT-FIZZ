@@ -1,4 +1,4 @@
-import { leadLiftOf, pbMoveWeek, linkedRoutineId, linkedVariants, isNotPlanDay, pbAppliedBuilder, pbWeekDaysOf, pbWeekdaysOf, planDayOf, type HistoryWorkout, type PbBlockWeek, type PlanDayLinkView, type PlanWeekDay, type PlanWeekWorkout } from '@fizz/domain';
+import { leadLiftOf, planSetWeekdays, pbMoveWeek, linkedRoutineId, linkedVariants, isNotPlanDay, pbAppliedBuilder, pbWeekDaysOf, pbWeekdaysOf, planDayOf, type HistoryWorkout, type PbBlockWeek, type PlanDayLinkView, type PlanWeekDay, type PlanWeekWorkout } from '@fizz/domain';
 import type { MuscleGroup, PlanDraft, Routine, SplitBodyPart } from '@fizz/schemas';
 
 /**
@@ -8,11 +8,14 @@ import type { MuscleGroup, PlanDraft, Routine, SplitBodyPart } from '@fizz/schem
  */
 
 /** A plan template as this week's count reads it: its plan day, body parts and main lift. */
-export function planWeekDayOf(plan: Pick<PlanDraft, 'id' | 'applied'>, r: Routine, bodyParts: readonly SplitBodyPart[]): PlanWeekDay & { name: string; dayIndex: number | null } {
+export function planWeekDayOf(plan: Pick<PlanDraft, 'id' | 'applied'> & Partial<Pick<PlanDraft, 'status' | 'versions' | 'currentVersion'>>, r: Routine, bodyParts: readonly SplitBodyPart[]): PlanWeekDay & { name: string; dayIndex: number | null } {
   const made = plan.applied?.made.find((m) => m.routineId === r.id)?.dayIndex;
   const ref = planDayOf(r);
   const dayIndex = made ?? (ref?.planId === plan.id ? ref.dayIndex : null);
+  // (Ben, 30 Oct) Set days: its scheduled weekday, so a variant done on its own weekday counts as that one.
+  const weekday = dayIndex === null ? undefined : planSetWeekdays(plan)?.get(dayIndex);
   return {
+    ...(weekday === undefined ? {} : { weekday }),
     routineId: r.id,
     name: r.name,
     createdFromSessionId: r.createdFromSessionId ?? null,
