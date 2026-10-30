@@ -287,7 +287,7 @@ export function PlanSetupScreen() {
     const prev = flow[at - 1];
     if (prev !== undefined) setPage(prev);
   };
-  const canBack = fromChange || fromPlan !== null || (page === 'plan' ? s.running === null && (draft === null || flow.length > 0) : flow.indexOf(page) > 0);
+  const canBack = fromChange || fromPlan !== null || (page === 'plan' ? (s.running === null || s.opensOn === 'start') && (draft === null || flow.length > 0) : flow.indexOf(page) > 0);
   const topBar = (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: theme.components.screenMargin, minHeight: 44 + insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
       {canBack ? <TextButton label={fromPlan !== null ? C.yourPlan : C.back} onPress={stepBack} /> : <View />}

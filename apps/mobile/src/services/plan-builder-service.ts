@@ -265,11 +265,18 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     // (WU1–WU12) The catalogue facts Start's warm-up planner reads, so the plan's main-lift warm-ups match the workout's.
     const factsOf = (k: string): Exercise | null => byId.get(catalogueExerciseId(k)) ?? null;
 
-    const fromId = opts.editPlanId ?? opts.fromPlanId;
+    // (Ben, 30 Oct: edits never restart the block) A plain `Set up a plan` while a builder plan is in use and its block
+    // runs is an edit of that plan: its Apply goes through `Apply changes` on the same plan, so the block's start, its
+    // lead-in, week numbers, deload, this week's done days and this week's changes all stay. Only `Start next block`
+    // (a finished block) or a plan built with none in use starts a new block (training-blocks.md §4.1).
+    const inUseNow = opts.editPlanId === undefined && opts.fromPlanId === undefined ? await repo().applied(p.id).catch(() => null) : null;
+    const continuing = inUseNow !== null && pbAppliedBuilder(inUseNow) !== null && editBlockOf(await readPlanBlock(store, p.id, inUseNow, nowMs, at.tz)) !== null ? inUseNow.id : undefined;
+    const editPlanId = opts.editPlanId ?? continuing;
+    const fromId = editPlanId ?? opts.fromPlanId;
     const from = fromId === undefined ? null : await repo().get(fromId).catch(() => null);
     const owned = from === null || from.ownerId !== p.id ? null : from;
     const fromAnswers = owned === null ? null : (pbAppliedBuilder(owned)?.builder.answers ?? currentPlanVersion(owned).builder?.answers ?? null);
-    const editing = opts.editPlanId !== undefined && fromAnswers !== null;
+    const editing = editPlanId !== undefined && fromAnswers !== null;
     // (Ben, 26 Oct) `Edit plan` on the plan in use while its block runs: the Changes card, nothing written until Apply.
     const inUse = editing && owned !== null && owned.status === 'applied' ? owned : null;
     const block: PbBlockWeek | null = inUse === null ? null : await readPlanBlock(store, p.id, inUse, nowMs, at.tz);
@@ -293,7 +300,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     return {
       answers,
       draft: draft === null || v === null ? null : { planId: draft.id, version: draft.version, versionN: v.n },
-      opensOn: editing ? 'plan' : 'start',
+      opensOn: editing && continuing === undefined ? 'plan' : 'start',
       lastDraft: leftover === null || leftoverV?.builder === undefined ? null : { planId: leftover.id, version: leftover.version, versionN: leftoverV.n, answers: leftoverV.builder.answers },
       gym,
       unit: p.preferredUnit,
