@@ -267,7 +267,7 @@ describe('Log a past workout and move workouts in time, on SQLite', () => {
     await at35.repos.profiles.save(profile(), null);
     await at35.repos.sessions.save(richFinishedSession(), null);
     const before = await at35.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toMatchObject({ from: 35, to: 39, applied: [36, 37, 38, 39] });
+    expect(await migrate(db)).toMatchObject({ from: 35, to: 40, applied: [36, 37, 38, 39, 40] });
     const at37 = await openStore(db);
     const after = await at37.db.read((q) => exportTables(q));
     expect(after.sessions).toEqual((before.sessions ?? []).map((r) => ({ ...r, past_log: null })));
@@ -286,7 +286,7 @@ describe('Log a past workout and move workouts in time, on SQLite', () => {
     await at36.repos.profiles.save(profile(), null);
     await at36.repos.sessions.save(richFinishedSession(), null);
     expect(await at36.checkHistorySummaries()).toMatchObject({ ok: true, checked: 1 });
-    expect(await migrate(db)).toMatchObject({ from: 36, to: 39, applied: [37, 38, 39] });
+    expect(await migrate(db)).toMatchObject({ from: 36, to: 40, applied: [37, 38, 39, 40] });
     const at37 = await openStore(db);
     expect(at37.summaryRefresh).toMatchObject({ written: 0 });
     expect(await at37.checkHistorySummaries()).toMatchObject({ ok: true, checked: 1 });
@@ -296,7 +296,7 @@ describe('Log a past workout and move workouts in time, on SQLite', () => {
 
   it('a fresh database runs 36 (history summaries) before 37 (past logs)', () => {
     const order = MIGRATIONS.map((m) => m.version);
-    expect(order.slice(-4)).toEqual([36, 37, 38, 39]);
+    expect(order.slice(-5)).toEqual([36, 37, 38, 39, 40]);
     expect(MIGRATIONS.find((m) => m.version === 36)?.name).toBe('history-summaries');
     expect(MIGRATIONS.find((m) => m.version === 37)?.name).toBe('past-log-and-shift');
   });

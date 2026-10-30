@@ -548,6 +548,16 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Not changed: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
+    case 'propose_plan_swap': {
+      // (Ben, 30 Oct) Every day of his plan with it, always a proposal: the card has each day, Apply and Undo.
+      if (st === 'proposed') {
+        const text = `Every week: ${d.removeName} → ${d.addName} (${d.days.map((x) => x.routineName).join(', ')}).`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
+      const text = `Not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
     case 'fill_setup': {
       // ADR 0039: today's Set up filled from Ben's words; he opens it to build (Undo on Set up).
       if (st === 'committed') {

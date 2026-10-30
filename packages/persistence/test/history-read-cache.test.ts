@@ -17,7 +17,7 @@ describe('migration 35 (session_exercises index)', () => {
     await at34.repos.profiles.save(profile(), null);
     await at34.repos.sessions.save(richFinishedSession(), null);
     const before = await at34.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toMatchObject({ from: 34, to: 39, applied: [35, 36, 37, 38, 39] });
+    expect(await migrate(db)).toMatchObject({ from: 34, to: 40, applied: [35, 36, 37, 38, 39, 40] });
     const at35 = await openStore(db);
     // Migration 37 adds `sessions.past_log` and `timing_audit.shift_ms` (both NULL here).
     const after = await at35.db.read((q) => exportTables(q));
