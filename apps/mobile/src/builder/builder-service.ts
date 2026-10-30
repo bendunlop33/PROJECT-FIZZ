@@ -17,7 +17,7 @@ import {
   fitPlannedSlotHere,
   PLANNED_HELD_LINE,
   buildFromSetup,
-  builderChangeLine,
+  builderChangeLine, builderChangeShort,
   adoptChangedSlots,
   adoptUneditedSlots,
   builderDraftEdit,
@@ -415,7 +415,8 @@ function v0GymOf(d: WorkoutDraft): string | null {
  * added or removed, a set count) differs from the plan day or saved workout it opened as, Time's cuts put back.
  * `open`: the row with the changes; `kept`: `Chest · bench updated` with Undo while nothing changed it since.
  */
-export type KeepNextTimeView = { state: 'open'; label: string; lines: string[] } | { state: 'kept'; text: string; canUndo: boolean };
+/** `short`: the same changes as one Summary line each (`builderChangeShort`; Ben, 30 Oct). */
+export type KeepNextTimeView = { state: 'open'; label: string; lines: string[]; short: string[] } | { state: 'kept'; text: string; canUndo: boolean };
 
 export type KeepNextTimeResult = { ok: true } | { ok: false; reason: 'stale' | 'gone' | 'failed'; message: string };
 
@@ -3001,7 +3002,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         return { state: 'kept', text: BUILDER_COPY.updated(answer.undo.label), canUndo: now !== null && now.version === answer.undo.version };
       }
       if (c.routine.version !== c.keepExpected || c.diff.changes.length === 0 || (await nextAlreadyStarted(p, c))) return null;
-      return { state: 'open', label: c.label, lines: c.diff.changes.map((x) => builderChangeLine(x, c.env.nameOf)) };
+      return { state: 'open', label: c.label, lines: c.diff.changes.map((x) => builderChangeLine(x, c.env.nameOf)), short: c.diff.changes.map((x) => builderChangeShort(x, c.env.nameOf)) };
     },
 
     /**

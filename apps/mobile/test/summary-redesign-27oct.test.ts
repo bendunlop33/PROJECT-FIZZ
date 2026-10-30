@@ -17,16 +17,16 @@ const src = readFileSync(join(import.meta.dirname, '..', 'src', 'screens', 'work
 const body = src.slice(src.indexOf('  return (\n    <View style={{ flex: 1, backgroundColor'), src.indexOf('      {nameSheet !== null ? ('));
 
 type Ex = WorkoutSummary['exercises'][number];
-const ex = (n: number, over: Partial<Ex> = {}): Ex => ({ sessionExerciseId: `se${String(n)}`, exerciseId: `e${String(n)}`, name: `Exercise ${String(n)}`, setsText: '3 sets', results: '80×8 · 80×8 · 80×7', skipped: 0, sides: null, unitNote: '', ...over });
+const ex = (n: number, over: Partial<Ex> = {}): Ex => ({ sessionExerciseId: `se${String(n)}`, exerciseId: `e${String(n)}`, name: `Exercise ${String(n)}`, setsText: '3 sets', results: '80×8 · 80×8 · 80×7', skipped: 0, sides: null, unitNote: '', line: null, ...over });
 
 describe('the order on screen', () => {
-  it('Saved, New best, the stat strip, Next time, Exercises · done, check-in and pain lines, Feel, Health, Ask, Done', () => {
+  it('(Ben, 30 Oct) Saved, New best, the stat strip, Exercises · done, Next time, Feel, Health, Ask, Done', () => {
     const at = (needle: string) => {
       const i = body.indexOf(needle);
       expect(i, needle).toBeGreaterThanOrEqual(0);
       return i;
     };
-    const order = ['{savedLine}', '<HeroHeader', 'New best</AppText>', '<StatStrip', '<NextRow', '<MainLiftRow', '<KeepRow', 'title="Exercises · done"', '<FeelRow', '<LinkedActivityRow', 'label="Ask about this workout"', '<PrimaryButton label="Done"'];
+    const order = ['{savedLine}', '<HeroHeader', 'New best</AppText>', '<StatStrip', 'title="Exercises · done"', '<NextRow', '<MainLiftRow', '<KeepRow', '<PlanDayAskRow', '<FeelRow', '<LinkedActivityRow', 'label="Ask about this workout"', '<PrimaryButton label="Done"'];
     const pos = order.map(at);
     expect([...pos].sort((x, y) => x - y)).toEqual(pos);
   });
@@ -63,11 +63,19 @@ describe('summary-view helpers', () => {
     ]);
   });
 
-  it('Exercises · done: done of planned (`4/4`), else the count; the unit note on the results line; 3 shown, then `N more`', () => {
-    const rows = summaryDoneRows([ex(1), ex(2, { setsText: '2 sets (kg each)', unitNote: '(kg each)', results: '24×8 · 26×8', skipped: 1 }), ex(3), ex(4), ex(5)], [{ sessionExerciseId: 'se1', doneSets: 4, plannedSets: 4 }]);
-    expect(rows[0]).toMatchObject({ name: 'Exercise 1', count: '4/4', results: '80×8 · 80×8 · 80×7' });
-    expect(rows[0]?.spoken).toBe('Exercise 1, 4 of 4 sets, 80×8 · 80×8 · 80×7');
-    expect(rows[1]).toMatchObject({ count: '2 sets · 1 skipped', results: '24×8 · 26×8 (kg each)' });
+  it('Exercises · done: one line each, the sets said once; `3/4` only when short of the plan; else the results; 3 shown, then `N more`', () => {
+    const rows = summaryDoneRows(
+      [ex(1, { line: { text: '8, 8, 7 @ 80 kg', spoken: '8, 8, 7 reps at 80 kilograms' } }), ex(2, { setsText: '2 sets (kg each)', unitNote: '(kg each)', results: '24×8 · 26×8', skipped: 1 }), ex(3, { line: { text: '3×10 @ 59 kg', spoken: '3 sets of 10 at 59 kilograms' } }), ex(4), ex(5)],
+      [
+        { sessionExerciseId: 'se1', doneSets: 4, plannedSets: 4 },
+        { sessionExerciseId: 'se3', doneSets: 3, plannedSets: 4 },
+      ],
+    );
+    expect(rows[0]).toMatchObject({ name: 'Exercise 1', count: '4/4', line: '8, 8, 7 @ 80 kg', aside: '' });
+    expect(rows[0]?.spoken).toBe('Exercise 1, 4 of 4 sets, 8, 8, 7 reps at 80 kilograms');
+    // No one-line form (sides, flags, mixed units): the logged results, with what was skipped beside them.
+    expect(rows[1]).toMatchObject({ count: '2 sets · 1 skipped', line: '24×8 · 26×8 (kg each)', aside: '1 skipped' });
+    expect(rows[2]).toMatchObject({ line: '3×10 @ 59 kg', aside: '3/4' });
     expect(SUMMARY_EXERCISES_SHOWN).toBe(3);
     expect(summaryShownRows(rows, false)).toMatchObject({ more: '2 more' });
     expect(summaryShownRows(rows, false).shown).toHaveLength(3);

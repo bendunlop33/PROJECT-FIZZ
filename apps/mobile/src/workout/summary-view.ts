@@ -61,17 +61,29 @@ export interface SummaryDoneRow {
   count: string;
   /** `80×8 · 82.5×6 (kg each)`; '' with nothing logged. */
   results: string;
+  /** (Ben, 30 Oct) The one line beside the name: `3×8 @ 80 kg`, `4 sets · best 102.5×5 kg`; else the results. */
+  line: string;
+  /** Beside the line: `3/4` when fewer sets were done than planned (with no plan, `1 skipped`); '' otherwise. */
+  aside: string;
   spoken: string;
 }
 
-/** One row per exercise: the name, done of planned at the right, the sets logged under it (`summaryResultsLine`). */
+/**
+ * (Ben, 30 Oct) One line per exercise: the name, then its sets said once (`3×8 @ 80 kg`, `4 sets · best 102.5×5 kg`;
+ * `doneLine`), with `3/4` beside it only when fewer sets were done than planned (no plan: `1 skipped`). Sets that can't be said that way
+ * (sides, flagged sets, two gyms, mixed units) keep the logged results (`summaryResultsLine`).
+ */
 export function summaryDoneRows(exercises: readonly WorkoutSummary['exercises'][number][], plan: readonly Pick<PlannedVsDoneRow, 'sessionExerciseId' | 'doneSets' | 'plannedSets'>[] | null): SummaryDoneRow[] {
   return exercises.map((e) => {
     const p = plan?.find((r) => r.sessionExerciseId === e.sessionExerciseId) ?? null;
     const count = p !== null ? `${String(p.doneSets)}/${String(p.plannedSets)}` : summaryPlanLine(e, null).text;
     const results = summaryResultsLine(e);
-    const spoken = [e.name, p !== null ? `${String(p.doneSets)} of ${String(p.plannedSets)} sets` : count, results].filter((x) => x !== '').join(', ');
-    return { key: e.sessionExerciseId, exerciseId: e.exerciseId, sessionExerciseId: e.sessionExerciseId, name: e.name, count, results, spoken };
+    const short = p !== null && p.doneSets < p.plannedSets;
+    const aside = short ? count : p === null && e.skipped > 0 ? `${String(e.skipped)} skipped` : '';
+    const line = e.line?.text ?? results;
+    const spokenLine = e.line?.spoken ?? results;
+    const spoken = [e.name, p !== null ? `${String(p.doneSets)} of ${String(p.plannedSets)} sets` : e.line !== null ? '' : count, spokenLine].filter((x) => x !== '').join(', ');
+    return { key: e.sessionExerciseId, exerciseId: e.exerciseId, sessionExerciseId: e.sessionExerciseId, name: e.name, count, results, line, aside, spoken };
   });
 }
 

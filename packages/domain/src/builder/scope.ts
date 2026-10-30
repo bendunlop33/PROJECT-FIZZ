@@ -211,6 +211,16 @@ export function builderChangeLine(c: BuilderChange, nameOf: (exerciseId: string)
   }
 }
 
+/**
+ * (Ben, 30 Oct) A change on one Summary line: a swap says `Swap Leg extension → Leg press`, a set change
+ * `Squat  3 → 4 sets`; the rest read as `builderChangeLine`.
+ */
+export function builderChangeShort(c: BuilderChange, nameOf: (exerciseId: string) => string): string {
+  if (c.kind === 'swap') return `Swap ${nameOf(c.from)} → ${nameOf(c.to)}`;
+  if (c.kind === 'sets') return `${nameOf(c.exerciseId)} ${String(c.from)} → ${String(c.to)} sets`;
+  return builderChangeLine(c, nameOf);
+}
+
 export type VariationExtras = { ok: true; extras: VariationOp[] } | { ok: false; reason: 'too_many_changes' };
 
 /**

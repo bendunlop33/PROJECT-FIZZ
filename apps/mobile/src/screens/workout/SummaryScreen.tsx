@@ -10,7 +10,7 @@ import { readTextCoachState } from '@fizz/providers';
 
 import { coachConnectionPorts } from '../../ai/coach-connection-ports';
 import { summaryCoachView } from '../../ai/coach-connection-view';
-import { nextTimeView, type NextTimeRowView, type NextTimeTap } from '../../coach/next-time-view';
+import { NEXT_LINE_COPY, nextTimeView, type NextTimeRowView, type NextTimeTap } from '../../coach/next-time-view';
 import { FeelRow } from '../../reviews/FeelRow';
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
@@ -21,7 +21,7 @@ import type { RootStackParams } from '../../navigation/types';
 import type { WorkoutPresence } from '../../services/history-services';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
-import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatStrip, StatusLine, Tag, type StatItem, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
+import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatStrip, StatusLine, type StatItem, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
 import { useAx } from '../../progress/components';
 import { newBestLastLine, summaryDoneRows, summaryMenu, summarySavedLine, summaryShownRows, summaryStatItems, type SummaryMenuId } from '../../workout/summary-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
@@ -83,7 +83,7 @@ export function SummaryScreen() {
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
     const [coachRows, stale, availability, turnNote, ruleRows] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null), s.coach.ruleResets(sessionId).catch(() => [])]);
-    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, ruleRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
+    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, from: summary.nextFrom, coachRows, ruleRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
     // A deleted (or purged) workout opens read-only with Restore (delete-workouts §3.2).
     // A presence read that fails offers no delete rather than one that would be refused (review r2 N2).
     const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
@@ -445,6 +445,53 @@ export function SummaryScreen() {
           ) : null}
         </FadeIn>
 
+        {doneRows.shown.length > 0 ? (
+          // (Ben, 30 Oct; redesign §E2) What he just did, before Next time: one line per exercise.
+          <View>
+            <SectionHeader title="Exercises · done" />
+            {doneRows.shown.map((e, i) => (
+              <View key={e.key} style={{ borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderColor: theme.colors['border.divider'], marginTop: i === 0 ? theme.space['1'] : 0 }}>
+                {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={e.spoken}
+                  accessibilityHint="Opens this exercise’s history"
+                  onPress={() => {
+                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+                >
+                  {/* The name gives way first; the numbers keep their width (up to most of the row). */}
+                  <AppText variant="body" numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, flexShrink: 1 }}>
+                    {e.name}
+                  </AppText>
+                  {e.line !== '' ? (
+                    <AppText variant="callout" numeric numberOfLines={1} ellipsizeMode="tail" style={{ flexShrink: 0, maxWidth: '70%' }}>
+                      {e.line}
+                    </AppText>
+                  ) : null}
+                  {e.aside !== '' ? (
+                    <AppText variant="callout" color="text.secondary" numeric numberOfLines={1} style={{ flexShrink: 0 }}>
+                      {e.aside}
+                    </AppText>
+                  ) : null}
+                </Pressable>
+              </View>
+            ))}
+            {doneRows.more !== null ? (
+              <View style={{ alignSelf: 'flex-start' }}>
+                <TextButton
+                  label={doneRows.more}
+                  tone="secondary"
+                  onPress={() => {
+                    setShowAll(true);
+                  }}
+                />
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         {nextOpen ? (
           // (Ben, 27 Oct; redesign §E2) One Next time list: the targets (Why? / Undo; offers Skip / Apply), the
           // coach's or the rule's offers to keep a change, Undo all at the top.
@@ -502,62 +549,6 @@ export function SummaryScreen() {
                   keepTap(() => (tap === 'undo' ? services.builder.undoKeepNextTime(sessionId) : services.builder.keepNextTime(sessionId, tap)));
                 }}
               />
-            ) : null}
-          </View>
-        ) : null}
-
-        {doneRows.shown.length > 0 ? (
-          <View>
-            <SectionHeader title="Exercises · done" />
-            {doneRows.shown.map((e, i) => (
-              <View
-                key={e.key}
-                style={{
-                  gap: 2,
-                  paddingVertical: theme.space['3'],
-                  borderTopWidth: i === 0 ? 0 : theme.dividerWidth,
-                  borderColor: theme.colors['border.divider'],
-                  marginTop: i === 0 ? theme.space['1'] : 0,
-                }}
-              >
-                {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={e.spoken}
-                  accessibilityHint="Opens this exercise’s history"
-                  onPress={() => {
-                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
-                  }}
-                  style={({ pressed }) => ({ minHeight: theme.target.min.height, gap: 2, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-                    <AppText variant="headline" numberOfLines={2} style={{ flex: 1 }}>
-                      {e.name}
-                    </AppText>
-                    {e.count !== '' ? (
-                      <AppText variant="callout" color="text.secondary" numeric>
-                        {e.count}
-                      </AppText>
-                    ) : null}
-                  </View>
-                  {e.results !== '' ? (
-                    <AppText variant="callout" numeric>
-                      {e.results}
-                    </AppText>
-                  ) : null}
-                </Pressable>
-              </View>
-            ))}
-            {doneRows.more !== null ? (
-              <View style={{ alignSelf: 'flex-start' }}>
-                <TextButton
-                  label={doneRows.more}
-                  tone="secondary"
-                  onPress={() => {
-                    setShowAll(true);
-                  }}
-                />
-              </View>
             ) : null}
           </View>
         ) : null}
@@ -753,116 +744,152 @@ export function SummaryScreen() {
 }
 
 /**
- * (Ben, 23 Oct, D1) `Keep for next time?` with what would change, `Skip` and `Apply`; once kept, `<day> updated` with
- * `Undo`. Values from the builder service only.
+ * (Ben, 23 Oct, D1; one line, Ben 30 Oct) `Keep for next time?` as one line (`Swap Leg extension → Leg press`, `+1` when
+ * more changed) with compact `Skip` / `Apply`; every change behind `Why?`. Once kept, `<day> updated` with `Undo`.
+ * Values from the builder service only.
  */
 function KeepRow({ view, busy, onTap }: { view: KeepNextTimeView; busy: boolean; onTap: (tap: 'apply' | 'skip' | 'undo') => void }) {
-  const theme = useTheme();
   if (view.state === 'kept') {
     return <StatusLine icon="checkmark.circle" tone="info" text={view.text} {...(view.canUndo ? { action: <TextButton label="Undo" disabled={busy} onPress={() => { onTap('undo'); }} /> } : {})} />;
   }
+  const first = view.short[0] ?? view.lines[0] ?? KEEP_COPY.title;
+  const more = view.short.length - 1;
   return (
-    <NextTimeItem>
-      <View accessible accessibilityLabel={[KEEP_COPY.title, view.label, ...view.lines].join('. ')} style={{ gap: theme.space['1'] }}>
-        <AppText variant="headline">{KEEP_COPY.title}</AppText>
-        {view.lines.map((l, i) => (
-          // A line can repeat (the same change named twice): keyed by place.
-          <AppText key={`${String(i)}:${l}`} variant="callout" numeric>
-            {l}
-          </AppText>
-        ))}
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
-        <TextButton label={KEEP_COPY.skip} tone="secondary" disabled={busy} onPress={() => { onTap('skip'); }} />
-        <TextButton label={KEEP_COPY.apply} accessibilityLabel={`${KEEP_COPY.apply}: keep for next ${view.label}`} disabled={busy} onPress={() => { onTap('apply'); }} />
-      </View>
-    </NextTimeItem>
+    <OneLineRow
+      text={more > 0 ? `${first} +${String(more)}` : first}
+      spoken={`${KEEP_COPY.title} ${view.short.join(', ')}`}
+      info={[KEEP_COPY.title, ...view.short]}
+      actions={[
+        { label: KEEP_COPY.skip, tone: 'secondary', disabled: busy, onPress: () => { onTap('skip'); } },
+        { label: KEEP_COPY.apply, accessibilityLabel: `${KEEP_COPY.apply}: keep for next ${view.label}`, disabled: busy, onPress: () => { onTap('apply'); } },
+      ]}
+    />
   );
 }
 
 const KEEP_COPY = { title: 'Keep for next time?', skip: 'Skip', apply: 'Apply' } as const;
 
 /**
- * (Ben, 23 Oct) A main lift Ben swapped: `Make Incline barbell press the main lift for Chest?` with `Skip` and `Apply`;
- * once kept, `<lift> · main lift for <day>` with `Undo`. Values from the builder service only.
+ * (Ben, 23 Oct) A main lift Ben swapped: `Make Incline barbell press the main lift for Chest?` with compact `Skip` /
+ * `Apply`; once kept, `<lift> · main lift for <day>` with `Undo`. Values from the builder service only.
  */
 function MainLiftRow({ view, busy, onTap }: { view: KeepMainLiftView; busy: boolean; onTap: (tap: 'apply' | 'skip' | 'undo') => void }) {
-  const theme = useTheme();
   if (view.state === 'kept') {
     return <StatusLine icon="checkmark.circle" tone="info" text={view.text} {...(view.canUndo ? { action: <TextButton label="Undo" disabled={busy} onPress={() => { onTap('undo'); }} /> } : {})} />;
   }
   return (
-    <NextTimeItem>
-      <AppText variant="headline">{view.text}</AppText>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
-        <TextButton label={KEEP_COPY.skip} tone="secondary" disabled={busy} onPress={() => { onTap('skip'); }} />
-        <TextButton label={KEEP_COPY.apply} accessibilityLabel={`${KEEP_COPY.apply}: ${view.text}`} disabled={busy} onPress={() => { onTap('apply'); }} />
-      </View>
-    </NextTimeItem>
+    <OneLineRow
+      text={view.text}
+      spoken={view.text}
+      lines={2}
+      actions={[
+        { label: KEEP_COPY.skip, tone: 'secondary', disabled: busy, onPress: () => { onTap('skip'); } },
+        { label: KEEP_COPY.apply, accessibilityLabel: `${KEEP_COPY.apply}: ${view.text}`, disabled: busy, onPress: () => { onTap('apply'); } },
+      ]}
+    />
   );
 }
 
 /** (Ben, 27 Oct; redesign §E2) One item of the one `Next time` list: ruled rows, not cards. */
 function NextTimeItem({ children }: { children: ReactNode }) {
   const theme = useTheme();
-  return <View style={{ gap: theme.space['1'], paddingTop: theme.space['3'], paddingBottom: theme.space['1'], borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'] }}>{children}</View>;
+  return <View style={{ gap: theme.space['1'], paddingTop: theme.space['1'], borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'] }}>{children}</View>;
+}
+
+interface RowAction {
+  label: string;
+  accessibilityLabel?: string | undefined;
+  tone?: 'accent' | 'secondary';
+  disabled?: boolean;
+  onPress: () => void;
+}
+
+/** A compact trailing action (`Why?`, `Undo`, `Skip`, `Apply`): callout text, a full-size touch target. */
+function CompactAction({ a, expanded }: { a: RowAction; expanded?: boolean }) {
+  const theme = useTheme();
+  const disabled = a.disabled === true;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={a.accessibilityLabel ?? a.label}
+      accessibilityState={{ disabled, ...(expanded !== undefined ? { expanded } : {}) }}
+      disabled={disabled}
+      onPress={a.onPress}
+      hitSlop={{ top: 4, bottom: 4, left: 2, right: 2 }}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, minWidth: 32, justifyContent: 'center', alignItems: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+    >
+      <AppText variant="callout" color={disabled ? 'text.tertiary' : a.tone === 'secondary' ? 'text.secondary' : 'accent'} numberOfLines={1}>
+        {a.label}
+      </AppText>
+    </Pressable>
+  );
 }
 
 /**
- * One `Next time` row (D21): the target and its %, the source tag, `Why?`
- * (the coach's reason, checks and the built-in rule's value, or the rule's
- * own facts) and the row's buttons. Values come from the saved rows.
+ * (Ben, 30 Oct; redesign §E2) One `Next time` line: the name (truncated first), the value (`100 → 102.5 kg`, never
+ * truncated), `Why?` when there is something behind it, then the row's compact actions or a one-word state. `Why?`
+ * opens the reasons as an info line under the row. VoiceOver: `Bench press, 100 to 102.5 kilograms`, then each button.
  */
-function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTap) => void }) {
+function OneLineRow({ name, text, spoken, info = [], actions, trailing = null, lines = 1 }: { name?: string; text: string; spoken: string; info?: readonly string[]; actions: readonly RowAction[]; trailing?: string | null; lines?: number }) {
   const theme = useTheme();
   const [why, setWhy] = useState(false);
   return (
     <NextTimeItem>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <AppText variant="headline" style={{ flex: 1 }}>
-          {row.exerciseName}
-        </AppText>
-        <Tag text={row.tag} />
-      </View>
-      <AppText variant="body" numeric>
-        {row.pct === null ? row.target : `${row.target} · ${row.pct}`}
-      </AppText>
-      {row.note !== null ? (
-        <AppText variant="callout" color="text.secondary">
-          {row.note}
-        </AppText>
-      ) : null}
-      {/* Design pass 3.5: the actions wrap, so Apply is never clipped at large text. */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
-        <TextButton
-          label={why ? 'Hide' : 'Why?'}
-          tone="secondary"
-          onPress={() => {
-            setWhy((w) => !w);
-          }}
-        />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
-          {row.actions.map((a) => (
-            <TextButton
-              key={a.tap}
-              label={a.label}
-              onPress={() => {
-                onTap(a.tap);
-              }}
-            />
-          ))}
+        <View accessible accessibilityLabel={name === undefined ? spoken : `${name}, ${spoken}`} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          {name !== undefined ? (
+            <>
+              <AppText variant="body" numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, flexShrink: 1 }}>
+                {name}
+              </AppText>
+              <AppText variant="callout" numeric numberOfLines={1} style={{ flexShrink: 0 }}>
+                {text}
+              </AppText>
+            </>
+          ) : (
+            <AppText variant="body" numberOfLines={lines} ellipsizeMode="tail" style={{ flex: 1, flexShrink: 1 }}>
+              {text}
+            </AppText>
+          )}
         </View>
+        {info.length > 0 ? (
+          <CompactAction
+            a={{ label: NEXT_LINE_COPY.why, tone: 'secondary', onPress: () => { setWhy((w) => !w); } }}
+            expanded={why}
+          />
+        ) : null}
+        {actions.map((a) => (
+          <CompactAction key={a.label} a={a} />
+        ))}
+        {actions.length === 0 && trailing !== null ? (
+          <AppText variant="callout" color="text.secondary" numberOfLines={1} style={{ flexShrink: 0 }}>
+            {trailing}
+          </AppText>
+        ) : null}
       </View>
       {why ? (
-        <View style={{ gap: theme.space['1'] }}>
-          {row.why.map((f) => (
-            <AppText key={f} variant="callout" color="text.secondary">
-              {`· ${f}`}
-            </AppText>
-          ))}
-        </View>
+        <AppText variant="callout" color="text.secondary" style={{ paddingBottom: theme.space['2'] }}>
+          {info.join(' · ')}
+        </AppText>
       ) : null}
     </NextTimeItem>
+  );
+}
+
+/**
+ * One `Next time` row (D21; one line, Ben 30 Oct): `Bench press  100 → 102.5 kg  Why?  Undo`. The source, %, note and
+ * reasons sit behind `Why?`. Values come from the saved rows (`nextTimeView`).
+ */
+function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTap) => void }) {
+  return (
+    <OneLineRow
+      name={row.exerciseName}
+      text={row.line.text}
+      spoken={row.line.spoken}
+      info={row.info}
+      trailing={row.trailing}
+      actions={row.actions.map((a) => ({ label: a.label, accessibilityLabel: a.accessibilityLabel, onPress: () => { onTap(a.tap); } }))}
+    />
   );
 }
 
