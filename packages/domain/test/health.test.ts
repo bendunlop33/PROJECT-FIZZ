@@ -12,6 +12,8 @@ import {
   activitiesWithHealth,
   dedupeHealthSources,
   dismissHealthLink,
+  dayPairs,
+  linkableSamples,
   linkQuestions,
   linkChoicesFor,
   mergeFeed,
@@ -548,5 +550,49 @@ describe('log times differ (Ben, 27 Oct: "the log times won\u2019t always be the
     expect(sameDayLinkCandidates(pm, [w1, w2], []).map((x) => x.uuid)).toEqual([U2, U1]);
     // One gym session but two watch workouts: also offered, not automatic.
     expect(autoLinkPairs({ samples: [w1, w2], workouts: [pm], links: [] })).toEqual([]);
+  });
+});
+
+describe('pairing a day (Ben, 29 Oct: "Why no option to pair workouts together")', () => {
+  // Ben's Monday: the app's Legs 18:01–19:00, Garmin's Strength 17:57–18:56 (59 min).
+  const legs = workout({ startUtc: '2026-10-26T18:01:00.000Z', endUtc: '2026-10-26T19:00:00.000Z', title: 'Legs' });
+  const garmin = sample({ activityType: 50, startUtc: '2026-10-26T17:57:00.000Z', endUtc: '2026-10-26T18:56:00.000Z', distanceM: null, avgHeartRate: 128 });
+
+  it('the app’s own copy (written, or its external ID is an app workout) never counts: one Garmin workout auto-links', () => {
+    const copy = sample({ uuid: U2, activityType: 50, startUtc: legs.startUtc, endUtc: legs.endUtc, sourceBundleId: 'com.projectfizz.fizz-old', externalId: S1.toUpperCase() });
+    expect(autoLinkPairs({ samples: [garmin, copy], workouts: [legs], links: [] })).toEqual([]);
+    expect(linkableSamples([garmin, copy], new Set(), new Set([S1]))).toEqual([garmin]);
+    expect(linkableSamples([garmin, copy], new Set([U2]), new Set())).toEqual([garmin]);
+    expect(autoLinkPairs({ samples: linkableSamples([garmin, copy], new Set(), new Set([S1])), workouts: [legs], links: [] })).toEqual([{ healthUuid: U1, sessionId: S1 }]);
+  });
+
+  it('a date-only (imported) workout is never auto-linked, but pairs by hand on its date', () => {
+    const imported = workout({ startUtc: '2026-10-26T12:00:00.000Z', endUtc: '2026-10-26T12:00:00.000Z', title: 'Workout', localDate: '2026-10-26' });
+    expect(autoLinkPairs({ samples: [garmin], workouts: [imported], links: [] })).toEqual([]);
+    expect(linkQuestions(imported, [garmin], [])).toEqual([]);
+    expect(sameDayLinkCandidates(imported, [garmin], []).map((x) => x.uuid)).toEqual([U1]);
+    expect(dayPairs({ date: '2026-10-26', samples: [garmin], workouts: [imported], links: [] }).unpaired.map((u) => [u.sample.uuid, u.choices.map((c) => c.sessionId)])).toEqual([[U1, [S1]]]);
+  });
+
+  it('Pair: the day’s unlinked strength workouts with the day’s free workouts, nearest first; `Not it` still pairable; never another day', () => {
+    const am = workout({ sessionId: S2, startUtc: '2026-10-26T07:00:00.000Z', endUtc: '2026-10-26T08:00:00.000Z' });
+    const sunday = workout({ sessionId: '10000000-0000-4000-8000-000000000003', startUtc: '2026-10-25T18:00:00.000Z', endUtc: '2026-10-25T19:00:00.000Z' });
+    const run = sample({ uuid: U3, activityType: 37, startUtc: '2026-10-26T06:00:00.000Z', endUtc: '2026-10-26T06:40:00.000Z' });
+    const notIt = link({ status: 'unlinked', by: 'ben' });
+    const d = dayPairs({ date: '2026-10-26', samples: [garmin, run], workouts: [legs, am, sunday], links: [notIt] });
+    expect(d.unpaired.map((u) => [u.sample.uuid, u.choices.map((c) => c.sessionId)])).toEqual([[U1, [S1, S2]]]);
+    expect(d.paired).toEqual([]);
+    // Sunday's sample has only Sunday's workout; Monday's never offered there.
+    const sun = sample({ uuid: U2, activityType: 50, startUtc: '2026-10-25T21:00:00.000Z', endUtc: '2026-10-25T22:00:00.000Z' });
+    expect(dayPairs({ date: '2026-10-25', samples: [sun, garmin], workouts: [legs, sunday], links: [] }).unpaired.map((u) => u.choices.map((c) => c.sessionId))).toEqual([[sunday.sessionId]]);
+  });
+
+  it('paired: the workout with its Health workout; a workout linked elsewhere is no choice; nothing left to pair: nothing offered', () => {
+    const linked = link({ version: 2 });
+    const d = dayPairs({ date: '2026-10-26', samples: [garmin], workouts: [legs], links: [linked] });
+    expect(d.unpaired).toEqual([]);
+    expect(d.paired.map((x) => [x.workout.sessionId, x.sample.uuid, x.link.version])).toEqual([[S1, U1, 2]]);
+    const second = sample({ uuid: U2, activityType: 50, startUtc: '2026-10-26T19:30:00.000Z', endUtc: '2026-10-26T20:00:00.000Z' });
+    expect(dayPairs({ date: '2026-10-26', samples: [garmin, second], workouts: [legs], links: [linked] }).unpaired).toEqual([]);
   });
 });

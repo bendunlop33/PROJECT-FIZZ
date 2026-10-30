@@ -382,6 +382,40 @@ export function daySheetRows(tile: Pick<WeekTile, 'items' | 'marks'>, feed: read
   });
 }
 
+/**
+ * (Ben, 29 Oct: "These two strength sessions should be linkable? Why no option to pair workouts together") A day sheet
+ * row with its pairing: a Health strength workout not paired yet gets `Pair` (one workout that day: one tap; several: a
+ * choice of the day's workouts by title and time); a paired workout reads as one row, the app's values with Health's
+ * after (`59 min · 22 sets · avg 128 bpm`), its source small (`Garmin`), and `Unpair`. Pure.
+ */
+export interface PairedDaySheetRow extends DaySheetRow {
+  /** The source of a paired workout's Health facts (`Garmin`), shown small; null: not paired. */
+  source: string | null;
+  pair: { healthUuid: string; choices: { sessionId: string; label: string }[] } | null;
+  unpair: { healthUuid: string; linkVersion: number } | null;
+}
+
+export function pairedDaySheetRows(rows: readonly DaySheetRow[], pairs: { unpaired: Readonly<Record<string, readonly { sessionId: string; time: string | null }[]>>; paired: Readonly<Record<string, { healthUuid: string; linkVersion: number; facts: string | null; source: string }>> }): PairedDaySheetRow[] {
+  const titleOf = new Map(rows.flatMap((r) => (r.open?.kind === 'summary' ? [[r.open.sessionId, r.title] as const] : [])));
+  return rows.flatMap((r): PairedDaySheetRow[] => {
+    const o = r.open;
+    if (o?.kind === 'activity') {
+      const choices = (pairs.unpaired[o.activityId] ?? []).filter((c) => titleOf.has(c.sessionId));
+      // A paired Health workout shows on its workout's row only.
+      if (Object.values(pairs.paired).some((x) => x.healthUuid === o.activityId)) return [];
+      const pair = choices.length === 0 ? null : { healthUuid: o.activityId, choices: choices.map((c) => ({ sessionId: c.sessionId, label: [titleOf.get(c.sessionId) ?? 'Workout', c.time].filter((x): x is string => x !== null).join(' · ') })) };
+      return [{ ...r, source: null, pair, unpair: null }];
+    }
+    if (o?.kind === 'summary') {
+      const p = pairs.paired[o.sessionId];
+      if (p === undefined) return [{ ...r, source: null, pair: null, unpair: null }];
+      const detail = [r.detail, p.facts].filter((x): x is string => x !== null && x !== '').join(' · ') || null;
+      return [{ ...r, detail, source: p.source, pair: null, unpair: { healthUuid: p.healthUuid, linkVersion: p.linkVersion }, accessibilityLabel: [r.accessibilityLabel, p.facts, `paired with ${p.source}`].filter((x): x is string => x !== null).join(', ') }];
+    }
+    return [{ ...r, source: null, pair: null, unpair: null }];
+  });
+}
+
 /** `Back squat · 5 exercises · 45 min`: a planned day's line from its card. */
 export function plannedDayDetail(v: { list: readonly { main: boolean; fullName: string }[]; exerciseCount: number; minutes: number; time: { minutes: number } | null }): string {
   const main = v.list.find((r) => r.main)?.fullName ?? null;

@@ -266,14 +266,25 @@ export class SqliteHealth {
     });
   }
 
-  /** The app workouts in history that started in [`fromUtc`, `toUtc`): what a Health activity can link to. */
+  /**
+   * The app workouts in history that started in [`fromUtc`, `toUtc`): what a Health activity can link to. A date-only
+   * workout (a FitNotes import: no end) is one too, on its date (Ben, 29 Oct: paired by hand, never automatically).
+   */
   linkableWorkouts(ownerId: string, fromUtc: string, toUtc: string): Promise<LinkableWorkout[]> {
     return this.db.read(async (q) => {
-      const rows = await q.getAll<{ id: string; started_at_utc: string; started_at_tz: string; ended_at_utc: string | null; routine_name: string | null }>(
-        `SELECT id, started_at_utc, started_at_tz, ended_at_utc, routine_name FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND ended_at_utc IS NOT NULL AND started_at_utc >= ? AND started_at_utc < ? ORDER BY started_at_utc`,
+      const rows = await q.getAll<{ id: string; started_at_utc: string; started_at_tz: string; ended_at_utc: string | null; routine_name: string | null; local_date: string | null; past_log: string | null }>(
+        `SELECT id, started_at_utc, started_at_tz, ended_at_utc, routine_name, local_date, past_log FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND (ended_at_utc IS NOT NULL OR local_date IS NOT NULL) AND started_at_utc >= ? AND started_at_utc < ? ORDER BY started_at_utc`,
         [ownerId, fromUtc, toUtc],
       );
-      return rows.map((r) => ({ sessionId: r.id, startUtc: r.started_at_utc, endUtc: r.ended_at_utc ?? r.started_at_utc, tz: r.started_at_tz, title: r.routine_name ?? 'Workout' }));
+      return rows.map((r) => ({
+        sessionId: r.id,
+        startUtc: r.started_at_utc,
+        endUtc: r.ended_at_utc ?? r.started_at_utc,
+        tz: r.started_at_tz,
+        title: r.routine_name ?? 'Workout',
+        ...(r.local_date === null ? {} : { localDate: r.local_date }),
+        ...(r.past_log === null ? {} : { pastLogged: true }),
+      }));
     });
   }
 }

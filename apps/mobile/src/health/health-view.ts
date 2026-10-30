@@ -51,6 +51,11 @@ export const HEALTH_COPY = {
   timesChanged: 'Times changed',
   openHealth: 'Open Health',
   failed: 'Couldn’t save. Try again.',
+  /** (Ben, 29 Oct) The day sheet's one-tap pairing of a Health workout and an app workout. */
+  pair: 'Pair',
+  paired: 'Paired',
+  unpair: 'Unpair',
+  unpaired: 'Unpaired',
   stale: 'Changed since. Try again.',
 } as const;
 
@@ -239,9 +244,10 @@ export function linkCandidateLine(s: Pick<HealthWorkoutSample, 'activityType' | 
   return { line, accessibilityLabel: `${label} from ${source} at ${formatTime(toMs(s.startUtc), tz, locale)}, ${String(m)} minutes, from Apple Health` };
 }
 
-/** One row of `Link to a workout`: `Push · Tue 27 Oct 18:02`. */
+/** One row of `Link to a workout`: `Push · Tue 27 Oct 18:02` (a date-only workout: no time). */
 export function linkableWorkoutLine(w: LinkableWorkout, locale?: string): string {
   const ms = toMs(w.startUtc);
+  if (w.localDate !== undefined) return `${w.title} · ${formatShortDate(ms, w.tz, locale)}`;
   return `${w.title} · ${formatShortDate(ms, w.tz, locale)} ${formatTime(ms, w.tz, locale)}`;
 }
 
@@ -257,6 +263,23 @@ export function healthActivityFacts(p: HealthActivityProvenance, detail: string,
 }
 
 export { healthActivityLine };
+
+/**
+ * (Ben, 29 Oct) The day sheet's pairs for one date. `unpaired`: per Health activity (its UUID), the day's app workouts
+ * it can pair with, nearest first. `paired`: per app workout, its Health workout's facts (`avg 128 bpm` while heart
+ * rate is on) and source (`Garmin`). Empty: Health off, unavailable or nothing that day.
+ */
+export interface DayPairsView {
+  unpaired: Readonly<Record<string, readonly { sessionId: string; time: string | null }[]>>;
+  paired: Readonly<Record<string, { healthUuid: string; linkVersion: number; facts: string | null; source: string }>>;
+}
+
+export const NO_DAY_PAIRS: DayPairsView = { unpaired: {}, paired: {} };
+
+/** A paired workout's Health facts after the app's own (`avg 128 bpm`); null when there are none to show. */
+export function pairedFacts(p: Pick<HealthActivityProvenance, 'avgHeartRate'>, showHeartRate: boolean): string | null {
+  return showHeartRate && p.avgHeartRate !== null ? `avg ${String(p.avgHeartRate)}\u00a0bpm` : null;
+}
 
 // ---------------------------------------------------------------------------
 // Progress: resting heart rate and sleep (Q8), raw values with their source
