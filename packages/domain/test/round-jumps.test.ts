@@ -91,7 +91,9 @@ describe('Do next / Move to end (Ben, 31 Oct)', () => {
 
   it('idempotent on its opId, refused on a stale version, and Undo puts the order back after a relaunch', () => {
     const s0 = benchStarted();
-    const cmd = jump(s0, HANG, 'do_next', 'dn-3');
+    const m = jumpRoundCommand(s0, rowId(s0, HANG), 'do_next', op('dn-3'));
+    if (!m.ok) throw new Error(m.reason);
+    const cmd = m.command;
     const r1 = expectOk(reduceSession(s0, cmd));
     const again = expectOk(reduceSession(r1.state, cmd));
     expect(again.duplicate).toBe(true);
