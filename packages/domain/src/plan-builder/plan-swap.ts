@@ -123,3 +123,46 @@ export function pbNotPreferredReplacement(key: string, a: Pick<PlanBuilderAnswer
   }
   return ports.alternatives.find(fits) ?? null;
 }
+
+export interface PlanAddDay {
+  routineId: string;
+  routineName: string;
+  /** The day's version as read: Apply is refused on any other (rule 5). */
+  versionBefore: number;
+  /** The new row's ID. */
+  rowId: string;
+  /** The row it goes straight after (the day's `after` exercise, its last row of it); null: at the end. */
+  afterRowId: string | null;
+}
+
+export type PlanAddPreview =
+  | { kind: 'ok'; days: PlanAddDay[]; /** Days named that already have it (left as they are). */ already: string[] }
+  | { kind: 'unknown_days'; unknown: string[] }
+  | { kind: 'already'; days: string[] };
+
+const dayKey = (name: string): string => name.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * (Ben, 31 Oct, build 493: "add them in after the raises … fix the plan too") One exercise added to the named plan days,
+ * every week. In each day it goes straight after `after` when the day has it (its last row of it), else at the end. A
+ * day that already has it is left as it is (never a second copy). Day names match case-insensitively; a name that is
+ * no plan day refuses the whole add (the coach is told the names). `rowIdOf`: the new row's ID for a day. Pure.
+ */
+export function planAddPreview(days: readonly PlanSwapDayInput[], req: { add: string; dayNames: readonly string[]; after: string | null; rowIdOf: (routineId: string) => string }): PlanAddPreview {
+  const wanted = [...new Set(req.dayNames.map(dayKey))];
+  const unknown = wanted.filter((w) => !days.some((d) => dayKey(d.name) === w));
+  if (unknown.length > 0) return { kind: 'unknown_days', unknown: req.dayNames.filter((n) => unknown.includes(dayKey(n))) };
+  const out: PlanAddDay[] = [];
+  const already: string[] = [];
+  for (const d of days) {
+    if (!wanted.includes(dayKey(d.name))) continue;
+    const rows = [...d.rows].sort((a, b) => a.order - b.order);
+    if (rows.some((r) => r.exerciseId === req.add)) {
+      already.push(d.name);
+      continue;
+    }
+    const anchor = req.after === null ? undefined : rows.filter((r) => r.exerciseId === req.after).at(-1);
+    out.push({ routineId: d.routineId, routineName: d.name, versionBefore: d.version, rowId: req.rowIdOf(d.routineId), afterRowId: anchor?.id ?? null });
+  }
+  return out.length === 0 ? { kind: 'already', days: already } : { kind: 'ok', days: out, already };
+}

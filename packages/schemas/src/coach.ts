@@ -299,6 +299,24 @@ export const ProposePlanSwapArgsSchema = z.strictObject({
 });
 export type ProposePlanSwapArgs = z.infer<typeof ProposePlanSwapArgsSchema>;
 
+/**
+ * (Ben, 31 Oct, build 493: "add them in after the raises … fix the plan too") One exercise added to chosen days of the
+ * plan in use, every week from now on: `add` (a catalogueId), `days` (plan day names from YOUR DATA plan.inUse.days),
+ * `after` (the catalogueId it goes straight after in each day that has it; null: at the end). Sets and reps are the
+ * coach's; `load` only a weight Ben named this turn (kept as typed, rule 4), otherwise null and the app plans it from
+ * his history on the day's equipment. Always a proposal with each day's before/after, Apply and Undo (rule 3).
+ */
+export const ProposePlanAddArgsSchema = z.strictObject({
+  add: z.string().min(1).max(80),
+  days: z.array(z.string().min(1).max(120)).min(1).max(7),
+  after: z.string().min(1).max(80).nullable(),
+  workingSets: z.int().min(1).max(10),
+  reps: z.strictObject({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable(),
+  load: z.number().min(0).max(1000).nullable(),
+  reason,
+});
+export type ProposePlanAddArgs = z.infer<typeof ProposePlanAddArgsSchema>;
+
 /** ADR 0039: today's Set up filled from Ben's own words this turn (the builder reads them); `reason` is the coach's one line. */
 export const FillSetupTodayArgsSchema = z.strictObject({ reason });
 export type FillSetupTodayArgs = z.infer<typeof FillSetupTodayArgsSchema>;
@@ -638,6 +656,8 @@ export const CoachToolNameSchema = z.enum([
   'fill_setup',
   /** (Ben, 30 Oct) One exercise out and another in, in every day of the plan in use: a proposal he applies, with Undo. */
   'propose_plan_swap',
+  /** (Ben, 31 Oct) One exercise added to chosen days of the plan in use, at a chosen place: a proposal he applies, with Undo. */
+  'propose_plan_add',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -679,6 +699,7 @@ export const COACH_TOOL_ARGS = {
   propose_workout_edit: ProposeDraftEditArgsSchema,
   fill_setup: FillSetupTodayArgsSchema,
   propose_plan_swap: ProposePlanSwapArgsSchema,
+  propose_plan_add: ProposePlanAddArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -1160,19 +1181,36 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
    */
   z.object({
     kind: z.literal('propose_plan_swap'),
+    /**
+     * (Ben, 31 Oct) `add` (`propose_plan_add`): `addId` goes into each listed day (none comes out), straight after
+     * `afterId` where the day has it, else at the end; `removeId` and `removeName` are absent. Absent: a swap.
+     */
+    op: z.enum(['swap', 'add']).optional(),
     planId: IdSchema,
     planName: z.string().max(120),
-    removeId: z.string().min(1).max(64),
-    removeName: z.string().min(1).max(120),
+    /** A swap's exercise going out. Absent on an add. */
+    removeId: z.string().min(1).max(64).optional(),
+    removeName: z.string().min(1).max(120).optional(),
     addId: z.string().min(1).max(64),
     addName: z.string().min(1).max(120),
+    /** An add's place: the exercise it goes after (null: at the end). */
+    afterId: z.string().min(1).max(64).nullable().optional(),
+    afterName: z.string().min(1).max(120).nullable().optional(),
+    /** An add's working sets, rep range and a load Ben named (null: planned from his history at the workout). */
+    sets: z.int().min(1).max(10).optional(),
+    reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable().optional(),
+    load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).nullable().optional(),
     days: z
       .array(
         z.object({
           routineId: IdSchema,
           routineName: z.string().max(120),
           versionBefore: z.int().min(1),
-          edits: z.array(z.object({ kind: z.enum(['swap', 'remove']), rowId: IdSchema })).min(1).max(6),
+          /** `add`: `rowId` is the new row's ID, `afterRowId` the row it goes after (null: at the end), `afterName` that row's exercise. */
+          edits: z.array(z.object({ kind: z.enum(['swap', 'remove', 'add']), rowId: IdSchema, afterRowId: IdSchema.nullable().optional(), afterName: z.string().max(120).nullable().optional() })).min(1).max(6),
+          /** The day's exercises before and after (names, in order): the card's before/after. */
+          before: z.array(z.string().max(120)).max(30).optional(),
+          after: z.array(z.string().max(120)).max(30).optional(),
         }),
       )
       .max(28),
