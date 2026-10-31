@@ -406,7 +406,8 @@ export function changeLinkAlso(current: HealthLink | null, input: { add?: readon
   const remove = new Set((input.remove ?? []).map((u) => u.toLowerCase()));
   const also = [...new Set([...(current.also ?? []).filter((u) => !remove.has(u)), ...add])];
   if (also.length > HEALTH_LIMITS.maxAlso) return { kind: 'invalid', reason: 'Too many recordings of one workout' };
-  const { also: _drop, ...rest } = current;
+  const rest: HealthLink = { ...current };
+  delete rest.also;
   return {
     kind: 'write',
     next: { ...rest, ...(also.length === 0 ? {} : { also }), version: current.version + 1, updatedAtUtc: input.atUtc, opIds: [...current.opIds, input.opId].slice(-HEALTH_LIMITS.maxOps) },
