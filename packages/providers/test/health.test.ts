@@ -51,6 +51,11 @@ const row = (p: Partial<HealthNativeWorkout> = {}): HealthNativeWorkout => ({
 });
 
 describe('mapping Health’s rows', () => {
+  it('(Ben, 31 Oct) drops any install’s own writes: a SideStore suffix on this install or another', () => {
+    const suffixed = 'com.projectfizz.fizz.ABCDE12345';
+    const rows = [row(), row({ uuid: 'B0000000-0000-4000-8000-000000000002', sourceBundleId: 'com.projectfizz.fizz.OTHER99' }), row({ uuid: 'C0000000-0000-4000-8000-000000000003', sourceBundleId: 'com.projectfizz.fizz-old' }), row({ uuid: 'D0000000-0000-4000-8000-000000000004', sourceBundleId: 'com.projectfizzy.app' })];
+    expect(workoutSamplesFrom(rows, suffixed, 'Europe/London').map((x) => x.uuid)).toEqual(['a0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000004']);
+  });
   it('maps a Garmin run; drops our own writes and malformed rows', () => {
     const out = workoutSamplesFrom([row(), row({ uuid: 'B0000000-0000-4000-8000-000000000002', sourceBundleId: OWN }), row({ uuid: 'nope' }), row({ uuid: 'C0000000-0000-4000-8000-000000000003', endMs: 0 })], OWN, 'Europe/London');
     expect(out).toEqual([
