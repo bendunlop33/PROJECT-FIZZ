@@ -80,14 +80,21 @@ export interface WeekTilesInput {
   chosenPicked?: boolean;
   /** Plan days skipped this week (names): never ringed, today included, unless Ben picks one. */
   skipped?: readonly string[];
+  /**
+   * (Ben, 31 Oct) Up next's plan day (name). Once a gym workout is finished today Up next plans from tomorrow: on an Any
+   * days plan it leads the days left from tomorrow. Absent or null: plan order.
+   */
+  upNext?: string | null;
 }
 
 /**
  * Whether the card's day is ringed on today, and the planned days left to ring (a plan day once). Pure.
  */
-export function todayRing(input: Pick<WeekTilesInput, 'today' | 'chosen' | 'chosenPicked' | 'skipped'>, planned: readonly StripPlannedDayInput[]): { chosen: string | null; planned: StripPlannedDayInput[] } {
+export function todayRing(input: Pick<WeekTilesInput, 'today' | 'chosen' | 'chosenPicked' | 'skipped'> & { doneToday?: boolean }, planned: readonly StripPlannedDayInput[]): { chosen: string | null; planned: StripPlannedDayInput[] } {
   const c = input.chosen;
   if (c === null) return { chosen: null, planned: [...planned] };
+  // (Ben, 31 Oct) Trained today: no planned ring on today unless Ben picks another session himself.
+  if (input.doneToday === true && input.chosenPicked !== true) return { chosen: null, planned: [...planned] };
   if (input.chosenPicked === true) return { chosen: c, planned: planned.filter((d) => !(d.name === c && d.localDate > input.today)) };
   const later = planned.some((d) => d.name === c && d.localDate > input.today);
   const datedToday = planned.some((d) => d.name === c && d.localDate === input.today);
@@ -106,12 +113,15 @@ function spokenActivity(a: StripActivityInput): string {
 /**
  * (Ben, 28 Oct) Where an Any days plan's days left this week go: one a day, in order, from tomorrow to Sunday (the
  * next N − done days). Today holds the card's day (`chosen`, taken out of the list once) or a workout done today, so
- * the rest start tomorrow. More days left than dates: the ones that fit. Never a past day.
+ * the rest start tomorrow. More days left than dates: the ones that fit. Never a past day. (Ben, 31 Oct) `first`: Up
+ * next once a workout is done today (it plans from tomorrow), so it goes on tomorrow, the rest after it in order.
  */
-export function aheadDates(today: string, ahead: readonly string[], chosen: string | null): StripPlannedDayInput[] {
+export function aheadDates(today: string, ahead: readonly string[], chosen: string | null, first: string | null = null): StripPlannedDayInput[] {
   const left = [...ahead];
   const i = chosen === null ? -1 : left.indexOf(chosen);
   if (i >= 0) left.splice(i, 1);
+  const j = first === null ? -1 : left.indexOf(first);
+  if (j > 0) left.unshift(...left.splice(j, 1));
   const sunday = addDays(mondayOf(today), 6);
   const out: StripPlannedDayInput[] = [];
   let date = addDays(today, 1);
@@ -125,8 +135,9 @@ export function aheadDates(today: string, ahead: readonly string[], chosen: stri
 
 export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
   const monday = mondayOf(input.today);
-  const ring = todayRing(input, input.plannedDays ?? []);
-  const plannedDays = [...ring.planned, ...aheadDates(input.today, input.ahead ?? [], ring.chosen)];
+  const doneToday = input.workouts.some((w) => w.localDate === input.today);
+  const ring = todayRing({ ...input, doneToday }, input.plannedDays ?? []);
+  const plannedDays = [...ring.planned, ...aheadDates(input.today, input.ahead ?? [], ring.chosen, doneToday ? (input.upNext ?? null) : null)];
   const chosen = ring.chosen;
   return Array.from({ length: 7 }, (_, i) => {
     const date = addDays(monday, i);
@@ -141,7 +152,7 @@ export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
       marks.push({ shape: 'dot', colour: planDayColourKey(w.dayName ?? w.title), planned: false });
       spoken.push(`${w.title}, done`);
     }
-    if (isToday && done.length === 0 && chosen !== null) {
+    if (isToday && chosen !== null) {
       items.push({ kind: 'today', text: chosen, planned: true });
       marks.push({ shape: 'ring', colour: planDayColourKey(chosen), planned: true });
       spoken.push(`${chosen}, today's workout`);

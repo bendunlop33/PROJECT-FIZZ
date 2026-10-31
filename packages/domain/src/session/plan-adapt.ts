@@ -627,13 +627,33 @@ export function aimWithPause(n: number, paused: number): number {
 }
 
 /**
- * (Ben, 28 Oct: "Set weekdays decide Up next") A Set days plan's Up next order this week: the plan day scheduled
- * today (not done this week); then a missed earlier day this week not done (earliest first); then the next scheduled
- * days not done (by weekday); then the rest (done this week, or with no weekday) in `order` (least recently trained,
- * D19). `today`: Mon = 0. "Done" is this week's count (one workout, one plan day), the one Today's tiles read, so Up
- * next and the tiles agree. Pure.
+ * (Ben, 31 Oct: "Up next plans from tomorrow") Whether a gym workout is already finished on `today` (local
+ * `YYYY-MM-DD`, by the date it started in `tz`). Only finished gym workouts count: an open workout (no `endedAtUtc`) or
+ * an activity (a run, never passed here) doesn't. Pure.
  */
-export function setDaysUpNextOrder<T>(order: readonly T[], input: { weekdayOf: (t: T) => number | null; done: (t: T) => boolean; today: number }): T[] {
+export function finishedGymWorkoutOn(workouts: readonly { startedAtUtc: string; endedAtUtc: string | null }[], today: string, tz: string): boolean {
+  return workouts.some((w) => w.endedAtUtc !== null && localDateOf(toMs(w.startedAtUtc), tz) === today);
+}
+
+/**
+ * (Ben, 31 Oct) The weekday Up next plans for (Mon = 0): tomorrow once a gym workout is finished today, else today. On
+ * a Sunday after a workout that is 7 (past this week's last day): every day not done this week is a missed one. Pure.
+ */
+export function upNextPlanningWeekday(today: number, finishedToday: boolean): number {
+  return finishedToday ? today + 1 : today;
+}
+
+/**
+ * (Ben, 28 Oct: "Set weekdays decide Up next"; Ben, 31 Oct: from tomorrow once he has trained today) A Set days plan's
+ * Up next order this week, for the planning day `upNextPlanningWeekday(today, finishedToday)`: the plan day scheduled
+ * that day (not done this week); then a missed earlier day not done (earliest first; after a workout today, today's own
+ * day is one); then the next scheduled days not done (by weekday); then the rest (done this week, or with no weekday)
+ * in `order` (least recently trained, D19). `today`: Mon = 0. "Done" is this week's count (one workout, one plan day),
+ * the one Today's tiles read, so Up next and the tiles agree. A pin (`Make next`) or Ben's own pick stays before this
+ * (the caller's). Pure.
+ */
+export function setDaysUpNextOrder<T>(order: readonly T[], input: { weekdayOf: (t: T) => number | null; done: (t: T) => boolean; today: number; finishedToday?: boolean }): T[] {
+  const day = upNextPlanningWeekday(input.today, input.finishedToday === true);
   const open = order.filter((t) => !input.done(t) && input.weekdayOf(t) !== null);
   const by = (pred: (wd: number) => boolean) =>
     open
@@ -641,7 +661,7 @@ export function setDaysUpNextOrder<T>(order: readonly T[], input: { weekdayOf: (
       .map((t, i) => ({ t, i, wd: input.weekdayOf(t) ?? 0 }))
       .sort((a, b) => a.wd - b.wd || a.i - b.i)
       .map((x) => x.t);
-  const first = [...by((wd) => wd === input.today), ...by((wd) => wd < input.today), ...by((wd) => wd > input.today)];
+  const first = [...by((wd) => wd === day), ...by((wd) => wd < day), ...by((wd) => wd > day)];
   const taken = new Set(first);
   return [...first, ...order.filter((t) => !taken.has(t))];
 }
