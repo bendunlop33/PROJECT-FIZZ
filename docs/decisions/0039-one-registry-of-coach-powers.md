@@ -110,3 +110,52 @@ sentence was about the week, and no tool changed the plan's days one exercise at
   The plan swap's checks never put a not-preferred exercise in (turned round when the coach had it the wrong way, else
   refused with one line on a `Not changed` card).
 - Migration 40 adds `propose_plan_swap` to `coach_actions` (rows kept). Not yet run on Ben's iPhone.
+
+## Amendment (31 Oct 2026, Ben's build 493 report): time limits that fit the work, the plan-wide add, solution-first
+
+Ben's Today chat sent "Change my plan: does the plan train enough biceps throughout?" three times and got `No answer in
+time. Nothing changed.` each time; his live Pull B chat asked "Can we just add them in after the raises. Can u fix the
+plan too?" and got the same. Root causes, from the code (timeouts stored no detail of which timer fired, so the device's
+turns can't say more):
+
+- "Change my plan: …" reads as a change to the plan in use, so the turn **forced `propose_plan`**: rewrite every day of
+  the plan, at high effort, with the text answer held and a nudge. A reasoning model sends no stream events while it
+  thinks; the step's **20 s first-event / 20 s stall** windows cut it off (the 60 s build cap bounded the rest).
+- The live two-part ask also forced the whole-plan rewrite (high effort, 60 s cap), and "add them in after the raises"
+  didn't read as a change to today, so the quick part waited behind the slow one. No tool could add an exercise across
+  the plan (`propose_plan_swap` only swaps).
+
+Decisions:
+
+1. **Time limits (constants in `turn.ts`, `coachTurnTiming`):** live workout 30 s for a simple edit
+   (`COACH_WORKOUT_TIMEOUT_MS`), 90 s when his words are about the plan or ask two things
+   (`COACH_WORKOUT_PLAN_TIMEOUT_MS`), 60 s for a build; any other chat 120 s about the plan (`COACH_PLAN_TIMEOUT_MS`),
+   60 s for a workout build, else no whole-turn cap. Every step: 20 s to the first event and between events, **60 s at
+   high effort** (`COACH_HIGH_EFFORT_EVENT_MS`). A timeout keeps which timer fired (`failure.code`: `first_event`,
+   `stall`, `turn_cap`).
+2. **One lighter retry:** after a timeout (not Stop, nothing of the reply shown), the turn retries once at low effort
+   with no forcing, its own 25 s budget (`COACH_LIGHT_RETRY_MS`) and two steps, and the answer carries `Short answer (ran
+   out of time).` (rule 1). A second timeout fails the turn: never three silent failures, never a third request.
+3. **Targeted plan asks:** with a plan in use and its targeted tools here, a question about the plan or a targeted change
+   is answered with a targeted proposal; only a rebuild (days, split, a new plan) forces `propose_plan`. Plan-level steps
+   run at high effort; the sheet shows `Thinking… 0:42` (`thinking` progress).
+4. **Quick part first:** a live ask for today's change and a plan change (`twoPart`) makes today's change first (forced
+   `edit_today`, low effort, applied with Undo since he asked), then the plan proposal. A plan part that fails or times
+   out after a full answer never fails the turn: today's card and the answer stand.
+5. **`propose_plan_add`** joins the registry with target `planInUse` (every chat with a plan): one exercise into the named
+   plan days, every week, straight after a named exercise where the day has it, else at the end; the coach's sets and
+   reps; a load only when Ben named it this turn (kept as typed; the gym learns it on Apply), else the workout plans it
+   from his history and equipment. Never a not-preferred exercise or one held for pain; never a second copy in a day.
+   Its record is a `propose_plan_swap` with `op: 'add'` (no new `coach_actions` kind, **no migration**); the same card,
+   Apply (`plans.editDayEveryWeek` per day) and Undo (routine revert).
+6. **Asked:** "Can u fix the plan too?", "sort my plan as well", "add curls to my plan" count as asked for a plan
+   proposal (`asksPlanFix`); an answer without a plan card is held once and the coach asked for the proposal (or the same
+   answer when nothing needs changing). "Add them in after the raises" counts as a change to today.
+7. **Solution-first:** the instructions say a gap comes with its fix as a card. A reply that ends by asking "Want me to …?"
+   about a fix, with no card, gets one more step to make that card (an offer or a proposal, rule 3 unchanged); the
+   answer is then shown without the question. If that step fails, the full answer stands.
+8. **Hidden lines:** a true restatement of this turn's saved change is still hidden (its card says it) but no longer
+   counted in `N lines hidden`. Explanations of a proposal ("Curls go after the raises on both pull days") are kept.
+
+Not yet run on Ben's iPhone: real reasoning latencies on the ChatGPT-plan route are still unmeasured, so the 60 s and
+90/120 s figures are estimates to check against `failure.code` on his next timeouts.
