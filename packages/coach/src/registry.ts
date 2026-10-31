@@ -428,6 +428,21 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Swap one exercise for another in every day of the plan in use where it appears, from now on, when Ben asks ("swap leg press for leg extension in my plan", "across the full plan", "every week"). remove: the catalogueId going out; add: the catalogueId coming in (YOUR DATA plan.inUse.days or find_exercises). Only that exercise changes in each day: its sets, reps, rest, place and superset stay. Never add an exercise listed in YOUR DATA notPreferred; when Ben says "swap A and B" and one of them is not preferred, that one is `remove`. Ben sees each day before and after and taps Apply; never say it changed. reason: one short line.',
   },
   {
+    // (Ben, 31 Oct, build 493: "add them in after the raises … can u fix the plan too?") One exercise into chosen plan
+    // days, every week, at a chosen place. Offered whenever a plan is in use, in every chat (ADR 0039). Always a
+    // proposal with each day's before/after, Apply and Undo (rule 3); never an exercise Ben marked not preferred.
+    name: 'propose_plan_add',
+    effect: 'propose',
+    writes: ['proposal'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Add an exercise to days of your plan, as a proposal you apply or undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Add one exercise to chosen days of the plan in use, every week from now on ("add curls to my pull days", "fix the plan too" after a gap you found). add: its catalogueId (YOUR DATA plan.inUse.days, build.usable, addable or find_exercises). days: the plan day names from plan.inUse.days it goes into. after: the catalogueId it goes straight after in each day that has it (null: at the end). workingSets and reps: yours. load: only a weight Ben named this turn, in his words; else null (the app plans it from his history). Never an exercise in YOUR DATA notPreferred. Ben sees each day before and after and taps Apply; never say it changed. reason: one short line.',
+  },
+  {
     // (Ben, 20 Oct) Offered only while Lift targets is on (the app wires the executor then). Applies with Undo
     // only when Ben asked; code decides from his words (`liftTargetAsked` in the turn), else nothing is saved.
     name: 'set_lift_target',
@@ -610,6 +625,7 @@ export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   propose_week: 'week',
   pause_plan: 'planInUse',
   propose_plan_swap: 'planInUse',
+  propose_plan_add: 'planInUse',
   think_harder: 'lightTurn',
   set_lift_target: 'liftTargetsOn',
   propose_workout_edit: 'builderDraft',

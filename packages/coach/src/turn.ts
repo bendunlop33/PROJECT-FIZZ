@@ -28,7 +28,7 @@ import { createReplyFilter, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem 
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { asksForPlan, asksLiveChange, asksToPausePlan, asksToPlanWeek, declinesChange, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
+import { asksForPlan, asksLiveChange, asksPlanFix, asksPlanRebuild, planLevelAsk, asksToPausePlan, asksToPlanWeek, declinesChange, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
 import { LIVE_TARGET_CORRECTION_LINES } from './corrections';
 import { parseToolCall } from './tool-call';
@@ -40,7 +40,8 @@ import { mentionsGymSetup } from './gym-update';
 import { editOfferIn } from './edit-today';
 import { addedContinuationOf } from './find-exercises';
 import { collectFacts, type FactText, type NumberFacts, EFFORT_WORDS_LINE } from './numbers';
-import { isBareAccept, offerAcceptedLine, offerContinuationOf, PLAN_SWAP_LINE, threadPlanScope } from './plan-swap';
+import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PLAN_ADD_LINE, PLAN_SWAP_LINE, threadPlanScope } from './plan-swap';
+import { splitSentences } from './sentences';
 import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
 
 /**
@@ -76,8 +77,22 @@ export const READ_LIMIT_LINE = 'Read limit reached for this turn. Answer with wh
 export const THINK_HARDER_LINE = 'Your next steps get more reasoning. Continue.';
 /** Fed back for a second `think_harder` in one turn. */
 export const THINK_AGAIN_LINE = 'Already thinking harder this turn. Continue.';
-/** (Coach v3) A live-workout turn's whole-turn cap: Ben is between sets. */
+/** (Coach v3) A live-workout turn's whole-turn cap: Ben is between sets. A simple edit or question. */
 export const COACH_WORKOUT_TIMEOUT_MS = 30_000;
+/**
+ * (Ben, 31 Oct, build 493: "No answer in time. Nothing changed." three times) A live-workout turn about his plan, or one
+ * asking for today's change and a plan change together: the plan's context and several steps. ADR 0039 amendment 31 Oct.
+ */
+export const COACH_WORKOUT_PLAN_TIMEOUT_MS = 90_000;
+/** (Ben, 31 Oct) A chat turn (Today, Plan, Progress) about the plan: an analysis, a plan change or a plan build. */
+export const COACH_PLAN_TIMEOUT_MS = 120_000;
+/**
+ * (Ben, 31 Oct) First event and stall at high effort. A reasoning model sends nothing while it thinks: 20 s cut such
+ * steps off. Used for any step sent at high effort (a build, a plan, `think_harder`).
+ */
+export const COACH_HIGH_EFFORT_EVENT_MS = 60_000;
+/** (Ben, 31 Oct) After a timeout, the one lighter retry (low effort, answer now): its own whole budget. */
+export const COACH_LIGHT_RETRY_MS = 25_000;
 /**
  * A build turn (F12, 13 Oct): one read, the text-answer nudge, a `propose_workout` whose
  * arguments fail the schema and its corrected retry, then `reply` is five steps; four ended
@@ -92,12 +107,37 @@ export interface CoachTiming {
   stallMs: number;
   /** The whole turn, every step included (workout-builder BD13, `timing.coachBuildTimeout`: 60 s). Absent: no cap. */
   totalMs?: number;
+  /** (Ben, 31 Oct) First event and stall for a step sent at high effort; absent: `firstEventMs` and `stallMs`. */
+  highEffortMs?: number;
+  /** (Ben, 31 Oct) The lighter retry's whole budget after a timeout; absent: `COACH_LIGHT_RETRY_MS`. 0: no retry. */
+  lightRetryMs?: number;
 }
 
 /** `timing.coachBuildTimeout` (workout-builder BD13): a whole workout is a bigger answer than a reply. */
 export const COACH_BUILD_TIMEOUT_MS = 60_000;
 
-export const DEFAULT_COACH_TIMING: CoachTiming = { firstEventMs: 20_000, stallMs: 20_000 };
+export const DEFAULT_COACH_TIMING: CoachTiming = { firstEventMs: 20_000, stallMs: 20_000, highEffortMs: COACH_HIGH_EFFORT_EVENT_MS };
+
+/**
+ * (Ben, 31 Oct, build 493) The time limits that fit the work (ADR 0039 amendment, 31 Oct). Pure.
+ * - A live workout: 30 s for a simple edit or question; 90 s when his words are about the plan or ask two things
+ *   (today and the plan); 60 s for a build.
+ * - Any other chat: 120 s about the plan (analysis, change, build); 60 s for a workout build; else no whole-turn cap.
+ * - Every step: 20 s to the first event and between events, 60 s at high effort.
+ */
+export function coachTurnTiming(input: { liveWorkout: boolean; words: string | null; buildInPlay: boolean; planBuild?: boolean }): CoachTiming {
+  const planLevel = input.planBuild === true || (input.words !== null && planLevelAsk(input.words));
+  const totalMs = input.liveWorkout ? (planLevel ? COACH_WORKOUT_PLAN_TIMEOUT_MS : input.buildInPlay ? COACH_BUILD_TIMEOUT_MS : COACH_WORKOUT_TIMEOUT_MS) : planLevel ? COACH_PLAN_TIMEOUT_MS : input.buildInPlay ? COACH_BUILD_TIMEOUT_MS : undefined;
+  return { ...DEFAULT_COACH_TIMING, ...(totalMs === undefined ? {} : { totalMs }) };
+}
+
+/** (Ben, 31 Oct) Which timer ended a turn, kept on the failed turn (`failure.code`) so `Why?` and a report can say. */
+export type TimeoutCause = 'first_event' | 'stall' | 'turn_cap';
+
+export function timeoutFailure(cause: TimeoutCause, ms: number, effort: ModelRequest['effort']): ModelFailureDetail {
+  const what = cause === 'first_event' ? 'No reply started' : cause === 'stall' ? 'Reply stalled' : 'Turn limit reached';
+  return { kind: 'timeout', code: cause, message: `${what} after ${String(Math.round(ms / 1000))} s${effort === undefined ? '' : ` (${effort} effort)`}` };
+}
 
 /** (Ben, 28 Oct) The turn's timers: the app's own, which stop counting while it is in the background. */
 export interface TurnTimers {
@@ -226,6 +266,8 @@ export interface CoachTurnRequest {
 export type CoachTurnProgress =
   /** The first stream event of any kind arrived (the sheet leaves `Thinking`). */
   | { kind: 'first_event' }
+  /** (Ben, 31 Oct) A step went out at high effort (`hard`), or the lighter retry after a timeout started (`short`). */
+  | { kind: 'thinking'; mode: 'hard' | 'short' }
   | { kind: 'tool'; line: ToolLogLine }
   | { kind: 'card'; card: CoachCard }
   | { kind: 'item'; item: ReplyItem };
@@ -470,6 +512,33 @@ function runnable(registry: TurnRegistry, executors: CoachExecutors): TurnRegist
 export const LAST_DAYS_COACH_LINE =
   'lastDays in YOUR DATA is his last 7 days: each finished workout (app, logged later or FitNotes import) with its working sets as logged, and his runs and other activities. For one day in full read get_recent_sessions with date or daysAgo (1 = yesterday). When he asks to change his next workout or plan because of one, use the proposal tools; a past workout is never changed.';
 
+/**
+ * (Ben, 31 Oct, build 493: "It should be more solution focused.") A gap the coach finds comes with its fix as a card, not
+ * a yes/no question about another fix; a fix Ben states is done as he said it. Rule 3 still holds: a fix he didn't ask
+ * for is an offer or a proposal (the card's Apply / Skip is the offer).
+ */
+export const SOLUTION_FIRST_LINE =
+  'Be solution-first. When you find a gap or a problem (a muscle with no direct work, too much or too little volume), make the concrete fix as a card in this same turn instead of asking: edit_today for today (when Ben did not ask, the app saves it as an offer he applies), propose_plan_add or propose_plan_swap for his plan (always a proposal he applies). Then say in one or two lines what the fix is and why. When Ben states the fix ("add them after the raises", "fix the plan too"), do exactly that, in that place. Never end with "Want me to …?" about a fix: the card is the offer.';
+
+/** (Ben, 31 Oct) Sent when Ben asks for today's change and a plan change in one message: the quick part first. */
+export const TWO_PART_LINE =
+  'Ben asked for two things: today’s change and a change to his plan. First call edit_today with today’s change exactly as he said it (an add goes straight after the exercise he named: afterSessionExerciseId). Then make the plan change as a proposal (propose_plan_add or propose_plan_swap). Then reply.';
+
+/** (Ben, 31 Oct) Fed back when a plan ask's answer came without a plan card. Never shown to Ben. */
+export const PLAN_PART_NUDGE_LINE =
+  'Not shown yet. Ben asked about or for a change to his plan. If your answer found something to change, call propose_plan_add or propose_plan_swap now with that fix (a proposal he applies), then reply. If nothing needs changing, call reply again with the same message.';
+
+/** (Ben, 31 Oct) Fed back when a reply ended by asking whether to make a fix, with no card. Never shown to Ben. */
+export const SOLUTION_NUDGE_LINE =
+  'Not shown yet. Do not ask Ben whether to make a fix: make the fix you offered as a card now (edit_today for today, saved as an offer he applies; propose_plan_add or propose_plan_swap for his plan, a proposal). Then call reply with an empty message: your earlier message is shown without the question.';
+
+/** (Ben, 31 Oct) Sent with the one lighter retry after a timeout. Never shown to Ben. */
+export const LIGHT_RETRY_LINE =
+  'Time ran out for the full answer. Answer now, briefly, with what you already have: at most one change tool call, then reply. Say in one short line that this is the short answer.';
+
+/** (Ben, 31 Oct) The note on an answer that came from the lighter retry (rule 1: honest about what it is). */
+export const SHORT_ANSWER_NOTE = 'Short answer (ran out of time).';
+
 export const COACH_INSTRUCTIONS = [
   // Coach v3 (ADR 0027, Ben 18 Oct: "more dynamic like AI would be"): a coach's voice, still short.
   'You are Ben’s strength coach in GymSmarter. Talk like a good coach on the gym floor: direct, warm and specific to his training. No filler, no disclaimers, no lectures.',
@@ -489,6 +558,7 @@ export const COACH_INSTRUCTIONS = [
   'You cannot delete workouts or sets. If Ben asks you to, reply only: "Delete workouts from History."',
   // 21 Oct (Ben's Build B report): the coach said "The adjustment didn't go through" with no tool result.
   'Never say a change failed, was rejected, didn’t go through or that the app is blocking it unless a tool result in this turn says so. If an earlier request was not answered, act on it now.',
+  SOLUTION_FIRST_LINE,
 ].join('\n');
 
 /** ADR 0039 (Ben, 29 Oct): sent when `propose_week` is offered (every chat with a week). */
@@ -612,7 +682,9 @@ export async function runModelStep(
   try {
     for (;;) {
       let timer: unknown;
-      const limit = first ? timing.firstEventMs : timing.stallMs;
+      // (Ben, 31 Oct) A high-effort step thinks in silence: the longer window for its first event and its stalls.
+      const high = request.effort === 'high' && timing.highEffortMs !== undefined;
+      const limit = Math.max(first ? timing.firstEventMs : timing.stallMs, high ? (timing.highEffortMs ?? 0) : 0);
       const timeout = new Promise<'timeout'>((resolve) => {
         timer = timers.set(() => {
           resolve('timeout');
@@ -632,7 +704,7 @@ export async function runModelStep(
       timers.clear(timer);
       if (next === 'timeout') {
         controller.abort();
-        return { kind: 'error', error: 'timeout' };
+        return { kind: 'error', error: 'timeout', failure: timeoutFailure(first ? 'first_event' : 'stall', limit, request.effort) };
       }
       if (next === 'cancelled' || controller.signal.aborted) return { kind: 'error', error: 'cancelled' };
       if (next.done === true) break;
@@ -768,6 +840,13 @@ async function lastCoachAsked(store: CoachTurnStore, lastCoach: CoachMessage | u
   const actions = await store.listTurnActions(lastCoach.turnId);
   return actions.some((a) => lastCoach.body.role === 'coach' && lastCoach.body.actionIds.includes(a.actionId) && a.status === 'proposed' && a.detail.kind !== 'build_workout');
 }
+
+/** The last sentence of a message ('' when none). */
+function lastSentenceOf(message: string): string {
+  return splitSentences(message).at(-1)?.trim() ?? '';
+}
+
+const retryMsOf = (timing: CoachTiming): number => timing.lightRetryMs ?? COACH_LIGHT_RETRY_MS;
 
 /**
  * Run one coach turn. Never throws for a model failure: the result says
@@ -906,7 +985,12 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // with no pain word and no multi-week scope (`forcesBuild`). A clear follow-up ("yes add it") gets the
   // build instructions, never the force; a loose one (r3 S1) the offer-reply ones; any other turn the
   // offered ones, which say when to use it and when never to.
-  const forcedPlan = planOffered && words !== null && askedPlan && buildPainMention(words) === 'none' && !multiWeekBlock(words);
+  // (Ben, 31 Oct, build 493) With a plan in use and its targeted tools here, a question about it or a targeted change
+  // ("does the plan train enough biceps?", "add curls, fix the plan too") is answered with a targeted proposal: only a
+  // rebuild (days, split, a new plan) forces the whole-plan proposal, which is the slow answer that timed out.
+  const planToolsHere = registry.tools.some((t) => t.name === 'propose_plan_add' || t.name === 'propose_plan_swap');
+  const targetedPlan = req.planInUse === true && planToolsHere && words !== null && !asksPlanRebuild(words);
+  const forcedPlan = planOffered && words !== null && askedPlan && !targetedPlan && buildPainMention(words) === 'none' && !multiWeekBlock(words);
   const forced = forcedPlan || (buildOffered && words !== null && forcesBuild(words, { draftInContext: req.draftInContext === true }));
   const forcedTool = forcedPlan ? 'propose_plan' : 'propose_workout';
   const benBuildWords = words !== null && (requestHas(classifyBenRequest(words, 'general'), 'build') || (req.draftInContext === true && revisesDraft(words)));
@@ -933,6 +1017,11 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     // Review coach-fail N2: `followsUpChange` accepts bare "yes" / "ok" / "please"; it counts only with an open,
     // unanswered change request in the history (`openAsk`), never on its own.
     (asksLiveChange(words) || (openAsk !== null && followsUpChange(words)));
+  // (Ben, 31 Oct, build 493) Ben asks for a change to the plan in use ("Can u fix the plan too?" counts): the turn ends
+  // with a plan proposal, or the coach says nothing needs changing (one nudge). `twoPart`: today's change too, which
+  // goes first and never waits on the plan part.
+  const planAsked = planToolsHere && !forcedPlan && words !== null && req.input.kind === 'words' && mention === 'none' && asksPlanFix(words);
+  const twoPart = liveChange && planAsked;
   // Review S5: adding is named only with the list of what can be added; without it the model can only guess an ID.
   const addOffered = registry.tools.some((t) => t.name === 'edit_today') && context.yourData.addable !== undefined;
   // ADR 0038: code's own reading of Ben's words this turn asks for a change (decided once per turn, leniently).
@@ -946,7 +1035,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
   const findLine = (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
-  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
+  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine + weekLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
@@ -991,6 +1080,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let heldReply: string | null = null;
   // Review coach-fail S2: the forced step failed and the held answer was shown instead; kept on the turn.
   let forcedFailure: { why: CoachTurnError; failure: ModelFailureDetail } | null = null;
+  // (Ben, 31 Oct) A follow-up step (the plan part, a fix card) that failed after a full answer was in hand.
+  let followUpFailed: { tool: string; why: CoachTurnError; failure: ModelFailureDetail } | null = null;
 
   // Coach v3 (ADR 0027): the numbers the coach was given, from code's and Ben's text only (context, his
   // messages, tool outputs); the model's own words (earlier replies, its arguments) never verify a number.
@@ -1009,7 +1100,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // after a text answer, "only one call at a time", think_harder, read limits) never back it, and once a change
   // to today committed this turn, nothing does.
   const notAppliedThisTurn = (): boolean => failureBackedBy(toolLog, registry.tools);
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange || liveChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, todayToolsOffered: todayOffered, weekToolOffered: registry.tools.some((t) => t.name === 'propose_week'), planToolOffered: registry.tools.some((t) => t.name === 'propose_plan_swap'), planScope: threadPlanScope(words, history.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [m.body.input.text] : [])).slice(-4)), facts, failureBacked: notAppliedThisTurn });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange || liveChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, todayToolsOffered: todayOffered, weekToolOffered: registry.tools.some((t) => t.name === 'propose_week'), planToolOffered: planToolsHere, planScope: threadPlanScope(words, history.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [m.body.input.text] : [])).slice(-4)), facts, failureBacked: notAppliedThisTurn });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {
@@ -1063,18 +1154,33 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // one); `think_harder`, once, makes the next steps high effort on his main model. Builds think hard;
   // anything else is medium.
   let thinking = false;
-  const stepModel = (): string => (liveWorkout && !thinking && req.workoutModel !== undefined ? req.workoutModel : req.model);
-  const stepEffort = (): NonNullable<ModelRequest['effort']> => (buildInPlay || forced ? 'high' : liveWorkout ? (thinking ? 'high' : 'low') : 'medium');
+  // (Ben, 31 Oct, build 493) After a timeout, one lighter retry: low effort (his lighter model mid-workout), no forcing.
+  let lightRetry = false;
+  let firstTimeout: ModelFailureDetail | null = null;
+  // Two-part ask: today's change goes first, light, so a slow plan part never holds it up.
+  const todayFirst = (): boolean => twoPart && !buildTried;
+  const stepModel = (): string => ((liveWorkout && !thinking) || lightRetry) && req.workoutModel !== undefined ? req.workoutModel : req.model;
+  // (Ben, 31 Oct) A question about or change to the whole plan needs the thinking a build gets.
+  const planLevel = chatTurn && words !== null && req.input.kind === 'words' && (planAsked || (req.planInUse === true && planLevelAsk(words)));
+  const stepEffort = (): NonNullable<ModelRequest['effort']> => (lightRetry ? 'low' : todayFirst() ? (liveWorkout ? 'low' : 'medium') : buildInPlay || forced || planLevel ? 'high' : liveWorkout ? (thinking ? 'high' : 'low') : 'medium');
+  let thinkingShown = false;
+  // (Ben, 31 Oct) A plan ask's held answer while its plan proposal is asked for; a fix-offer's held answer while its card is made.
+  let planNudged = false;
+  let planHeld: string | null = null;
+  let solutionHeld: { message: string; streamed: string } | null = null;
+  const planCardMade = (): boolean => entries.some((e) => e.origin === 'this_turn' && (e.record.detail.kind === 'propose_plan_swap' || e.record.detail.kind === 'build_plan'));
+  const anyCard = (): boolean => entries.some((e) => e.origin === 'this_turn');
+  const fixToolHere = registry.tools.some((t) => t.name === 'edit_today' || t.name === 'propose_plan_add' || t.name === 'propose_plan_swap');
   // Coach v3: reads per turn, and identical reads answered from this turn's cache (keyed by the opId).
   let readCalls = 0;
   const readCache = new Map<string, string>();
   let replyStream = new ReplyMessageStream();
   // The whole-turn cap (BD13): when it fires the running step is stopped and the turn ends as a timeout.
-  const cap = new AbortController();
+  let cap = new AbortController();
   const capped = { fired: false };
   const lifecycle = ports.lifecycle;
   const timers = lifecycle?.timers ?? PLAIN_TURN_TIMERS;
-  const capTimer =
+  let capTimer =
     timing.totalMs === undefined
       ? undefined
       : timers.set(() => {
@@ -1088,19 +1194,34 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   req.signal?.addEventListener('abort', onStop);
 
   const maxSteps = buildInPlay || forced ? MAX_BUILD_STEPS : MAX_MODEL_STEPS;
+  // (Ben, 31 Oct) The lighter retry gets two steps of its own (one change, then reply).
+  let stepLimit = maxSteps;
   for (let step = 0; ; step += 1) {
-    if (step >= maxSteps) {
-      error = 'too_many_steps';
+    if (step >= stepLimit) {
+      // A held full answer stands when the follow-up ran out of steps.
+      const held = solutionHeld?.message ?? (planHeld === null ? null : parseReply(planHeld, req.kind));
+      if (typeof held === 'string') message = held;
+      else if (held?.ok === true) {
+        message = held.reply.message;
+        offer = held.reply.offer;
+      } else error = 'too_many_steps';
       break;
     }
-    const holdReply = anyForced && !buildTried && !nudged;
+    const planHold = planAsked && !planNudged && !planCardMade() && !lightRetry;
+    const forcedHold = !lightRetry && anyForced && !buildTried && !nudged;
+    const holdReply = forcedHold || planHold || solutionHeld !== null;
     // Review S1: after a text answer on a build turn, the next step is forced to call `propose_workout`
     // (21 Oct: on a live change request, `edit_today`).
-    const forceBuild = anyForced && nudged && !buildTried;
+    const forceBuild = !lightRetry && anyForced && nudged && !buildTried;
     const toolChoice: ModelRequest['toolChoice'] = forceBuild ? { type: 'function', name: forcedName } : 'required';
     const runStep = (): Promise<StepOutcome> => {
       replyStream = new ReplyMessageStream();
       const stream = replyStream;
+      // (Ben, 31 Oct) The sheet shows `Thinking…` while a high-effort step works in silence.
+      if (stepEffort() === 'high' && !thinkingShown) {
+        thinkingShown = true;
+        req.onProgress?.({ kind: 'thinking', mode: 'hard' });
+      }
       return runModelStep(ports.model, { model: stepModel(), instructions, input, tools, toolChoice, parallelToolCalls: false, effort: stepEffort() }, timing, cap.signal, {
         timers,
         onFirstEvent,
@@ -1132,6 +1253,47 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     lostInBackground = lostAway(out, since);
     if (out.kind === 'error') {
       const why = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
+      const stoppedByBen = req.signal?.aborted === true;
+      // (Ben, 31 Oct) A follow-up step (the plan part, the fix card) failed after a full answer: that answer stands, and
+      // anything already made (today's change) keeps its card. A slow plan part never fails the turn.
+      const held = planHeld ?? (solutionHeld === null ? null : 'solution');
+      if (held !== null && !stoppedByBen && why !== 'cancelled') {
+        if (solutionHeld !== null) {
+          message = solutionHeld.message;
+          followUpFailed = { tool: 'reply', why, failure: out.failure ?? { kind: why } };
+          break;
+        }
+        const parsed = parseReply(planHeld ?? '', req.kind);
+        if (parsed.ok) {
+          message = parsed.reply.message;
+          offer = parsed.reply.offer;
+          followUpFailed = { tool: 'propose_plan_add', why, failure: out.failure ?? { kind: why } };
+          break;
+        }
+      }
+      // (Ben, 31 Oct, build 493: three "No answer in time" in a row) One timeout gets one lighter retry: low effort, no
+      // forcing, a fresh short budget, and the answer says it is the short one. Not when Ben pressed Stop, not after any
+      // of a reply was shown, and only once.
+      const retryMs = timing.lightRetryMs ?? COACH_LIGHT_RETRY_MS;
+      if (why === 'timeout' && !lightRetry && retryMs > 0 && !stoppedByBen && replyStream.streamed === '' && !lostInBackground) {
+        lightRetry = true;
+        stepLimit = step + 3;
+        firstTimeout = out.failure ?? timeoutFailure('turn_cap', timing.totalMs ?? 0, stepEffort());
+        if (capTimer !== undefined) timers.clear(capTimer);
+        cap = new AbortController();
+        capped.fired = false;
+        capTimer = timers.set(() => {
+          capped.fired = true;
+          cap.abort();
+        }, retryMs);
+        logLine({ tool: 'timeout', outcome: 'failed', text: `${failureWhy(cleanFailure(firstTimeout))}. Short answer instead.`.slice(0, 300), actionId: null });
+        input.push({ type: 'message', role: 'developer', content: LIGHT_RETRY_LINE });
+        req.onProgress?.({ kind: 'thinking', mode: 'short' });
+        // Nothing held is shown twice: the retry answers afresh.
+        planHeld = null;
+        solutionHeld = null;
+        continue;
+      }
       // The route refused the forced call (a rejected named tool_choice surfaces as `unavailable` or, 21 Oct, a
       // request error): the held answer stands, as before the nudge (WB3: `No change made.`). Review r2 S2: any
       // other error (usage limit, signed out, not eligible, model gone, network) is shown as it is, so the AI status stays honest.
@@ -1146,7 +1308,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
         }
       }
       error = why;
-      failure = out.failure ?? null;
+      failure = out.failure ?? (why === 'timeout' && capped.fired ? timeoutFailure('turn_cap', lightRetry ? retryMsOf(timing) : (timing.totalMs ?? 0), stepEffort()) : null) ?? firstTimeout;
       break;
     }
     if (out.kind === 'text') {
@@ -1159,7 +1321,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       break;
     }
     if (out.extraCalls > 0) logLine({ tool: out.name, outcome: 'not_allowed', text: ONE_CALL_LINE, actionId: null });
-    if (out.name === COACH_REPLY_TOOL_NAME && holdReply && step + 2 < maxSteps) {
+    if (out.name === COACH_REPLY_TOOL_NAME && forcedHold && step + 2 < maxSteps) {
       nudged = true;
       heldReply = out.arguments;
       logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: forced ? 'Answer in text; asked to build.' : NUDGE_CHANGE_LINE, actionId: null });
@@ -1167,12 +1329,46 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: forcedPlan ? PLAN_NUDGE_LINE : forced ? BUILD_NUDGE_LINE : LIVE_CHANGE_NUDGE_LINE }) });
       continue;
     }
+    // (Ben, 31 Oct) A plan ask answered without a plan card: held once, and the coach asked for the plan proposal (or the
+    // same answer when nothing needs changing). Today's change, if any, is already made and stays.
+    if (out.name === COACH_REPLY_TOOL_NAME && planHold && !(anyForced && !buildTried) && step + 2 < maxSteps) {
+      planNudged = true;
+      planHeld = out.arguments;
+      logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: 'Answer held; asked for the plan change.', actionId: null });
+      input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: PLAN_PART_NUDGE_LINE }) });
+      continue;
+    }
     if (forced ? out.name === 'propose_workout' || out.name === 'propose_plan' : out.name === 'edit_today') buildTried = true;
     if (out.name === COACH_REPLY_TOOL_NAME) {
       const parsed = parseReply(out.arguments, req.kind);
+      if (solutionHeld !== null) {
+        // The fix card step is over: the earlier answer is shown, without its question when a card was made.
+        message = anyCard() ? solutionHeld.message.slice(0, solutionHeld.message.lastIndexOf(lastSentenceOf(solutionHeld.message))).trimEnd() : solutionHeld.message;
+        if (!anyCard()) offer = parsed.ok ? parsed.reply.offer : null;
+        break;
+      }
       if (!parsed.ok) {
+        // The plan nudge's answer couldn't be read: the held one stands.
+        const fallback = planHeld === null ? null : parseReply(planHeld, req.kind);
+        if (fallback?.ok === true) {
+          message = fallback.reply.message;
+          offer = fallback.reply.offer;
+          break;
+        }
         error = 'no_reply';
         break;
+      }
+      // (Ben, 31 Oct, build 493: "Want me to swap hanging leg raises for curls today?") A reply ending by asking whether to
+      // make a fix, with no card: the coach makes that fix as a card first (an offer or a proposal, rule 3); the answer is
+      // then shown without the question. Once a turn, never on the lighter retry.
+      const last = lastSentenceOf(parsed.reply.message);
+      if (chatTurn && !lightRetry && fixToolHere && !anyCard() && step + 2 < maxSteps && last !== '' && isFixOffer(last) && !replyStream.streamed.includes(last)) {
+        solutionHeld = { message: parsed.reply.message, streamed: replyStream.streamed };
+        logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: 'Asked instead of offering a card; asked for the card.', actionId: null });
+        input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
+        input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: SOLUTION_NUDGE_LINE }) });
+        continue;
       }
       message = parsed.reply.message;
       offer = parsed.reply.offer;
@@ -1283,7 +1479,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   if (liftOffered && error === null && offer === null) offer = 'lift_target';
   // The rest of the reply, through the same backstop. What already streamed is never sent twice.
   if (message !== null) {
-    const streamed = replyStream.streamed;
+    // (Ben, 31 Oct) A held answer shown after its fix card: what of it already streamed is the earlier step's.
+    const streamed = solutionHeld !== null ? solutionHeld.streamed : replyStream.streamed;
     emit(filter.push(message.startsWith(streamed) ? message.slice(streamed.length) : ''));
     emit(filter.end(true));
     // Review S3: a hidden "no tool for that" became "Want me to adjust?": Adjust applies it (rule 3).
@@ -1298,6 +1495,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const cards = thisTurn.map((record) => ({ record, rendered: renderActionResult(record, req.surface) }));
   let note = message === null ? null : (filter.note()?.text ?? null);
   if (error !== null && thisTurn.length > 0) note = INTERRUPTED_NOTE;
+  // (Ben, 31 Oct) Rule 1: the lighter retry's answer says it is the short one.
+  if (error === null && lightRetry) note = note === null ? SHORT_ANSWER_NOTE : `${SHORT_ANSWER_NOTE} ${note}`;
+  // The follow-up step that didn't finish is logged (after the reply was checked, so it backs no "didn't go through").
+  if (followUpFailed !== null) logLine({ tool: followUpFailed.tool, outcome: 'failed', text: `Not finished: ${failureWhy(cleanFailure(followUpFailed.failure))}`.slice(0, 300), actionId: null });
   // Review coach-fail S2: the forced change step never ran; say so (no card, so nothing changed) and log why.
   if (forcedFailure !== null) {
     if (thisTurn.length === 0) note = NO_CHANGE_SAVED_LINE;
@@ -1324,7 +1525,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       complete: error === null,
     },
   });
-  const kept = error !== null && error !== 'cancelled' && failure !== null ? cleanFailure(failure) : forcedFailure !== null ? cleanFailure(forcedFailure.failure) : null;
+  // (Ben, 31 Oct) A timeout answered by the lighter retry keeps which timer fired, for `Why?` and a report.
+  const kept = error !== null && error !== 'cancelled' && failure !== null ? cleanFailure(failure) : forcedFailure !== null ? cleanFailure(forcedFailure.failure) : error === null && firstTimeout !== null ? cleanFailure(firstTimeout) : null;
   await ports.store.updateTurn(req.turnId, { status, error, endedAtUtc: endedAt.utc, toolLog, ...(kept === null ? {} : { failure: kept }) }, endedAt.utc);
 
   return {

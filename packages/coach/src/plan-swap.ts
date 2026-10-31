@@ -50,6 +50,56 @@ export function createPlanSwapExecutor(deps: PlanSwapDeps): CoachExecutors {
   return { propose_plan_swap: propose };
 }
 
+/** (Ben, 31 Oct) What the app's port is asked to check for `propose_plan_add`; `load` only a weight Ben named. */
+export interface PlanAddRequest {
+  add: string;
+  days: string[];
+  after: string | null;
+  sets: number;
+  reps: { min: number; max: number } | null;
+  load: number | null;
+}
+
+export interface PlanAddDeps {
+  store: CoachWriteStore;
+  /** Reads the plan in use and checks the add; nothing is written here. */
+  prepare(req: PlanAddRequest): Promise<PlanSwapPrepared>;
+}
+
+/**
+ * Rule 4 (Ben, 28 Oct): a weight is kept as typed only when Ben named it. A `load` whose number isn't in his words this
+ * turn is the coach's guess: dropped, and the app plans it from his history and the day's equipment. Pure.
+ */
+export function namedLoadIn(load: number | null, benWords: string | null): number | null {
+  if (load === null || benWords === null) return null;
+  const said = (benWords.replace(/,/g, '.').match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
+  return said.some((n) => Math.abs(n - load) < 1e-9) ? load : null;
+}
+
+export function createPlanAddExecutor(deps: PlanAddDeps): CoachExecutors {
+  const propose: ToolExecutor = async (call, ctx): Promise<ToolResult> => {
+    if (call.tool !== 'propose_plan_add') throw new TypeError(call.tool);
+    const a = call.args;
+    const reps = a.reps === null ? null : { min: Math.min(a.reps.min, a.reps.max), max: Math.max(a.reps.min, a.reps.max) };
+    const req: PlanAddRequest = { add: a.add.trim(), days: a.days.map((d) => d.trim()), after: a.after === null ? null : a.after.trim(), sets: a.workingSets, reps, load: namedLoadIn(a.load, ctx.benWords) };
+    const r = await deps.prepare(req).catch((): PlanSwapPrepared => ({ kind: 'refused', line: 'Not proposed: the plan couldn’t be read just now.' }));
+    if (r.kind === 'refused') {
+      const detail: ActionDetail = { kind: 'propose_plan_swap', op: 'add', planId: NO_PLAN, planName: '', addId: a.add.slice(0, 64), addName: (r.names?.add ?? a.add).slice(0, 120), days: [] };
+      const refused = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord(ctx, detail, { status: 'rejected', failure: r.line.slice(0, 200), reason: a.reason.slice(0, 240) }) });
+      if (refused.status === 'conflict') throw new Error('Could not record the refused plan add');
+      return { kind: 'action', record: refused.action, replayed: refused.status === 'replayed' };
+    }
+    const saved = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord(ctx, r.detail, { status: 'proposed', reason: a.reason.slice(0, 240) }) });
+    if (saved.status === 'conflict') throw new Error('Could not record the plan add');
+    return { kind: 'action', record: saved.action, replayed: saved.status === 'replayed' };
+  };
+  return { propose_plan_add: propose };
+}
+
+/** Sent when `propose_plan_add` is offered (a plan in use). */
+export const PLAN_ADD_LINE =
+  'To add an exercise to days of Ben’s plan from now on ("add curls to my pull days", "fix the plan too" after you found a gap), call propose_plan_add: the days by their names in YOUR DATA plan.inUse.days, `after` the exercise it goes after (null: at the end), your sets and reps. It is a proposal Ben applies with Undo: never say it changed.';
+
 /** Sent when `propose_plan_swap` is offered (a plan in use). */
 export const PLAN_SWAP_LINE = [
   'To swap one exercise in every day of Ben’s plan from now on ("swap leg press for leg extension in my plan", "across the full plan", "every week"), call propose_plan_swap in this turn: `remove` is the exercise going out, `add` the one coming in, catalogueIds from YOUR DATA plan.inUse.days or find_exercises. Only that exercise changes in each day. It is always a proposal Ben applies with Undo: never say it changed.',
@@ -99,6 +149,18 @@ export function isBareAccept(text: string): boolean {
 
 /** A coach question offering to act: "Want me to …?", "Shall I …?", "Should I …?", "Do you want me to …?". */
 const OFFER_QUESTION = /\b(?:want me to|shall i|should i|would you like me to|do you want me to|happy for me to|ok if i)\b[^?]*\?\s*$/i;
+
+/** A change the coach could make itself: swap, add, put in, replace… (not "adjust?" on its own, which is the app's line). */
+const FIX_VERB = /\b(?:swap|add|replace|put|drop|remove|switch|change|move|bump|lower|raise|increase|reduce|include|programme|program|fix|sort|tweak|make)\b/i;
+
+/**
+ * (Ben, 31 Oct, build 493: "Want me to swap hanging leg raises for curls today?") A sentence asking Ben whether the coach
+ * should make a fix, instead of making it as a card. Pure.
+ */
+export function isFixOffer(sentence: string): boolean {
+  const t = sentence.trim().replace(/[’]/g, "'");
+  return OFFER_QUESTION.test(t) && FIX_VERB.test(t);
+}
 
 export interface OfferContinuation {
   /** Ben's words that led to the offer, then his answer: read as his request this turn. */

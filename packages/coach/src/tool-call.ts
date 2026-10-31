@@ -91,6 +91,9 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'propose_plan_swap':
       // (Ben, 30 Oct) The reason is explanation; what goes out and what comes in are the change.
       return { remove: call.args.remove, add: call.args.add };
+    case 'propose_plan_add':
+      // (Ben, 31 Oct) The reason is explanation; what goes in, where, and its sets are the change.
+      return { add: call.args.add, days: [...call.args.days].map((d) => d.trim().toLowerCase()).sort(), after: call.args.after, workingSets: call.args.workingSets, reps: call.args.reps, load: call.args.load };
     case 'propose_week':
       // The message is explanation; the merges and skips are the change.
       return { merges: call.args.merges.map((m) => ({ dayIds: m.dayIds, name: m.name.trim().toLowerCase() })), skips: [...call.args.skips].sort() };
@@ -177,6 +180,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'propose_workout_edit':
     case 'fill_setup':
     case 'propose_plan_swap':
+    case 'propose_plan_add':
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':

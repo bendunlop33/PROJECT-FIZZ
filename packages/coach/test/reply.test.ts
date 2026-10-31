@@ -114,6 +114,13 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
     expect(hidden).toEqual([{ sentence: 'I’ve lowered sets 3–4 to 95 kg.', reason: 'mismatch', detail: 'Changes show on their cards, not in the reply.' }]);
   });
 
+  it('(Ben, 31 Oct) a true restatement is hidden (Why? keeps it) but never counted: no "1 line hidden" beside its card', async () => {
+    const model = new ScriptedCoachModel([[{ type: 'tool_call', callId: 'a1', name: 'adjust_pending_sets', arguments: '{}' }, ...chunked('I’ve lowered sets 3–4 to 95 kg. Set 2 was RPE 10.'), { type: 'completed' }]]);
+    const { hidden, note } = await play(model, { a1: benchAdjust() });
+    expect(hidden).toHaveLength(1);
+    expect(note).toBeNull();
+  });
+
   it('a kept claim with a token shows the coach sentence and the app line', async () => {
     const saved = benchAdjust();
     const model = new ScriptedCoachModel([[{ type: 'tool_call', callId: 'a1', name: 'adjust_pending_sets', arguments: '{}' }, ...chunked('Set 2 was RPE 10. [[a1]] That should keep you at 8.'), { type: 'completed' }]]);
