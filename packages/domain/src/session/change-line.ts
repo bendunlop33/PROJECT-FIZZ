@@ -206,10 +206,9 @@ export function topBackoffLine(from: ChangeSide | null, to: ChangeSide, backoff:
   const tl = isBodyweight(t.load) ? null : t.load;
   const f = from?.target ?? null;
   const fl = f === null || isBodyweight(f.load) ? null : f.load;
-  const comparable = fl !== null && tl !== null && sameUnit(fl, tl) && f?.reps != null && t.reps !== null;
   let top: Num;
   let same: boolean;
-  if (comparable && f !== null && fl !== null && tl !== null && f.reps !== null && t.reps !== null) {
+  if (f !== null && fl !== null && tl !== null && sameUnit(fl, tl) && f.reps !== null && t.reps !== null) {
     same = fl.value === tl.value && sameReps(f.reps, t.reps);
     const u = unit(tl);
     const a = { text: `${num(fl, from?.plates === true).text}×${reps(f.reps).text}`, spoken: `${num(fl, from?.plates === true).spoken} for ${reps(f.reps).spoken}` };
