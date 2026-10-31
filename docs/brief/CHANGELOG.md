@@ -1014,3 +1014,10 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Exercises done:** one line each (`3×8 @ 80 kg`, `8, 8, 7 @ 80 kg`, `4 sets · best 102.5×5 kg`), `3/4` beside it only when short of the plan.
 - **Ben to confirm:** (1) after an Undo the row's action reads `Redo` (VoiceOver: Use coach target), shortened from `Use coach target` to fit one line. (2) `ea` is shown with its unit (`24 → 26 kg ea`), so kg/lb stays explicit.
 - **Open:** not run on Ben's iPhone; the one-line fit at iPhone width and large Dynamic Type is untested on a device (the name truncates first by layout, checked only in the test renderer, which has no layout engine). `Make <lift> the main lift for <day>?` can take two lines.
+## 2026-10-31: Up next plans from tomorrow once today's workout is finished (Ben, 31 Oct)
+
+- **Ben's decision (30–31 Oct, "Yes"):** answers the 30 Oct "Ben to confirm". Once a gym workout is finished today, Up next is worked out as if today were tomorrow.
+- **Rule (training-blocks.md §4.1a):** Set days: tomorrow's scheduled day if not done; then missed days up to and including today, earliest first; then the next scheduled day; all done: least recently trained. Any days: Up next is the next session and Today's tiles place it on tomorrow. An open workout or an activity doesn't count. Ben's own pick (picker, `Make next`) still wins. Today's tile shows no planned ring once he has trained, unless he picks another session.
+- **Ben's week:** Fri 30 before training, Up next is Pull B; after Legs B, Push B (Sat's Legs B is done; Thu's Push B is the earliest missed).
+- **Built:** `setDaysUpNextOrder` (`finishedToday`), `upNextPlanningWeekday`, `finishedGymWorkoutOn` in `packages/domain`; the one resolver feeds Today's card, Library › Plan's NEXT, the tiles, the morning reminder's first day (on Set days it now uses this order for a later date, not the least-recently-trained rule) and the coach's Up next.
+- **Open:** not run on Ben's iPhone. Sunday after a workout plans from this week's days not done (not next Monday's). The reminder's days 2–7 are still predicted by the least-recently-trained rule on Set days.
