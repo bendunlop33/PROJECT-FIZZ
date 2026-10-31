@@ -136,8 +136,9 @@ export function daySheetOf(input: { at: { date: string } | { dayKey: string }; t
   const byKey = 'dayKey' in input.at ? input.at.dayKey : null;
   const onDate = 'date' in input.at ? input.at.date : null;
   const here = byKey !== null ? input.days.filter((d) => d.key === byKey) : input.days.filter((d) => d.date === onDate);
-  // The day still to do first, then a done one, then a skipped one.
-  const rank = (d: WeekPlanDay) => (d.status === 'today' || d.status === 'planned' || d.status === 'missed' ? 0 : d.status === 'done' ? 1 : 2);
+  // The day still to do first, then a done one, then a missed one (Ben, 31 Oct: the day he trained on its date, never
+  // `Missed` over it), then a skipped one.
+  const rank = (d: WeekPlanDay) => (d.status === 'today' || d.status === 'planned' ? 0 : d.status === 'done' ? 1 : d.status === 'missed' ? 2 : 3);
   const day = [...here].sort((a, b) => rank(a) - rank(b))[0] ?? null;
   const date = day?.date ?? onDate;
   if (day === null) {

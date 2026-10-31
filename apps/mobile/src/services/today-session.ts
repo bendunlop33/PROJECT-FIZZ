@@ -33,6 +33,9 @@ import {
   pbBlockLine,
   pbAppliedBuilder,
   pbWeekdaysOf,
+  setDaysWeekSlots,
+  weekdayIndexOfDate,
+  upNextPlanningWeekday,
   buildWeekTiles,
   daySheetOf,
   weekPlanDays,
@@ -1159,7 +1162,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const at = d.templates.map((t) => (t.routineId === null ? undefined : weekDone.get(t.routineId))).find((x): x is string => x !== undefined);
       return at === undefined ? null : localDateOf(toMs(at), tz);
     };
-    const week = { ...weekOf(plan, block, planDays, weekWorkouts.map((w) => ({ ...w, dayName: dayNameOf.get(w.sessionId) ?? null })), weekActs, today, doneOnOf, skippedDays), feed: weekFeed };
+    const week = { ...weekOf(plan, block, planDays, weekWorkouts.map((w) => ({ ...w, dayName: dayNameOf.get(w.sessionId) ?? null })), weekActs, today, doneOnOf, skippedDays, { nextKey: nextDay?.key ?? null, doneToday: stripWorkouts.some((w) => w.localDate === today) }), feed: weekFeed };
     // The nudge's real signals (rule 6): finished sessions in the window, today's check-in, what Ben logged.
     const recentForNudge: NudgeSession[] = newest.slice(0, 10).map((a) => ({
       sessionId: a.session.id,
@@ -1941,6 +1944,7 @@ function weekOf(
   today: string,
   doneOnOf: (d: TodayDay) => string | null,
   skipped: ReadonlySet<number> = new Set(),
+  upNext: { nextKey: string | null; doneToday: boolean } = { nextKey: null, doneToday: false },
 ): Omit<TodaySessionData['week'], 'feed'> {
   const monday = mondayOf(today);
   const doneOn: Record<string, string> = {};
@@ -1957,11 +1961,21 @@ function weekOf(
   if (setDays) {
     const indexes = planDays.flatMap((d) => (d.dayIndex === null ? [] : [d.dayIndex]));
     const weekdays = pbWeekdaysOf(builder.builder.answers, plan.moves, pbMoveWeek(block), indexes);
+    // (Ben, 31 Oct) This week's dates follow what he did (a plan day done on another day's weekday is a swap), then Up
+    // next on the planning day (today, or tomorrow once he has trained today): `setDaysWeekSlots`, the one rule.
+    const wdOf = (d: TodayDay) => (d.dayIndex === null ? undefined : weekdays?.get(d.dayIndex));
+    const slots = setDaysWeekSlots({
+      days: planDays.map((d) => ({ key: d.key, weekday: wdOf(d) ?? null, doneOn: doneOn[d.key] === undefined ? null : weekdayIndexOfDate(doneOn[d.key] ?? monday), skipped: d.dayIndex !== null && skipped.has(d.dayIndex) })),
+      planningDay: upNextPlanningWeekday(weekdayIndexOfDate(today), upNext.doneToday),
+      upNext: upNext.nextKey,
+    });
     for (const d of planDays) {
-      const wd = d.dayIndex === null ? undefined : weekdays?.get(d.dayIndex);
+      const wd = wdOf(d);
       if (wd !== undefined && doneOn[d.key] === undefined && d.dayIndex !== null && skipped.has(d.dayIndex)) skippedOn[d.key] = addDays(monday, wd);
       if (wd === undefined || doneOn[d.key] !== undefined || (d.dayIndex !== null && skipped.has(d.dayIndex))) continue;
-      planned.push({ key: d.key, name: d.name, localDate: addDays(monday, wd) });
+      // No slot left this week: genuinely missed, on its own date.
+      const slot = slots.get(d.key) ?? wd;
+      planned.push({ key: d.key, name: d.name, localDate: addDays(monday, slot) });
     }
   } else if (running) {
     for (const d of planDays) {

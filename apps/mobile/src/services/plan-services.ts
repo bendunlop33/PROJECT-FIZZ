@@ -83,6 +83,9 @@ import {
   type GymEdit,
   pbBlockStartUtc,
   pbKeepBlockOf,
+  finishedGymWorkoutOn,
+  setDaysWeekSlots,
+  upNextPlanningWeekday,
 } from '@fizz/domain';
 import type { PlanSplitView } from '@fizz/coach';
 import type { PlanWrite, Store } from '@fizz/persistence';
@@ -291,7 +294,15 @@ export function createPlanServices(deps: PlanServicesDeps) {
   }
 
   /** (Ben, 23 Oct: plan length = block 1) The applied builder plan's weeks; null on a coach plan. */
-  async function blockOverview(p: UserProfile, plan: PlanDraft, refs: readonly { routineId: string | null; startedAtUtc: string; planDay?: { planId: string; dayIndex: number } | undefined }[], nowMs: number, tz: string, of: (id: string) => Exercise | null): Promise<PlanBlockOverview | null> {
+  async function blockOverview(
+    p: UserProfile,
+    plan: PlanDraft,
+    refs: readonly { routineId: string | null; startedAtUtc: string; planDay?: { planId: string; dayIndex: number } | undefined }[],
+    nowMs: number,
+    tz: string,
+    of: (id: string) => Exercise | null,
+    week: { doneOn: ReadonlyMap<number, string>; nextDayIndex: number | null; finishedToday: boolean } | null = null,
+  ): Promise<PlanBlockOverview | null> {
     const b = pbAppliedBuilder(plan);
     const block = pbBlockOfPlan(plan, refs, nowMs, tz);
     if (b === null || block === null) return null;
@@ -299,7 +310,10 @@ export function createPlanServices(deps: PlanServicesDeps) {
     const kitOf = await slotKits(deps.store(), p.id);
     const a = b.builder.answers;
     // (Ben, 26 Oct: Edit plan) Each week from the plan's week map; Set days plans show each day's weekday.
-    const views = weekViews({ plan, answers: a, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise', asWorkout: await asWorkoutOf(p, plan, block, of) });
+    const planned = weekViews({ plan, answers: a, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise', asWorkout: await asWorkoutOf(p, plan, block, of) });
+    // (Ben, 31 Oct) This week's days on the dates Today's tiles show: what he did, then Up next on the planning day.
+    const at = editBlockOf(block)?.week ?? null;
+    const views = at === null || week === null || activePause(plan, nowMs, tz) !== null ? planned : planned.map((v, i) => (i === at - 1 ? { ...v, days: thisWeekSlots(v.days, plan, block, week, nowMs, tz) } : v));
     const deloads = views[0]?.deloadWeeks ?? [];
     const line = [`${String(a.weeks)} weeks`, EFFORT_WORD[a.effort], ...(deloads.length === 0 ? [] : [`deload ${deloads.length === 1 ? 'week' : 'weeks'} ${deloads.join(', ')}`])].join(' · ');
     const eb = editBlockOf(block);
@@ -362,6 +376,22 @@ export function createPlanServices(deps: PlanServicesDeps) {
   }
 
   /** (Ben, 29 Oct) This week's skipped plan days not done anyway (a skipped day done after all counts as done). */
+  /** (Ben, 31 Oct) This week's days with their weekday after `setDaysWeekSlots` (Set days only; done days keep theirs). */
+  function thisWeekSlots<D extends { index: number; weekday: number | null; done: boolean }>(days: readonly D[], plan: PlanDraft, block: PbBlockWeek, week: { doneOn: ReadonlyMap<number, string>; nextDayIndex: number | null; finishedToday: boolean }, nowMs: number, tz: string): D[] {
+    if (!days.some((d) => d.weekday !== null)) return [...days];
+    const skips = pbSkipsOf(plan, pbMoveWeek(block));
+    const today = weekdayIndexOfDate(localDateOf(nowMs, tz));
+    const slots = setDaysWeekSlots({
+      days: days.map((d) => {
+        const on = week.doneOn.get(d.index);
+        return { key: d.index, weekday: d.weekday, doneOn: on === undefined ? (d.done ? d.weekday : null) : weekdayIndexOfDate(on), skipped: skips.has(d.index) };
+      }),
+      planningDay: upNextPlanningWeekday(today, week.finishedToday),
+      upNext: week.nextDayIndex,
+    });
+    return days.map((d) => (d.done || week.doneOn.has(d.index) || skips.has(d.index) ? d : { ...d, weekday: slots.get(d.index) ?? d.weekday }));
+  }
+
   function skippedNow(plan: PlanDraft, block: PbBlockWeek | null, days: readonly { dayIndex: number | null }[]): number {
     if (block === null || block.done) return 0;
     const skips = pbSkipsOf(plan, pbMoveWeek(block));
@@ -752,7 +782,11 @@ export function createPlanServices(deps: PlanServicesDeps) {
         tz,
       });
       if (view === null) return null;
-      return { ...view, block: await blockOverview(p, plan, workouts, nowMs, tz, of) };
+      const doneOn = new Map(view.days.flatMap((d) => (d.dayIndex !== null && d.state === 'done' && d.doneOn !== null ? [[d.dayIndex, d.doneOn] as const] : [])));
+      const nextDayIndex = view.days.find((d) => d.next)?.dayIndex ?? null;
+      const today = localDateOf(nowMs, tz);
+      const finishedToday = finishedGymWorkoutOn(week.sessions.map((a) => ({ startedAtUtc: a.session.startedAt.utc, endedAtUtc: a.session.endedAt?.utc ?? null })), today, tz);
+      return { ...view, block: await blockOverview(p, plan, workouts, nowMs, tz, of, { doneOn, nextDayIndex, finishedToday }) };
     },
 
     /** One day of the plan in use (Library › Your plan › a day): its planned sets at this gym and last time's. Null: not a day of it. */
