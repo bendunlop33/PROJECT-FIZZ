@@ -1274,7 +1274,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       // (Ben, 31 Oct, build 493: three "No answer in time" in a row) One timeout gets one lighter retry: low effort, no
       // forcing, a fresh short budget, and the answer says it is the short one. Not when Ben pressed Stop, not after any
       // of a reply was shown, and only once.
-      const retryMs = timing.lightRetryMs ?? COACH_LIGHT_RETRY_MS;
+      // A workout build keeps its own cap (BD13): a short text answer is no workout.
+      const retryMs = forced && !forcedPlan ? 0 : (timing.lightRetryMs ?? COACH_LIGHT_RETRY_MS);
       if (why === 'timeout' && !lightRetry && retryMs > 0 && !stoppedByBen && replyStream.streamed === '' && !lostInBackground) {
         lightRetry = true;
         stepLimit = step + 3;
