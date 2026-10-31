@@ -1,5 +1,5 @@
 import { healthActivityLine, healthSourceText, READ_WINDOW_WORD, sleepText, toMs, type HealthDailyValue, type LinkableWorkout } from '@fizz/domain';
-import type { HealthActivityProvenance, HealthReadWindow, HealthSettings, HealthWorkoutSample } from '@fizz/schemas';
+import type { Activity, HealthActivityProvenance, HealthReadWindow, HealthSettings, HealthWorkoutSample } from '@fizz/schemas';
 import type { HealthCapability } from '@fizz/providers';
 
 import { NATIVE_PAUSED_COPY, type NativePause } from '../diagnostics/launch-guard';
@@ -56,6 +56,11 @@ export const HEALTH_COPY = {
   paired: 'Paired',
   unpair: 'Unpair',
   unpaired: 'Unpaired',
+  /** (Ben, 31 Oct) The Health activity sheet's one action. */
+  pairWith: 'Pair with',
+  pairedWith: 'Paired with',
+  sameWorkout: 'Same workout',
+  sameWorkoutAs: 'Same workout as',
   stale: 'Changed since. Try again.',
 } as const;
 
@@ -218,7 +223,8 @@ function heartRateText(p: Pick<HealthActivityProvenance, 'avgHeartRate' | 'maxHe
 /** The `Linked activity` row and sheet for a linked Health workout (actuals from the watch; never merged with the app's). */
 export function linkedActivityView(p: HealthActivityProvenance, linkVersion: number, showHeartRate: boolean, tz: string, locale?: string): LinkedActivityView {
   const m = minutes(p);
-  const line = `${p.sourceName} · ${String(m)} min`;
+  // (Ben, 31 Oct) `Paired with Garmin · 46 min`, with `Unpair` beside it.
+  const line = `${HEALTH_COPY.pairedWith} ${p.sourceName} · ${String(m)} min`;
   const energy = p.activeKcal === undefined || p.activeKcal === null ? null : `${String(p.activeKcal)} kcal active`;
   const hrOnly = showHeartRate ? heartRateText(p) : null;
   const hr = [hrOnly, energy].filter((x): x is string => x !== null).join(' · ') || null;
@@ -271,10 +277,56 @@ export { healthActivityLine };
  */
 export interface DayPairsView {
   unpaired: Readonly<Record<string, readonly { sessionId: string; time: string | null }[]>>;
+  /** (Ben, 31 Oct) Per Health activity, the day's paired workouts it may be a second recording of (`Same workout`). */
+  same?: Readonly<Record<string, readonly { sessionId: string; linkUuid: string; linkVersion: number }[]>>;
   paired: Readonly<Record<string, { healthUuid: string; linkVersion: number; facts: string | null; source: string }>>;
 }
 
 export const NO_DAY_PAIRS: DayPairsView = { unpaired: {}, paired: {} };
+
+/** (Ben, 31 Oct) A Health activity sheet's same-day pairing: at most one of `pair`/`same` lists or `paired` leads. */
+export interface HealthActivityDetail {
+  activity: Activity;
+  showHeartRate: boolean;
+  /** The day's workouts with no linked activity, nearest first. */
+  pair: { sessionId: string; title: string; time: string | null }[];
+  /** The day's paired workouts it may be the same session as. */
+  same: { sessionId: string; title: string; time: string | null; linkUuid: string; linkVersion: number }[];
+  /** The workout it is paired with. */
+  paired: { sessionId: string; title: string; time: string | null; linkVersion: number } | null;
+}
+
+/** The sheet's one action at the top (Ben, 31 Oct). */
+export type HealthSheetAction =
+  | { kind: 'pair'; sessionId: string; label: string }
+  | { kind: 'same'; sessionId: string; linkUuid: string; linkVersion: number; label: string }
+  | { kind: 'choose'; rows: ({ kind: 'pair'; sessionId: string; label: string; button: string } | { kind: 'same'; sessionId: string; linkUuid: string; linkVersion: number; label: string; button: string })[] }
+  | { kind: 'paired'; sessionId: string; label: string; linkVersion: number }
+  | { kind: 'none' };
+
+/** `Push A · 18:04–18:50`-style label: title and time (no time on a date-only workout). */
+const workoutLabel = (w: { title: string; time: string | null }) => [w.title, w.time].filter((x): x is string => x !== null).join(' · ');
+
+/**
+ * (Ben, 31 Oct: "make it easier to pair") The Health activity sheet's one action: one workout that day → `Pair with
+ * Push A · 18:04`; the day's workout already paired → `Same workout as Push A`; several → a short list; paired →
+ * `Paired with Push A` and Unpair; no workout that day → nothing. Pure.
+ */
+export function healthSheetAction(d: Pick<HealthActivityDetail, 'pair' | 'same' | 'paired'>): HealthSheetAction {
+  if (d.paired !== null) return { kind: 'paired', sessionId: d.paired.sessionId, label: `${HEALTH_COPY.pairedWith} ${workoutLabel(d.paired)}`, linkVersion: d.paired.linkVersion };
+  const [p] = d.pair;
+  const [s] = d.same;
+  if (d.pair.length === 1 && d.same.length === 0 && p !== undefined) return { kind: 'pair', sessionId: p.sessionId, label: `${HEALTH_COPY.pairWith} ${workoutLabel(p)}` };
+  if (d.pair.length === 0 && d.same.length === 1 && s !== undefined) return { kind: 'same', sessionId: s.sessionId, linkUuid: s.linkUuid, linkVersion: s.linkVersion, label: `${HEALTH_COPY.sameWorkoutAs} ${s.title}` };
+  if (d.pair.length + d.same.length === 0) return { kind: 'none' };
+  return {
+    kind: 'choose',
+    rows: [
+      ...d.pair.map((w) => ({ kind: 'pair' as const, sessionId: w.sessionId, label: workoutLabel(w), button: HEALTH_COPY.pair })),
+      ...d.same.map((w) => ({ kind: 'same' as const, sessionId: w.sessionId, linkUuid: w.linkUuid, linkVersion: w.linkVersion, label: workoutLabel(w), button: HEALTH_COPY.sameWorkout })),
+    ],
+  };
+}
 
 /** A paired workout's Health facts after the app's own (`avg 128 bpm`); null when there are none to show. */
 export function pairedFacts(p: Pick<HealthActivityProvenance, 'avgHeartRate'>, showHeartRate: boolean): string | null {

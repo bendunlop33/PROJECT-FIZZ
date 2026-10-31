@@ -25,6 +25,8 @@ import {
   type PlanTabRow,
 } from '@fizz/domain';
 
+import type { Activity } from '@fizz/schemas';
+
 import { dateAt } from '../../clock';
 import { changePlanView, CHANGE_PLAN_COPY, type ChangePlanAction } from '../../library/change-plan-view';
 import { WEEK_COPY } from '../../services/week-services';
@@ -36,6 +38,8 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Eyebrow, Icon, TextButton } from '../../ui';
 import { SwipeRow } from '../../ui/table-parts';
+import { activitySavedToast } from '../../activity/activity-toast';
+import { ActivitySheet } from '../activity/ActivitySheet';
 import { ChangePlanSheet, EditPlanButton } from './ChangePlanSheet';
 import { LiftTargetsBlock } from './LiftTargetsBlock';
 import { DaySheetFlow } from '../today/DaySheet';
@@ -67,6 +71,12 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
   // (Ben, 29 Oct) This week's day row: the day sheet.
   const [daySheet, setDaySheet] = useState<{ key: string; routineId: string; name: string } | null>(null);
   const busy = useRef(false);
+  // (Ben, 31 Oct) This week's activity line tapped: its sheet (a Health workout's has Pair).
+  const [activity, setActivity] = useState<Activity | null>(null);
+  async function openActivity(activityId: string) {
+    const a = await services.activities.get(activityId);
+    if (a !== null) setActivity(a);
+  }
   // One op ID per confirm, so a retried tap is the same End (rule 5).
   const endOp = useRef<string | null>(null);
   const pauseOp = useRef<string | null>(null);
@@ -460,11 +470,17 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
           </View>
         ) : null}
         {view.thisWeek
-          ? plan.activities.map((line) => (
-              <AppText key={line} variant="callout" color="text.secondary" numeric style={{ paddingTop: theme.space['1'] }}>
-                {line}
-              </AppText>
-            ))
+          ? plan.activities.map((line, i) => {
+              // (Ben, 31 Oct) Each line opens its activity's sheet (a Health workout's has Pair).
+              const id = plan.activityIds[i] ?? null;
+              return (
+                <Pressable key={`${line}:${String(i)}`} accessibilityRole={id === null ? 'text' : 'button'} accessibilityLabel={line} disabled={id === null} onPress={() => { if (id !== null) void openActivity(id); }} style={({ pressed }) => ({ paddingTop: theme.space['1'], opacity: pressed ? 0.7 : 1 })}>
+                  <AppText variant="callout" color="text.secondary" numeric>
+                    {line}
+                  </AppText>
+                </Pressable>
+              );
+            })
           : null}
       </View>
       {/* (Ben approved 20 Oct) Lift targets: nothing while the setting is off. */}
@@ -475,6 +491,18 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
         onPress={() => {
           if (edit?.kind === 'next') navigation.dispatch(openNextBlock(plan.planId));
           else setSheet(true);
+        }}
+      />
+      <ActivitySheet
+        visible={activity !== null}
+        activity={activity}
+        onClose={() => {
+          setActivity(null);
+        }}
+        onSaved={(saved) => {
+          setActivity(null);
+          changed();
+          onToast(activitySavedToast(saved, { undo: services.activities.undo, newOpId: newUuid, changed, show: onToast }));
         }}
       />
       <DaySheetFlow

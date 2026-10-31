@@ -1,6 +1,7 @@
 import {
   ActivityFieldsSchema,
   HEALTH_LIMITS,
+  isFizzBundle,
   type Activity,
   type ActivityKind,
   type HealthActivityProvenance,
@@ -337,7 +338,103 @@ export function linkableDate(w: LinkableWorkout): string {
  * second strength workout that day, it blocked the auto-link).
  */
 export function linkableSamples(samples: readonly HealthWorkoutSample[], writtenUuids: ReadonlySet<string>, appSessionIds: ReadonlySet<string>): HealthWorkoutSample[] {
-  return samples.filter((s) => !writtenUuids.has(s.uuid) && (s.externalId === null || !appSessionIds.has(s.externalId.toLowerCase())));
+  return samples.filter((s) => !isOwnCopy(s, writtenUuids, appSessionIds));
+}
+
+/** (Ben, 31 Oct) The app's own Health copy: a UUID it wrote, one of its workouts' IDs, or any install's bundle (`isFizzBundle`). */
+export function isOwnCopy(s: HealthWorkoutSample, writtenUuids: ReadonlySet<string>, appSessionIds: ReadonlySet<string>): boolean {
+  return writtenUuids.has(s.uuid) || isFizzBundle(s.sourceBundleId) || (s.externalId !== null && appSessionIds.has(s.externalId.toLowerCase()));
+}
+
+/**
+ * (Ben, 31 Oct: "These should link") Two Health strength workouts that are one session recorded twice (Garmin
+ * writing it again, a watch's twin), whatever their sources: the same local day, overlapping by most of the shorter
+ * one (`AUTO_LINK_MIN_OVERLAP`). Pure.
+ */
+export function sameSessionSamples(a: HealthWorkoutSample, b: HealthWorkoutSample): boolean {
+  return a.uuid !== b.uuid && HK_STRENGTH_TYPES.has(a.activityType) && HK_STRENGTH_TYPES.has(b.activityType) && localDateOf(toMs(a.startUtc), a.tz) === localDateOf(toMs(b.startUtc), a.tz) && overlapShare(a, b) >= AUTO_LINK_MIN_OVERLAP;
+}
+
+/** A link record that is Ben's own `Unlink` or `Not it`: that Health workout stays apart, never folded into another. */
+const bensApart = (l: HealthLink | undefined): boolean => l !== undefined && l.status !== 'linked' && l.by === 'ben';
+
+/**
+ * (Ben, 31 Oct) The Health workouts that are a linked workout recorded again, by UUID, with the link they belong to:
+ * the link's own `also`, and any strength workout with no link of its own that is the same session as a linked one
+ * (`sameSessionSamples`). Ben's own `Unlink` / `Not it` keeps one apart. They show nowhere on their own: the linked
+ * workout shows once. Pure.
+ */
+export function linkedTwins(samples: readonly HealthWorkoutSample[], links: readonly HealthLink[]): Map<string, HealthLink> {
+  const live = links.filter((l) => l.status === 'linked');
+  const recordOf = new Map(links.map((l) => [l.healthUuid, l] as const));
+  const liveUuids = new Set(live.map((l) => l.healthUuid));
+  const linkedSamples = samples.filter((x) => liveUuids.has(x.uuid));
+  const out = new Map<string, HealthLink>();
+  for (const l of live) for (const u of l.also ?? []) if (!liveUuids.has(u)) out.set(u, l);
+  for (const s of samples) {
+    if (liveUuids.has(s.uuid) || out.has(s.uuid) || bensApart(recordOf.get(s.uuid))) continue;
+    const twin = linkedSamples.find((l) => sameSessionSamples(s, l));
+    const link = twin === undefined ? undefined : live.find((l) => l.healthUuid === twin.uuid);
+    if (link !== undefined) out.set(s.uuid, link);
+  }
+  return out;
+}
+
+/**
+ * (Ben, 31 Oct) What reading records into the links: each strength workout that is a linked workout recorded again
+ * (`linkedTwins`) and not in its link's `also` yet, by link. Pure.
+ */
+export function twinsToRecord(samples: readonly HealthWorkoutSample[], links: readonly HealthLink[]): { healthUuid: string; add: string[] }[] {
+  const by = new Map<string, string[]>();
+  for (const [uuid, l] of linkedTwins(samples, links)) {
+    if ((l.also ?? []).includes(uuid)) continue;
+    by.set(l.healthUuid, [...(by.get(l.healthUuid) ?? []), uuid]);
+  }
+  return [...by].map(([healthUuid, add]) => ({ healthUuid, add: add.sort() }));
+}
+
+/**
+ * (Ben, 31 Oct: "Same workout") Add Health workouts to a live link as the same session recorded again (`also`), or
+ * take them out (`remove`: its Undo). On the version read; idempotent by op ID. Pure.
+ */
+export function changeLinkAlso(current: HealthLink | null, input: { add?: readonly string[]; remove?: readonly string[]; opId: string; atUtc: string; expectedVersion: number | null }): HealthLinkChange {
+  if (current === null) return { kind: 'stale', current: null };
+  if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
+  if (input.expectedVersion !== null && current.version !== input.expectedVersion) return { kind: 'stale', current };
+  if (current.status !== 'linked') return { kind: 'stale', current };
+  const add = (input.add ?? []).map((u) => u.toLowerCase()).filter((u) => u !== current.healthUuid);
+  const remove = new Set((input.remove ?? []).map((u) => u.toLowerCase()));
+  const also = [...new Set([...(current.also ?? []).filter((u) => !remove.has(u)), ...add])];
+  if (also.length > HEALTH_LIMITS.maxAlso) return { kind: 'invalid', reason: 'Too many recordings of one workout' };
+  const rest: HealthLink = { ...current };
+  delete rest.also;
+  return {
+    kind: 'write',
+    next: { ...rest, ...(also.length === 0 ? {} : { also }), version: current.version + 1, updatedAtUtc: input.atUtc, opIds: [...current.opIds, input.opId].slice(-HEALTH_LIMITS.maxOps) },
+    expectedVersion: current.version,
+  };
+}
+
+/**
+ * (Ben, 31 Oct: "These should link") Automatic links that hold a workout with the wrong Health workout: the app's own
+ * copy (`ownUuids`, or any install's bundle), or one no longer in Health (absent from a read covering its day), while
+ * a strength workout from another source, with no link record, overlaps that workout the same day. Releasing them lets
+ * the real one link (`autoLinkPairs`). Ben's own links are left alone. Pure.
+ */
+export function linksToRelink(input: { links: readonly HealthLink[]; samples: readonly HealthWorkoutSample[]; workouts: readonly LinkableWorkout[]; ownUuids: ReadonlySet<string>; readFromUtc: string }): HealthLink[] {
+  const byUuid = new Map(input.samples.map((x) => [x.uuid, x] as const));
+  const recorded = new Set(input.links.map((l) => l.healthUuid));
+  const fromMs = toMs(input.readFromUtc) + 86_400_000;
+  const workoutOf = new Map(input.workouts.map((w) => [w.sessionId, w] as const));
+  return input.links.filter((l) => {
+    if (l.status !== 'linked' || l.by !== 'auto') return false;
+    const w = workoutOf.get(l.sessionId);
+    if (w === undefined || (w.localDate !== undefined && w.startAsWritten !== true)) return false;
+    const sample = byUuid.get(l.healthUuid);
+    const wrong = sample === undefined ? toMs(w.startUtc) >= fromMs : input.ownUuids.has(l.healthUuid) || isFizzBundle(sample.sourceBundleId);
+    if (!wrong) return false;
+    return input.samples.some((x) => HK_STRENGTH_TYPES.has(x.activityType) && !recorded.has(x.uuid) && !input.ownUuids.has(x.uuid) && !isFizzBundle(x.sourceBundleId) && sameDay(x, w) && overlapShare(x, w) > 0);
+  });
 }
 
 /** Overlap as a share of the shorter of the two (0–1). */
@@ -366,6 +463,24 @@ function linkedSessions(links: readonly HealthLink[]): Set<string> {
   return new Set(links.filter((l) => l.status === 'linked').map((l) => l.sessionId));
 }
 
+/** The fuller recording first: heart rate, then distance, then the longer, then by UUID. */
+const recordingScore = (s: HealthWorkoutSample) => (s.avgHeartRate !== null ? 4 : 0) + (s.distanceM !== null ? 2 : 0);
+function fullerFirst(a: HealthWorkoutSample, b: HealthWorkoutSample): number {
+  return recordingScore(b) - recordingScore(a) || b.durationS - a.durationS || a.uuid.localeCompare(b.uuid);
+}
+
+/** One day's strength workouts grouped into sessions (`sameSessionSamples`, transitively), each fuller first. */
+function sessionGroups(samples: readonly HealthWorkoutSample[]): HealthWorkoutSample[][] {
+  const groups: HealthWorkoutSample[][] = [];
+  for (const s of samples) {
+    const hit = groups.filter((g) => g.some((x) => sameSessionSamples(s, x)));
+    const merged = [s, ...hit.flat()];
+    for (const g of hit) groups.splice(groups.indexOf(g), 1);
+    groups.push(merged);
+  }
+  return groups.map((g) => [...g].sort(fullerFirst));
+}
+
 /** Auto-link needs the two within this of each other (or overlapping): log times differ (Ben, 27 Oct). */
 export const AUTO_LINK_NEAR_MS = 2 * 3_600_000;
 
@@ -388,8 +503,11 @@ function nearInTime(s: HealthInterval, w: HealthInterval): boolean {
  * (`startAsWritten`) and the Health workout starts within `ASK_WITHIN_MS` of it; one with no time (FitNotes: the
  * 12:00 anchor) is left for the day sheet's `Pair`.
  */
-export function autoLinkPairs(input: { samples: readonly HealthWorkoutSample[]; workouts: readonly LinkableWorkout[]; links: readonly HealthLink[] }): { healthUuid: string; sessionId: string }[] {
-  const recorded = new Set(input.links.map((l) => l.healthUuid));
+export function autoLinkPairs(input: { samples: readonly HealthWorkoutSample[]; workouts: readonly LinkableWorkout[]; links: readonly HealthLink[] }): { healthUuid: string; sessionId: string; also?: string[] }[] {
+  // (Ben, 31 Oct) A workout recorded twice (Garmin writing it again, a watch's twin) is one: the twins of a linked
+  // workout are that link's, and two unlinked twins on a day count once (the fuller one links, the other is `also`).
+  const twins = linkedTwins(input.samples, input.links);
+  const recorded = new Set([...input.links.map((l) => l.healthUuid), ...twins.keys()]);
   const taken = linkedSessions(input.links);
   const byDay = new Map<string, { samples: HealthWorkoutSample[]; workouts: LinkableWorkout[] }>();
   const day = (date: string) => {
@@ -405,14 +523,17 @@ export function autoLinkPairs(input: { samples: readonly HealthWorkoutSample[]; 
     if (!HK_STRENGTH_TYPES.has(s.activityType) || recorded.has(s.uuid)) continue;
     day(localDateOf(toMs(s.startUtc), s.tz)).samples.push(s);
   }
-  const out: { healthUuid: string; sessionId: string }[] = [];
+  const out: { healthUuid: string; sessionId: string; also?: string[] }[] = [];
   for (const d of byDay.values()) {
-    const [s] = d.samples;
+    const groups = sessionGroups(d.samples);
+    const [g] = groups;
     const [w] = d.workouts;
-    if (d.samples.length !== 1 || d.workouts.length !== 1 || s === undefined || w === undefined || taken.has(w.sessionId)) continue;
+    if (groups.length !== 1 || d.workouts.length !== 1 || g === undefined || w === undefined || taken.has(w.sessionId)) continue;
+    const [s, ...also] = g;
+    if (s === undefined) continue;
     // A date-only workout has no end: only a start written in the file can match, by start time; the noon anchor never does.
     const near = w.localDate === undefined ? nearInTime(s, w) : w.startAsWritten === true && Math.abs(toMs(s.startUtc) - toMs(w.startUtc)) <= ASK_WITHIN_MS;
-    if (near) out.push({ healthUuid: s.uuid, sessionId: w.sessionId });
+    if (near) out.push({ healthUuid: s.uuid, sessionId: w.sessionId, ...(also.length === 0 ? {} : { also: also.map((x) => x.uuid).sort() }) });
   }
   return out;
 }
@@ -510,7 +631,8 @@ export function nearbyWorkouts(sample: HealthWorkoutSample, workouts: readonly L
  * workout. Pure.
  */
 export function dayPairs(input: { date: string; samples: readonly HealthWorkoutSample[]; workouts: readonly LinkableWorkout[]; links: readonly HealthLink[] }): {
-  unpaired: { sample: HealthWorkoutSample; choices: LinkableWorkout[] }[];
+  /** `same`: (Ben, 31 Oct) the day's paired workouts it may be a second recording of (`Same workout`). */
+  unpaired: { sample: HealthWorkoutSample; choices: LinkableWorkout[]; same: { workout: LinkableWorkout; link: HealthLink }[] }[];
   paired: { workout: LinkableWorkout; sample: HealthWorkoutSample; link: HealthLink }[];
 } {
   const live = input.links.filter((l) => l.status === 'linked');
@@ -521,8 +643,11 @@ export function dayPairs(input: { date: string; samples: readonly HealthWorkoutS
   const pairable = (s: HealthWorkoutSample) => HK_STRENGTH_TYPES.has(s.activityType) || s.activityType === HK_OTHER_TYPE;
   const taken = new Set(live.map((l) => l.sessionId));
   const free = dayWorkouts.filter((w) => !taken.has(w.sessionId));
-  const unpaired: { sample: HealthWorkoutSample; choices: LinkableWorkout[] }[] = [];
+  const unpaired: { sample: HealthWorkoutSample; choices: LinkableWorkout[]; same: { workout: LinkableWorkout; link: HealthLink }[] }[] = [];
   const paired: { workout: LinkableWorkout; sample: HealthWorkoutSample; link: HealthLink }[] = [];
+  // (Ben, 31 Oct) A linked workout recorded again is that workout: never a row of its own, never offered.
+  const twins = linkedTwins(input.samples, input.links);
+  const dayLinks = live.filter((l) => byId.has(l.sessionId));
   for (const s of input.samples) {
     const link = linkOf.get(s.uuid);
     if (link !== undefined) {
@@ -530,10 +655,18 @@ export function dayPairs(input: { date: string; samples: readonly HealthWorkoutS
       if (w !== undefined) paired.push({ workout: w, sample: s, link });
       continue;
     }
-    if (!pairable(s) || sampleDate(s) !== input.date || free.length === 0) continue;
+    if (twins.has(s.uuid) || !pairable(s) || sampleDate(s) !== input.date) continue;
     const at = toMs(s.startUtc);
-    const choices = [...free].sort((a, b) => Math.abs(toMs(a.startUtc) - at) - Math.abs(toMs(b.startUtc) - at) || a.sessionId.localeCompare(b.sessionId));
-    unpaired.push({ sample: s, choices });
+    const near = (a: LinkableWorkout, b: LinkableWorkout) => Math.abs(toMs(a.startUtc) - at) - Math.abs(toMs(b.startUtc) - at) || a.sessionId.localeCompare(b.sessionId);
+    const choices = [...free].sort(near);
+    const same = HK_STRENGTH_TYPES.has(s.activityType)
+      ? dayLinks
+          .map((l) => ({ workout: byId.get(l.sessionId), link: l }))
+          .filter((x): x is { workout: LinkableWorkout; link: HealthLink } => x.workout !== undefined)
+          .sort((a, b) => near(a.workout, b.workout))
+      : [];
+    if (choices.length === 0 && same.length === 0) continue;
+    unpaired.push({ sample: s, choices, same });
   }
   return { unpaired: unpaired.sort((a, b) => toMs(a.sample.startUtc) - toMs(b.sample.startUtc)), paired };
 }
@@ -656,7 +789,7 @@ export function healthActivityOf(s: HealthWorkoutSample, ownerId: string): Activ
 
 /** The app's own write: its source, a UUID it wrote, or an external ID that is one of its workouts (apple-health.md §3.1). */
 function isOwnWrite(s: HealthWorkoutSample, ownBundleId: string | null, writtenUuids: ReadonlySet<string>, appSessionIds: ReadonlySet<string>): boolean {
-  if (ownBundleId !== null && (s.sourceBundleId === ownBundleId || s.sourceBundleId.startsWith(`${ownBundleId}.`))) return true;
+  if (isFizzBundle(s.sourceBundleId, ownBundleId)) return true;
   return writtenUuids.has(s.uuid) || (s.externalId !== null && appSessionIds.has(s.externalId.toLowerCase()));
 }
 
@@ -714,7 +847,10 @@ export function activitiesWithHealth(input: {
   const linked = new Set(input.links.filter((l) => l.status === 'linked').map((l) => l.healthUuid));
   const notOwn = input.samples.filter((s) => !isOwnWrite(s, input.ownBundleId, input.writtenUuids, input.appSessionIds));
   const linkedSamples = notOwn.filter((s) => linked.has(s.uuid));
-  const twinOfLinked = (s: HealthWorkoutSample) => linkedSamples.some((l) => l.sourceBundleId !== s.sourceBundleId && familyOf(l.activityType) === familyOf(s.activityType) && overlapShare(l, s) >= AUTO_LINK_MIN_OVERLAP);
+  // A watch's twin of a linked workout (another family member too, e.g. an `other` with the same times), and (Ben,
+  // 31 Oct) any strength workout that is the linked one recorded again, from any source (`linkedTwins`).
+  const twins = linkedTwins(notOwn, input.links);
+  const twinOfLinked = (s: HealthWorkoutSample) => twins.has(s.uuid) || linkedSamples.some((l) => l.sourceBundleId !== s.sourceBundleId && familyOf(l.activityType) === familyOf(s.activityType) && overlapShare(l, s) >= AUTO_LINK_MIN_OVERLAP);
   const fresh = notOwn.filter((s) => !linked.has(s.uuid) && !twinOfLinked(s));
   const { kept } = dedupeHealthSources(fresh);
   const health = kept.map((s) => healthActivityOf(s, input.ownerId)).filter((a): a is Activity => a !== null);

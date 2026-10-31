@@ -126,7 +126,7 @@ export interface PlanServicesDeps {
    */
   learnTyped?: (exerciseId: string, load: Load) => Promise<GymEdit | null>;
   /** (Ben, 20 Oct) This week's activity lines and the week change in use (week-services); absent: none. */
-  weekInfo?: () => Promise<{ lines: string[]; change: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][]; mergedRoutineIds?: (string | null)[] } | null }>;
+  weekInfo?: () => Promise<{ lines: string[]; /** Each line's activity ID. */ ids?: string[]; change: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][]; mergedRoutineIds?: (string | null)[] } | null }>;
 }
 
 /**
@@ -771,6 +771,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const info = (await deps.weekInfo?.().catch(() => null)) ?? null;
       const view = planOverview({
         activities: info?.lines ?? [],
+        activityIds: info?.ids ?? [],
         weekChange: info?.change ?? null,
         paused: pause === null ? null : { untilDate: pause.untilDate },
         pausedDaysThisWeek: pausedInWeek(monday, pausedDates(plan.pauses, monday, addDays(monday, 7), tz)),

@@ -209,7 +209,7 @@ describe('reading activities and linking', () => {
     expect((await s.health.linkChoices(id)).map((c) => c.healthUuid)).toEqual([strength]);
     // Ben links it by hand from the activity's sheet.
     const sheet = await s.health.activity(strength);
-    expect(sheet?.nearby.map((w) => w.sessionId)).toContain(id);
+    expect(sheet?.pair.map((w) => w.sessionId)).toContain(id);
     expect((await s.health.link({ healthUuid: strength, sessionId: id, opId: 'link-1' })).ok).toBe(true);
     expect((await s.health.forWorkout(id)).kind).toBe('linked');
     // The Health activity is read-only.
