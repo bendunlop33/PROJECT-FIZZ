@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-front-raise",
+  "tier": "rich",
+  "name": "Dumbbell front raise",
+  "aliases": ["Front raise", "Front dumbbell raise", "DB front raise", "Dumbbell front raises", "Front delt raise", "Standing dumbbell front raise"],
+  "family": "front_raise",
+  "movementPattern": "vertical_push",
+  "mechanic": "isolation",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["side_delts", "upper_chest"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Stand tall, a dumbbell in each hand",
+      "Dumbbells resting in front of your thighs",
+      "Elbows soft, not locked"
+    ],
+    "execution": [
+      "Raise the dumbbells forward to shoulder height",
+      "Keep the slight bend in your elbows",
+      "Pause briefly at the top",
+      "Lower slowly to your thighs"
+    ],
+    "faults": [
+      "Don't swing with your hips or back",
+      "Don't shrug your shoulders up",
+      "Don't go too heavy; light weights work"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Keep the weight light. The front of the shoulder is small, and swinging moves the work elsewhere.",
+      "Both arms together, one at a time, or one dumbbell held in both hands are all common. Log the weight of one dumbbell either way.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "One-arm-at-a-time front raise", "reason": "Raising one arm while the other rests makes it easier to keep the body still." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Cable front raise", "reason": "Keeps tension on through the whole range." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-lateral-raise", "name": "Lateral raise", "reason": "Same raise out to the sides; more side delts." },
+      { "key": "barbell-overhead-press", "name": "Overhead press", "reason": "Compound press that trains the front delts heavily." },
+      { "key": "dumbbell-seated-shoulder-press", "name": "Dumbbell shoulder press", "reason": "Pressing with dumbbells; front delts and triceps." },
+      { "key": "machine-shoulder-press", "name": "Machine shoulder press", "reason": "Front-delt pressing on a fixed path." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at shoulder height, figure facing right, both dumbbells moving together (the far arm hidden behind the near one).",
+    "keyPositions": [
+      {
+        "label": "Down",
+        "describe": "Standing tall, dumbbells in front of the thighs, palms facing the body, elbows softly bent.",
+        "approxAnglesDeg": { "shoulderFlexion": 5, "elbowFlexion": 10, "trunkLeanFromVertical": 0 }
+      },
+      {
+        "label": "Up",
+        "describe": "Arms raised forward to shoulder height, roughly parallel to the floor, elbows still softly bent. Torso upright; no backward lean.",
+        "approxAnglesDeg": { "shoulderFlexion": 90, "elbowFlexion": 10, "trunkLeanFromVertical": 0 }
+      }
+    ],
+    "ikHints": ["Feet and torso fixed; only the arms move", "Elbow angle constant"],
+    "tempo": { "downMs": 1800, "holdMs": 400, "upMs": 1000 },
+    "props": ["dumbbell_pair"],
+    "emphasise": [
+      "Arms rise to shoulder height and no higher",
+      "Torso stays still; no swing",
+      "Slow lowering"
+    ],
+    "doNotShow": ["Leaning back to swing the weights", "Shoulders shrugged to the ears", "Heavy dumbbells"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/dumbbell-front-raise/",
+      "title": "StrengthLog: Dumbbell Front Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles (side delts); cues.setup[0-1]; cues.execution[0,3]; cues.faults[2]; safety.notes[0]"
+    },
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/54/front-raise/",
+      "title": "ACE Exercise Library: Front Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (front and side delts); cues.setup[1]; cues.execution[0-1]",
+      "note": "Seen through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "There is no isolation or raise pattern. vertical_push matches the lateral raise entries."
+    },
+    {
+      "field": "implements",
+      "note": "Left out on purpose: front raises are commonly done with two dumbbells, alternating, or one dumbbell held in both hands, so an import asks."
+    },
+    {
+      "field": "secondaryMuscles",
+      "note": "upper_chest is reasoned from the movement (the upper chest helps raise the arm forward), not measured."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

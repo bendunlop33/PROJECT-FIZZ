@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-lateral-raise",
+  "tier": "rich",
+  "name": "Machine lateral raise",
+  "aliases": ["Lateral raise machine", "Seated lateral raise machine", "Machine side raise", "Side lateral raise machine", "Lateral delt machine"],
+  "family": "lateral_raise",
+  "movementPattern": "vertical_push",
+  "mechanic": "isolation",
+  "primaryMuscles": ["side_delts"],
+  "secondaryMuscles": ["front_delts", "traps"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Seat so your shoulders line up with the pivots",
+      "Pads against your upper arms near the elbows",
+      "Chest on or back against the pad, feet flat"
+    ],
+    "execution": [
+      "Lead with your elbows out to the sides",
+      "Raise until upper arms are level",
+      "Pause briefly at the top",
+      "Lower slowly; keep a little tension"
+    ],
+    "faults": [
+      "Don't shrug your shoulders up",
+      "Don't rock your torso for momentum",
+      "Don't let the stack slam down"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Line the shoulder joint up with the machine's pivot; a poor seat height drags the shoulder through an awkward path.",
+      "Pick a lighter weight than you expect and keep the reps strict.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Partial-range machine lateral raise", "reason": "Raise only to a comfortable height while learning." }
+    ],
+    "progressions": [
+      { "key": "cable-lateral-raise", "name": "Cable lateral raise", "reason": "One arm, no pads to lean on; more control needed." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-lateral-raise", "name": "Lateral raise", "reason": "Free-weight version. Load is each dumbbell." },
+      { "key": "cable-lateral-raise", "name": "Cable lateral raise", "reason": "Steady tension through the range." },
+      { "key": "machine-shoulder-press", "name": "Machine shoulder press", "reason": "Pressing for the shoulders when the raise machine is busy." },
+      { "key": "cable-face-pull", "name": "Face pull", "reason": "Rear and side shoulder work on a cable." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at shoulder height, figure seated facing the camera with the machine's arm pads at the sides. Pivots drawn level with the shoulders.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Seated tall, arms by the sides with elbows bent, pads resting on the outside of the upper arms near the elbows.",
+        "approxAnglesDeg": { "shoulderAbduction": 15, "elbowFlexion": 90 }
+      },
+      {
+        "label": "Top",
+        "describe": "Arms raised out to the sides until the upper arms are level with the shoulders, pads pushed up. Shoulders down, not shrugged; torso still.",
+        "approxAnglesDeg": { "shoulderAbduction": 90, "elbowFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Upper arms stay in contact with the pads", "Torso fixed against the seat pad"],
+    "tempo": { "downMs": 1800, "holdMs": 400, "upMs": 1000 },
+    "props": ["lateral_raise_machine"],
+    "emphasise": [
+      "Elbows lead the lift",
+      "Stops at shoulder height",
+      "No shrug"
+    ],
+    "doNotShow": ["Shrugging", "Torso rocking", "Arms raised far above the shoulders"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/machine-lateral-raise/",
+      "title": "StrengthLog: Machine Lateral Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1]; cues.execution[1,3]; primaryMuscles; secondaryMuscles (front_delts); safety.notes[1]"
+    },
+    {
+      "url": "https://fitnessvolt.com/machine-lateral-raise-exercise-guide",
+      "title": "Fitness Volt: Machine Lateral Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0]; cues.execution[2]; cues.faults[0-1]; secondaryMuscles (traps)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "cues.setup[2]",
+      "note": "Some machines are seated facing the pad (chest-supported), others with the back against it; the cue covers both."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

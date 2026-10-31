@@ -1,0 +1,545 @@
+# Progress goals: one Reviews area for different aims (rev 2)
+
+> **Progress v3, agreed with Ben 21 Oct 2026. This section supersedes the rest of this file where they differ.** Prototype: `docs/design/prototypes/progress-simple.html` (artifact https://claude.ai/artifact/GfDtC5R8YydovHNhtcuoPv).
+
+> **Revision (Ben, 22–23 Oct): D2 and D5.** Prototypes: `progress-simple.html` (no plan) and `training-blocks.html` › Progress (with a plan).
+> - **D2, Coach's changes.** The weekly review applies only CA8 "small" changes (load one step, reps ±2, a set fewer; coach-adjustments.md) with reason and `Undo`, e.g. `Squat 117.5 → 120 kg · next Legs`. Anything bigger is an offer with `Apply` / `Skip`, and **a stall reset and an extra set Ben didn't ask for always need Apply**: `Row 3 × 8 → 4 × 6? · next Back · Stuck at 92.5 × 8 for 3 weeks  Apply  Skip`, `Lateral raise 3 → 4 sets? · next Shoulders  Apply  Skip`. A structural change too: `Legs on Saturday in your plan?` `Apply` / `Skip`. After Apply the row reads like an applied change with `Undo`; after Skip, `Row 3 × 8 · Skipped` with `Undo`. The collapsed line reads `1 change for next week · 3 to review`. Supersedes item 3 below ("Row 3 × 8 → 4 × 6 … Undo" as automatic).
+> - **D5, Muscles.** Rows use the detailed counting list: Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core (rear delts count as Back). A broad group (Legs, Arms) is exactly the sum of its rows; Progress shows the detailed rows. Supersedes "Chest, Back, Shoulders, Legs, Arms" in item 1. *Built 23 Oct: glutes count as Hamstrings, hip flexors as Core, shins as Calves; forearm work in no row.*
+> - **Scope wording (Ben, 23 Oct; review batch23-v5offers SP4).** A weekly change writes the plan day's template, so it changes every future workout of that day until undone. Rows and offers say so: `future Pulls` (one plain word takes an `s`), `future Legs days`, `future Push A days`; never `next Pull`. Read every `next Legs` / `next Back` / `next Shoulders` in the examples above and below as `future …`. The `Next Pull` / `Future Pulls` scope chips (§5) aren't built: a weekly change has one scope, the template.
+> - **Acceptance.** (1) With the coach connected, Row and Lateral raise show `Apply` / `Skip` and no `Undo` until applied; Squat shows `Undo`. (2) Nothing in Coach's changes is applied to the next session until `Apply` except CA8-small rows. (3) Muscles lists the nine detailed rows, in that order, with and without a plan. (4) Offline: the built-in rule's line with `Not reviewed · Offline`; no offers.
+
+> **Revision (Ben, 26 Oct): Progress fast, one exercise-progress screen, one list of tracked lifts, taps open workouts, monthly recap.** From the 26 Oct app review (findings 1, 4, 5, 9) and competitor pass 4 (#6, #9). Supersedes earlier text where they differ.
+> - **Fast (Ben, 26 Oct).** Progress opens on a cheap shell (is there history, the period, the ResumeBar) and then reads only the tab that shows; a hidden tab (and the calendar) doesn't read on focus. Every Progress answer (Overview, Lifts, Training totals, the consistency card, the recap) is kept while nothing is written (the store's write count and today's date), so a return to the tab with nothing changed reads nothing and renders nothing new; any write (a workout, an edit, a setting, an import, a restore) reads again. Records walk the history once per list of finished workouts; the launch pass also prepares Training's totals. The Overview read yields between its views so no single block is long. Budgets (`progress-open.perf.test.ts`, on ~800 workouts with a plan): Overview cold < 500 ms (< 1.5 s without the JIT), a return with nothing changed < 25 ms (< 50 ms jitless), tab switches and each Lifts option change < 150–250 ms.
+> - **One exercise-progress screen (Ben, 26 Oct).** Exercise detail (from a Summary, a workout's `History`, the editors and Library's exercise page) is Progress › Lifts' own body for that exercise, with no chip row: the same chart (dashed trailing average; the lift target's dotted line on Est. 1RM and Top set), the series / `Measure` / `Period` controls, **one period set** (`1 month` · `3 months` · `6 months` · `1 year` · custom months; `All` is a custom period from the first month), the stat line, `Trailing average` and the sessions table. Under them, in Lifts too: an active pain flag (under the chart), the lift target (under the stat line), `BEST REPS` (by weight or by reps, for the period) and `RECORDS` (all time). Exercise detail's `3 mo / 6 mo / 1 yr / All` chips, its metric list, its `HISTORY` by month and its chart/table toggle are gone (the sessions table lists every session in the period). Opened on a workout, it shows that workout's series, selected, in a period that holds it. Replaces progress.md §2.7 and §4.2 for the layout.
+> - **One list of tracked lifts (Ben, 26 Oct).** Overview's `Edit` picks (`progress_lifts`) lead the Lifts chips, in his order, then the defaults (the plan's main lifts per day, else his most-trained main compounds, else his recent exercises), each once, up to 6, only lifts with history. The tab opens on the first chip (so `All lifts ›` opens on his first pick). Overview shows his picks alone once he has made any. *Open: with no picks and no plan, Overview's default (each split day's main lift and lifts with a target) and the Lifts defaults (most-trained compounds) can still differ; aligning them is a proposal for Ben.*
+> - **A tap opens the workout (Ben, 26 Oct).** A PB ring on Overview's Lifts chart (and a point of a lift shown alone), a point on the Lifts / Exercise detail chart, a `RECORDS` row (Lifts, Exercise detail and Training) and a `BEST REPS` row open the workout it came from (its Summary, read-only, as Past workouts). The PB line still shows when he comes back. A row in the sessions table still selects its point.
+> - **Monthly recap (Ben, 26 Oct; facts only).** On the 1st–7th of a month, the top of Overview has a card for the month just ended: `October` · `12 workouts · 9 h 40 min · 3 records ›` and `×` (dismiss). A tap opens a sheet: `Workouts` and `Time` beside the month before (`OCT` · `SEP`; `9 of 12 timed` when imports have no time), `Weeks at your aim 3 of 4` with a plan in use, `SETS` per body part (the Training count) beside the month before, `LIFTS` (the tracked lifts trained that month, up to 3: heaviest top set, `97.5 × 5 → 100 × 5 kg`, in his unit, `kg each` / `kg assist` said) and `RECORDS` set that month (actual sets only, never an estimate). Lifts and records open their workout. No score, no wearable data, no estimate. Computed offline from the stored history summaries; nothing is read for it after the 7th or once dismissed. Dismissing stores the month in Your data (`profile.progress.recapDismissed`, a versioned profile write; the same month twice writes once). No sharing image.
+> - **Acceptance.** (1) Progress opens on Overview without reading Training's totals; a return with nothing changed reads nothing (same objects). (2) Any write shows on the next open. (3) Exercise detail and the Lifts chip of the same lift show the same view. (4) A lift picked on Overview is the first Lifts chip, after a force-close too. (5) Tapping a PB ring, a chart point or a record opens that workout. (6) On 2 Nov the recap shows October against September; `×` hides it for good (also after a force-close); on 8 Nov it doesn't show. (7) The jitless `Progress window switch` stays under its 100 ms budget. Not yet run on Ben's iPhone.
+
+> **Revision (Ben, 26 Oct, iPhone): Lifts tab layout, default lifts, Overview names.**
+> - **Lifts tab, chart near the top.** "You have to scroll down too much to see the charts." Top to bottom: a row of lift chips (scrolls sideways, names whole, the selected one filled, then `More` for the searchable list of every exercise), the chart straight under it, then the series / Measure / Period controls with the dates, the stat line, Trailing average and the sessions table (`LIFTS_TAB_SECTIONS`). At the default text size the whole chart is in view on opening the tab on every iPhone from the SE up. No new copy.
+> - **Lifts tab, main lifts by default.** "Doesn't show main lifts by default." The chips are his main lifts: with a plan in use, the plan's main lift for each day in day order; with none, his most-trained main compounds, one per pattern (bench, squat, deadlift, row, overhead press), most sessions in the last 12 weeks first, ties in that order; with no compound logged, his most recent exercises. Only lifts with history are offered, up to 6. The tab opens on the lift a link asked for (`Open Bench ›`), else his last pick on this phone (device preference, not backed up; ignored once it has no history), else the first chip. A lift opened from elsewhere leads the row, selected. Replaces "the exercise defaults to the most recently done".
+> - **Overview, lift names under the chart.** "The text for lift cuts off under the chart." The table's lift name is never cut: it wraps in its column when it fits on two lines there with no word broken; otherwise that row stacks, the name across the row and its numbers on the line under, in their columns. The four columns stay equal. The y-axis widens for its labels at large text (ticks capped at 1.3×) and the card's key wraps. Checked by text-fit tests at 320–430 pt from the default size to AX5.
+> - **Acceptance.** (1) With a plan applied, Lifts opens on the plan's first day's main lift and the chips are the plan's main lifts in day order. (2) With no plan, the chips are his main compounds by recent sessions and the tab opens on the first, even when his newest workout was accessories only. (3) After he picks Row, Lifts opens on Row on this phone after a force-close. (4) On a 320 pt and a 430 pt iPhone at the default and the largest text size, no lift name in the Overview table ends in `…`. Not yet run on Ben's iPhone.
+
+> **Revision (Ben, 26 Oct): records follow the New best rule.** Progress's `RECORDS` (Training's list, the Lifts tab and Exercise detail) and the monthly recap's `N records` are the same `New best`s as the Summary, the table's `PB` mark and Overview's PB ring: a tracked lift, at its tracked reps, a real set heavier (assisted: less assistance) than every earlier real one; the same machine for stacks and plate-loaded; a lift's first top set never one. Each row reads `New best  102.5 kg × 8 · 24 Oct` and opens its workout. So:
+> - a lift that isn't tracked has no records (Lifts and Exercise detail hide `RECORDS`; Training lists none for it); picking it on Overview gives it its New bests;
+> - estimates never are records: `Best Est. 1RM`, `Heaviest set`, `Most reps at …`, bodyweight `Most reps` and `Least assistance for 8+ reps` rows are gone (Est. 1RM stays on the chart and stat line, labelled);
+> - an imported (FitNotes) workout never claims a best (ring, Summary or record) but its sets must be beaten; a lift whose older history can't be read claims none;
+> - a tracked lift with none shows `No records yet.`; the old `Records start after 3 logged sessions.` is gone (the rule needs one earlier top set, not three sessions).
+> - **Acceptance.** (1) After a workout with `New best · Bench press 102.5 × 8` on its Summary, the ring on Overview, Training's `RECORDS`, Bench's `RECORDS` and next month's recap count all show that workout and set. (2) A heavier curl, untracked, appears in none. (3) No row is an estimate. Not yet run on Ben's iPhone.
+
+## Progress v3 (agreed)
+
+**Goals (Ben, 21 Oct):** the Profile training goal (strength / muscle / both) shapes the **coach** (rep ranges, sets per muscle, targets, rate of progression, the changes it makes), not the page. Progress is the same for every goal: This week → **Lifts** (main lifts on the chart; key accessories listed in the table under `Accessories`, not drawn on the all-lifts chart, tap any row to see it alone) → **Muscles** (sets per muscle, 8 weeks) → Coach's changes. Sets per muscle count every working set (warm-ups excluded) whatever RPE was or wasn't logged, so weeks stay comparable; RPE is used by the coach, not by this count.
+
+**Page order (Ben, 21 Oct, for every goal): This week → Goal trackers → Coach's changes (at the bottom).** This week answers the frequent question (am I on track this week, what can I still do); the Goal trackers (is it working) follow; Coach's changes sit last, in full with a `NEW` badge after each weekly review and collapsed to one line (`3 changes for next week ›`) once Ben taps `Got it` (or Undo/Apply on all of them). The numbered sections below describe each block; their order on screen is this one.
+
+**Structure (Ben, 21 Oct): Progress tabs `Overview | Lifts | Training`.** Overview (default) is this page, a glance: This week (Week/Month), Trends (Lifts summary chart with PB tags and targets; Muscles sets vs plan), Coach's changes. **Lifts** tab owns the detail per exercise: full PR / rep-max list, history chart, est. 1RM (labelled), past sessions. **Training** tab owns totals and habits (sessions/month, time, total weight, muscle frequency, sets by exercise). Links: Lifts card `All lifts ›` → Lifts tab; a focused lift shows `Open Bench ›` → that lift's page in Lifts; Muscles card `Details ›` → Training. PB tags stay on Overview as highlights only; the record list lives in Lifts. The Overview trends section header reads `TRENDS · last 8 weeks`.
+
+**Space (Ben, 21 Oct):** card titles 18 pt with their key on the same line (Lifts: `Top set · ○ est. · Edit`; Muscles: `At plan · Under · ┄ Plan`), no separate subtitle lines; the focused-lift line appears only when a lift is tapped; card padding 14 pt. Column header in Muscles reads `Sets vs plan`.
+
+**Also agreed for Build B (Ben, 21 Oct):**
+- **Weeks on plan:** Month view header shows a gentle count, `5 weeks on plan` (consecutive completed plan-weeks where sessions done ≥ planned; a paused week neither breaks nor adds; a short week simply ends the count without any 'broken' message).
+- **PB moment on Summary:** after a workout, the Summary lists any new PBs at the tracked reps (`New best · Bench 100 × 6`), same definition as the chart.
+
+**Later (agreed):** ~~monthly recap card~~ *(built 26 Oct, facts only, no sharing image: see the 26 Oct revision above)*, Body section (weigh-ins weekly average, measurements, private photos), training blocks (`Block 1 · week 3 of 6` in the header once blocks exist; see training-blocks.md).
+
+**Blocks (Progress › Reviews):**
+1. **Goal (last 8 weeks).**
+   - *Lifts* (formerly Strength tracker; always shown): subtitle `Top set at each lift’s reps · ○ est.` (13 pt). Real points filled, estimated points hollow (tap → `est. 97.5 × 6 from 100 × 4`). **Targets in the all-lifts view** sit in a right gutter: a short bar in the lift's colour at the target height with its number (`110`), plus a faint dotted guide from the latest point; the full dashed target line and the `at this rate` estimate appear when one lift is focused (focused subtitle `Top set × 6 (target reps) · 100 now`). Table under the chart (Ben, 21 Oct), compact 34 pt rows, 13 pt text, small caps header `LIFT · REPS · CURRENT · TARGET`, four equal-width columns (the name wraps or takes its own line, never cut; Ben, 26 Oct), name left and every number column right-aligned like the builder/Today tables: colour dot · `Bench` · `× 6` · `100` (no change figure; the chart shows the trend) · `110` (or `–`). Tap a row = focus that lift. **PBs on the chart (Ben, 21 Oct; no separate list, the Lifts tab's rep maxes stay the full record):** a PB = a real (not estimated) top set heavier than every earlier real one at that lift's tracked reps. All-lifts view: a ring around the latest point when it is a PB; focused view: a ring on every PB point; tap a ring → `PB · Bench 100 × 6 · week of 13 Oct`. Table: a small `PB` tag before Current when the latest top set is a PB. Header key `Top set · ◎ PB · ○ est. · Edit`. One line per tracked lift in **real kg on one axis**, colours = dataviz categorical slots 1–3 (dark: `#3987e5`, `#d95926`, `#199e70`), legend rows under the chart: dot · name · `100 × 6` · `+10 kg` (· `level 3 wk` when the last 3 are equal) · `target 110` when a lift target exists. Tracked lifts default to the plan's main lifts (typically 3, not locked); `Edit lifts` adds/removes (up to 6); adding a lift not in the plan asks for its reps once.
+   - **Tap a line or its row** → that lift alone, axis rescaled to it: its target as a dashed line, `On track` when the trend reaches the target, and `about mid-Nov at this rate` (labelled `est.`) as a dotted line — only after ≥ 4 weeks of rising top sets and only if the date is within 6 months (Ben liked it; overrides the earlier no-projection note and the `lift-targets.ts` comment). `All lifts` returns.
+   - **Reps each lift is tracked at (Ben, 21 Oct):** the lift target's reps if a target is set, else the plan's reps for that lift's top set (or the reps Ben picked when adding it). Every point is comparable at those reps: a **real** point (solid) when a set was done at those reps (heaviest load for ≥ those reps), otherwise an **estimated** point (hollow, `est.`, tap → `est. from 105 × 4`) converted from the best set of 3–12 reps that session (same e1RM formula the app already uses); singles and >12-rep sets never drive an estimate. History before the plan is shown the same way. When the tracked reps change (new target / plan change), the whole chart is recomputed at the new reps and a small marker shows the date (`now × 4`). Change words and `On track` use real points; if a window has only estimates they are labelled `est.` too. Same-machine rule for stacks/plate-loaded kept.
+   - *Muscles* (formerly Muscle tracker; always shown; reworked Ben 21 Oct, the single total-sets chart was unclear): subtitle `Sets per week vs plan · last 8 weeks` and a key (`At plan` full colour, `Under` faded, `┄ Plan`). One row per muscle (*D5, Ben 22–23 Oct: the detailed counting list Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core; was "Chest, Back, Shoulders, Legs, Arms; the builder's groups"*; the builder's set-counting convention): name · 8 small weekly bars with the plan as a dotted line (bar full colour when at or over plan, faded when under; paused weeks a flat grey stub) · last week right-aligned `9 of 14`. VoiceOver per row: `Quads: 5 sets last week, plan 7. At plan in 4 of 7 weeks.` (review N2: Legs is no longer a row, D5)
+2. **Last week (12–18 Oct)** (was "This week (13–19 Oct)": not Monday-start, and a finished week; 22 Oct, design review V1/V2/V4/V6). `Sessions 3 of 4 · 2 runs`; one chip per planned session with **day and % of planned reps done** (names spelled out, no ✓: **done = soft green** chip, **missed = faint grey** (`Thu – missed`, no red; Ben 21 Oct), upcoming/moved = outline; colour is never the only signal, the second line says `– 92%`, `– missed` or `– moved`; 12 pt: `Chest` over `Mon – 100%`, `Back` over `Wed – 92%`, `Shoulders` over `Fri – 104%`, `Legs` over `Sat – moved`; day and % always on one line, no wrapping at 320 pt; Ben, 21 Oct). % = all working reps done ÷ reps planned (warm-ups excluded; planned reps = each set's target reps as planned for that session, e.g. 10 for an 8–12 set planned at 10; only a set with no single target uses the low end of its range); **it can go over 100%** (Ben, 21 Oct): extra reps and sets you added count. Skipped planned sets count 0. Because extras can offset a skipped set, the Summary detail always names what was short or skipped. Tap → that workout's Summary with `156 of 170 planned reps` and what was short. Never write sets/reps as `15/15` (reads as a date); tap → that workout's Summary (or `planned Thu, moved to Sat`). No sets-per-muscle bars here (Ben, 21 Oct): they live once, in Muscles below. A small **Week | Month** segmented switch in the section header (right side, replacing the dates; header reads `THIS WEEK · 13–19 OCT` or `LAST 5 WEEKS`; Ben, 21 Oct) switches the card to a **calendar** (Ben, 21 Oct; replaces the chips while open): columns M T W T F S S, rows `This wk` (bold, first) then the 4 previous weeks (`6 Oct` …); each day a small rounded square: session done = soft green with the session's letter (C, B, S, L), planned but missed = faint grey with its letter, planned and still to come = outlined with its letter, cardio = a small dot (named **Cardio**, not runs), rest = empty; a paused week is outlined and empty with `Paused` on the right; other rows show `3 of 4` on the right. A key underneath (`Done · Missed · Planned · Cardio`). `Week` returns to the chips; no extra links in the card. The header count reads `3 of 4 · 2 cardio`. VoiceOver reads each row (`Week of 6 Oct: 3 of 4 sessions; Mon Chest, Tue cardio, …`). Tapping a row opens that week's past review. More informative than Today's strip, which stays as-is (3 back / 3 ahead, name + day + ✓) for spacing.
+3. **Coach's changes (for next week).** *(Revised by D2, Ben 22–23 Oct: see the revision note above. A stall reset like `Row 3 × 8 → 4 × 6` and an unasked extra set are offers with Apply / Skip, not automatic; buttons are `Apply` / `Skip`.)* One coach sentence, then the changes the coach **already made** to next sessions (rule 3: small load/reps/sets changes on the same exercises (CA8) are automatic, with reason and Undo), e.g. `Squat 117.5 → 120 kg · next Legs · All sets done at RPE 8  Undo`. Bigger changes are asked, e.g. `Row 3 × 8 → 4 × 6? · next Back · Stuck at 92.5 × 8 for 3 weeks  Apply  Skip` and `Legs on Saturday in your plan?` [Apply] [Skip]. Offline: the built-in rule's changes with `Not reviewed · Offline`. `Past weeks ›` lists earlier weeks (facts + changes).
+
+**Today vs Progress:** Today looks forward (today's session, the spacing strip, the one change that touches today under `Why?`); Progress looks back (trends, the plan week in detail, all of next week's changes with Undo).
+
+
+Status: **Proposal for Ben, 21 Oct 2026 (rev 2, after two critiques).** Nothing here is approved yet. Ben decides §12.
+Prototype: [prototypes/progress-goals.html](prototypes/progress-goals.html) (example data).
+
+> Ben, 21 Oct: "think more about the context of the review / progress and how it would suit different needs. e.g. if the target was following the plan sets, or plan volumes, or progress towards weight etc. — think about how runna and other apps do it"
+
+Builds on [workout-builder-v3.md](workout-builder-v3.md) §6–§6.2 (Reviews area, 21 Oct Goal bullet), [training-blocks.md](training-blocks.md), [progress.md](progress.md) (PG7, PG26), [lift targets](../../packages/schemas/src/lift-targets.ts) and the research in [plans-and-plan-progress.md](../research/plans-and-plan-progress.md), [competitor-analytics.md](../research/competitor-analytics.md) and [competitor-landscape.md](../research/competitor-landscape.md). Tokens: [design-system.md](design-system.md), Direction D. Nothing here adds a step to Active set, Rest or Summary, and nothing new appears on Today.
+
+---
+
+## 0. In short (for Ben)
+
+Each of your three examples gets its own card, and there are no settings to manage:
+
+| You want to see… | Card | Measured against |
+|---|---|---|
+| "Am I following the plan's sets?" | **Plan** (always first) | Sessions vs your days-a-week aim, and the planned sets in the sessions you did |
+| "Am I getting the planned volume?" | **Muscles** | Sets per muscle vs what those sessions planned |
+| "Am I getting closer to a weight?" | **Lifts** | Your own earlier sessions at the same reps, plus your lift targets |
+
+- Your training goal (strength / muscle / both) only decides the **order**. There's no separate "focus" setting.
+- The cards show **numbers instead of verdicts**: `41/44`, not `Behind`. Only the words the app already uses appear (`Hit`/`Short`/`Over`, `Up`/`Level`/`Down`, `Paused`, `Held · pain`).
+- There are no scores, no streaks, nothing called "missed", and no predictions unless you switch on the opt-in Option (Q2).
+- The weekly review stores the same facts every week, so any week can be compared with any other.
+
+---
+
+## 1. Purpose
+
+**Question answered:** "How is my training going against what I'm aiming for?" The screen answers it with facts from logged data, measured against the plan where one exists.
+**Primary action:** none on a normal visit; it's a read-only screen. When a weekly review is new, its primary action is `Open review`. A proposal's primary action is `Apply`.
+
+**Why the plan is the yardstick (Runna lesson, adapted):** Runna judges each run against the plan and keeps the plan separate from the race outcome. GymSmarter's plan is a rotation and today's loads come from logged sessions, not a path, so only two things borrow the idea: **plan sets** and **targets hit**. Lifts are compared with Ben's own past sessions. Runna's other useful lesson is that its Plan tab leads with *this week* and *the next session*, which the Plan card's day strip copies. We copy no screens, names or assets.
+
+---
+
+## 2. Model
+
+### 2.1 Order comes from the training goal only
+
+| Profile goal | Card order (after `Latest`) | Collapsed |
+|---|---|---|
+| `strength` | Plan · Lifts · Muscles | Muscles |
+| `muscle` | Plan · Muscles · Lifts | Lifts |
+| `both` | Plan · Lifts · Muscles | none |
+| not set | Plan · Lifts · Muscles | Lifts, Muscles |
+
+- A **collapsed** card is one row showing its first values (`Muscles  Chest 12/12 · Back 13/14 · …  ›`, `Lifts  Bench 102.5 × 6 · Squat 117.5 × 5 · …  ›`), and tapping it expands the card in place. Nothing is hidden, just lower down.
+- Changing the goal in Profile reorders the cards. No other write or setting is involved, and nothing about order is stored on reviews.
+
+### 2.2 What counts (code, pure, unit-tested)
+
+| Term | Definition | Source |
+|---|---|---|
+| **Week** | Local Monday–Sunday | `localWeekBounds` |
+| **Aim** | Profile `Days a week you lift` minus paused days (`aimWithPause`). With no aim: the plan's day count. With neither: no aim, and counts are shown with nothing to compare against | Change W3 (today `planWeekOf` uses plan length) |
+| **Sessions** | Distinct local dates trained (`consistency().thisWeek.days`) | existing |
+| **Plan sessions** | Finished workouts started from a plan day (`routineId` / `createdFromSessionId`). Off-plan workouts that met a day count toward **Sessions** but not toward planned sets; `Why?` lists them as `1 off-plan` | `dayOf`, `planDaysDoneBy` |
+| **Planned sets** | Σ planned working sets **snapshotted on each finished plan session** (`WorkoutSet.planned`), never today's templates. Sessions that didn't happen add nothing, so a skipped day appears only once, in the session count | `plannedVsDone` |
+| **Sets done** | `plannedVsDone().doneSets`: working sets done, capped per exercise at the planned count. Extra sets don't raise it, and the app never says "ahead" | existing; test pins the cap |
+| **Targets hit** | Exercises whose verdict is `Hit` **or** `Over` / exercises with a target, in plan sessions. This is the same definition as `exerciseTargetHistory.hitText` | existing |
+| **Muscle sets** | Working sets per muscle group with PG26 credit (1 primary, ½ helper), **done and planned counted the same way**, both from the plan sessions done that week. Off-plan sets add to done only. Hard-set counts (PG7) stay in Progress › Training | new `muscleSetsVsPlanned` |
+| **Lift top set** | The heaviest load lifted for at least the lift's **usual reps** in a session. Usual reps = the most common working-set rep count over its last 6 sessions, with ties going to the lower count | new `liftTopAtReps` (uses `repTableByReps`) |
+| **Change words** | Compares the latest session's top set at usual reps with the first of the last 3 sessions, which must span ≥ 3 weeks. Heavier load reads `Up x kg in n wk`, the same load reads `Level n wk`, a lighter load reads `Down x kg in n wk`. Comparisons are exact (loads are discrete, so there's no noise band). Fewer sessions: nothing is shown | new `liftChange` |
+| **Same equipment** | For `stack` and plate-loaded `added` conventions, only sessions on the same `equipmentId` are compared (`SeriesKey`). If the latest session used different equipment, the row shows `Different machine` and no change word | `SeriesKey` |
+| **Est. 1RM** | Never in change words or on this screen. It stays a labelled chart toggle in Progress › Lifts (sets ≤ 10 reps, `est.`) | `estimateOneRepMax` |
+| **Runs** | Activities with `type: 'run'` and `status: 'done'`. Rides, swims and the rest are left out of this row, and runs never count toward the lifting aim | activities |
+| **Pain hold** | A set is held if a flag on **that exercise** was active at the time of the set (`reportedAt` ≤ set < `clearedAtUtc`). There are no muscle-level holds | `PainFlagSchema` |
+| **Paused** | Paused days leave the aim. A fully paused week shows `⏸` and is never compared | `pausedInWeek` |
+
+Deload and Light weeks need training blocks (TB3+) and are not part of Wave 3.
+
+---
+
+## 3. Layout (Progress › Reviews, iPhone 390 pt, Direction D)
+
+Progress keeps its tabs (`Reviews` · `Lifts` · `Training`).
+
+```
+┌──────────────────────────────────────────────┐
+│ Progress                                     │
+│ [ Reviews ][  Lifts  ][ Training ]           │  segmented, 44 pt
+│                                              │
+│ ┌ WEEK OF 13 OCT · NEW ────────────────────┐ │  only while new or open
+│ │ 4 of 4 days, 58 of 62 planned sets. Coach│ │  coach line, or Not reviewed
+│ │ ┌──────────────────────────────────────┐ │ │
+│ │ │ Cable row on Pull                    │ │ │  ≤ 2 proposals
+│ │ │ 3 × 10–12 → 3 × 8–10                 │ │ │  before → after (targets)
+│ │ │ [Next Pull] [Future Pulls]           │ │ │  scope chips (rule 2)
+│ │ │ [ Apply ]          Skip      Why?    │ │ │
+│ │ └──────────────────────────────────────┘ │ │
+│ │ Open review ›                            │ │
+│ └──────────────────────────────────────────┘ │
+│                                              │
+│ ┌ PLAN ──────────────────────────── Why? ──┐ │  always first
+│ │ This week   2 of 4                       │ │  actual of aim
+│ │ [Push ✓][Pull ✓][Legs  ][    ]           │ │  plan-day strip (§3.1)
+│ │  Mon     Wed    next                     │ │
+│ │ Runs 1                                   │ │
+│ │ Planned sets 27/28 · Targets hit 9 of 10 │ │  plan sessions only
+│ │ Push  Mon  15/15 · Hit 5 of 5         ›  │ │  per plan session
+│ │ Pull  Wed  12/13 · Short: Cable row   ›  │ │
+│ │ ▕█▏▕█▏▕▒▏▕█▏▕█▏▕⏸▏▕▒▏▕█▏                  │ │  8 wk, done vs aim
+│ │  4  4  3  4  4  –  3  4                  │ │  digits carry meaning
+│ │ Runs 2  1  2  2  1  0  1  2              │ │
+│ └──────────────────────────────────────────┘ │
+│ ┌ LIFTS ───────────────────────── Edit ────┐ │
+│ │ Bench Press          102.5 × 6        ›  │ │  top set at usual reps (actual)
+│ │ Up 2.5 kg in 3 wk    ╭─●─●─●┈110╮        │ │  sparkline + target line
+│ │ Target 110 × 6 · 7.5 kg to go · 8 wk left│ │  target (no ≈ for weight×reps)
+│ │ Squat                117.5 × 5        ›  │ │
+│ │ Up 5 kg in 4 wk                          │ │
+│ │ Row                   92.5 × 8        ›  │ │
+│ │ Level 3 wk                               │ │
+│ │ Overhead Press   ⚠ Held · pain        ›  │ │
+│ │ Lat Pulldown          59 × 10         ›  │ │
+│ │ Different machine                        │ │
+│ └──────────────────────────────────────────┘ │
+│ Muscles  Chest 12/12 · Back 13/14 · …     ›  │  collapsed (goal = strength)
+│                                              │
+│ HISTORY                                      │
+│ Week of 12 Oct   4 of 4 · 58/62           ›  │
+│ Week of 5 Oct    3 of 4 · 44/46           ›  │
+│ Week of 28 Sep   ⏸ Paused                 ›  │
+└──────────────────────────────────────────────┘
+```
+
+### 3.1 Plan card
+
+- **Plan-day strip (this week):** one chip per session of the aim.
+  - Done sessions come first, each labelled with its plan day and the weekday it was done (`Push ✓ Mon`). An off-plan session reads `Other ✓ Tue`.
+  - Next comes the rotation's **next** plan day, labelled `next`. It has no weekday because rotation days have no dates (D19).
+  - Any remaining chips are blank outlines.
+  - No glyph ever marks a weekday as "not done".
+  - With no plan, the chips are unlabelled (`✓ Mon`, `✓ Wed`, blank, blank).
+- **Runs** sit on their own line under the strip and never fill a chip.
+- **Plan facts:** `Planned sets 27/28 · Targets hit 9 of 10` for this week's plan sessions so far. With no plan session yet, the line is absent.
+- **Per-session rows:** one row per plan session done this week, carrying `Hit`/`Short`/`Over` names. Short and Over appear only here. Tapping a row opens that workout's Summary.
+- **8-week bars:** each bar has a 1 pt `chart.bandEdge` outline showing the aim and a `chart.bar` fill showing sessions done. The digit under each bar is the count. A fully paused week shows `⏸` and the digit `–`. Past weeks use the aim stored on that week's review record (§6), so changing the aim never re-judges old weeks. Runs get a digit row under the bars. There's no `Weeks at your aim` ratio.
+- **`Why?`** opens the evidence sheet: the plan sessions behind the numbers (date, day, sets, verdicts) and any off-plan sessions (`1 off-plan · not in planned sets`).
+
+### 3.2 Lifts card
+
+- **Rows:** the chosen lifts, up to 6. By default these are the plan's main lifts (`mainLifts`). Lifts with a target come first.
+- **Each row:**
+  - Name, then the top set at usual reps (actual).
+  - The change words, or `Different machine`, or nothing when there are too few sessions.
+  - A small sparkline of the last 8 weeks' top sets at usual reps. If the lift has a target, the target is drawn as a dashed line.
+  - If the lift has a target (setting on), the target line follows: `Target 110 × 6 · 7.5 kg to go · 8 weeks left`. A `one_rm` target reads `≈` before the gap. A hit target reads `Hit 2 Dec`.
+- **Option (Q2), off by default:** `about mid-Dec at this rate` under a target line. It shows only if:
+  - Ben switched it on in Profile › Training,
+  - there are ≥ 4 weeks of top sets and they're rising,
+  - the date is ≤ 6 months away.
+  It's text only, with no line drawn on the chart.
+- **Pain:** `⚠ Held · pain` (icon `exclamationmark.triangle`, `status.warning`, plus the words) replaces the change words while a flag is active. Older sets still show on the sparkline.
+- Tapping a row opens that lift in Progress › Lifts. `Edit` opens the chosen-lifts picker (the existing exercise picker, multi-select, max 6).
+
+### 3.3 Muscles card
+
+```
+┌ MUSCLES ─────────────── [Last week|So far] ┐
+│ Chest        12 / 12      ████████████│    │  fill = done, │ = planned
+│ Back         13 / 14      ███████████ │    │
+│ Shoulders   9.5 / 10      ██████████  │    │  ½ credits shown
+│ Quads         9 / 9       █████████│       │
+│ Triceps     6.5 / 6       ██████│▌         │  over the mark, no word
+│ Calves        3           ███              │  not in plan: no mark
+│ ⚠ Shoulders incl. 2 held sets              │  only with a pain hold
+└────────────────────────────────────────────┘
+```
+
+- The bars are `VolumeBandRow` with a 2 pt `chart.bandEdge` tick marking planned. There are no status words and no colour coding.
+- Rows follow the plan's split order. Muscles not in the plan come last, with no tick.
+- **One muscle list (22 Oct, design review V1/V2/V4/V6):** Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core, the same list as the plan, the block review and Library › Exercises.
+- **Week labels (22 Oct, design review V1/V2/V4/V6):** weeks run Monday–Sunday and are labelled by their Monday (`Week of 12 Oct`, `Last week · 12–18 Oct`). A week that has finished is never called "this week".
+- `So far` shows this week's sets done with no planned tick until the week ends.
+- **Range band:** a general range (e.g. 10–20) is drawn behind a row only if Ben has approved a playbook rule that supplies it. The on/off switch lives in Settings › Progress, not on this card. `Why?` names the rule's source.
+
+### 3.4 Latest review card
+
+- It shows only:
+  - the coach line (≤ 2 sentences), or `Not reviewed` with `Offline` / `Not connected` as the reason,
+  - up to 2 open proposals,
+  - `Open review ›`.
+- Facts live in the full sheet (§3.5), so they never appear twice on screen.
+- It sits on top only **while it's new or has open proposals**. After `Open review` → `Done` with nothing open, it folds into History.
+
+### 3.5 Weekly review sheet
+
+```
+┌──────────────────────────────────────────────┐
+│ Week of 12 Oct                      Done     │
+│ 4 of 4 days, 58 of 62 planned sets.   Coach  │
+│ FACTS                         this · last    │
+│ Days                          4 of 4 · 3 of 4│
+│ Planned sets                   58/62 · 44/46 │
+│ Targets hit                  17 of 19 · 13/15│
+│ Bench Press top set     102.5 × 6 · 100 × 6  │  order follows the goal
+│ Squat top set           117.5 × 5 · 115 × 5  │
+│ Chest · Back · …       12/12 · 13/14 · …   › │
+│ Runs                              2 · 1      │
+│ PROPOSALS                                    │
+│ (as on the Latest card)                      │
+└──────────────────────────────────────────────┘
+```
+
+- Every week stores the **same fixed fact set**, and the goal changes only the display order. `last` reads from the previous week's current review record. With no record for that week, the column shows `–`.
+- `Felt` counts (`About right 2 · Hard 1`) appear only once how-did-it-feel data exists. Until then the row is absent rather than showing `0`.
+- At AX sizes, `this` stacks above `last`.
+
+### 3.6 Weekly proposals (what the review may touch)
+
+Rule 3 already applies small next-session changes (load, reps, sets on the same exercise) on the Summary. To avoid two adjusters fighting over the same targets, the weekly review **only** proposes:
+
+1. A template change the per-session loop can't make: set count or rep range on a plan day's exercise, with scope chips `Next Pull` / `Future Pulls` (rule 2).
+2. A structural change (swap, add, remove, order), and only when Ben asked or something changed (goal, schedule, equipment, pain).
+
+It never proposes a load change. Loads stay with the Summary. Further limits:
+
+- At most 2 proposals.
+- No proposal for an exercise the Summary has changed since the review's inputs were computed.
+- No catch-up: sets not done are never added to a later week (Q5).
+- Triggers need ≥ 2 sessions with RPE rated. Unrated sessions never trigger a proposal.
+- Any amount is snapped to the gym's achievable loads, reps and stack steps, and the snapped value is shown.
+- **The coach makes proposals.** With no AI there are none, and the facts stand alone (rule 1). The 2-of-3 Short at RPE ≥ 9 style thresholds go to the training-researcher. They become code fallbacks only once Ben approves them as playbook rules (ADR 0006).
+
+---
+
+## 4. States
+
+| State | What shows |
+|---|---|
+| Empty (no sessions) | Plan card with a blank strip and `No sessions yet`. Lifts and Muscles hidden. No Latest card |
+| Loading | Card frames with static `…` values, no shimmer and never `0` |
+| Normal | §3 |
+| No plan | Plan card: strip unlabelled, no planned-sets line, no per-session rows. Muscles: counts with no tick |
+| No aim and no plan | Strip shows done chips only. Bars show counts with no outline |
+| Few sessions for a lift | Top set only, no change words |
+| Different machine | `Different machine` instead of change words |
+| Pain-held lift | `⚠ Held · pain` row. Muscles shows `incl. n held sets` |
+| Paused now | Plan card header `⏸ Paused until 1 Nov`. The strip shows done chips only |
+| Paused past week | Bar `⏸`, digit `–`. History row `⏸ Paused` |
+| Offline / AI unavailable | All cards and facts as normal (code). Latest card `Not reviewed · Offline`, no proposals, `Open review` still works |
+| Couldn’t load | `Couldn’t load` + `Try again` in the affected card. Never an empty or zero state |
+| Stale proposal | `Out of date. Ask again.` with a warning icon (rule 5) |
+| Superseded review | A late-logged or corrected session changes the inputs. The review re-runs and supersedes the old one (`TrainingReview.status`). History shows the current one only |
+| Option on, limits not met | No projection text; nothing explains why |
+| AX sizes | Strip becomes a vertical list, `this · last` stacks, sparklines move under the text |
+
+Transitions:
+- A new weekly review appears on top as `NEW`.
+- Opening it clears `NEW`. Handling every proposal (Apply, Skip) folds it into History.
+- `Apply` writes, then the `Applied · Undo` toast appears. `Undo` restores the prior template version.
+
+---
+
+## 5. Interactions
+
+- **Taps:**
+  - A plan session row opens that workout's Summary.
+  - A lift row opens Progress › Lifts for that lift.
+  - A bar or a History row opens that week's review sheet.
+  - `Why?` opens the evidence sheet.
+  - A collapsed card expands in place.
+  - `[Last week | So far]` switches the Muscles card.
+  - There are no other surfaces.
+- **Proposals:** `Apply` is primary and takes one tap. The scope chip defaults to the narrower scope (`Next Pull`). `Skip` dismisses for this review. Undo is available in the toast and in the review sheet. Nothing is applied without Apply.
+- **Swipe:** none. There are no destructive swipes, and reviews are deleted only with Your data.
+- **Voice:**
+  - "How's my week?" and "How's my bench?" get the coach reading the same code facts aloud.
+  - Any number not among the facts is dropped (`checkReviewNumbers`).
+  - Offline, the app says `Offline` and nothing more.
+- **VoiceOver:**
+  - Plan card: "This week, 2 of 4 sessions. Push done Monday, Pull done Wednesday, Legs next."
+  - Each bar: "Week of 5 October, 3 of 4."
+  - Lift row: "Bench Press, 102.5 kilograms for 6, up 2.5 kilograms in 3 weeks. Target 110 for 6, 7.5 kilograms to go, 8 weeks left."
+  - `Held · pain` is always spoken.
+- **Keyboard:** none on this screen.
+
+---
+
+## 6. Copy
+
+All values are **actual** unless marked target.
+- **Cards:** `Plan` · `Lifts` · `Muscles` · `This week` · `next` · `Other` · `Runs` · `Planned sets 27/28` · `Targets hit 9 of 10` · `Hit 5 of 5` · `Short: Cable row` · `Over: Curl` · `Edit` · `Last week` · `So far`
+- **Lifts:**
+  - `102.5 × 6` (actual)
+  - `Up 2.5 kg in 3 wk` · `Level 3 wk` · `Down 2.5 kg in 3 wk`
+  - `Different machine`
+  - `Target 110 × 6` (target)
+  - `7.5 kg to go` (`≈` only for `one_rm`)
+  - `8 weeks left` · `Hit 2 Dec`
+  - `Held · pain`
+- **Option only:** `about mid-Dec at this rate`
+- **Muscles:** `12 / 12` (done / planned) · `incl. 2 held sets`
+- **Review:**
+  - `Week of 12 Oct` (always the week's Monday) · `NEW` · `Open review` · `Done` · `this` · `last`
+  - `Days` · `Planned sets` · `Targets hit` · `top set` · `Runs` · `Felt`
+  - `Not reviewed` · `Offline` · `Not connected`
+  - `Apply` · `Skip` · `Why?` · `Next Pull` · `Future Pulls` · `Applied · Undo` · `Out of date. Ask again.`
+- **Evidence sheet:** `1 off-plan · not in planned sets` · `No RPE on 6 sets` (only where it changes a number on screen)
+- **States:** `No sessions yet` · `Paused until 1 Nov` · `Couldn’t load` · `Try again`
+- **Never used:** `streak`, `missed`, `broken`, `failed`, `behind`, `ahead`, `on track`, `%` progress, `score`, `readiness`, `rule`, `snapped`, and `at this rate` unless the Option is on.
+- **Spoken cues:** none new.
+
+---
+
+## 7. Data needed (developer)
+
+**Existing:**
+- `consistency`, `aimWithPause`, `pausedInWeek`, `planDaysDoneThisWeek`, `planDaysDoneBy`, `dayOf`
+- `plannedVsDone`, `PLAN_VERDICT_WORD`, `exerciseTargetHistory`
+- `muscleGroupCredits`
+- `repTableByReps`, `SeriesKey`
+- `liftTargetsInUse`, `liftTargetStatus`, `liftTargetLine`
+- `reviewSubjectKey`, `TrainingReviewSchema`
+
+**New domain functions** (pure, `packages/domain/src/progress/goal/`; thresholds are named constants):
+- `planWeekView(input)`: strip chips, aim, runs, plan facts, per-session rows, 8 bars with per-week aims
+- `muscleSetsVsPlanned(sessions, catalogue)`: done and planned working sets per group (½ credits), plus held counts
+- `liftTopAtReps(series, sessions)`, `usualReps(series)`, `liftChange(series)`: rep-matched and same-equipment
+- `projectAtThisRate(series, target, today)`: Option only. Returns null unless every limit is met
+- `weeklyFacts(week)`: returns the fixed fact set
+- `checkReviewNumbers(text, facts)`: every number in a coach sentence must match a fact value (unit-aware). A sentence that fails is hidden, and `numbersChecked` is set from the result. Tests cover this
+- `heldAt(set, painFlags)`: time-scoped hold
+
+**View builders:**
+- `buildReviewsView(profile, plan, …)`: card order (§2.1), collapsed flags, `accessibilityLabel`s
+- `buildWeeklyReviewView(review, prevReview)`
+- `buildEvidenceView(kind, week)`
+
+**Schema changes (Wave 3; the earlier "no schema change" was wrong):**
+- `ReviewFactSchema` new kinds:
+  - `planned_sets {done, planned, offPlanSessions}`
+  - `targets_hit {hit, of}`
+  - `runs {count}`
+  - `lift_top {exerciseId, equipmentId, load, reps, usualReps}`
+  - `feel_counts {…}`, added with how-did-it-feel
+- `sessions_vs_plan` gains `aim` so past weeks keep their aim.
+- `group_sets.sets` and `planned` become `z.number().multipleOf(0.5)`.
+- There's no `prev` field: `last` is read from the previous week's current review.
+- `TrainingProfile.progressLifts?: string[]` (max 6), via `TrainingChange { kind: 'progress_lifts'; exerciseIds }`, versioned with an opId (rule 5). Absent means the plan's main lifts.
+- `TrainingProfile.projectionOption?: boolean` (only if Q2 = opt-in), via `{ kind: 'projection_option'; on }`.
+- Supersede stays the correction model. There's no `Corrected since` tag.
+
+**Coach context:** weekly facts (Your data), labelled apart from playbook rules and catalogue (Coaching knowledge, rule 10). Tools are the existing proposal tools, limited to the §3.6 scope.
+
+---
+
+## 8. Acceptance checks
+
+1. Airplane mode, no AI: all three cards show correct numbers. The Latest card reads `Not reviewed · Offline` and shows no proposal, and no coach sentence appears anywhere.
+2. Goal `strength`: order Plan → Lifts → Muscles (collapsed). Switching the Profile goal to `muscle` gives Plan → Muscles → Lifts (collapsed), with no other write.
+3. 4-day rotation and aim 3: the header reads `n of 3`, not `n of 4` (W3 test). With no aim it reads `n of 4`.
+4. Aim 4, Push and Pull done: the strip shows `Push ✓ Mon`, `Pull ✓ Wed`, `Legs next` and one blank chip. No weekday shows a not-done glyph, and "missed" appears nowhere.
+5. Same week: `Planned sets` counts only the Push and Pull snapshots (e.g. `27/28`). Editing the Legs template changes no past or current number.
+6. An exercise done with 5 sets against 3 planned: `doneSets` contributes 3, and nothing says ahead.
+7. An off-plan workout that met Legs: the session count includes it, planned sets don't, and `Why?` shows `1 off-plan · not in planned sets`.
+8. Muscles: an unrated set and an RPE-5 set both count as working sets on the done side. Shoulders with helper credit shows `9.5 / 10`.
+9. Bench sessions 100 × 6, 100 × 6, 102.5 × 6 over 3 weeks read `Up 2.5 kg in 3 wk`. Adding 105 × 2 (usual reps 6) leaves it unchanged.
+10. Lat pulldown 50 kg stack at gym A, then 59 kg at gym B: the row shows `Different machine` with no change word.
+11. Lift target `weight_reps` 110 × 6, best 102.5 × 6: `7.5 kg to go` with no `≈`. A `one_rm` target shows `≈`.
+12. With the Option off (the default), no projection text appears anywhere. With it on, the text appears only with ≥ 4 rising weeks and a date ≤ 6 months away.
+13. Pain flag on OHP reported 15 Oct, cleared 20 Oct: sets 15–19 Oct are held and later sets aren't. Clearing the flag doesn't change the earlier weeks' facts.
+14. Changing the aim from 3 to 4: past bars keep their stored aims.
+15. Every review fact shows `this · last`, and `last` matches the previous week's stored record. A coach sentence citing a number not among the facts is hidden.
+16. Never more than 2 proposals, and none changes a load. After the Summary changes Cable row, a review proposal for Cable row isn't shown. Apply → `Applied · Undo` → Undo restores the prior template version. A template edited after the review shows `Out of date. Ask again.`
+17. A late-logged set for last week supersedes that week's review, and History shows only the current one.
+18. Runs (`done` only) appear on their own line and never change the session count. A ride doesn't appear in `Runs`.
+19. Colour filters on: every state is readable as text or icon. Targets are ≥ 44 pt, body text ≥ 16 pt and numbers tabular. At AX5 the strip is a list and `this · last` stacks.
+
+---
+
+## 9. Borrowed and avoided
+
+| Pattern | From | How we use it |
+|---|---|---|
+| Plan tab leads with this week and the next session | Runna | Plan-day strip with `next` |
+| Plan is the yardstick, separate from the outcome | Runna | Plan sets and targets hit only; lifts against his own past |
+| Planned vs done volume | Runna Mileage Insights, TrainingPeaks | Muscles done / planned tick |
+| "Why" lists the sessions behind a number | Runna Pace Insights, MacroFactor | `Why?` evidence sheet |
+| Compare with last period | WHOOP, Strava | `this · last` column |
+| Pause keeps history intact | Apple, Garmin, Runna | `⏸` weeks never compared |
+| No catch-up, adherence-neutral | MacroFactor | §3.6 |
+| Scoped goals per exercise | StrengthLog | Chosen lifts and lift targets |
+
+Avoided:
+- Composite scores (Runna Score, Fitbod Strength Score, Garmin Training Status)
+- Status words for numbers that already speak for themselves (Pace Insights needs words because pace is noisy; set counts don't)
+- Streaks and banners
+- `%` complete
+- Tonnage headlines
+- Colour-only ranges
+- Irreversible re-plans
+- Generic AI summaries
+
+Sources are as cited in [competitor-analytics.md](../research/competitor-analytics.md) and [plans-and-plan-progress.md](../research/plans-and-plan-progress.md). We borrow interaction patterns only.
+
+---
+
+## 10. Changes after critique
+
+**Cut (simpler):**
+- The Focus concept: the Focus sheet, `progressFocus`, `deriveFocus`, focus proposals, the voice command, the toast and the review header. Order now comes from the goal.
+- The status vocabulary (`On plan`/`Ahead`/`Behind`/`Mixed`/`Too few sessions`), `lensStatus` and the 25/40/90 % thresholds.
+- The Bodyweight lens and both Today lines.
+- Full lens views and the Focus and week sheets.
+- `Weeks at your aim` and the RPE-vs-target line.
+- The Follow-the-plan lens, merged with Consistency into one Plan card.
+- Facts duplicated on the Latest card.
+- Offline `Rule` proposals.
+- The in-card range toggle (moved to Settings).
+- Most gap lines (kept only in `Why?` when they change a number).
+- `Corrected since` (supersede instead).
+- Open questions: 14 → 8.
+
+**Fixed (honesty / feasibility):**
+- Schema additions listed (§7).
+- Planned sets now come from snapshots on sessions done, so a skipped day is counted only once.
+- Done and planned are counted the same way (working sets).
+- No "ahead" from the capped `doneSets`.
+- Top sets are rep-matched and compared only on the same equipment for stacks and plate-loaded machines.
+- e1RM is kept out of change words.
+- Deload and Light deferred to blocks.
+- Pain holds are per exercise and time-scoped.
+- The aim is decided (days-a-week aim, then plan length) and stored per week.
+- `Runs` defined.
+- One `Targets hit` definition.
+- No `≈` on weight × reps targets.
+- Proposals are coach-only, snapped, need ≥ 2 rated sessions, never touch loads, and are suppressed after a Summary change.
+- `checkReviewNumbers` specified.
+- The projection is offered as an opt-in Option instead of only being deleted.
+- `progressLifts` named.
+- `Felt` hidden until data exists.
+- The strip no longer marks undone weekdays.
+
+**Kept:** consistency first, chosen lifts up to 6, lift targets, no scores, `Not reviewed` with no AI, reviews as Your data.
+
+---
+
+## 11. Changes for the Wave 3 build
+
+| # | Change | Effort |
+|---|---|---|
+| W1 | Plan card: plan-day strip (done + `next` + blanks), runs line, planned sets and targets hit from plan-session snapshots, per-session rows, 8 bars with stored per-week aims, `Why?` | M |
+| W2 | Card order and collapse from the profile goal (§2.1). No focus field | S |
+| W3 | `consistency().planThisWeek` measured against the aim (fallback: plan length) + rotation test; the same change applies to Library › Your plan `Days this week` | S |
+| W4 | Schema: new fact kinds, `aim` on `sessions_vs_plan`, ½ steps on `group_sets`, `progressLifts` | S–M |
+| W5 | Lifts: `usualReps`, `liftTopAtReps`, `liftChange` (exact, same equipment), target line without `≈` for weight × reps | M |
+| W6 | Muscles: `muscleSetsVsPlanned` (working sets on both sides, ½ credits), planned tick, no status | S |
+| W7 | 8-week window; no "missed" anywhere; no undone-weekday glyphs | S |
+| W8 | Slim Latest card, on top only while new or open; review sheet with fixed facts and `this · last` | S |
+| W9 | `checkReviewNumbers` + tests | S |
+| W10 | Weekly proposal scope (§3.6): templates and structure only, suppression after Summary changes, coach-only | S |
+| W11 | `heldAt` time-scoped pain holds, per exercise | S |
+| Later | Projection Option (if Q2 = opt-in); range band (after an approved rule); Felt counts (with how-did-it-feel); Deload/Light (blocks TB3+) | — |
+
+Dropped from the old Wave 3 list: `lensStatus`, `deriveFocus`, data-gap lines, and the Follow-the-plan lens as a separate card.
+
+---
+
+## 12. Open questions for Ben
+
+1. **Order from your training goal only, with no separate focus setting?** *Recommended: yes.*
+2. **Predictions:** never, or an opt-in Option (off by default, Profile toggle, lift-target rows only, ≥ 4 rising weeks, ≤ 6 months, text `about mid-Dec at this rate`)? *Recommended: never, which matches your 21 Oct "no predictions". Opt-in is ready if you want it.* Either way, training-blocks §3.2/§3.4/Q8 and the `lift-targets.ts` comment get updated, with a CHANGELOG entry.
+3. **Weekly count against your days-a-week aim** (plan length only if no aim is set)? *Recommended: yes.* With a 4-day rotation and a 3-day aim, the card reads `of 3`.
+4. **Plan-day strip without dates and 8 weeks of bars,** dropping "missed planned days named" and "6 weeks" from v3 §6.2? *Recommended: yes* (D19).
+5. **Weekly proposals change templates or structure only; loads stay with the Summary;** no catch-up sets. This also needs a one-line clarification of rule 3 in CLAUDE.md/brief. *Recommended: yes.*
+6. **"Progress towards weight"** meant a lift weight, not bodyweight? *Recommended: lift weight. Bodyweight stays a points chart in Progress › Training, with no target.*
+7. **Latest review on top only while it's new or has open proposals?** *Recommended: yes.*
+8. **Muscles counts working sets on both sides** (hard sets stay in Training)? *Recommended: yes*, so rating easy sets honestly never makes the numbers look worse.
+
+---
+
+## 13. Design-system additions (on approval only)
+
+There are no new colours and no new status words. New components:
+- `PlanDayStrip` (chip: done / next / blank; becomes a list at AX)
+- `FactRow` (label · this · last; stacks at AX1+)
+- `EvidenceSheet`
+
+Variants:
+- `WeekBars` gains a planned-outline variant
+- `VolumeBandRow` gains a planned tick (2 pt `chart.bandEdge`)
+- `LiftRow` (name, actual, change words, sparkline, optional target line)
+
+design-system.md is unchanged until Ben approves.

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "farmers-carry",
+  "tier": "basic",
+  "name": "Farmer's carry",
+  "aliases": ["Farmer's walk", "Farmers walk", "Farmers carry", "Farmer carry", "HYROX farmers carry", "Kettlebell farmers carry", "Dumbbell farmers walk"],
+  "family": "carry",
+  "movementPattern": "carry",
+  "mechanic": "compound",
+  "primaryMuscles": ["grip", "traps"],
+  "secondaryMuscles": ["forearms", "upper_back", "core", "obliques", "glutes", "quads"],
+  "compatibleEquipment": ["kettlebell", "dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "distance",
+  "laterality": "bilateral",
+  "implements": 2,
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

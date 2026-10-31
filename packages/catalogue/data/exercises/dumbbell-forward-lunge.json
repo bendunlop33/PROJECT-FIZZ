@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-forward-lunge",
+  "tier": "rich",
+  "name": "Dumbbell forward lunge",
+  "aliases": ["Forward lunge", "DB forward lunge", "Dumbbell front lunge", "Dumbbell lunge", "DB lunge"],
+  "family": "lunge",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings", "core", "grip"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "implements": 2,
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "A dumbbell in each hand at your sides",
+      "Stand tall, feet hip-width apart",
+      "Clear a stride of floor in front"
+    ],
+    "execution": [
+      "Step forward and land heel first",
+      "Lower the back knee toward the floor",
+      "Push off the front foot to step back",
+      "Stand tall before the next rep"
+    ],
+    "faults": [
+      "Don't take a tiny step",
+      "Don't let the front knee cave in",
+      "Don't crash down into the bottom",
+      "Don't push off the back foot to return"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "The step forward brakes your whole body on the front leg, so it asks more of knee control than a reverse lunge. Start light and move at a steady pace.",
+      "Use a stride long enough that the front heel stays down at the bottom.",
+      "If balance goes, put the dumbbells down rather than twisting to save the rep.",
+      "Load is each dumbbell; reps are per leg.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-reverse-lunge", "name": "Dumbbell reverse lunge", "reason": "Stepping back is easier to control than braking a step forward." },
+      { "key": "bodyweight-split-squat", "name": "Split squat", "reason": "Feet stay planted; learn the bottom position first." }
+    ],
+    "progressions": [
+      { "key": "dumbbell-walking-lunge", "name": "Dumbbell walking lunge", "reason": "Each step carries straight into the next, so control and conditioning demands rise." },
+      { "key": null, "name": "Heavier dumbbells", "reason": "Add load once every rep lands in the same spot." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-reverse-lunge", "name": "Dumbbell reverse lunge", "reason": "Same muscles with an easier landing." },
+      { "key": "barbell-reverse-lunge", "name": "Barbell reverse lunge", "reason": "Heavier loads on a bar; needs a rack." },
+      { "key": "dumbbell-bulgarian-split-squat", "name": "Bulgarian split squat", "reason": "Single-leg strength with no step." },
+      { "key": "dumbbell-step-up", "name": "Dumbbell step-up", "reason": "Single-leg drive with a bench, no landing." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right; the near leg steps forward. Leave space in front of the figure for the stride.",
+    "keyPositions": [
+      {
+        "label": "Standing",
+        "describe": "Standing tall, feet hip-width, a dumbbell hanging at each side.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "frontKneeFlexion": 0, "backKneeFlexion": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Near foot has stepped forward about a stride, flat on the floor. Back knee just above the floor, on the ball of the back foot. Torso upright, dumbbells hanging straight down.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 5, "frontKneeFlexion": 90, "backKneeFlexion": 90, "frontHipFlexion": 80 }
+      },
+      {
+        "label": "Push back",
+        "describe": "Pushing off the front foot, body moving back over the back foot, front foot lifting to return beside it.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 5, "frontKneeFlexion": 40, "backKneeFlexion": 20 }
+      }
+    ],
+    "ikHints": ["Back foot stays planted on its forefoot through the rep", "Dumbbells hang vertically from the hands"],
+    "tempo": { "downMs": 1200, "holdMs": 200, "upMs": 1100 },
+    "props": ["dumbbell_pair"],
+    "emphasise": [
+      "Step lands under control, heel first",
+      "Back knee drops straight down",
+      "The front leg pushes the body back to standing"
+    ],
+    "doNotShow": ["Front knee caving in", "Front heel lifting", "Torso folding forward"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/dumbbell-lunge/",
+      "title": "StrengthLog: Dumbbell Lunge",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-1]; cues.execution[0-3]"
+    },
+    {
+      "url": "https://catalystathletics.com/exercise/735/Reverse-Lunge/",
+      "title": "Catalyst Athletics exercise library: Reverse Lunge",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.regressions[0] (comparison of forward and reverse lunges)",
+      "note": "Seen through a search listing; describes the reverse lunge, used here for the comparison only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "'Dumbbell lunge' and 'DB lunge' usually mean a forward lunge in place (StrengthLog uses that name), but some people log walking lunges under it. An import should let Ben confirm."
+    },
+    {
+      "field": "safety.notes[0]",
+      "note": "That a forward lunge asks more of knee control than a reverse lunge is common coaching reasoning, not a measured finding."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

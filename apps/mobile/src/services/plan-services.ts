@@ -1,0 +1,1218 @@
+import {
+  localDateOf,
+  activePause,
+  activePin,
+  applyPlan,
+  autoResumeDue,
+  addDays,
+  consistency,
+  localWeekBounds,
+  pausedDates,
+  planInUseUntilUtc,
+  pausedInWeek,
+  pausePlan,
+  pinPlanDay,
+  isNotPlanDay,
+  linkedRoutineId,
+  linkedVariants,
+  answerPlanDayLink,
+  isInHistory,
+  planLinksFor,
+  linkPlanDaysOf,
+  undoPlanDayLink,
+  previousPlanLine,
+  previousPlans,
+  restartedPlanIdFor,
+  restartPlan,
+  planDayBodyParts,
+  resumePlan,
+  splitInUse,
+  undoPlanControl,
+  workoutGroupsOf,
+  type PlanControlChange,
+  type PlanDueWorkout,
+  currentPlanVersion,
+  endPlan,
+  isDeleted,
+  liveRoutines,
+  isMainLift,
+  planDayDetail,
+  planDayFromTemplates,
+  planDayLines,
+  planDayRows,
+  planIsOpen,
+  plannedSetsThisWeek,
+  planOverview,
+  planRoutines,
+  planWeekStartMs,
+  rotationRoutines,
+  showsTargetsHit,
+  toIso,
+  toMs,
+  undoEndPlan,
+  undoPlanApply,
+  type ConsistencyView,
+  type PlanDayDetailRow,
+  type PlanDayRow,
+  type PlanEndChange,
+  type PlanOverview,
+  pbAppliedBuilder,
+  pbBlockOfPlan,
+  planDayOf,
+  PB_BLOCK_COPY,
+  type PbBlockRow,
+  movePlanDay,
+  undoMovePlanDay,
+  oneExerciseChange,
+  pbChangeWeek,
+  pbDayWithEdits,
+  pbUndoWeekChange,
+  pbWeekChange,
+  pbMovedOntoToday,
+  pbWeekEditsOf,
+  pbSkipsOf,
+  pbMoveWeek,
+  deriveId,
+  weekdayIndexOfDate,
+  type PbWeekChangeRequest,
+  syncPlanWeek,
+  type PbBlockView,
+  type PbBlockWeek,
+  pbDaysAtOf,
+  pbVersionOf,
+  type HistoryWorkout,
+  type GymEdit,
+  pbBlockStartUtc,
+  pbKeepBlockOf,
+  pbCarryOnOpenOf,
+  finishedGymWorkoutOn,
+  setDaysWeekSlots,
+  upNextPlanningWeekday,
+} from '@fizz/domain';
+import type { PlanSplitView } from '@fizz/coach';
+import type { PlanWrite, Store } from '@fizz/persistence';
+import { createVersionMemo } from './version-memo';
+import { readPlanLinks } from './plan-day-links';
+import { planWeekDayOf, planWeekWorkoutOf, planWeekdaysNow } from './plan-week';
+import { editBlockOf, readPlanBlock, slotKits, weekViews, type WeekViewsInput } from './plan-edit-read';
+import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, PlanDraft, PlanWeekExerciseEdit, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+
+/**
+ * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
+ * (`Replace my workouts` / `Add alongside`) and Undo, and the plan tracker's
+ * consistency card. Your data, local only: nothing here calls the coach or
+ * the network. Every value comes from the stored plan and Ben's records;
+ * the screens never compute targets, loads or counts themselves.
+ */
+
+export interface PlanServicesDeps {
+  store: () => Store;
+  profile: () => Promise<UserProfile | null>;
+  now: () => ZonedTimestamp;
+  catalogueExercises?: () => readonly Exercise[];
+  /** The selected gym (Library › Your plan's Up next and a day's loads are at it); absent or null: none set up. */
+  currentGym?: () => Promise<{ id: string; name: string } | null>;
+  /** Up next's workout at this gym (null: the typical gym), as Today shows it; null when Up next isn't a workout. */
+  upNextRoutineId?: (gymId: string | null) => Promise<string | null>;
+  /** What Start would create for a workout at this gym (a dry run, saves nothing) and about how long. */
+  plannedDay?: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate; aboutMinutes: number | null } | null>;
+  /** (Ben, 27 Oct) Today's card minutes for a plan day's workout (the shared estimate); absent or null: the dry run's. */
+  todayMinutes?: (routineId: string) => Promise<number | null>;
+  /** Each split day's main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
+  splitMainLiftIds?: () => Promise<ReadonlySet<string>>;
+  /**
+   * (Ben, 29 Oct; CLAUDE.md rule 4) A weight Ben typed for a swapped-in or added exercise: the current gym learns it
+   * (a dumbbell, a plate, a machine's recorded max), never past a machine's max. The edit it made (for the change's
+   * Undo); null: nothing to learn. Absent: not wired.
+   */
+  learnTyped?: (exerciseId: string, load: Load) => Promise<GymEdit | null>;
+  /** (Ben, 20 Oct) This week's activity lines and the week change in use (week-services); absent: none. */
+  weekInfo?: () => Promise<{ lines: string[]; /** Each line's activity ID. */ ids?: string[]; change: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][]; mergedRoutineIds?: (string | null)[] } | null }>;
+}
+
+/**
+ * (Ben, 23 Oct: plan length = block 1) A builder plan's weeks on Library › Plan › Your plan: every week's view (the
+ * strip shows any of them; done weeks read-only), the current week, and whether the block is done (`Start next
+ * block ›` opens the builder with the plan's answers). Null on a coach plan (it has no length).
+ */
+export interface PlanBlockOverview {
+  views: PbBlockView[];
+  /** The week the strip opens on: the current one (the last once done). */
+  current: number;
+  done: boolean;
+  header: string;
+  /** `6 weeks · Standard · deload week 6`. */
+  line: string;
+  /** (Ben, 26 Oct) The plan's version as read: `Move day` and `Edit plan` write against it (rule 5). */
+  planId: string;
+  planVersion: number;
+  /** (26 Oct) `Edit plan` while the block runs (a done block starts the next one instead). */
+  editable: boolean;
+  /**
+   * (26 Oct) This week's plan days not done yet: `Do today ›` opens that day on Today (its Today key); `Move day` the
+   * weekdays it can move to this week (Set days plans; null on Any days).
+   */
+  actions: Readonly<Record<number, { todayKey: string; moveTo: number[] | null }>>;
+  /** (Redesign 27 Oct, D4) The answers the plan was built from: Change plan's `Days and time` and `Goal` lines. */
+  answers: PlanBuilderAnswers;
+  /** (Ben, 28 Oct) The lead-in week: the Monday week 1 starts (`Starts Mon 2 Nov`); null: not a lead-in. */
+  startsOn: string | null;
+}
+
+export interface PlanOverviewWithBlock extends PlanOverview {
+  /** Absent or null: no weeks to show (a coach plan). */
+  block?: PlanBlockOverview | null;
+}
+
+const EFFORT_WORD = { standard: 'Standard', push: 'Push', maintain: 'Maintain' } as const;
+
+export type PlanCardState =
+  | { kind: 'open' }
+  /** Applied (this version): Undo while it is the plan in use. */
+  | { kind: 'applied'; mode: PlanApplyMode; atUtc: string }
+  /** A newer version of the same plan exists: this card can't apply (rule 5). */
+  | { kind: 'replaced'; byN: number }
+  /** A newer plan was applied since: this one ended (no Undo here; the newer plan's Undo brings it back). */
+  | { kind: 'superseded' }
+  /**
+   * Ben ended it (Library › Your plan › `End plan`). `canResume` (review planview S4): no other plan is in
+   * use, so `Use again` (the same write as the toast's Undo) is offered here after the toast is gone.
+   */
+  | { kind: 'ended'; canResume: boolean }
+  | { kind: 'expired' }
+  | { kind: 'gone' };
+
+export interface PlanCardData {
+  planId: string;
+  versionN: number;
+  /** The plan's stored version: what Apply and Undo must find (rule 5). */
+  planVersion: number;
+  name: string;
+  days: { index: number; name: string; line: string; leftOut: number }[];
+  rationale: string | null;
+  gymName: string | null;
+  state: PlanCardState;
+  /** Workouts in the rotation now that `Replace my workouts` would take out (kept in Workouts). */
+  replaces: string[];
+}
+
+export interface PlanDayData {
+  planId: string;
+  versionN: number;
+  index: number;
+  name: string;
+  minutes: number;
+  rows: PlanDayRow[];
+  /** The checks' lines for this day (`Why?`). */
+  checks: string[];
+  /** After Apply: the saved workout this day became (open it to edit). */
+  routineId: string | null;
+}
+
+export type PlanWriteOutcome = { ok: true; plan: PlanDraft; duplicate: boolean; /** (29 Oct) What the gym learnt from a typed weight (its Undo goes with the change's). */ learned?: GymEdit | null; /** (29 Oct) Your workout drafts today the same change was made on (their Undo goes with it). */ draftEdits?: { draftId: string; opId: string }[] } | { ok: false; reason: 'stale' | 'closed' | 'changed_since' | 'missing' | 'failed'; message: string };
+
+/** The applied plan as Progress and Today read it. */
+export interface ActivePlan {
+  planId: string;
+  name: string;
+  appliedAtUtc: string;
+  days: { routineId: string; name: string; createdFromSessionId: string | null }[];
+}
+
+export const PLAN_COPY = {
+  stale: 'Out of date. Nothing changed.',
+  closed: 'This plan has expired.',
+  missing: 'Plan not found.',
+  failed: 'Couldn’t save. Try again.',
+  /** A plan day with no gym set up, or one this gym can't plan (review planview S2). */
+  noGym: 'No gym',
+  notHere: 'Can’t plan at this gym',
+  /** Your plan couldn't be read (review planview S5). */
+  loadFailed: 'Couldn’t load your plan.',
+  changedSince: (names: readonly string[]) => `Can’t undo: ${names.join(', ')} changed since.`,
+  /** Undo of `End plan` with a newer plan in use, or the plan moved on since. */
+  notEnded: 'Out of date. Nothing changed.',
+  /** (20 Oct) A pause `until` that isn't after today. */
+  badDate: 'Pick a date after today.',
+  alreadyPaused: 'Already paused.',
+  notPaused: 'Not paused.',
+} as const;
+
+/** (26 Oct) `Move day`'s write as an outcome (a taken weekday or a done day: out of date). */
+function moveOutcome(r: PlanWrite | null): PlanWriteOutcome {
+  if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+  if (r.status === 'written' || r.status === 'replayed') return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+  if (r.status === 'missing') return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+  return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+}
+
+/** Library › Your plan › a day (Ben, 19 Oct): what Start would plan here and last time's sets. */
+export interface PlanDayScreenData {
+  planId: string;
+  routineId: string;
+  name: string;
+  dayN: number;
+  of: number;
+  /** `Day 2 of 4 · Main gym · about 60 min`. */
+  header: string;
+  rows: PlanDayDetailRow[];
+  /**
+   * `planned`: the rows are what Start would plan at this gym. Review planview S2: `no_gym` (none set up
+   * yet) or `not_here` (this gym can't plan it): the rows are the saved sets × targets, no loads.
+   */
+  status: 'planned' | 'no_gym' | 'not_here';
+  /** (Ben, 20 Oct) The plan's stored version (what `Make next` must find) and whether this day is pinned now. */
+  planVersion: number;
+  pinned: boolean;
+  /** The plan is paused: `Make next` isn't offered. */
+  paused: boolean;
+  /**
+   * (Ben, 27 Oct: Library › Plan v2) Opened from another week of a builder plan: that week's planned targets
+   * (`Week 5 of 6 · Deload`, each exercise's sets × reps · kg), as the week's day card showed; null: this week (the
+   * rows are what Start would plan) or a coach plan.
+   */
+  week: { header: string; note: string | null; rows: PbBlockRow[] } | null;
+}
+
+/** Library › Plan › Previous: one row (`Summer PPL` / `Push / Pull / Legs · ended 20 Sep`). */
+export interface PreviousPlanRow {
+  planId: string;
+  planVersion: number;
+  name: string;
+  line: string;
+}
+
+/** What `End plan` did (Ben, 20 Oct): the workouts it couldn't put back (`N workouts not restored`, behind `Why?`). */
+export type PlanEndOutcome = (Extract<PlanWriteOutcome, { ok: true }> & { notRestored: string[] }) | Extract<PlanWriteOutcome, { ok: false }>;
+
+const plural = (n: number, word: string): string => `${String(n)} ${word}${n === 1 ? '' : 's'}`;
+
+export function createPlanServices(deps: PlanServicesDeps) {
+  const consistencyMemo = createVersionMemo<ConsistencyView | null>(2);
+  const repo = () => deps.store().repos.planDrafts;
+
+  async function owner(): Promise<UserProfile | null> {
+    return deps.profile();
+  }
+
+  /** (Ben, 23 Oct: plan length = block 1) The applied builder plan's weeks; null on a coach plan. */
+  async function blockOverview(
+    p: UserProfile,
+    plan: PlanDraft,
+    refs: readonly { routineId: string | null; startedAtUtc: string; planDay?: { planId: string; dayIndex: number } | undefined }[],
+    nowMs: number,
+    tz: string,
+    of: (id: string) => Exercise | null,
+    week: { doneOn: ReadonlyMap<number, string>; nextDayIndex: number | null; finishedToday: boolean } | null = null,
+  ): Promise<PlanBlockOverview | null> {
+    const b = pbAppliedBuilder(plan);
+    const block = pbBlockOfPlan(plan, refs, nowMs, tz);
+    if (b === null || block === null) return null;
+    // Each slot's item wherever Ben set it up (the plan was checked at one gym; a later gym change doesn't move the plan).
+    const kitOf = await slotKits(deps.store(), p.id);
+    const a = b.builder.answers;
+    // (Ben, 26 Oct: Edit plan) Each week from the plan's week map; Set days plans show each day's weekday.
+    const planned = weekViews({ plan, answers: a, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise', asWorkout: await asWorkoutOf(p, plan, block, of) });
+    // (Ben, 31 Oct) This week's days on the dates Today's tiles show: what he did, then Up next on the planning day.
+    const at = editBlockOf(block)?.week ?? null;
+    const views = at === null || week === null || activePause(plan, nowMs, tz) !== null ? planned : planned.map((v, i) => (i === at - 1 ? { ...v, days: thisWeekSlots(v.days, plan, block, week, nowMs, tz) } : v));
+    const deloads = views[0]?.deloadWeeks ?? [];
+    const line = [`${String(a.weeks)} weeks`, EFFORT_WORD[a.effort], ...(deloads.length === 0 ? [] : [`deload ${deloads.length === 1 ? 'week' : 'weeks'} ${deloads.join(', ')}`])].join(' · ');
+    const eb = editBlockOf(block);
+    const actions: Record<number, { todayKey: string; moveTo: number[] | null }> = {};
+    // Move day's weekdays as `movePlanDay` checks them: the plan's own this week (moves applied).
+    const thisWeek = eb === null ? undefined : planned[eb.week - 1];
+    if (eb !== null && thisWeek !== undefined && activePause(plan, nowMs, tz) === null) {
+      const taken = new Set(thisWeek.days.flatMap((d) => (d.weekday === null ? [] : [d.weekday])));
+      for (const d of thisWeek.days) {
+        if (d.done) continue;
+        actions[d.index] = { todayKey: `plan:${plan.id}:${String(d.index)}`, moveTo: d.weekday === null ? null : [0, 1, 2, 3, 4, 5, 6].filter((x) => x === d.weekday || !taken.has(x)) };
+      }
+    }
+    return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line, planId: plan.id, planVersion: plan.version, editable: eb !== null, actions, answers: a, startsOn: block.leadIn?.startsOn ?? null };
+  }
+
+  /**
+   * (Ben, 27 Oct: "If I add superset it doesn't then change the plan") Weeks not done yet show each plan day as its
+   * workout will run it: the day's workout (the one Apply made, else the first) and the version it was last made to
+   * match (`daysAt`). Undefined: the block is done.
+   */
+  async function asWorkoutOf(p: UserProfile, plan: PlanDraft, block: PbBlockWeek, of: (id: string) => Exercise | null): Promise<WeekViewsInput['asWorkout']> {
+    if (block.done) return undefined;
+    const routines = await live(p.id);
+    const at = pbDaysAtOf(plan);
+    return {
+      fromWeek: block.week,
+      doneThisWeek: block.daysDone[block.week - 1] ?? [],
+      dayOf: (dayIndex) => {
+        const made = plan.applied?.made.find((m) => m.dayIndex === dayIndex)?.routineId;
+        const r = routines.find((x) => x.id === made) ?? routines.find((x) => planDayOf(x)?.planId === plan.id && planDayOf(x)?.dayIndex === dayIndex);
+        if (r === undefined) return null;
+        const n = at.get(dayIndex) ?? null;
+        return { template: r.exercises, base: n === null ? null : (pbVersionOf(plan, n)?.days.find((d) => d.index === dayIndex) ?? null) };
+      },
+      unitOf: (id) => {
+        const e = of(id);
+        return e === null ? null : { unit: p.preferredUnit, convention: e.defaultLoadConvention };
+      },
+    };
+  }
+
+  /**
+   * (Ben, 27 Oct: Library › Plan v2) A plan day's planned targets in block week `w`, when that isn't the block's week
+   * now: what the old week strip's day card showed. Null: this week, a coach plan, or not a day of the plan.
+   */
+  async function weekOfDay(p: UserProfile, plan: PlanDraft, routine: Routine, w: number, nowMs: number): Promise<PlanDayScreenData['week']> {
+    const b = pbAppliedBuilder(plan);
+    if (b === null || plan.applied === null) return null;
+    const dayIndex = plan.applied.made.find((m) => m.routineId === routine.id)?.dayIndex ?? planDayOf(routine)?.dayIndex ?? null;
+    const block = await readPlanBlock(deps.store(), p.id, plan, nowMs, p.timezone);
+    const a = b.builder.answers;
+    if (dayIndex === null || block === null || w < 1 || w > a.weeks || (!block.done && w === block.week)) return null;
+    const of = await exerciseOf();
+    const views = weekViews({ plan, answers: a, block, kitOf: await slotKits(deps.store(), p.id), nameOf: (id) => of(id)?.name ?? 'Exercise', asWorkout: await asWorkoutOf(p, plan, block, of) });
+    const view = views[w - 1];
+    const day = view?.days.find((d) => d.index === dayIndex);
+    if (view === undefined || day === undefined) return null;
+    const deload = view.deloadWeeks.includes(w);
+    return { header: `${PB_BLOCK_COPY.week(w, a.weeks)}${deload ? ` · ${PB_BLOCK_COPY.deload}` : ''}`, note: view.note, rows: day.rows };
+  }
+
+  /** (Ben, 29 Oct) This week's skipped plan days not done anyway (a skipped day done after all counts as done). */
+  /** (Ben, 31 Oct) This week's days with their weekday after `setDaysWeekSlots` (Set days only). */
+  function thisWeekSlots<D extends { index: number; weekday: number | null; done: boolean }>(days: readonly D[], plan: PlanDraft, block: PbBlockWeek, week: { doneOn: ReadonlyMap<number, string>; nextDayIndex: number | null; finishedToday: boolean }, nowMs: number, tz: string): D[] {
+    if (!days.some((d) => d.weekday !== null)) return [...days];
+    const skips = pbSkipsOf(plan, pbMoveWeek(block));
+    const movedTo = new Map((plan.moves ?? []).filter((m) => m.week === pbMoveWeek(block)).map((m) => [m.dayIndex, m.weekday] as const));
+    const today = weekdayIndexOfDate(localDateOf(nowMs, tz));
+    const slots = setDaysWeekSlots({
+      days: days.map((d) => {
+        const on = week.doneOn.get(d.index);
+        return { key: d.index, weekday: d.weekday, doneOn: on === undefined ? (d.done ? d.weekday : null) : weekdayIndexOfDate(on), skipped: skips.has(d.index), movedTo: movedTo.get(d.index) ?? null };
+      }),
+      planningDay: upNextPlanningWeekday(today, week.finishedToday),
+      upNext: week.nextDayIndex,
+    });
+    // Done days: the weekday they were done; the rest where the slots put them (none left: their own, missed).
+    return days.map((d) => (skips.has(d.index) ? d : { ...d, weekday: slots.get(d.index) ?? d.weekday }));
+  }
+
+  function skippedNow(plan: PlanDraft, block: PbBlockWeek | null, days: readonly { dayIndex: number | null }[]): number {
+    if (block === null || block.done) return 0;
+    const skips = pbSkipsOf(plan, pbMoveWeek(block));
+    const done = new Set(block.daysDone[block.week - 1] ?? []);
+    return days.filter((d) => d.dayIndex !== null && skips.has(d.dayIndex) && !done.has(d.dayIndex)).length;
+  }
+
+  /** A typed weight is in the exercise's own load convention (per dumbbell, plates, stack…), never the screen's guess. */
+  async function withConvention(c: PbWeekChangeRequest): Promise<PbWeekChangeRequest> {
+    if (c.kind !== 'exercise' || c.edit.load == null || c.edit.toExerciseId === null) return c;
+    const x = (await exerciseOf())(c.edit.toExerciseId);
+    const convention = x?.defaultLoadConvention ?? c.edit.load.convention;
+    return { ...c, edit: { ...c.edit, load: { ...c.edit.load, convention } } };
+  }
+
+  async function exerciseOf(): Promise<(id: string) => Exercise | null> {
+    const pool = new Map<string, Exercise>();
+    for (const e of await deps.store().repos.exercises.list().catch(() => [] as Exercise[])) pool.set(e.id, e);
+    for (const e of deps.catalogueExercises?.() ?? []) if (!pool.has(e.id)) pool.set(e.id, e);
+    return (id) => pool.get(id) ?? null;
+  }
+
+  /** The main lifts on a plan day: each split day's main lift (Ben, 20 Oct), not the day's `Main` flags. */
+  async function splitMainLifts(): Promise<Set<string>> {
+    return new Set((await deps.splitMainLiftIds?.().catch(() => null)) ?? []);
+  }
+
+  /** Ben's plan by ID (expired on read past its 14 days while open). */
+  async function get(planId: string): Promise<PlanDraft | null> {
+    const p = await owner();
+    if (p === null) return null;
+    await repo().expire(p.id, deps.now().utc).catch(() => []);
+    const plan = await repo().get(planId).catch(() => null);
+    return plan !== null && plan.ownerId === p.id ? plan : null;
+  }
+
+  function stateOf(plan: PlanDraft | null, versionN: number, nowUtc: string, otherApplied = false): PlanCardState {
+    if (plan === null) return { kind: 'gone' };
+    if (plan.status === 'expired' || plan.status === 'discarded' || (plan.status === 'open' && !planIsOpen(plan, nowUtc))) return { kind: 'expired' };
+    if (plan.currentVersion !== versionN) return { kind: 'replaced', byN: plan.currentVersion };
+    if (plan.status === 'superseded') return { kind: 'superseded' };
+    if (plan.status === 'ended') return { kind: 'ended', canResume: !otherApplied };
+    if (plan.status === 'applied' && plan.applied !== null) return { kind: 'applied', mode: plan.applied.mode, atUtc: plan.applied.atUtc };
+    return { kind: 'open' };
+  }
+
+  async function live(ownerId: string): Promise<Routine[]> {
+    return liveRoutines(await deps.store().repos.routines.listByOwner(ownerId).catch(() => [] as Routine[]));
+  }
+
+  /**
+   * The catalogue exercises a plan names that aren't Ben's rows yet (as `Add exercise` saves them). Read only:
+   * Apply saves them in its own transaction, so a stale or refused Apply writes nothing (review S4). Null: one is unknown.
+   */
+  async function exercisesToSave(plan: PlanDraft): Promise<Exercise[] | null> {
+    const ids = new Set(currentPlanVersion(plan).days.flatMap((d) => d.plan.slots.map((s) => s.exerciseId)));
+    const catalogue = new Map((deps.catalogueExercises?.() ?? []).map((e) => [e.id, e]));
+    const out: Exercise[] = [];
+    for (const id of ids) {
+      if ((await deps.store().repos.exercises.get(id).catch(() => null)) !== null) continue;
+      const row = catalogue.get(id);
+      if (row === undefined) return null;
+      out.push(row);
+    }
+    return out;
+  }
+
+  /** The applied plan in use and its live days, in day order; null without one. */
+  async function active(): Promise<ActivePlan | null> {
+    const p = await owner();
+    if (p === null) return null;
+    const plan = await repo().applied(p.id).catch(() => null);
+    if (plan === null || plan.applied === null) return null;
+    const days = planRoutines(plan, await live(p.id));
+    if (days.length === 0) return null;
+    return { planId: plan.id, name: plan.name, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc, days: days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null })) };
+  }
+
+  async function endWrite(planId: string, make: (current: PlanDraft, routines: ReadonlyMap<string, Routine | null>, otherApplied: boolean) => PlanEndChange): Promise<PlanWriteOutcome> {
+    const p = await owner();
+    if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+    const r = await repo()
+      .endOrResume(p.id, planId, make)
+      .catch(() => null);
+    if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+    switch (r.status) {
+      case 'written':
+      case 'replayed':
+        return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+      case 'stale':
+      case 'closed':
+        return { ok: false, reason: 'stale', message: PLAN_COPY.notEnded };
+      case 'changed_since':
+        return { ok: false, reason: 'changed_since', message: PLAN_COPY.changedSince(r.names) };
+      case 'missing':
+      case 'invalid':
+        return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+    }
+  }
+
+  /** (Ben, 20 Oct) A `Make next`, pause, resume or Undo write on the plan, decided against what is stored (rule 5). */
+  async function controlWrite(planId: string, make: (current: PlanDraft, routines: readonly Routine[]) => PlanControlChange): Promise<PlanWriteOutcome> {
+    const p = await owner();
+    if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+    const r = await repo()
+      .control(p.id, planId, make)
+      .catch(() => null);
+    if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+    switch (r.status) {
+      case 'written':
+      case 'replayed':
+        return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+      case 'stale':
+      case 'closed':
+      case 'changed_since':
+        return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+      case 'missing':
+        return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      case 'invalid':
+        return { ok: false, reason: 'stale', message: r.reason === 'bad_date' ? PLAN_COPY.badDate : r.reason === 'already_paused' ? PLAN_COPY.alreadyPaused : r.reason === 'not_paused' ? PLAN_COPY.notPaused : PLAN_COPY.stale };
+    }
+  }
+
+  /** Each plan day's body parts (`planDayBodyParts`) for the ✓ and Up next's muscle counting. */
+  async function bodyPartsOf(ownerId: string, days: readonly Routine[]): Promise<Map<string, SplitBodyPart[]>> {
+    const of = await exerciseOf();
+    const training = await deps.store().repos.trainingProfiles.get(ownerId).catch(() => null);
+    const split = splitInUse(training);
+    return new Map(days.map((r) => [r.id, planDayBodyParts(r, of, split)]));
+  }
+
+  return {
+    get,
+    active,
+
+    /**
+     * (D7, Ben 22–23 Oct: one split source) The plan in use, paused or not: an applied plan with live workouts, as
+     * Today and Library › Your plan read it. Null: none (Profile › Split and its defaults are then the source). Local
+     * reads only; a failed read throws (never taken for no plan).
+     */
+    async inUse(): Promise<{ planId: string; name: string } | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await repo().applied(p.id);
+      if (plan === null || plan.applied === null) return null;
+      return planRoutines(plan, liveRoutines(await deps.store().repos.routines.listByOwner(p.id))).length === 0 ? null : { planId: plan.id, name: plan.name };
+    },
+
+    /**
+     * ADR 0039 (Ben, 29 Oct: "Why does it get confused with my split?"): the plan in use (paused or not) as the coach's
+     * one split: its days in order, this week's weekday on Set days plans, body parts and main lifts. Null: no plan in
+     * use (the profile's split is then the source). Local reads only; never throws.
+     */
+    async splitSource(): Promise<PlanSplitView | null> {
+      try {
+        const p = await owner();
+        if (p === null) return null;
+        const plan = await repo().applied(p.id);
+        if (plan === null || plan.applied === null) return null;
+        const days = planRoutines(plan, await live(p.id));
+        if (days.length === 0) return null;
+        const nowMs = toMs(deps.now().utc);
+        const tz = p.timezone;
+        const parts = await bodyPartsOf(p.id, days);
+        const madeDay = new Map(plan.applied.made.map((m) => [m.routineId, m.dayIndex] as const));
+        const dayRefs = days.map((r) => ({ ...planWeekDayOf(plan, r, parts.get(r.id) ?? []), dayIndex: madeDay.get(r.id) ?? planDayOf(r)?.dayIndex ?? null }));
+        const refs = await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => []);
+        const weekdays = planWeekdaysNow(plan, pbBlockOfPlan(plan, refs, nowMs, tz), dayRefs);
+        const of = await exerciseOf();
+        const paused = activePause(plan, nowMs, tz) !== null;
+        const next = paused ? null : ((await deps.upNextRoutineId?.((await deps.currentGym?.().catch(() => null))?.id ?? null).catch(() => null)) ?? null);
+        return {
+          name: plan.name,
+          paused,
+          days: days.map((r) => {
+            const main = r.exercises.find((e) => e.main === true) ?? null;
+            return { id: r.id, name: r.name, bodyParts: [...(parts.get(r.id) ?? [])], weekday: weekdays?.get(r.id) ?? null, mainLift: main === null ? null : (of(main.exerciseId)?.name ?? null) };
+          }),
+          upNext: days.find((r) => r.id === next)?.name ?? null,
+        };
+      } catch {
+        return null;
+      }
+    },
+
+    /** The plan card for one version: every value from the stored plan. Null: the plan isn't Ben's. */
+    async card(req: { planId: string; versionN: number }): Promise<PlanCardData | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await get(req.planId);
+      const v = plan?.versions.find((x) => x.n === req.versionN) ?? null;
+      if (plan === null || v === null) return null;
+      const gym = v.request.gymId === null ? null : await deps.store().repos.gyms.get(v.request.gymId).catch(() => null);
+      const routines = await live(p.id);
+      const madeIds = new Set(plan.applied?.made.map((m) => m.routineId) ?? []);
+      return {
+        planId: plan.id,
+        versionN: v.n,
+        planVersion: plan.version,
+        name: `${String(v.days.length)}-day plan`,
+        days: planDayLines(v).map((d) => ({ index: d.index, name: d.name, line: `${plural(d.exercises, 'exercise')} · ${plural(d.workingSets, 'set')} · ${String(d.minutes)} min`, leftOut: d.leftOut })),
+        rationale: v.rationale,
+        gymName: gym?.name ?? null,
+        state: stateOf(plan, req.versionN, deps.now().utc, plan.status === 'ended' && (await repo().applied(p.id).catch(() => null)) !== null),
+        replaces: rotationRoutines(routines).filter((r) => !madeIds.has(r.id)).map((r) => r.name),
+      };
+    },
+
+    /** One day of a plan version, for the day view. */
+    async day(req: { planId: string; versionN: number; dayIndex: number }): Promise<PlanDayData | null> {
+      const plan = await get(req.planId);
+      const v = plan?.versions.find((x) => x.n === req.versionN) ?? null;
+      const d = v?.days.find((x) => x.index === req.dayIndex) ?? null;
+      if (plan === null || v === null || d === null) return null;
+      const of = await exerciseOf();
+      const made = plan.applied !== null && plan.applied.versionN === v.n ? (plan.applied.made.find((m) => m.dayIndex === d.index)?.routineId ?? null) : null;
+      const routine = made === null ? null : await deps.store().repos.routines.get(made).catch(() => null);
+      return {
+        planId: plan.id,
+        versionN: v.n,
+        index: d.index,
+        name: d.name,
+        minutes: d.minutes,
+        rows: planDayRows(d, of),
+        checks: d.checks.map((c) => c.text),
+        routineId: routine !== null && !isDeleted(routine) ? routine.id : null,
+      };
+    },
+
+    /**
+     * Apply (rule 3: Ben's tap on a proposal). `expectedVersion` and
+     * `versionN` are the card's: a newer version, or an Apply or Undo since,
+     * changes nothing (rule 5). Idempotent by `opId` (minted at the first tap).
+     */
+    async apply(req: { planId: string; versionN: number; expectedVersion: number; mode: PlanApplyMode; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const plan = await get(req.planId);
+      if (plan === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const exercises = await exercisesToSave(plan);
+      if (exercises === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      const at = deps.now();
+      const r = await repo()
+        .apply(p.id, req.planId, (c, routines, applied) => applyPlan(c, { expectedVersion: req.expectedVersion, versionN: req.versionN, mode: req.mode, opId: req.opId, at, live: liveRoutines(routines), applied }), exercises)
+        .catch(() => null);
+      if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      switch (r.status) {
+        case 'written':
+        case 'replayed':
+          return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+        case 'stale':
+          return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        case 'closed':
+          return { ok: false, reason: 'closed', message: PLAN_COPY.closed };
+        case 'changed_since':
+          return { ok: false, reason: 'changed_since', message: PLAN_COPY.changedSince(r.names) };
+        case 'missing':
+        case 'invalid':
+          return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      }
+    },
+
+    /** Undo of an Apply: the setup before it back, only while nothing it touched changed since (rule 2, 5). */
+    async undo(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const r = await repo()
+        .undo(p.id, req.planId, (c, routines, plans) => undoPlanApply(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routines, plans }))
+        .catch(() => null);
+      if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      switch (r.status) {
+        case 'written':
+        case 'replayed':
+          return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+        case 'stale':
+          return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        case 'closed':
+          return { ok: false, reason: 'closed', message: PLAN_COPY.closed };
+        case 'changed_since':
+          return { ok: false, reason: 'changed_since', message: PLAN_COPY.changedSince(r.names) };
+        case 'missing':
+        case 'invalid':
+          return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      }
+    },
+
+    /**
+     * Library › Plan › Previous (Ben, 22–23 Oct, D7): the plans Ben used before, newest first, each with the
+     * stored version `Start again` must find. Local reads only; a failed read throws (never shown as none).
+     */
+    async previous(): Promise<PreviousPlanRow[]> {
+      const p = await owner();
+      if (p === null) return [];
+      return previousPlans(await repo().listByOwner(p.id), p.id).map((x) => ({ planId: x.planId, planVersion: x.planVersion, name: x.name, line: previousPlanLine(x, p.timezone) }));
+    },
+
+    /**
+     * `Start again` on a previous plan (until the plan builder ships, which opens with its answers instead):
+     * a copy of it applied in `mode`, superseding any plan in use. Its Undo is `undo({ planId: copy })`,
+     * which puts the setup before back (the plan in use then, too). `expectedVersion`: the row's (rule 5).
+     * Idempotent by `opId` (minted at the tap).
+     */
+    async startAgain(req: { planId: string; expectedVersion: number; mode: PlanApplyMode; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const source = await repo().get(req.planId).catch(() => null);
+      if (source === null || source.ownerId !== p.id) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const exercises = await exercisesToSave(source);
+      if (exercises === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      const at = deps.now();
+      const r = await repo()
+        .restart(p.id, req.planId, restartedPlanIdFor(req.opId), (s, routines, applied) => restartPlan(s, { expectedVersion: req.expectedVersion, mode: req.mode, opId: req.opId, at, live: liveRoutines(routines), applied }), exercises)
+        .catch(() => null);
+      if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      switch (r.status) {
+        case 'written':
+        case 'replayed':
+          return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+        case 'stale':
+        case 'closed':
+        case 'changed_since':
+          return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        case 'missing':
+        case 'invalid':
+          return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      }
+    },
+
+    /**
+     * Library › Workouts › Your plan (Ben, 19 Oct): the plan in use, its
+     * goal line from Profile › Training details, each day's state this week
+     * (Monday–Sunday in Ben's time zone, from Apply) and Up next, days this
+     * week and planned sets done. Null without a plan in use. Local reads only.
+     * Throws when the plan or its workouts can't be read (review planview S5: never
+     * shown as no plan).
+     */
+    async overview(): Promise<PlanOverviewWithBlock | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await repo().applied(p.id);
+      if (plan === null || plan.applied === null) return null;
+      const days = planRoutines(plan, liveRoutines(await deps.store().repos.routines.listByOwner(p.id)));
+      if (days.length === 0) return null;
+      const now = deps.now();
+      const nowMs = toMs(now.utc);
+      const tz = p.timezone;
+      const parts = await bodyPartsOf(p.id, days);
+      // (27 Oct) Each workout's plan day, so Library › Plan's one list joins the week's days to their workouts.
+      const madeDay = new Map(plan.applied.made.map((m) => [m.routineId, m.dayIndex] as const));
+      const dayRefs = days.map((r) => ({ ...planWeekDayOf(plan, r, parts.get(r.id) ?? []), dayIndex: madeDay.get(r.id) ?? planDayOf(r)?.dayIndex ?? null }));
+      const from = planWeekStartMs({ appliedAtUtc: plan.applied.atUtc, nowMs, tz });
+      const week = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, toIso(from), toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
+      // (Ben, 20 Oct) This week's workouts carry the muscles they trained: an off-plan leg day ticks Legs.
+      const of = await exerciseOf();
+      const groups = new Map(week.sessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
+      // (Ben, 28 Oct) An imported or past-logged workout that matches a plan day (or Ben counted) is that day's;
+      // `Not a plan day` ticks none.
+      const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan, templates: days, nowMs, exerciseOf: of });
+      // (Ben, 28 Oct) This week's workouts as this week's count reads them (one workout, one plan day): the lift each led
+      // with, and the variants a workout named for several (`Pull`) may fill.
+      const thisWeek = new Map(week.sessions.map((a) => [a.session.id, planWeekWorkoutOf(a, links, () => groups.get(a.session.id) ?? new Map())]));
+      const workouts = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).map((w) => {
+        const wk = thisWeek.get(w.sessionId);
+        const variants = linkedVariants(links, w.sessionId);
+        return { ...w, routineId: linkedRoutineId(links, w.sessionId, w.routineId), groups: isNotPlanDay(links, w.sessionId) ? undefined : groups.get(w.sessionId), leadExerciseId: wk?.leadExerciseId ?? null, ...(variants === null ? {} : { variants, variantRoutineIds: variants }) };
+      });
+      const training = await deps.store().repos.trainingProfiles.get(p.id).catch(() => null);
+      const gym = (await deps.currentGym?.().catch(() => null)) ?? null;
+      const pause = activePause(plan, nowMs, tz);
+      const nextRoutineId = pause !== null ? null : ((await deps.upNextRoutineId?.(gym?.id ?? null).catch(() => null)) ?? null);
+      const monday = localWeekBounds(nowMs, tz).mondayLocalDate;
+      const info = (await deps.weekInfo?.().catch(() => null)) ?? null;
+      const view = planOverview({
+        activities: info?.lines ?? [],
+        activityIds: info?.ids ?? [],
+        weekChange: info?.change ?? null,
+        paused: pause === null ? null : { untilDate: pause.untilDate },
+        pausedDaysThisWeek: pausedInWeek(monday, pausedDates(plan.pauses, monday, addDays(monday, 7), tz)),
+        skippedThisWeek: skippedNow(plan, pbBlockOfPlan(plan, workouts, nowMs, tz), dayRefs),
+        plan: { id: plan.id, name: plan.name, status: plan.status, version: plan.version, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc },
+        days: dayRefs,
+        workouts,
+        nextRoutineId,
+        training: training === null ? null : { goal: training.goal, daysPerWeek: training.daysPerWeek, sessionMinutes: training.sessionMinutes },
+        sets: plannedSetsThisWeek({ sessions: week.sessions, days: dayRefs, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc, nowMs, tz }),
+        weekdays: planWeekdaysNow(plan, pbBlockOfPlan(plan, workouts, nowMs, tz), dayRefs),
+        nowMs,
+        tz,
+      });
+      if (view === null) return null;
+      const doneOn = new Map(view.days.flatMap((d) => (d.dayIndex !== null && d.state === 'done' && d.doneOn !== null ? [[d.dayIndex, d.doneOn] as const] : [])));
+      const nextDayIndex = view.days.find((d) => d.next)?.dayIndex ?? null;
+      const today = localDateOf(nowMs, tz);
+      const finishedToday = finishedGymWorkoutOn(week.sessions.map((a) => ({ startedAtUtc: a.session.startedAt.utc, endedAtUtc: a.session.endedAt?.utc ?? null })), today, tz);
+      return { ...view, block: await blockOverview(p, plan, workouts, nowMs, tz, of, { doneOn, nextDayIndex, finishedToday }) };
+    },
+
+    /** One day of the plan in use (Library › Your plan › a day): its planned sets at this gym and last time's. Null: not a day of it. */
+    async planDay(routineId: string, opts: { targetsHit: boolean; week?: number | undefined } = { targetsHit: false }): Promise<PlanDayScreenData | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await repo().applied(p.id).catch(() => null);
+      const days = planRoutines(plan, await live(p.id));
+      const at = days.findIndex((r) => r.id === routineId);
+      const routine = days[at];
+      if (plan === null || routine === undefined) return null;
+      const gym = (await deps.currentGym?.().catch(() => null)) ?? null;
+      const run = gym === null ? null : ((await deps.plannedDay?.(routine.id, gym.id).catch(() => null)) ?? null);
+      const histories = new Map<string, HistoryWorkout[]>();
+      for (const exerciseId of run === null ? routine.exercises.map((e) => e.exerciseId) : run.aggregate.exercises.map((e) => e.exerciseId)) {
+        if (histories.has(exerciseId)) continue;
+        histories.set(exerciseId, await deps.store().repos.sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => []));
+      }
+      const history = (id: string) => histories.get(id) ?? [];
+      // `Targets hit` (Ben, 20 Oct): with the setting on, only on the split's main lifts (Profile), never a workout's `Main` flags.
+      const mains = opts.targetsHit ? await splitMainLifts() : new Set<string>();
+      const targetsHit = (id: string) => showsTargetsHit({ on: opts.targetsHit, main: isMainLift(id, mains) });
+      const detail =
+        run === null
+          ? planDayFromTemplates({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, routine, exerciseOf: await exerciseOf(), unit: p.preferredUnit, history, targetsHit })
+          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: (await deps.todayMinutes?.(routine.id).catch(() => null)) ?? run.aboutMinutes, planned: run.aggregate, history, targetsHit });
+      const status = run !== null ? 'planned' : gym === null ? 'no_gym' : 'not_here';
+      const nowMs = toMs(deps.now().utc);
+      // Pinned while no workout since the pin did that day (as Up next reads it).
+      let pinned = false;
+      if (plan.pin?.routineId === routine.id) {
+        const parts = await bodyPartsOf(p.id, days);
+        // Every finished workout since the pin, read as Up next reads it (review plan-adapt S3).
+        const r = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, plan.pin.atUtc, toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
+        const of = await exerciseOf();
+        const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan, templates: days, nowMs, exerciseOf: of });
+        const ws: PlanDueWorkout[] = r.sessions.map((a) => ({ sessionId: a.session.id, routineId: linkedRoutineId(links, a.session.id, a.session.routineId ?? null), startedAtUtc: a.session.startedAt.utc, groups: isNotPlanDay(links, a.session.id) ? new Map() : workoutGroupsOf(a, of) }));
+        pinned = activePin(plan.pin, days.map((r) => ({ routineId: r.id, name: r.name, bodyParts: parts.get(r.id) ?? [], createdFromSessionId: r.createdFromSessionId ?? null })), ws) !== null;
+      }
+      const week = opts.week === undefined ? null : await weekOfDay(p, plan, routine, opts.week, nowMs);
+      return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status, planVersion: plan.version, pinned, paused: activePause(plan, nowMs, p.timezone) !== null, week };
+    },
+
+    /**
+     * `End plan` (Ben's tap, after the in-page confirm): the plan's days leave
+     * the rotation (kept, with their history); Up next falls back to the
+     * normal rules. `expectedVersion`: the block's read (rule 5). Idempotent by `opId`.
+     */
+    async end(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanEndOutcome> {
+      const at = deps.now();
+      const r = await endWrite(req.planId, (c, routines) => endPlan(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routines }));
+      return r.ok ? { ...r, notRestored: (r.plan.ended?.notRestored ?? []).map((x) => x.name) } : r;
+    },
+
+    /**
+     * (Ben, 20 Oct) `Make next` on a plan day (null: unpin): Up next starts it until it is done. `expectedVersion`:
+     * the screen's read (rule 5). Idempotent by `opId`; `undoControl` is its Undo.
+     */
+    async makeNext(req: { planId: string; routineId: string | null; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return controlWrite(req.planId, (c, routines) => pinPlanDay(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routineId: req.routineId, days: planRoutines(c, liveRoutines(routines)) }));
+    },
+
+    /** (Ben, 20 Oct) `Pause plan`: until `untilDate` (local `YYYY-MM-DD`) starts, or until Resume (null). */
+    async pause(req: { planId: string; untilDate: string | null; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      const at = deps.now();
+      return controlWrite(req.planId, (c) => pausePlan(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, untilDate: req.untilDate, tz: p?.timezone ?? at.tz }));
+    },
+
+    /** (Ben, 20 Oct) `Resume`: the plan drives Up next again at once. */
+    async resumePause(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      const at = deps.now();
+      return controlWrite(req.planId, (c) => resumePlan(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, tz: p?.timezone ?? at.tz }));
+    },
+
+    /** Undo of the last `Make next`, pause or resume (`targetOpId`), from the version it left (`expectedVersion`). */
+    async undoControl(req: { planId: string; targetOpId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return controlWrite(req.planId, (c) => undoPlanControl(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, targetOpId: req.targetOpId }));
+    },
+
+    /**
+     * (Ben, 28 Oct) `Count as Pull?` on an imported or past-logged workout's Summary: `count` (it counts as that plan
+     * day, `routineId`) or `not_plan_day`. One versioned write on the plan in use (op ID; refused when the plan moved,
+     * rule 5); the workout itself never changes (rule 2). `undoDayLink` is its Undo.
+     */
+    async answerDayLink(req: { planId: string; sessionId: string; answer: 'count' | 'not_plan_day'; routineId: string | null; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return controlWrite(req.planId, (c, routines) => {
+        const day = req.routineId === null ? undefined : linkPlanDaysOf(c, planRoutines(c, liveRoutines(routines))).find((d) => d.routineId === req.routineId);
+        return answerPlanDayLink(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, sessionId: req.sessionId, answer: req.answer, routineId: day?.routineId ?? null, dayIndex: day?.dayIndex ?? null });
+      });
+    },
+
+    /**
+     * (Ben, 28 Oct) The one-time question on an imported or past-logged workout's Summary: `Count as Pull?` when it
+     * couldn't be matched to a plan day for sure and Ben hasn't answered. Null: nothing to ask (no plan in use, not
+     * such a workout, matched, or answered).
+     */
+    async dayLinkAsk(sessionId: string): Promise<PlanDayAsk | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan === null || plan.applied === null) return null;
+      const a = await deps.store().repos.sessions.get(sessionId).catch(() => null);
+      if (a === null || a.session.ownerId !== p.id || !isInHistory(a.session)) return null;
+      const days = linkPlanDaysOf(plan, planRoutines(plan, await live(p.id)));
+      const of = await exerciseOf();
+      const v = planLinksFor({ plan, days, workouts: [a], exerciseOf: of }).get(sessionId);
+      if (v?.kind !== 'ask') return null;
+      return { planId: plan.id, planVersion: plan.version, routineId: v.day.routineId, dayName: (v.day.name.split('·')[0] ?? v.day.name).trim() };
+    },
+
+    /** Undo of the last `Count` / `Not a plan day` (`targetOpId`), from the version it left (`expectedVersion`). */
+    async undoDayLink(req: { planId: string; targetOpId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return controlWrite(req.planId, (c) => undoPlanDayLink(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, targetOpId: req.targetOpId }));
+    },
+
+    /**
+     * (Ben, 20 Oct) On app open: a pause whose `until` date has come is ended (at that date's start). Idempotent: the op
+     * ID is the pause's own, so two opens write it once. Returns whether it wrote.
+     */
+    async autoResume(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      const at = deps.now();
+      const due = autoResumeDue(plan, toMs(at.utc), p.timezone);
+      if (plan === null || due === null) return false;
+      const r = await controlWrite(plan.id, (c) => resumePlan(c, { expectedVersion: c.version, opId: `plan-auto-resume:${due.opId}`, at, tz: p.timezone, auto: true }));
+      return r.ok && !r.duplicate;
+    },
+
+    /**
+     * (Ben, 30 Oct: edits never restart the block) On app open: a plan in use that a re-apply made before 30 Oct (a new
+     * plan document over the builder plan whose block was running) gets its block's start back, derived from the plans
+     * it superseded (`pbKeepBlockOf`). Idempotent (derived op ID); nothing to derive writes nothing. Returns whether it wrote.
+     */
+    async keepBlock(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan?.applied == null || plan.applied.block !== undefined || (plan.applied.superseded ?? []).length === 0) return false;
+      const all = await repo().listByOwner(p.id).catch(() => [] as PlanDraft[]);
+      const at = deps.now();
+      if (pbKeepBlockOf(plan, all, p.timezone, at.utc) === null) return false;
+      const r = await controlWrite(plan.id, (c) => {
+        const k = pbKeepBlockOf(c, all, p.timezone, at.utc);
+        return k === null ? { kind: 'duplicate', current: c } : { kind: 'write', next: k.next, expectedVersion: k.expectedVersion };
+      });
+      return r.ok && !r.duplicate;
+    },
+
+    /**
+     * (Ben, 31 Oct: "When I upload a new version it seems to forget that I have changed the order") On app open, after
+     * `keepBlock`: a plan in use that continues a block from earlier plan documents gets their week changes (moves,
+     * skips, one-change edits; `pbCarryOnOpenOf`), once, on a derived op ID. Returns whether it wrote.
+     */
+    async carryWeekChanges(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan?.applied == null || (plan.applied.block?.plans ?? []).length === 0) return false;
+      const all = await repo().listByOwner(p.id).catch(() => [] as PlanDraft[]);
+      const rows = new Map<number, { id: string; exerciseId: string }[]>();
+      for (const m of plan.applied.made) {
+        if (rows.has(m.dayIndex)) continue;
+        const r = await deps.store().repos.routines.get(m.routineId).catch(() => null);
+        if (r !== null) rows.set(m.dayIndex, r.exercises.map((e) => ({ id: e.id, exerciseId: e.exerciseId })));
+      }
+      const at = deps.now();
+      const rowsOf = (i: number) => rows.get(i) ?? null;
+      if (pbCarryOnOpenOf(plan, all, rowsOf, at.utc) === null) return false;
+      const r = await controlWrite(plan.id, (c) => {
+        const k = pbCarryOnOpenOf(c, all, rowsOf, at.utc);
+        return k === null ? { kind: 'duplicate', current: c } : { kind: 'write', next: k.next, expectedVersion: k.expectedVersion };
+      });
+      return r.ok && !r.duplicate;
+    },
+
+    /**
+     * (Ben, 26 Oct: Edit plan) On app open and on Library › Your plan: a new block week's version takes over the plan's
+     * workouts (a change `from week N` or `only week N` starts or ends). Idempotent; writes only when a day's version
+     * changes. Returns whether it wrote.
+     */
+    async syncWeek(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan?.weekVersions === undefined) return false;
+      const at = deps.now();
+      const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, toMs(at.utc), p.timezone));
+      const b = pbAppliedBuilder(plan);
+      if (eb === null || b === null) return false;
+      const r = await repo().edit(p.id, plan.id, (c, routines) => syncPlanWeek(c, { at, block: eb, weeks: b.builder.answers.weeks, routines })).catch(() => null);
+      return r?.status === 'written';
+    },
+
+    /**
+     * (Ben, 26 Oct) `Move day` on a plan day, this week only (Set days plans): Legs → Sat. Refused when that weekday
+     * holds another plan day or the day is done this week. `expectedVersion`: Your plan's read (rule 5); idempotent by
+     * `opId`; `undoMove` is its Undo.
+     */
+    async moveDay(req: { planId: string; dayIndex: number; weekday: number; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const plan = await repo().get(req.planId).catch(() => null);
+      if (plan === null || plan.ownerId !== p.id) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, toMs(at.utc), p.timezone));
+      if (eb === null) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+      const r = await repo().move(p.id, req.planId, (c) => movePlanDay(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, block: eb, dayIndex: req.dayIndex, weekday: req.weekday })).catch(() => null);
+      return moveOutcome(r);
+    },
+
+    /**
+     * (Ben, 29 Oct: day sheet) One this-week change: `Do today instead` (two Set days swap weekdays), `Move to…`,
+     * `Skip this week`, or one exercise change for this week only (`Swap`, `Remove`, `Add`; the template never
+     * changes). Against the plan's version as read (rule 5); idempotent by `opId`; `undoWeekChange` is its one Undo. An
+     * exercise change is checked against the day's rows this week: a row that changed since is out of date.
+     */
+    async weekChange(req: { planId: string; expectedVersion: number; opId: string; change: PbWeekChangeRequest }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const plan = await repo().get(req.planId).catch(() => null);
+      if (plan === null || plan.ownerId !== p.id) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, toMs(at.utc), p.timezone));
+      if (eb === null) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+      const c = await withConvention(req.change);
+      if (c.kind === 'exercise' && !plan.opIds.includes(req.opId)) {
+        // The row as this week has it now (the template with this week's changes): a swap or remove names it as seen.
+        const templates = planRoutines(plan, liveRoutines(await deps.store().repos.routines.listByOwner(p.id)));
+        const r = templates.find((x) => planWeekDayOf(plan, x, []).dayIndex === c.edit.dayIndex);
+        if (r === undefined) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        const rows = pbDayWithEdits(r.exercises, pbWeekEditsOf(plan, pbChangeWeek(eb), c.edit.dayIndex)).rows;
+        const row = rows.find((x) => x.id === c.edit.rowId);
+        const ok = c.edit.kind === 'add' ? row === undefined && (c.edit.afterRowId == null || rows.some((x) => x.id === c.edit.afterRowId)) : row !== undefined && row.exerciseId === c.edit.fromExerciseId;
+        if (!ok) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+      }
+      const todayWeekday = weekdayIndexOfDate(localDateOf(toMs(at.utc), p.timezone));
+      const r = await repo().move(p.id, req.planId, (cur) => pbWeekChange(cur, { expectedVersion: req.expectedVersion, opId: req.opId, at, block: eb, todayWeekday, change: c })).catch(() => null);
+      const out = moveOutcome(r);
+      // A weight Ben typed: the gym learns it, after the write (its Undo takes it back with the change).
+      const typed = c.kind === 'exercise' && c.edit.toExerciseId !== null ? (c.edit.load ?? null) : null;
+      if (!out.ok || out.duplicate || typed === null || c.kind !== 'exercise' || c.edit.toExerciseId === null) return out;
+      return { ...out, learned: (await deps.learnTyped?.(c.edit.toExerciseId, typed).catch(() => null)) ?? null };
+    },
+
+    /**
+     * (Ben, 31 Oct) Up next is a plan day Ben moved onto today this week (`Move to…`, `Do today instead`): the plan and
+     * day for `Moved by you · Undo`; its Undo is `weekChange` with `unmove` against this version (rule 5). Null: not
+     * moved onto today (or no plan, Any days, a coach plan). `undo`: `last` (`undoWeekChange`, the move was the last
+     * day-sheet change) or `unmove` (`weekChange` with `unmove`).
+     */
+    async movedToday(dayIndex: number): Promise<{ planId: string; version: number; dayIndex: number; undo: 'last' | 'unmove' } | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan === null) return null;
+      const nowMs = toMs(deps.now().utc);
+      const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, nowMs, p.timezone));
+      if (eb === null || eb.doneThisWeek.includes(dayIndex)) return null;
+      const today = weekdayIndexOfDate(localDateOf(nowMs, p.timezone));
+      if (!pbMovedOntoToday(plan, eb, dayIndex, today)) return null;
+      // The last day-sheet change made this move: its own Undo puts the week back exactly (an earlier move of the day
+      // too). Otherwise (another change since, or Library's Move day): this week's move of the day is taken back.
+      const week = pbChangeWeek(eb);
+      const last = plan.lastWeekChange ?? null;
+      const was = last?.before.moves.find((m) => m.week === week && m.dayIndex === dayIndex)?.weekday ?? null;
+      const undo = last !== null && last.versionAfter === plan.version && was !== today ? 'last' : 'unmove';
+      return { planId: plan.id, version: plan.version, dayIndex, undo };
+    },
+
+    async undoWeekChange(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const r = await repo().move(p.id, req.planId, (c) => pbUndoWeekChange(c, { expectedVersion: req.expectedVersion, opId: req.opId, at })).catch(() => null);
+      return moveOutcome(r);
+    },
+
+    /**
+     * (Ben, 29 Oct) `Every week`: the same one change on the plan day's workout (its template) from now on. Done
+     * workouts never change (rule 2): they are their own records. One versioned write with an `update_routine` record
+     * (rule 5); its Undo is the routine's `revert` (the version before, only while nothing changed since).
+     */
+    async editDayEveryWeek(req: { routineId: string; expectedVersion: number; opId: string; edit: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load'> }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean; learned?: GymEdit | null } | { ok: false; reason: 'stale' | 'missing' | 'failed'; message: string }> {
+      try {
+        const p = await owner();
+        if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        const repos = deps.store().repos;
+        const actionId = deriveId(`plan-day-every-week:${req.opId}`);
+        const prior = await repos.coach.getAction(actionId).catch(() => null);
+        const current = await repos.routines.get(req.routineId).catch(() => null);
+        if (current === null || current.ownerId !== p.id || isDeleted(current)) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        if (prior !== null) return { ok: true, actionId, routine: current, duplicate: true, learned: null };
+        if (current.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const norm = await withConvention({ kind: 'exercise', edit: { ...req.edit, dayIndex: 0 } });
+        const e = norm.kind === 'exercise' ? norm.edit : { ...req.edit, dayIndex: 0 };
+        const row = current.exercises.find((x) => x.id === e.rowId);
+        if (e.kind === 'add' ? row !== undefined : row?.exerciseId !== e.fromExerciseId) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const of = await exerciseOf();
+        const rowId = e.kind === 'add' ? deriveId(`plan-day-add:${req.opId}`) : e.rowId;
+        const exercises = oneExerciseChange(current.exercises, { ...e, rowId }, (id) => of(id)?.measurement ?? 'reps').map((x) => (x.id === rowId ? { ...x, structureChangedAtUtc: deps.now().utc } : x));
+        if (JSON.stringify(exercises) === JSON.stringify([...current.exercises].sort((a, b) => a.order - b.order))) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const at = deps.now();
+        const next: Routine = { ...current, exercises, version: current.version + 1, updatedAtUtc: at.utc, lastOpId: req.opId };
+        const name = (id: string | null) => (id === null ? 'Exercise' : (of(id)?.name ?? 'Exercise'));
+        const text = e.kind === 'swap' ? `${name(e.fromExerciseId)} → ${name(e.toExerciseId)}` : e.kind === 'remove' ? `− ${name(e.fromExerciseId)}` : `+ ${name(e.toExerciseId)}`;
+        const action: ActionRecord = {
+          actionId,
+          turnId: null,
+          opId: req.opId,
+          status: 'committed',
+          author: 'ben',
+          detail: { kind: 'update_routine', routineId: current.id, routineName: current.name, changes: [{ change: e.kind, text: text.slice(0, 200) }], before: current, versionBefore: current.version, versionAfter: next.version, draft: null },
+          failure: null,
+          reason: null,
+          evidenceRefs: [],
+          guardNotes: [],
+          entityVersions: [{ entity: 'routine', id: current.id, before: current.version, after: next.version }],
+          undoneBy: null,
+          createdAt: at,
+        };
+        const r = await repos.drafts.applyRoutineChange({ ownerId: p.id, routine: next, expectedRoutineVersion: current.version, action, at });
+        if (r.status === 'missing') return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        if (r.status === 'stale') return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const learned = r.status === 'written' && e.load != null && e.toExerciseId !== null ? ((await deps.learnTyped?.(e.toExerciseId, e.load).catch(() => null)) ?? null) : null;
+        return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed', learned };
+      } catch {
+        return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      }
+    },
+
+    async undoMove(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const r = await repo().move(p.id, req.planId, (c) => undoMovePlanDay(c, { expectedVersion: req.expectedVersion, opId: req.opId, at })).catch(() => null);
+      return moveOutcome(r);
+    },
+
+    /** The `Plan ended` toast's Undo: the plan in use again, its days back in their places (refused if a newer plan is in use or a day changed since). */
+    async resume(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return endWrite(req.planId, (c, routines, otherApplied) => undoEndPlan(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routines, otherApplied }));
+    },
+
+    /**
+     * `Consistency` on Progress (plan tracker v1): the last 8 weeks against
+     * Profile's days-a-week aim (none: counts only) and, with a plan, its
+     * days done this week. Counts from finished workouts only.
+     */
+    async consistency(): Promise<ConsistencyView | null> {
+      const p = await owner();
+      if (p === null) return null;
+      // (Perf, Ben 26 Oct) Kept while nothing is written and the day is the same: a return to Progress reads nothing.
+      return consistencyMemo.get(deps.store(), `${p.id}|${p.timezone}|${localDateOf(toMs(deps.now().utc), p.timezone)}`, () => readConsistency(p));
+    },
+  };
+
+  async function readConsistency(p: UserProfile): Promise<ConsistencyView | null> {
+      const now = deps.now();
+      const nowMs = toMs(now.utc);
+      const from = nowMs - 10 * 7 * 86_400_000;
+      // Workouts with a set done, FitNotes imports included (they are his workouts too); deleted ones aren't.
+      const refs = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).filter((r) => toMs(r.startedAtUtc) >= from);
+      const training = await deps.store().repos.trainingProfiles.get(p.id).catch(() => null);
+      const plan = await active();
+      // (Ben, 20 Oct) Paused days don't count against the aim: every plan's pauses (one ended since still paused those
+      // days), none past the day its plan stopped being in use (review plan-adapt B1).
+      const tz = p.timezone;
+      const firstMonday = localWeekBounds(from, tz).mondayLocalDate;
+      const end = addDays(localWeekBounds(nowMs, tz).mondayLocalDate, 7);
+      const paused = new Set<string>();
+      for (const d of await repo().listByOwner(p.id).catch(() => [] as PlanDraft[])) {
+        if (d.applied === null || (d.pauses ?? []).length === 0) continue;
+        for (const x of pausedDates(d.pauses, firstMonday, end, tz, planInUseUntilUtc(d))) paused.add(x);
+      }
+      const weekStart = plan === null ? nowMs : planWeekStartMs({ appliedAtUtc: plan.appliedAtUtc, nowMs, tz });
+      const of = await exerciseOf();
+      const weekSessions = plan === null ? [] : (await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, toIso(weekStart), toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }))).sessions;
+      const groups = new Map(weekSessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
+      const liveNow = plan === null ? [] : await live(p.id);
+      // In plan order (variants fill in that order).
+      const planRoutinesLive = plan === null ? [] : plan.days.flatMap((d) => liveNow.filter((r) => r.id === d.routineId));
+      const parts = plan === null ? new Map<string, SplitBodyPart[]>() : await bodyPartsOf(p.id, planRoutinesLive);
+      // (Ben, 28 Oct) Imported and past-logged workouts that count as plan days (the same links as Library › Plan).
+      const applied = plan === null ? null : await repo().applied(p.id).catch(() => null);
+      const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan: applied, nowMs });
+      // (Ben, 28 Oct) The same one-to-one count as Library › Plan: each workout's lead lift and variants.
+      const thisWeek = new Map(weekSessions.map((a) => [a.session.id, planWeekWorkoutOf(a, links, () => groups.get(a.session.id) ?? new Map())]));
+      const dayRefs = applied === null ? [] : planRoutinesLive.map((r) => planWeekDayOf(applied, r, parts.get(r.id) ?? []));
+      const variantRefs = refs.map((r) => {
+        const v = linkedVariants(links, r.sessionId);
+        return { ...r, routineId: linkedRoutineId(links, r.sessionId, r.routineId), ...(v === null ? {} : { variantRoutineIds: v }) };
+      });
+      const weekdays = applied === null ? null : planWeekdaysNow(applied, pbBlockOfPlan(applied, variantRefs, nowMs, tz), dayRefs);
+      return consistency({
+        workouts: refs.map((r) => ({ sessionId: r.sessionId, routineId: linkedRoutineId(links, r.sessionId, r.routineId), startedAtUtc: r.startedAtUtc, groups: isNotPlanDay(links, r.sessionId) ? undefined : groups.get(r.sessionId), ...(r.planDay === undefined ? {} : { planDay: r.planDay }), leadExerciseId: thisWeek.get(r.sessionId)?.leadExerciseId ?? null, variants: linkedVariants(links, r.sessionId) })),
+        nowMs,
+        tz,
+        aim: training?.daysPerWeek ?? null,
+        plan: plan === null ? null : { days: dayRefs.length > 0 ? dayRefs : plan.days.map((d) => ({ ...d, bodyParts: parts.get(d.routineId) ?? [] })), appliedAtUtc: plan.appliedAtUtc, weekdays },
+        pausedDates: paused,
+      });
+  }
+}
+
+/** (Ben, 28 Oct) `Count as Pull?` on a workout's Summary: the plan day it would count as, and the plan's version. */
+export interface PlanDayAsk {
+  planId: string;
+  planVersion: number;
+  routineId: string;
+  /** `Pull`. */
+  dayName: string;
+}
+
+export type PlanServices = ReturnType<typeof createPlanServices>;

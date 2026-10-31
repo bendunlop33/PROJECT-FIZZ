@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-chest-press",
+  "tier": "basic",
+  "name": "Chest press machine",
+  "aliases": ["Machine chest press", "Seated chest press", "Seated machine chest press", "Chest press"],
+  "family": "chest_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["front_delts", "triceps"],
+  "compatibleEquipment": ["weight_stack", "plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

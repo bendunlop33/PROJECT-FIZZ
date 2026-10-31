@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-bulgarian-split-squat",
+  "tier": "rich",
+  "name": "Bulgarian split squat",
+  "aliases": ["BSS", "Rear-foot-elevated split squat", "RFESS", "Dumbbell Bulgarian split squat", "DB Bulgarian split squat", "Bulgarian squat"],
+  "family": "split_squat",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings", "abductors", "core", "grip"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "implements": 2,
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Bench behind you at about knee height",
+      "Top of your back foot on the bench",
+      "Front foot far enough out to drop straight down",
+      "Dumbbells hanging at your sides"
+    ],
+    "execution": [
+      "Drop your back knee toward the floor",
+      "Front knee follows your front toes",
+      "Lower until your front thigh is about level",
+      "Drive through your front foot to stand"
+    ],
+    "faults": [
+      "Don't let your front heel lift",
+      "Don't let your front knee cave inward",
+      "Don't push up mainly with your back leg",
+      "Don't set your front foot too close to the bench"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a stable bench that won't slide. Find your stance with bodyweight before adding dumbbells.",
+      "Choose a load you can balance. If you wobble or lean far forward, go lighter.",
+      "Finish all reps on one leg, then switch. Each side is logged separately and the load is each dumbbell.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-split-squat", "name": "Split squat", "reason": "Both feet on the floor; easier balance." },
+      { "key": "bodyweight-bulgarian-split-squat", "name": "Bodyweight Bulgarian split squat", "reason": "Learns the stance and depth before adding load." }
+    ],
+    "progressions": [
+      { "key": "barbell-bulgarian-split-squat", "name": "Barbell Bulgarian split squat", "reason": "Heavier loads; needs a rack and more balance." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-reverse-lunge", "name": "Dumbbell reverse lunge", "reason": "One leg at a time with both feet on the floor." },
+      { "key": "dumbbell-step-up", "name": "Dumbbell step-up", "reason": "Single-leg drive using the same bench." },
+      { "key": "dumbbell-walking-lunge", "name": "Dumbbell walking lunge", "reason": "Single-leg work when there's floor space." },
+      { "key": "smith-machine-bulgarian-split-squat", "name": "Smith machine Bulgarian split squat", "reason": "Guided path with less balance demand." },
+      { "key": "dumbbell-goblet-squat", "name": "Goblet squat", "reason": "Both legs together; much easier balance." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view, figure facing right, bench behind the figure on the left, camera at hip height. Front leg is the near leg; rear leg is far, drawn behind.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Tall split stance. Front foot flat, front knee softly bent. Top of the rear foot (laces down) on a knee-height bench behind. Torso upright with a slight forward lean. Arms straight, dumbbells hanging at the sides.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 10, "frontHipFlexion": 15, "frontKneeFlexion": 10, "frontAnkleDorsiflexion": 5 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Both knees bending, hips travelling mostly straight down. Front heel down, front knee over the toes. Dumbbells still hanging vertically.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 15, "frontHipFlexion": 55, "frontKneeFlexion": 50, "frontAnkleDorsiflexion": 12 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Front thigh about level with the floor, front knee about 90°. Front shin angled slightly forward with the heel flat. Rear knee a few centimetres above the floor, rear thigh near vertical. Torso leaning forward about 15–25° with a neutral spine. Dumbbells vertical beside the front foot.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 20, "frontHipFlexion": 100, "frontKneeFlexion": 95, "frontAnkleDorsiflexion": 15 }
+      }
+    ],
+    "ikHints": [
+      "Rear foot: top of the foot fixed on the bench edge in every frame",
+      "Rear knee at Bottom: a few centimetres above the floor, roughly below the hip",
+      "Front foot planted flat; hands fixed to the dumbbell handles"
+    ],
+    "barPath": "Dumbbells and hips move mostly straight down and up; small forward drift allowed, ≤ 4% of body height",
+    "tempo": { "downMs": 1600, "holdMs": 200, "upMs": 1000 },
+    "props": ["dumbbell_pair", "bench_flat_knee_height"],
+    "emphasise": [
+      "Front heel stays down",
+      "Front knee tracks over the toes",
+      "Rear foot stays on the bench while the rear knee drops toward the floor",
+      "Dumbbells hang vertically"
+    ],
+    "doNotShow": ["Rear knee hitting the floor", "Front knee caving in", "Big forward lean (more than about 35°)"]
+  },
+  "sources": [
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8136570",
+      "title": "Mackey ER, Riemann BL (2021) Biomechanical differences between the Bulgarian split-squat and back squat. Int J Exerc Sci 14(1):533-543",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[0,2] (rear foot on a box at knee height; front foot placed by test squat); cues.execution[2] (about 90° knee flexion); primaryMuscles (hip-dominant)"
+    },
+    {
+      "url": "https://www.nasm.org/resource-center/exercise-library/bulgarian-split-squat",
+      "title": "NASM Exercise Library: Bulgarian Split Squat",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[1,3]; cues.execution[1-3]; cues.faults[1]; safety.notes[1-2]; secondaryMuscles"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets for the front leg, not measured data. Mackey & Riemann did not measure trunk angle and used a barbell, not dumbbells."
+    },
+    {
+      "field": "guideBrief.ikHints",
+      "note": "Rear-leg angles are given as IK targets rather than numbers because they depend on bench height and leg length."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

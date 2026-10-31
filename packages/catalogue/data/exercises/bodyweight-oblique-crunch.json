@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-oblique-crunch",
+  "tier": "rich",
+  "name": "Oblique crunch",
+  "aliases": ["Oblique crunches", "Cross-body crunch", "Elbow-to-knee crunch", "Crossover crunch"],
+  "family": "crunch",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["obliques"],
+  "secondaryMuscles": ["abs"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your back on a mat, knees bent",
+      "Feet flat, about hip width apart",
+      "Fingertips lightly by your ears"
+    ],
+    "execution": [
+      "Breathe out and curl your shoulder up",
+      "Bring one shoulder toward the opposite knee",
+      "Lower back stays on the mat",
+      "Lower slowly; do all reps, then switch"
+    ],
+    "faults": [
+      "Don't pull on your head or neck",
+      "Don't just swing the elbow across",
+      "Don't yank up with momentum"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Keep the hands light behind the head; the trunk does the lifting, not the arms.",
+      "A short range is fine: the shoulder blade only needs to lift off the mat.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Trunk control on the back without any curling; easier on the neck." },
+      { "key": "bodyweight-crunch", "name": "Crunch", "reason": "Straight curl-up with no twist; learn the short range first." }
+    ],
+    "progressions": [
+      { "key": "bodyweight-bicycle-crunch", "name": "Bicycle crunch", "reason": "Alternating sides with the legs moving; more demanding." },
+      { "key": "cable-woodchop", "name": "Cable woodchop", "reason": "Loaded rotation on a stack, so it progresses in small steps." }
+    ],
+    "substitutions": [
+      { "key": "cable-woodchop", "name": "Cable woodchop", "reason": "Standing, loaded rotation for the obliques." },
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Obliques held still instead of curled; no spinal flexion." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Obliques resist twisting; no flexion or rotation." },
+      { "key": "cable-side-bend", "name": "Cable side bend", "reason": "Loaded side-bending for the obliques on a stack." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "View from just beyond the feet, camera raised about 30° above the floor so the diagonal path of the shoulder toward the opposite knee is clear. Mat along the floor.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Lying on the back, knees bent about 90°, feet flat. Fingertips lightly by the ears, elbows wide. Head and shoulders resting on the mat.",
+        "approxAnglesDeg": { "kneeFlexion": 90, "hipFlexion": 45, "trunkCurl": 0 }
+      },
+      {
+        "label": "Top",
+        "describe": "Upper back curled up and turned so the right shoulder moves toward the left knee. Right shoulder blade off the mat, lower back still down. Chin a fist's width from the chest; elbows still wide.",
+        "approxAnglesDeg": { "kneeFlexion": 90, "hipFlexion": 45, "trunkCurl": 30, "trunkRotation": 25 }
+      }
+    ],
+    "ikHints": ["Feet and pelvis stay fixed on the mat", "Hands stay by the ears; they don't pull the head"],
+    "tempo": { "downMs": 1500, "holdMs": 500, "upMs": 1000 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "The shoulder travels diagonally, not just the elbow",
+      "Lower back stays on the mat",
+      "Short, controlled range"
+    ],
+    "doNotShow": ["Hands pulling the head forward", "Full sit-up", "Feet lifting off the floor"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/oblique-crunch/",
+      "title": "StrengthLog: How to Do Oblique Crunch",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-1]; primaryMuscles; secondaryMuscles"
+    },
+    {
+      "url": "https://www.thegymgroup.com/exercises/abs-and-core-exercises/how-to-do-oblique-crunches/",
+      "title": "The Gym Group: How to do Oblique Crunches",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[2] (lower back stays down; shorter range than a sit-up)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "laterality",
+      "note": "Logged as unilateral (all reps on one side, then the other). Some people alternate sides within a set; how reps are counted then is not settled."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

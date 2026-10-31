@@ -1,0 +1,270 @@
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
+
+import { compactEachText, compactExerciseName, libraryChangeMarks, type LibraryChangeMark } from '@fizz/domain';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
+import { newUuid } from '../../device/runtime';
+import type { LibraryStackParams } from '../../navigation/types';
+import { PLAN_COPY } from '../../services/plan-services';
+import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { TIMING, useTheme } from '../../theme';
+import { AppText, HeroHeader, PrimaryButton, StatusLine, TextButton, Toast } from '../../ui';
+import { takeLibraryToast } from '../../workout/library-toast';
+import { undoTemplateSave } from '../../workout/template-editor';
+
+export const PLAN_DAY_COPY = {
+  /** (22 Oct) It opens Your workout (nothing starts until Start there), so it says Open, not Start. */
+  open: (name: string) => `Open ${name}`,
+  edit: 'Edit',
+  askCoach: 'Ask coach',
+  coachDraft: (name: string) => `Change ${name} in my plan: `,
+  /** (Ben, 20 Oct) Pin this day as Up next until it's done. */
+  makeNext: 'Make next',
+  unpin: 'Unpin',
+  madeNext: (name: string) => `${name} is next`,
+  unpinned: 'Unpinned',
+  undo: 'Undo',
+} as const;
+
+/**
+ * Your plan › a day (Ben, 19 Oct; mockup approved): the day's name, `Day 2
+ * of 4 · Main gym · about 60 min`, each exercise's planned sets × reps ·
+ * load at this gym with last time's sets and targets hit (or `est.`), then
+ * `Open <day>` (Your workout for that day, where Start is; 22 Oct), `Edit`
+ * (the saved workout) and `Ask coach` (the coach sheet with a draft; nothing
+ * is sent). Every value comes from `services.plans.planDay`; nothing is
+ * computed here. Local only (rule 1).
+ */
+/** (Redesign v3 §B) The compact list's sets and target text: ≈14 pt. */
+const COMPACT_VALUE = { fontSize: 14, lineHeight: 20 } as const;
+
+export function PlanDayScreen() {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const { routineId, name: shownName, week } = useRoute<RouteProp<LibraryStackParams, 'LibraryPlanDay'>>().params;
+  const { prefs } = useDevicePrefs();
+  const [data, reload] = useScreenData((s) => s.plans.planDay(routineId, { targetsHit: prefs.targetsHit, week }));
+  const day = data.state === 'ready' ? data.value : null;
+  // (Redesign 27 Oct, D2) A number the coach changed carries a dot; a tap says was / now with Undo.
+  const [changesData, reloadChanges] = useScreenData((s) => s.libraryChanges.read().catch(() => null));
+  const changes = changesData.state === 'ready' ? changesData.value : null;
+  const marks = changes === null ? new Map<string, LibraryChangeMark>() : libraryChangeMarks(changes.view, routineId);
+  const name = day?.name ?? shownName ?? '';
+  const services = useServices();
+  const changed = useDataChanged();
+  const busy = useRef(false);
+  const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
+  useEffect(() => {
+    if (toast === null) return;
+    const t = setTimeout(() => {
+      setToast(null);
+    }, TIMING.undoToast);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [toast]);
+
+  // (Ben, 23 Oct: one editor) `Edit` → Save comes back here with `Saved Push day · Undo` (handed off in memory); Undo
+  // puts the template's version before back, only while it is still at the saved one (rule 5).
+  useFocusEffect(
+    useCallback(() => {
+      const t = takeLibraryToast();
+      if (t === null) return;
+      reload();
+      const undo = t.undo;
+      setToast(
+        undo === null
+          ? { text: t.text }
+          : {
+              text: t.text,
+              action: PLAN_DAY_COPY.undo,
+              onAction: () => {
+                setToast(null);
+                void undoTemplateSave(services.routines, undo, newUuid()).then((u) => {
+                  changed();
+                  reload();
+                  if (!u.ok) setToast({ text: u.message });
+                });
+              },
+            },
+      );
+    }, [reload, services, changed]),
+  );
+
+  /** A changed number's tap: `Bench press 85 kg · was 82.5 kg` with Undo (the change's own versioned write). */
+  function showMark(m: LibraryChangeMark) {
+    if (changes === null) return;
+    const opId = newUuid();
+    setToast({
+      text: m.text,
+      action: PLAN_DAY_COPY.undo,
+      onAction: () => {
+        setToast(null);
+        void services.libraryChanges.tap(changes, m.row, 'undo', opId).then((r) => {
+          changed();
+          reload();
+          reloadChanges();
+          setToast({ text: r.ok ? (r.text ?? PLAN_DAY_COPY.undo) : r.message });
+        });
+      },
+    });
+  }
+
+  /** `Make next` / `Unpin` (rule 5: the screen's read of the plan; a retried tap is the same write), then Undo. */
+  async function pin(on: boolean) {
+    if (day === null || busy.current) return;
+    busy.current = true;
+    const opId = newUuid();
+    try {
+      const r = await services.plans.makeNext({ planId: day.planId, routineId: on ? day.routineId : null, expectedVersion: day.planVersion, opId });
+      changed();
+      reload();
+      if (!r.ok) {
+        setToast({ text: r.message });
+        return;
+      }
+      const after = r.plan;
+      const undoOp = newUuid();
+      setToast({
+        text: on ? PLAN_DAY_COPY.madeNext(day.name) : PLAN_DAY_COPY.unpinned,
+        action: PLAN_DAY_COPY.undo,
+        onAction: () => {
+          setToast(null);
+          void services.plans.undoControl({ planId: after.id, targetOpId: opId, expectedVersion: after.version, opId: undoOp }).then((u) => {
+            changed();
+            reload();
+            if (!u.ok) setToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'] + insets.bottom, gap: theme.space['5'] }}>
+      {data.state === 'error' ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_COPY.failed} action={<TextButton label="Try again" onPress={reload} />} /> : null}
+      {data.state === 'ready' && day === null ? <StatusLine icon="info.circle" tone="info" text={PLAN_COPY.missing} /> : null}
+      {day !== null ? (
+        <>
+          {/* (Ben, 27 Oct: Library › Plan v2) From another block week: that week's planned targets, as its day card showed. */}
+          <HeroHeader size="screen" title={day.name} lines={day.week === null ? [day.header] : [day.week.header, ...(day.week.note === null ? [] : [day.week.note])]} />
+          {day.week === null && day.status !== 'planned' ? <StatusLine icon="info.circle" tone="info" text={day.status === 'no_gym' ? PLAN_COPY.noGym : PLAN_COPY.notHere} /> : null}
+          {day.week !== null ? (
+            <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
+              {day.week.rows.map((r, i) => (
+                <View
+                  key={r.key}
+                  accessible
+                  accessibilityLabel={`${r.superset === null ? '' : `${r.superset}, superset, `}${r.name}, ${r.line}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
+                  style={{ minHeight: 48, paddingVertical: theme.space['2'], flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['3'], borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
+                >
+                  {r.superset !== null ? (
+                    <AppText variant="callout" color="text.secondary" numeric style={{ minWidth: 24 }}>
+                      {r.superset}
+                    </AppText>
+                  ) : null}
+                  {/* (Redesign v3 §B) Compact list: `DB` in names, `ea` on per-dumbbell loads, 14 pt sets and target. */}
+                  <AppText variant="body" style={{ flex: 1, minWidth: 140, ...(r.main ? { fontWeight: '600' } : {}) }}>
+                    {compactExerciseName(r.name)}
+                  </AppText>
+                  <AppText variant="callout" color="text.secondary" numeric style={COMPACT_VALUE}>
+                    {`${compactEachText(r.line)}${r.kg === null && r.est ? ' est.' : ''}`}
+                  </AppText>
+                  {r.kg !== null ? (
+                    <AppText variant="callout" numeric style={{ ...COMPACT_VALUE, minWidth: 56, textAlign: 'right' }}>
+                      {`${compactEachText(r.kg)}${r.est ? ' est.' : ''}`}
+                    </AppText>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          ) : day.rows.length > 0 ? (
+            <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
+              {day.rows.map((r, i) => {
+                const mark = marks.get(r.exerciseId);
+                return (
+                <Pressable
+                  key={r.key}
+                  accessible
+                  accessibilityRole={mark === undefined ? undefined : 'button'}
+                  accessibilityLabel={mark === undefined ? r.accessibilityLabel : `${r.accessibilityLabel}, changed by coach`}
+                  disabled={mark === undefined}
+                  onPress={() => {
+                    if (mark !== undefined) showMark(mark);
+                  }}
+                  style={({ pressed }) => ({ paddingVertical: theme.space['3'], gap: 2, borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}
+                >
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: theme.space['3'] }}>
+                    <AppText variant="body" style={{ flexShrink: 1 }}>
+                      {r.superset === null ? compactExerciseName(r.name) : `${r.superset}  ${compactExerciseName(r.name)}`}
+                    </AppText>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <AppText variant="callout" numeric style={COMPACT_VALUE}>
+                        {compactEachText(r.line)}
+                      </AppText>
+                      {mark !== undefined ? <View accessibilityElementsHidden style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent }} /> : null}
+                    </View>
+                  </View>
+                  {r.sub !== null ? (
+                    <AppText variant="callout" color="text.secondary" numeric>
+                      {r.sub}
+                    </AppText>
+                  ) : null}
+                </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+          <PrimaryButton
+            label={PLAN_DAY_COPY.open(name)}
+            onPress={() => {
+              // (Ben, 29 Oct) The day as this week has it (the day sheet's changes in place), as Today's Edit opens it.
+              void services.todaySession
+                .openDay(day.routineId)
+                .catch(() => null)
+                .then((o) => {
+                  navigation.navigate('BuilderWorkout', o === null ? { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' } : { draftId: o.draftId, back: 'Library' });
+                });
+            }}
+          />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
+            <TextButton
+              label={PLAN_DAY_COPY.edit}
+              onPress={() => {
+                navigation.navigate('WorkoutEditor', { routineId: day.routineId, from: 'PlanDay' });
+              }}
+            />
+            <TextButton
+              label={PLAN_DAY_COPY.askCoach}
+              onPress={() => {
+                navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: PLAN_DAY_COPY.coachDraft(name) });
+              }}
+            />
+            {day.paused ? null : (
+              <TextButton
+                label={day.pinned ? PLAN_DAY_COPY.unpin : PLAN_DAY_COPY.makeNext}
+                tone={day.pinned ? 'secondary' : 'accent'}
+                onPress={() => {
+                  void pin(!day.pinned);
+                }}
+              />
+            )}
+          </View>
+        </>
+      ) : null}
+    </ScrollView>
+    {toast !== null ? (
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + theme.space['2'] }}>
+        <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
+      </View>
+    ) : null}
+    </View>
+  );
+}

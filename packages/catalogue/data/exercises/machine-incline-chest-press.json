@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-incline-chest-press",
+  "tier": "rich",
+  "name": "Incline chest press machine",
+  "aliases": ["Machine incline chest press", "Incline machine press", "Incline chest press", "Incline machine chest press", "Incline press machine", "Seated incline chest press"],
+  "family": "chest_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["upper_chest"],
+  "secondaryMuscles": ["chest", "front_delts", "triceps"],
+  "compatibleEquipment": ["weight_stack", "plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Set the seat so the handles line up with your upper chest",
+      "Back and head on the pad, feet flat",
+      "Shoulder blades back and down",
+      "Grip a little outside shoulder width"
+    ],
+    "execution": [
+      "Press the handles up and away to straight arms",
+      "Keep your shoulder blades on the pad",
+      "Lower slowly to a light chest stretch",
+      "Breathe out as you press"
+    ],
+    "faults": [
+      "Don't let your shoulders roll forward at the top",
+      "Don't let the stack crash between reps",
+      "Don't lift your hips or back off the pad"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Seat height changes the angle. Too low and the shoulders can feel pinched at the bottom; adjust until the press feels smooth.",
+      "If the machine has a foot lever or start handle, use it to bring the handles forward before you take them.",
+      "On a plate-loaded machine, load and unload both sides evenly and log the plates added.",
+      "Machines differ in angle and stack, so numbers aren't comparable between brands or gyms.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "Flat pressing angle; often easier on the shoulders." }
+    ],
+    "progressions": [
+      { "key": "dumbbell-incline-bench-press", "name": "Incline dumbbell press", "reason": "Free weights; each arm balances its own load." },
+      { "key": "barbell-incline-bench-press", "name": "Incline bench press", "reason": "Free bar; heavier, and needs safeties or a spotter." }
+    ],
+    "substitutions": [
+      { "key": "smith-machine-incline-press", "name": "Smith machine incline press", "reason": "Same angle on a guided bar; plates added." },
+      { "key": "dumbbell-incline-bench-press", "name": "Incline dumbbell press", "reason": "Same upper-chest angle with dumbbells." },
+      { "key": "barbell-incline-bench-press", "name": "Incline bench press", "reason": "Same angle with a barbell, in a rack with safeties." },
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "When the incline machine is busy; flatter angle." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at seated shoulder height. Seat and back pad reclined about 30-45°, handles in front of the upper chest. Draw the machine simply, with no brand detail; the stack can be left out.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Seated with back and head on the reclined pad, feet flat. Hands on the handles level with the upper chest, elbows below and slightly behind the handles, chest up.",
+        "approxAnglesDeg": { "backPadFromVertical": 35, "shoulderFlexion": 20, "elbowFlexion": 100 }
+      },
+      {
+        "label": "Lockout",
+        "describe": "Arms straight, handles pressed up and forward along the machine's path. Shoulder blades still on the pad; head and hips unchanged.",
+        "approxAnglesDeg": { "backPadFromVertical": 35, "shoulderFlexion": 120, "elbowFlexion": 5 }
+      }
+    ],
+    "ikHints": ["Back, head and hips fixed on the pad", "Hands fixed to the handles; handles move on the machine's arc"],
+    "barPath": "Handles travel up and forward along the machine's fixed arc",
+    "tempo": { "downMs": 2000, "holdMs": 200, "upMs": 1000 },
+    "props": ["incline_press_machine"],
+    "emphasise": [
+      "Handles start level with the upper chest",
+      "Shoulder blades stay on the pad at lockout",
+      "Slow return to a light stretch"
+    ],
+    "doNotShow": ["Shoulders rolling forward off the pad", "Hips lifting", "Stack slamming"]
+  },
+  "sources": [
+    {
+      "url": "https://exrx.net/WeightExercises/PectoralClavicular/LVInclineChestPress",
+      "title": "ExRx.net: Lever Incline Chest Press",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (clavicular pectoralis target); secondaryMuscles (sternal pec, front delts, triceps); cues.setup[0] (upper chest at the grips); cues.execution[0,2]; safety.notes[1] (foot lever)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    },
+    {
+      "url": "https://lifefitness.com/en-gb/catalog/strength-training/plate-loaded/plate-loaded-iso-lateral-incline-press",
+      "title": "Life Fitness / Hammer Strength: Plate-Loaded Iso-Lateral Incline Press",
+      "checkedOn": "2026-10-23",
+      "supports": "compatibleEquipment (plate-loaded versions are common); primaryMuscles (upper chest, shoulders, triceps)",
+      "note": "Manufacturer product page; equipment evidence only."
+    },
+    {
+      "url": "https://www.skelcore.com/guides/incline-chest-press-machine",
+      "title": "Skelcore: Incline chest press machine guide",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0]; safety.notes[0] (seat height and shoulder comfort)",
+      "note": "Seen only through a search-result summary. Equipment retailer's guide."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "Stack by default, like the chest press machine. Plate-loaded incline presses log plates added; how iso-lateral plate machines should be counted (per side or total) is still open (expansion research Q3)."
+    },
+    {
+      "field": "aliases",
+      "note": "FitNotes' \"Incline Hammer Strength Chest Press\" is deliberately not an alias: it is plate-loaded, so its default convention would differ. An import should ask."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Machine angles vary by brand."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-sumo-deadlift",
+  "tier": "basic",
+  "name": "Sumo deadlift",
+  "aliases": ["Sumo DL", "Barbell sumo deadlift", "BB sumo deadlift", "Wide-stance deadlift"],
+  "family": "deadlift",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "quads", "adductors"],
+  "secondaryMuscles": ["hamstrings", "spinal_erectors", "upper_back", "traps", "grip"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 180,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

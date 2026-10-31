@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-plate-loaded-high-row",
+  "tier": "rich",
+  "name": "Plate-loaded high row",
+  "aliases": ["Iso-lateral high row", "Plate-loaded iso-lateral high row", "High row machine"],
+  "family": "row",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back"],
+  "secondaryMuscles": ["rear_delts", "traps", "biceps", "brachialis"],
+  "compatibleEquipment": ["plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Seat so the handles are just in reach",
+      "Thigh pad snug on your legs",
+      "Overhand grip, arms long and up"
+    ],
+    "execution": [
+      "Pull your shoulder blades down first",
+      "Drive your elbows down and back",
+      "Handles to your upper chest",
+      "Let them rise slowly to a full stretch"
+    ],
+    "faults": [
+      "Don't lean far back to finish",
+      "Don't shrug toward your ears",
+      "Don't let the arms snap back up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Load and unload plates evenly on each side.",
+      "Let the arms come all the way back to the stops before you stand up.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "cable-lat-pulldown", "name": "Lat pulldown", "reason": "Stack-loaded with smaller load steps." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Single-arm plate-loaded high row", "reason": "One arm at a time; the free hand holds the thigh-pad handle." }
+    ],
+    "substitutions": [
+      { "key": "cable-lat-pulldown", "name": "Lat pulldown", "reason": "Similar downward pull on a stack. Numbers aren't comparable." },
+      { "key": "cable-single-arm-pulldown", "name": "Single-arm pulldown", "reason": "One arm at a time, like the iso-lateral machine." },
+      { "key": "cable-neutral-grip-pulldown", "name": "Neutral-grip pulldown", "reason": "Pulldown with a different handle." },
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "More horizontal machine row." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at shoulder height of the seated figure, machine arms pivoting from above and in front. Show one plate horn on the near arm.",
+    "keyPositions": [
+      {
+        "label": "Stretch",
+        "describe": "Seated, thighs under the pad, torso upright or leaning slightly forward. Arms reaching up and forward at about 45° above horizontal, overhand grip on the handles.",
+        "approxAnglesDeg": { "shoulderFlexion": 140, "elbowFlexion": 10, "trunkLeanFromVertical": 5 }
+      },
+      {
+        "label": "Pulled",
+        "describe": "Elbows driven down and back beside the ribs, handles near the upper chest. Shoulder blades down and together, chest up.",
+        "approxAnglesDeg": { "shoulderFlexion": 10, "elbowFlexion": 110, "trunkLeanFromVertical": 5 }
+      }
+    ],
+    "ikHints": ["Thighs fixed under the pad", "Hands follow each machine arm's arc"],
+    "barPath": "Handles travel down and back on a diagonal arc",
+    "tempo": { "downMs": 1000, "holdMs": 300, "upMs": 1800 },
+    "props": ["plate_loaded_high_row", "weight_plates"],
+    "emphasise": [
+      "Diagonal pull, between a pulldown and a row",
+      "Elbows drive down and back",
+      "Slow return to the stretch"
+    ],
+    "doNotShow": ["Big backward lean", "Shrugging", "Arms snapping back"]
+  },
+  "sources": [
+    {
+      "url": "https://www.lifefitness.com/en-gb/catalog/strength-training/plate-loaded/plate-loaded-iso-lateral-high-row",
+      "title": "Life Fitness: Plate Loaded Iso-Lateral High Row",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2] (adjustable seat and thigh pad, overhand grip); primaryMuscles; secondaryMuscles; variations.progressions[0]; barPath",
+      "note": "Manufacturer product page."
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/BackGeneral/LVSeatedHighRow",
+      "title": "ExRx: Lever Seated High Row",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1-3] (general seated high-row technique)",
+      "note": "Not fetched (ExRx blocks direct fetch). URL taken from the expansion research, which saw it only as a search snippet. Supporting source only."
+    },
+    {
+      "url": "https://shop.lifefitness.com/products/hammer-strength-iso-lateral-high-row",
+      "title": "Life Fitness shop: Hammer Strength Iso-Lateral High Row",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (upper back, traps, lats); cues.setup[2] (fixed overhand grip); variations.progressions[0] (independent arms)",
+      "note": "Manufacturer shop page, seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "\"Hammer Strength high row\" and \"Hammer high row\" were removed (23 Oct 2026): either made a FitNotes \"Hammer Strength Row\" (often a low or iso-lateral row) suggest this high row. Hammer Strength is a brand with several rows."
+    },
+    {
+      "field": "movementPattern",
+      "note": "The pull is diagonal; the manufacturer calls it more horizontal than a pulldown. Filed as vertical_pull so pulldowns come up as substitutes; it could be horizontal_pull."
+    },
+    {
+      "field": "defaultLoadConvention",
+      "note": "Logged as plates added (added); the plate-loaded convention is still open (expansion research Q3)."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

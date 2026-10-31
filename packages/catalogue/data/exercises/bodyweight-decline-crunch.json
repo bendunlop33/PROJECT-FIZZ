@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-decline-crunch",
+  "tier": "rich",
+  "name": "Decline crunch",
+  "aliases": ["Decline crunches", "Decline bench crunch", "Decline ab crunch", "Decline ab curl"],
+  "family": "crunch",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Start with the bench at a slight decline",
+      "Hook your feet under the pads",
+      "Lie back, hands lightly by your head"
+    ],
+    "execution": [
+      "Breathe out and curl your ribs toward your hips",
+      "Lift your shoulders and upper back only",
+      "Keep your lower back on the pad",
+      "Lower slowly under control"
+    ],
+    "faults": [
+      "Don't pull on your neck",
+      "Don't sit all the way up from the hips",
+      "Don't drop back down fast"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Start with a shallow angle; each step steeper makes it harder.",
+      "Get on and off carefully: sit up fully before you unhook your feet.",
+      "Lying head-down makes some people light-headed. Sit up slowly between sets and stop if you feel dizzy.",
+      "To add load, hold a plate on your chest and log it as added weight.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-crunch", "name": "Crunch", "reason": "Same curl on the floor, with less gravity to work against." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Steeper decline", "reason": "Raise the angle a notch at a time." },
+      { "key": null, "name": "Weighted decline crunch", "reason": "A plate held on the chest; log it as added weight." }
+    ],
+    "substitutions": [
+      { "key": "machine-ab-crunch", "name": "Ab crunch machine", "reason": "Loaded curl with stack steps instead of bench angles." },
+      { "key": "cable-crunch", "name": "Cable crunch", "reason": "Loaded curl kneeling at a cable column." },
+      { "key": "bodyweight-decline-sit-up", "name": "Decline sit-up", "reason": "Fuller range on the same bench, adding hip bending." },
+      { "key": "bodyweight-reverse-crunch", "name": "Reverse crunch", "reason": "No decline bench needed; curls from the pelvis up." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height. Decline bench angled with the head end low on the left and the foot rollers high on the right. Keep the angle shallow (about 20-30°).",
+    "keyPositions": [
+      {
+        "label": "Down",
+        "describe": "Lying back on the decline bench, head lower than hips, knees bent with feet hooked under the rollers. Back flat on the pad, hands lightly by the head.",
+        "approxAnglesDeg": { "benchDecline": 25, "trunkFlexion": 0, "hipFlexion": 60, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Curled",
+        "describe": "Head, shoulders and upper back curled up off the pad, ribs drawn toward the hips. Lower back and hips still on the pad; the hips don't bend further.",
+        "approxAnglesDeg": { "benchDecline": 25, "trunkFlexion": 35, "hipFlexion": 60, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Feet fixed under the rollers", "Hips and lower back fixed on the pad"],
+    "tempo": { "downMs": 1600, "holdMs": 400, "upMs": 1000 },
+    "props": ["decline_bench", "leg_rollers"],
+    "emphasise": [
+      "Only the upper back lifts off the pad",
+      "Hips don't bend; this is a curl, not a sit-up",
+      "Slow lowering"
+    ],
+    "doNotShow": ["Sitting all the way up", "Hands yanking the head", "Steep, near-vertical bench"]
+  },
+  "sources": [
+    {
+      "url": "https://catalystathletics.com/exercise/704/Decline-Crunch/",
+      "title": "Catalyst Athletics exercise library: Decline Crunch",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1-2]; cues.execution[1-2]; cues.faults[1] (curl the back without bending at the hips)"
+    },
+    {
+      "url": "https://fitbod.me/exercises/decline-crunch",
+      "title": "Fitbod: Decline Crunch",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.execution[0-2]; aliases[3] (decline ab curl); guideBrief.emphasise[1] (sitting fully up turns it into a sit-up)",
+      "note": "Commercial app library."
+    },
+    {
+      "url": "https://www.jefit.com/blog/get-ripped-with-these-popular-jefit-core-exercises",
+      "title": "JEFIT: popular core exercises",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.progressions[1] (weight plate decline crunch as a harder option); commonness only",
+      "note": "Commercial app blog; popularity, not technique."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "requiresStation",
+      "note": "A decline or ab bench has no station value. specific_machine is the nearest; the domain doesn't check it, so this exercise is never hidden for lack of a decline bench."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. benchDecline is the bench angle from horizontal."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

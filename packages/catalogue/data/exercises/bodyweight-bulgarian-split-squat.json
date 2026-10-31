@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-bulgarian-split-squat",
+  "tier": "basic",
+  "name": "Bodyweight Bulgarian split squat",
+  "aliases": ["Bodyweight BSS", "BW Bulgarian split squat", "Bodyweight rear-foot-elevated split squat", "BW BSS"],
+  "family": "split_squat",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings", "abductors"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

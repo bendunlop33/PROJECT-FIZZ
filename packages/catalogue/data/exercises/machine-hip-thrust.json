@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-hip-thrust",
+  "tier": "rich",
+  "name": "Hip thrust machine",
+  "aliases": ["Machine hip thrust", "Glute drive", "Glute drive machine", "Hip thrust (machine)", "Glute thrust machine"],
+  "family": "hip_thrust",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes"],
+  "secondaryMuscles": ["hamstrings", "quads", "adductors"],
+  "compatibleEquipment": ["plate_loaded_machine", "weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Back on the pad at your shoulder blades",
+      "Belt or pad across your hip crease",
+      "Feet flat, shins vertical at the top"
+    ],
+    "execution": [
+      "Tuck your chin and ribs down",
+      "Drive your hips up through your heels",
+      "Squeeze your glutes hard at the top",
+      "Lower under control"
+    ],
+    "faults": [
+      "Don't arch your lower back at the top",
+      "Don't push through your toes",
+      "Don't cut the top short"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Set the pad or belt so it sits across the hips, not the stomach, before loading.",
+      "Lockout is a strong glute squeeze with the ribs down, not an arched lower back.",
+      "Machines differ. Plate-loaded versions log the plates added; stack versions log the pin reading. Neither is the true resistance, and numbers aren't comparable with a barbell hip thrust.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-glute-bridge", "name": "Glute bridge", "reason": "Same hip drive from the floor with no load." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Pause at the top", "reason": "A 1–2 second hold at lockout adds work without more weight." },
+      { "key": "barbell-hip-thrust", "name": "Hip thrust", "reason": "Free bar allows heavier loads; more setup." }
+    ],
+    "substitutions": [
+      { "key": "barbell-hip-thrust", "name": "Hip thrust", "reason": "Same movement with a barbell and bench; load is total bar weight." },
+      { "key": "smith-machine-hip-thrust", "name": "Smith machine hip thrust", "reason": "Bar on a fixed track; easier to set up than a free bar." },
+      { "key": "barbell-glute-bridge", "name": "Barbell glute bridge", "reason": "Shorter range from the floor; no bench needed." },
+      { "key": "cable-pull-through", "name": "Cable pull-through", "reason": "Standing hip extension on a cable." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right, upper back on the machine's pad and the belt or pad across the hips. Machine frame drawn simply.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Upper back on the pad, hips lowered with knees bent and feet flat. Chin tucked.",
+        "approxAnglesDeg": { "hipFlexion": 90, "kneeFlexion": 110, "trunkLeanFromVertical": 60 }
+      },
+      {
+        "label": "Top",
+        "describe": "Hips driven up until the body is level from knees to shoulders, shins about vertical, ribs down, glutes squeezed.",
+        "approxAnglesDeg": { "hipFlexion": 0, "kneeFlexion": 90, "trunkLeanFromVertical": 90 }
+      }
+    ],
+    "ikHints": ["Upper back stays on the pad", "Feet fixed on the footplate or floor", "Hip belt or pad moves with the hips"],
+    "tempo": { "downMs": 1500, "holdMs": 600, "upMs": 1000 },
+    "props": ["hip_thrust_machine"],
+    "emphasise": [
+      "Hips rise to a level line, ribs down",
+      "Shins vertical at the top",
+      "Squeeze at the top"
+    ],
+    "doNotShow": ["Arched lower back at the top", "Heels lifting", "Head pushed back into the pad"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/hip-thrust-machine/",
+      "title": "StrengthLog: Hip Thrust Machine",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-2]; cues.execution[1-3]"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/GluteusMaximus/LVHipThrustPL",
+      "title": "ExRx: Lever hip thrust (plate loaded)",
+      "checkedOn": "2026-10-23",
+      "supports": "compatibleEquipment (plate-loaded lever machine); primaryMuscles",
+      "note": "Direct fetch blocked; search snippet only (research exercise-catalogue-expansion [E])."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "Hip thrust machines are either plate-loaded or stack-loaded. 'added' is the default; a stack machine logs 'stack'. Plate-loaded convention is research Q3, still to decide in an ADR."
+    },
+    {
+      "field": "aliases",
+      "note": "'Glute drive' is a brand name (Nautilus) that many gym-goers use for any hip thrust machine."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. trunkLeanFromVertical 90 means the torso is horizontal."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}
