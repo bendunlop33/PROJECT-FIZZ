@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { PLAN_OVERVIEW_COPY } from '@fizz/domain';
+import { BLOCKS_COPY, PLAN_OVERVIEW_COPY } from '@fizz/domain';
 import type { PlanApplyMode } from '@fizz/schemas';
 
 import { PLAN_COPY as CARD_COPY } from '../../coach/plan-view';
@@ -201,8 +201,18 @@ export function PlanTab({ scrollTopKey, planApplied, onPlanApplied }: { scrollTo
           <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_TAB_COPY.loadFailed} action={<TextButton label={PLAN_TAB_COPY.tryAgain} onPress={reload} />} />
         ) : previous.length > 0 ? (
           <View>
-            <View style={{ minHeight: 44, justifyContent: 'center' }} accessibilityRole="header">
-              <Eyebrow>{PLAN_TAB_COPY.previous}</Eyebrow>
+            <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View accessibilityRole="header">
+                <Eyebrow>{PLAN_TAB_COPY.previous}</Eyebrow>
+              </View>
+              {/* (Ben, 31 Oct; block-progress §4) Every block kept. */}
+              <TextButton
+                label={`${BLOCKS_COPY.blocksLink} ›`}
+                tone="secondary"
+                onPress={() => {
+                  navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressBlocks' } });
+                }}
+              />
             </View>
             {previous.map((row, i) => (
               <PreviousRow

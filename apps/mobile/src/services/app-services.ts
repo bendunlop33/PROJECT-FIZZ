@@ -1,3 +1,4 @@
+import { createBlockProgressService } from './block-progress-service';
 import { createLibraryChangesService } from '../library/library-changes-service';
 import { createWeeklyReviewService } from '../reviews/weekly-review-service';
 import { createCustomExercises } from './custom-exercises';
@@ -49,7 +50,7 @@ import {
 } from '@fizz/persistence';
 import type { CheckInSettings, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, PlanWeekExerciseEdit, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
-import { builderApplyOpId, type CoachModelPort, type TurnLifecycle } from '@fizz/coach';
+import { builderApplyOpId, nextTargetTapOpId, type CoachModelPort, type TurnLifecycle } from '@fizz/coach';
 import type { HealthPort, TextCoachState } from '@fizz/providers';
 
 import type { RestAlertController } from '../alerts/rest-alerts';
@@ -1335,6 +1336,20 @@ export function createAppServices(deps: AppServicesDeps) {
   const libraryChanges = createLibraryChangesService({ store: () => deps.manager.store, profile: getProfile, reviews, coach });
 
   /**
+   * (Ben, 31 Oct; block-progress.md) This block, a lift's block detail with its `Next week` fix (the Summary's own
+   * next-time row and writes), every block kept, and Library › Plan's line. Local only.
+   */
+  const blockProgress = createBlockProgressService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    projected: () => progress.projected(),
+    summary: (sessionId, status) => loop.workout.summary(sessionId, status),
+    coach,
+    nextTargetTapOpId,
+  });
+
+  /**
    * (workout-table-v3 §7) Same editing as the builder mid-workout: its Swap / Add sheet and load sources,
    * `Why this weight?` and advice, over the workout's own versioned commands (today only).
    */
@@ -1347,6 +1362,7 @@ export function createAppServices(deps: AppServicesDeps) {
     builderCoach,
     reviews,
     libraryChanges,
+    blockProgress,
     workoutEdit,
     exercisePicker,
     library,

@@ -22,6 +22,7 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
+import { MovedByYou } from '../today/MovedByYou';
 import { daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, followUpNext, hasOwnDraftFor, movedOffToday, plannedDayDetail, plannedOnOf, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
@@ -962,6 +963,16 @@ export function TodayScreen() {
               open={exercisesOpen}
               why={selection.why}
               moved={moved}
+              movedByYou={
+                selection.dayKey === session.nextKey ? (
+                  <MovedByYou
+                    dayIndex={[...session.days, ...session.others].find((d) => d.key === selection.dayKey)?.dayIndex ?? null}
+                    onResult={(text) => {
+                      setToast({ text });
+                    }}
+                  />
+                ) : null
+              }
               gymName={gym?.name ?? null}
               onGym={openGym}
               onTitle={() => {

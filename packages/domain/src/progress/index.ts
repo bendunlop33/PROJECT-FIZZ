@@ -21,3 +21,5 @@ export * from './recap';
 export * from './plan-day-colours';
 export * from './period-bar';
 export * from './training-period';
+export * from './block-lifts';
+export * from './block-history';

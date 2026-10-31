@@ -3,7 +3,7 @@ import type { Load, Measurement, PlanDayMove, PlanDraft, PlanWeekExerciseEdit, P
 
 import { deriveId } from '../stable';
 import { replaceExercise } from '../session/routine-editor';
-import { pbWeekDaysOf, pbWeekdaysOf, type PbEditBlock, type PlanMoveChange } from './edit';
+import { builderAnswersOf, pbWeekDaysOf, pbWeekdaysOf, type PbEditBlock, type PlanMoveChange } from './edit';
 
 /**
  * The day sheet's this-week changes (Ben, 29 Oct: "I don't find it easy to see what the plan for each day is and then
@@ -37,6 +37,11 @@ export type PbWeekChangeRequest =
   | { kind: 'place'; moves: { dayIndex: number; weekday: number }[] }
   | { kind: 'skip'; dayIndex: number }
   | { kind: 'unskip'; dayIndex: number }
+  /**
+   * (Ben, 31 Oct) `Moved by you · Undo` on Up next: this week's move of the day taken back, so it is on its planned
+   * weekday again; a day the move put on another weekday to make room (a swap) goes back too.
+   */
+  | { kind: 'unmove'; dayIndex: number }
   | { kind: 'exercise'; edit: Omit<PlanWeekExerciseEdit, 'week' | 'opId' | 'atUtc'> };
 
 export interface PbWeekChangeInput {
@@ -142,6 +147,17 @@ export function pbWeekChange(current: PlanDraft, input: PbWeekChangeInput): Plan
       if (!skipped.has(c.dayIndex)) return { kind: 'invalid', current };
       next = { moves, skips: skips.filter((s) => !(s.week === week && s.dayIndex === c.dayIndex)), edits };
       break;
+    case 'unmove': {
+      const answers = builderAnswersOf(current);
+      const base = answers === null ? null : pbWeekdaysOf(answers, [], week, [...days]);
+      const mine = moves.find((m) => m.week === week && m.dayIndex === c.dayIndex);
+      const home = base?.get(c.dayIndex);
+      if (base === null || mine === undefined || home === undefined || !open(c.dayIndex)) return { kind: 'invalid', current };
+      // A day moved onto this day's own weekday from the weekday this day took (a swap) goes back with it.
+      const displaced = new Set(moves.filter((m) => m.week === week && m.dayIndex !== c.dayIndex && m.weekday === home && open(m.dayIndex) && base.get(m.dayIndex) === mine.weekday).map((m) => m.dayIndex));
+      next = { moves: moves.filter((m) => !(m.week === week && (m.dayIndex === c.dayIndex || displaced.has(m.dayIndex)))), skips, edits };
+      break;
+    }
     case 'exercise': {
       const e = c.edit;
       if (!open(e.dayIndex) || (e.kind !== 'remove' && e.toExerciseId === null) || (e.kind !== 'add' && e.fromExerciseId === null)) return { kind: 'invalid', current };
@@ -166,6 +182,27 @@ export function pbWeekChange(current: PlanDraft, input: PbWeekChangeInput): Plan
     },
     expectedVersion: current.version,
   };
+}
+
+export const PB_MOVED_COPY = {
+  movedByYou: 'Moved by you',
+  undo: 'Undo',
+  undone: 'Move undone',
+} as const;
+
+/**
+ * (Ben, 31 Oct) Whether Ben moved plan day `dayIndex` onto today this week (`Move to…`, `Do today instead`): its
+ * planned weekday is another and this week's move puts it on `todayWeekday` (Mon = 0). Up next shows `Moved by you ·
+ * Undo` then. False on Any days and coach plans (no weekdays to move).
+ */
+export function pbMovedOntoToday(plan: Pick<PlanDraft, 'versions' | 'currentVersion' | 'moves'> & Partial<Pick<PlanDraft, 'applied'>>, block: Pick<PbEditBlock, 'week' | 'leadIn'>, dayIndex: number, todayWeekday: number): boolean {
+  const answers = plan.versions.find((v) => v.n === plan.currentVersion)?.builder?.answers ?? null;
+  if (answers === null) return false;
+  const week = pbChangeWeek(block);
+  const move = (plan.moves ?? []).find((m) => m.week === week && m.dayIndex === dayIndex);
+  if (move?.weekday !== todayWeekday) return false;
+  const planned = pbWeekdaysOf(answers, [], week, [dayIndex])?.get(dayIndex);
+  return planned !== undefined && planned !== todayWeekday;
 }
 
 /** The day-sheet change's Undo: the week exactly as before, only while the plan is still as that change left it. */

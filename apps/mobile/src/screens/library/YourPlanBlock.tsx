@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Pressable, View } from 'react-native';
 
 import {
@@ -34,7 +34,7 @@ import type { PlanOverviewWithBlock } from '../../services/plan-services';
 import { openNextBlock, openPlanChange, todayWithDay } from '../../navigation/actions';
 import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
-import { useDataChanged, useServices } from '../../shell/context';
+import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Eyebrow, Icon, TextButton } from '../../ui';
 import { SwipeRow } from '../../ui/table-parts';
@@ -44,6 +44,7 @@ import { ChangePlanSheet, EditPlanButton } from './ChangePlanSheet';
 import { LiftTargetsBlock } from './LiftTargetsBlock';
 import { DaySheetFlow } from '../today/DaySheet';
 import { WeekCircles } from './WeekCircles';
+import { MovedByYou } from '../../today/MovedByYou';
 
 /** `why`: a line behind the toast's `Why?` (End plan's `N workouts not restored`). */
 export type PlanToast = { text: string; action?: string; onAction?: () => void; why?: string };
@@ -337,6 +338,8 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
             }}
           />
         ) : null}
+        {/* (Ben, 31 Oct; block-progress §3) `5 lifts up · 1 stalled ›`: this block's lifts in Progress. */}
+        {circles !== null ? <BlockLiftsLine /> : null}
         {pausing !== null ? (
           <View style={{ gap: theme.space['2'], paddingTop: theme.space['2'] }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
@@ -429,6 +432,16 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
             row={row}
             first={i === 0}
             moving={moving !== null && moving === row.dayIndex}
+            extra={
+              view.thisWeek && row.state === 'next' ? (
+                <MovedByYou
+                  dayIndex={row.dayIndex}
+                  onResult={(text) => {
+                    onToast({ text });
+                  }}
+                />
+              ) : null
+            }
             onPress={() => {
               if (row.routineId === null) return;
               // (Ben, 29 Oct) This week's day: the day sheet (the same as Today's), Every week by default.
@@ -554,7 +567,7 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
  * `Do today` (leading) and `Move` (trailing, Set days plans), with the same in a `⋯` button, long-press and VoiceOver
  * actions (UX review 27 Oct §P4). `Move day` shows the weekday chips under the row.
  */
-function DayRow({ row, first, moving, onPress, onMore, onAction, onMove, onCancelMove }: { row: PlanTabRow; first: boolean; moving: boolean; onPress: () => void; onMore: () => void; onAction: (kind: string) => void; onMove: (weekday: number) => void; onCancelMove: () => void }) {
+function DayRow({ row, first, moving, extra = null, onPress, onMore, onAction, onMove, onCancelMove }: { row: PlanTabRow; first: boolean; moving: boolean; /** (Ben, 31 Oct) Under the row: `Moved by you · Undo` on NEXT. */ extra?: ReactNode; onPress: () => void; onMore: () => void; onAction: (kind: string) => void; onMove: (weekday: number) => void; onCancelMove: () => void }) {
   const theme = useTheme();
   const menu = planTabDayMenu(row);
   const today = menu.find((x) => x.kind === 'today');
@@ -612,6 +625,7 @@ function DayRow({ row, first, moving, onPress, onMore, onAction, onMove, onCance
           {content}
         </Pressable>
       )}
+      {extra !== null ? <View style={{ paddingLeft: 24 + theme.space['3'], paddingBottom: theme.space['2'] }}>{extra}</View> : null}
       {moving && row.actions?.moveTo != null ? (
         <View style={{ gap: theme.space['1'], paddingBottom: theme.space['2'] }}>
           <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', gap: theme.space['1'] }}>
@@ -678,3 +692,27 @@ function Choice({ label, selected, onPress }: { label: string; selected: boolean
   );
 }
 
+
+/** (Ben, 31 Oct; block-progress §3) One line under the week circles, opening Progress's This block. Nothing until a lift is up or stalled. */
+function BlockLiftsLine() {
+  const theme = useTheme();
+  const navigation = useNavigation();
+  const [data] = useScreenData((s) => s.blockProgress.planLine().catch(() => null));
+  const line = data.state === 'ready' ? data.value : null;
+  if (line === null) return null;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={line}
+      onPress={() => {
+        navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressBlock', params: {} } });
+      }}
+      style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
+    >
+      <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
+        {line}
+      </AppText>
+      <Icon name="chevron.right" color="text.tertiary" size={14} />
+    </Pressable>
+  );
+}

@@ -68,6 +68,7 @@ import {
   pbDayWithEdits,
   pbUndoWeekChange,
   pbWeekChange,
+  pbMovedOntoToday,
   pbWeekEditsOf,
   pbSkipsOf,
   pbMoveWeek,
@@ -1042,6 +1043,31 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const typed = c.kind === 'exercise' && c.edit.toExerciseId !== null ? (c.edit.load ?? null) : null;
       if (!out.ok || out.duplicate || typed === null || c.kind !== 'exercise' || c.edit.toExerciseId === null) return out;
       return { ...out, learned: (await deps.learnTyped?.(c.edit.toExerciseId, typed).catch(() => null)) ?? null };
+    },
+
+    /**
+     * (Ben, 31 Oct) Up next is a plan day Ben moved onto today this week (`Move to…`, `Do today instead`): the plan and
+     * day for `Moved by you · Undo`; its Undo is `weekChange` with `unmove` against this version (rule 5). Null: not
+     * moved onto today (or no plan, Any days, a coach plan). `undo`: `last` (`undoWeekChange`, the move was the last
+     * day-sheet change) or `unmove` (`weekChange` with `unmove`).
+     */
+    async movedToday(dayIndex: number): Promise<{ planId: string; version: number; dayIndex: number; undo: 'last' | 'unmove' } | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan === null) return null;
+      const nowMs = toMs(deps.now().utc);
+      const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, nowMs, p.timezone));
+      if (eb === null || eb.doneThisWeek.includes(dayIndex)) return null;
+      const today = weekdayIndexOfDate(localDateOf(nowMs, p.timezone));
+      if (!pbMovedOntoToday(plan, eb, dayIndex, today)) return null;
+      // The last day-sheet change made this move: its own Undo puts the week back exactly (an earlier move of the day
+      // too). Otherwise (another change since, or Library's Move day): this week's move of the day is taken back.
+      const week = pbChangeWeek(eb);
+      const last = plan.lastWeekChange ?? null;
+      const was = last?.before.moves.find((m) => m.week === week && m.dayIndex === dayIndex)?.weekday ?? null;
+      const undo = last !== null && last.versionAfter === plan.version && was !== today ? 'last' : 'unmove';
+      return { planId: plan.id, version: plan.version, dayIndex, undo };
     },
 
     async undoWeekChange(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
