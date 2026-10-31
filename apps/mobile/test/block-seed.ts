@@ -21,6 +21,8 @@ const at = (date: string, hour = 8) => Date.parse(`${date}T${String(hour - 1).pa
 
 export interface BlockBen {
   h: Harness;
+  /** The launch (render tests mount screens on it). */
+  launched: Awaited<ReturnType<Harness['launch']>>;
   s: AppServices;
   gymId: string;
   /** Each block's plan (oldest first) and the first day's main lift. */
@@ -93,7 +95,8 @@ export async function logPlanDay(h: Harness, s: AppServices, gymId: string, rout
 
 export async function benWithBlocks(opts: Parameters<typeof createHarness>[1] = {}): Promise<BlockBen> {
   const h = createHarness('2026-07-27T07:00:00.000Z', opts);
-  const { services: s } = await h.launch();
+  const launched = await h.launch();
+  const s = launched.services;
   const gymId = await setUpGym(h, s);
   const plans: BlockBen['plans'] = [];
   const block = async (monday: string, patch: Partial<PlanBuilderAnswers>, weeks: [number, number][]) => {
@@ -135,5 +138,5 @@ export async function benWithBlocks(opts: Parameters<typeof createHarness>[1] = 
   h.clockMs = at('2026-10-21', 12);
   const offPlan = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 59, reps: 10, rpe: 8 }] }]);
   h.clockMs = at('2026-10-21', 18);
-  return { h, s, gymId, plans, accessory: { exerciseId: accessory, latestSessionId: latest }, offPlanSessionId: offPlan };
+  return { h, launched, s, gymId, plans, accessory: { exerciseId: accessory, latestSessionId: latest }, offPlanSessionId: offPlan };
 }
