@@ -10,6 +10,7 @@ import {
   twinsToRecord,
   changeLinkAlso,
   deriveId,
+  feedWorkoutTitle,
   classifyHealthWorkout,
   dismissHealthLink,
   healthActivityOf,
@@ -408,6 +409,15 @@ export function createHealthService(deps: HealthServiceDeps) {
     return { workout, samples: all.filter((x) => !writes.has(x.uuid) && x.externalId?.toLowerCase() !== sessionId), links };
   }
 
+  /** A workout's name as the lists show it (`feedWorkoutTitle`). */
+  async function workoutTitle(w: LinkableWorkout): Promise<string> {
+    const a = await deps.store().repos.sessions.get(w.sessionId);
+    if (a === null) return w.title;
+    const info = new Map<string, Awaited<ReturnType<Store['repos']['exercises']['get']>>>();
+    for (const e of a.exercises) if (!info.has(e.exerciseId)) info.set(e.exerciseId, await deps.store().repos.exercises.get(e.exerciseId).catch(() => null));
+    return feedWorkoutTitle(a, (id) => info.get(id) ?? null);
+  }
+
   function candidateView(x: HealthWorkoutSample, tz: string): LinkCandidateView {
     return { healthUuid: x.uuid, ...linkCandidateLine(x, classifyHealthWorkout(x.activityType).label, tz) };
   }
@@ -686,14 +696,24 @@ export function createHealthService(deps: HealthServiceDeps) {
         const d = dayPairs({ date, samples: samples.some((x) => x.uuid === sample.uuid) ? samples : [...samples, sample], workouts, links });
         // `18:04–18:50`; a date-only workout has no times.
         const time = (w: LinkableWorkout) => (w.localDate !== undefined ? null : `${formatTime(toMs(w.startUtc), p.timezone)}–${formatTime(toMs(w.endUtc), p.timezone)}`);
-        const pairedTo = d.paired.find((x) => x.sample.uuid === sample.uuid);
+        // Each workout by the name the lists give it (`Push A`; an unnamed one by its exercises, `Legs`).
+        const titles = new Map<string, string>();
+        for (const w of [...d.paired.map((x) => x.workout), ...d.unpaired.flatMap((u) => [...u.choices, ...u.same.map((x) => x.workout)])]) {
+          if (titles.has(w.sessionId)) continue;
+          titles.set(w.sessionId, await workoutTitle(w).catch(() => w.title));
+        }
+        const named = <W extends LinkableWorkout>(w: W): W => ({ ...w, title: titles.get(w.sessionId) ?? w.title });
+        const pairedTo = (() => {
+          const x = d.paired.find((y) => y.sample.uuid === sample.uuid);
+          return x === undefined ? undefined : { ...x, workout: named(x.workout) };
+        })();
         if (pairedTo !== undefined) return { ...base, pair: [], same: [], paired: { sessionId: pairedTo.workout.sessionId, title: pairedTo.workout.title, time: time(pairedTo.workout), linkVersion: pairedTo.link.version } };
         const u = d.unpaired.find((x) => x.sample.uuid === sample.uuid);
         if (u === undefined) return none;
         return {
           ...base,
-          pair: u.choices.map((w) => ({ sessionId: w.sessionId, title: w.title, time: time(w) })),
-          same: u.same.map((x) => ({ sessionId: x.workout.sessionId, title: x.workout.title, time: time(x.workout), linkUuid: x.link.healthUuid, linkVersion: x.link.version })),
+          pair: u.choices.map(named).map((w) => ({ sessionId: w.sessionId, title: w.title, time: time(w) })),
+          same: u.same.map((x) => ({ sessionId: x.workout.sessionId, title: named(x.workout).title, time: time(x.workout), linkUuid: x.link.healthUuid, linkVersion: x.link.version })),
           paired: null,
         };
       } catch {

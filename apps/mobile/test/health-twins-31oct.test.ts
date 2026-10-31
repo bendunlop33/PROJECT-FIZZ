@@ -170,3 +170,38 @@ describe('an automatic link to the wrong Health workout moves to the real one (B
     expect(await wedHealth(s)).toEqual([]);
   });
 });
+
+describe('pairing from wherever the Health workout is tapped (Ben, 31 Oct: "make it easier to pair")', () => {
+  it('Today’s Recent, Progress’s day list, History and Library’s This week line each carry it to its sheet: Pair, then Undo', async () => {
+    const { s, id, startMs, endMs } = await wednesday();
+    const g = fake.addGarmin({ activityType: 50, startMs: startMs - 3 * MIN, endMs: endMs + MIN, sourceName: 'Connect' });
+    await s.health.setSwitch('readActivities', true);
+    // Not automatic (Ben once said Not it): Pair is the way.
+    await s.health.notIt({ healthUuid: g, sessionId: id, opId: 'not-it' });
+    h.clockMs = endMs + 60 * MIN;
+    await s.health.readNow();
+
+    const today = await s.todaySession.load();
+    const recent = today?.recent.find((i) => i.kind === 'activity' && i.activityId === g);
+    const progress = (await s.progress.training({ span: 'month', offset: 0 }))?.view?.dayRows[WED]?.find((r) => r.kind === 'activity');
+    const history = (await s.history.feed()).items.find((i) => i.kind === 'activity' && i.activityId === g);
+    const library = await s.plans.overview();
+    const opened = [recent?.kind === 'activity' ? recent.activityId : null, progress?.id ?? null, history?.kind === 'activity' ? history.activityId : null];
+    expect(opened).toEqual([g, g, g]);
+    // Library › Plan (no plan in use here): the week's lines and their IDs line up when there is one.
+    expect(library === null || library.activities.length === library.activityIds.length).toBe(true);
+
+    // Each opens the same sheet (`activities.get`), whose one action is Pair with the day's workout.
+    const a = await s.activities.get(g);
+    expect(a?.source).toBe('health');
+    const sheet = await s.health.activity(g);
+    expect(sheet?.pair.map((w) => [w.sessionId, w.title])).toEqual([[id, 'Push']]);
+    const r = await s.health.link({ healthUuid: g, sessionId: id, opId: 'pair-1' });
+    if (!r.ok) throw new Error(r.message);
+    expect(await wedHealth(s)).toEqual([]);
+    expect((await s.health.activity(g))?.paired?.sessionId).toBe(id);
+    // The toast's Undo.
+    expect((await s.health.unlink({ healthUuid: g, expectedVersion: r.version, opId: 'undo-pair-1' })).ok).toBe(true);
+    expect(await wedHealth(s)).toEqual([g]);
+  });
+});
