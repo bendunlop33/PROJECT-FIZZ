@@ -198,7 +198,8 @@ describe('Try again retries its own turn, also after a relaunch', () => {
   it('each failed turn’s row carries that turn’s own words: A fails, B succeeds, A’s Try again is A', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
-    model = new StepModel([() => [{ type: 'error', error: 'timeout' }], () => replyWith('Two minutes.')]);
+    // (Ben, 31 Oct) A timeout gets one lighter retry within the turn; A fails only when that times out too.
+    model = new StepModel([() => [{ type: 'error', error: 'timeout' }], () => [{ type: 'error', error: 'timeout' }], () => replyWith('Two minutes.')]);
     const a = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Message A', spoken: false }, turnId: h.ids() });
     await s.coach.send({ entry: { kind: 'today' }, threadId: a.threadId, input: { kind: 'words', text: 'Message B', spoken: false }, turnId: h.ids() });
     await h.forceClose();

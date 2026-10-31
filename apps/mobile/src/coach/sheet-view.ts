@@ -605,6 +605,8 @@ export interface LiveTurn {
   benText: string | null;
   startedAtMs: number;
   firstEvent: boolean;
+  /** (Ben, 31 Oct) A high-effort step is thinking (`hard`), or the short answer after a timeout is on its way (`short`). */
+  thinking?: 'hard' | 'short';
   tools: string[];
   cards: CardView[];
   sentences: string[];
@@ -624,6 +626,8 @@ export function applyProgress(live: LiveTurn, p: CoachTurnProgress): LiveTurn {
   switch (p.kind) {
     case 'first_event':
       return { ...live, firstEvent: true };
+    case 'thinking':
+      return { ...live, thinking: p.mode };
     case 'tool':
       return p.line.outcome === 'read' ? { ...live, firstEvent: true, tools: [...live.tools, p.line.text] } : { ...live, firstEvent: true };
     case 'card': {
@@ -639,8 +643,10 @@ export function applyProgress(live: LiveTurn, p: CoachTurnProgress): LiveTurn {
 export function thinkingLabel(live: LiveTurn, nowMs: number): string | null {
   if (live.sentences.length > 0) return null;
   const s = Math.floor((nowMs - live.startedAtMs) / 1000);
-  if (s < 3) return 'Coach · …';
-  return `Coach · ${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`;
+  // (Ben, 31 Oct) A long think is shown as one, with the time so far; the short answer after a timeout says so.
+  const lead = live.thinking === 'hard' ? 'Thinking…' : live.thinking === 'short' ? 'Short answer…' : 'Coach';
+  if (s < 3) return live.thinking === undefined ? 'Coach · …' : lead;
+  return `${lead === 'Coach' ? 'Coach ·' : lead} ${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`;
 }
 
 export type { ReplyItem };
@@ -798,7 +804,15 @@ export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<B
 export function planSwapLines(r: ActionRecord): { head: string; days: string[] } | null {
   if (r.detail.kind !== 'propose_plan_swap') return null;
   const d = r.detail;
-  return { head: `${d.removeName} → ${d.addName}`, days: d.days.map((x) => (x.edits.every((e) => e.kind === 'remove') ? `${x.routineName}: − ${d.removeName}` : x.routineName)) };
+  // (Ben, 31 Oct) An add: `+ Dumbbell curl · 3 × 10–12`, then each day's place (`Pull B: after Hanging leg raise`).
+  if (d.op === 'add') {
+    const reps = d.reps == null ? '' : d.reps.min === d.reps.max ? ` × ${String(d.reps.min)}` : ` × ${String(d.reps.min)}–${String(d.reps.max)}`;
+    const load = d.load == null ? '' : ` @ ${String(d.load.value)} ${d.load.unit}${d.load.convention === 'per_hand' ? ' each' : ''}`;
+    const head = `+ ${d.addName}${d.sets === undefined ? '' : ` · ${String(d.sets)}${reps}`}${load}`;
+    return { head, days: d.days.map((x) => `${x.routineName}: ${x.edits.map((e) => (e.afterName == null ? 'at the end' : `after ${e.afterName}`)).join(', ')}`) };
+  }
+  const out = d.removeName ?? 'Exercise';
+  return { head: `${out} → ${d.addName}`, days: d.days.map((x) => (x.edits.every((e) => e.kind === 'remove') ? `${x.routineName}: − ${out}` : x.routineName)) };
 }
 
 export const DRAFT_EDIT_COPY = { apply: 'Apply', skip: 'Skip', undo: 'Undo', applied: 'Applied', skipped: 'Skipped', undone: 'Undone', openSetup: 'Open Set up' } as const;
