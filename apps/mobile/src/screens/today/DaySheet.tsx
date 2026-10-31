@@ -507,9 +507,9 @@ export function DoneRow({
                 {r.detail}
               </AppText>
             ) : null}
-            {r.source !== null ? (
+            {r.note !== null ? (
               <AppText variant="callout" color="text.tertiary">
-                {r.source}
+                {r.note}
               </AppText>
             ) : null}
           </View>

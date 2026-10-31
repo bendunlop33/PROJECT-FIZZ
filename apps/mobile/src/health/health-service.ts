@@ -1,6 +1,8 @@
 import {
   localMidnightUtcMs,
   autoLinkPairs,
+  ownCopyLinks,
+  releaseOwnCopyLink,
   dayPairs,
   linkableSamples,
   classifyHealthWorkout,
@@ -304,9 +306,17 @@ export function createHealthService(deps: HealthServiceDeps) {
     const nowMs = toMs(deps.now().utc);
     const first = samples.reduce((m, x) => Math.min(m, toMs(x.startUtc)), nowMs);
     const workouts = await repo().linkableWorkouts(p.id, toIso(first - 2 * 86_400_000), toIso(nowMs + 86_400_000));
-    const links = await repo().links(p.id);
     // Never the app's own copies (an older build's source passes the bundle check): one Garmin workout is then one.
     const own = await ownCopies(p.id, samples);
+    // (Ben, 31 Oct) An older build's automatic link to the app's own copy holds the workout: release it first.
+    const ownUuids = new Set([...own.written, ...samples.filter((x) => x.externalId !== null && own.sessions.has(x.externalId.toLowerCase())).map((x) => x.uuid)]);
+    for (const l of ownCopyLinks(await repo().links(p.id), ownUuids)) {
+      await repo()
+        .changeLink(p.id, l.healthUuid, async (cur) => (cur === null ? { kind: 'stale', current: null } : releaseOwnCopyLink(cur, { opId: `health-own-release:${l.healthUuid}:${String(l.version)}`, atUtc: deps.now().utc, expectedVersion: l.version })))
+        .catch(() => null);
+    }
+    const links = await repo().links(p.id);
+    // Every Health workout in the read window, so past days pair too (a back-fill; Ben, 31 Oct).
     for (const pair of autoLinkPairs({ samples: linkableSamples(samples, own.written, own.sessions), workouts, links })) {
       await repo()
         .changeLink(p.id, pair.healthUuid, async (cur, elsewhere) =>

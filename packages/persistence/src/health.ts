@@ -16,7 +16,7 @@ import {
   type HealthWorkoutSample,
   type HealthWorkoutWrite,
 } from '@fizz/schemas';
-import { activitiesWithHealth, addDays, toIso, toMs, type HealthLinkChange, type LinkableWorkout } from '@fizz/domain';
+import { activitiesWithHealth, addDays, anchorUtcFor, toIso, toMs, type HealthLinkChange, type LinkableWorkout } from '@fizz/domain';
 
 import type { Database } from './database';
 import { decodeDocument, erase, listDocuments, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -283,6 +283,8 @@ export class SqliteHealth {
         tz: r.started_at_tz,
         title: r.routine_name ?? 'Workout',
         ...(r.local_date === null ? {} : { localDate: r.local_date }),
+        // A date-only import's start is the noon anchor unless the file gave a time (Ben, 31 Oct: then it may auto-link).
+        ...(r.local_date !== null && toMs(r.started_at_utc) !== toMs(anchorUtcFor(r.local_date, r.started_at_tz)) ? { startAsWritten: true } : {}),
         ...(r.past_log === null ? {} : { pastLogged: true }),
       }));
     });
