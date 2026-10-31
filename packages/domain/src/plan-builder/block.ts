@@ -462,3 +462,86 @@ export function pbKeepBlockOf(current: PlanDraft, plans: readonly PlanDraft[], t
     opId,
   };
 }
+
+/** This week's changes on a plan document: moves, skips and one-change edits (each keyed by block week). */
+export type PbWeekChanges = Pick<PlanDraft, 'moves' | 'weekSkips' | 'weekEdits'>;
+
+/** The same, every list present. */
+export interface PbWeekChangeLists {
+  moves: NonNullable<PlanDraft['moves']>;
+  weekSkips: NonNullable<PlanDraft['weekSkips']>;
+  weekEdits: NonNullable<PlanDraft['weekEdits']>;
+}
+
+/**
+ * (Ben, 31 Oct: "When I upload a new version it seems to forget that I have changed the order") A block continued on a
+ * new plan document keeps the week changes made on the earlier one: `from`'s moves, skips and one-change edits merged
+ * into `into`'s (its own win for the same week and day, or the same row). Only days the new document has
+ * (`dayIndexes`); an edit's row is found again by its exercise in the new day's rows (`rowsOf`), an added row keeps its
+ * own ID (after a row that is gone: last). An edit whose row isn't there any more is dropped. The block's week numbers
+ * are shared, so each change stays on its week. Pure.
+ */
+export function pbCarryWeekChanges(from: PbWeekChanges, into: PbWeekChanges, input: { dayIndexes: readonly number[]; rowsOf: (dayIndex: number) => readonly { id: string; exerciseId: string }[] | null }): PbWeekChangeLists {
+  const days = new Set(input.dayIndexes);
+  const key = (x: { week: number; dayIndex: number }) => `${String(x.week)}:${String(x.dayIndex)}`;
+  const ownMoves = into.moves ?? [];
+  const ownSkips = into.weekSkips ?? [];
+  const ownEdits = into.weekEdits ?? [];
+  const movedKeys = new Set(ownMoves.map(key));
+  const skipKeys = new Set(ownSkips.map(key));
+  const moves = [...(from.moves ?? []).filter((m) => days.has(m.dayIndex) && !movedKeys.has(key(m))), ...ownMoves].slice(-84);
+  const weekSkips = [...(from.weekSkips ?? []).filter((x) => days.has(x.dayIndex) && !skipKeys.has(key(x))), ...ownSkips].slice(-84);
+  const editKeys = new Set(ownEdits.map((e) => `${key(e)}:${e.rowId}`));
+  const carried: NonNullable<PlanDraft['weekEdits']> = [];
+  const used = new Map<string, Set<string>>();
+  for (const e of from.weekEdits ?? []) {
+    if (!days.has(e.dayIndex)) continue;
+    const rows = input.rowsOf(e.dayIndex) ?? [];
+    const taken = used.get(key(e)) ?? new Set<string>();
+    used.set(key(e), taken);
+    let rowId = e.rowId;
+    if (e.kind !== 'add') {
+      const row = rows.find((r) => r.id === e.rowId) ?? rows.find((r) => r.exerciseId === e.fromExerciseId && !taken.has(r.id));
+      if (row === undefined) continue;
+      rowId = row.id;
+      taken.add(row.id);
+    }
+    const afterRowId = e.afterRowId == null || rows.some((r) => r.id === e.afterRowId) || (from.weekEdits ?? []).some((x) => x.kind === 'add' && x.rowId === e.afterRowId) ? (e.afterRowId ?? null) : null;
+    const next = { ...e, rowId, ...(e.kind === 'add' ? { afterRowId } : {}) };
+    if (!editKeys.has(`${key(next)}:${next.rowId}`)) carried.push(next);
+  }
+  return { moves, weekSkips, weekEdits: [...carried, ...ownEdits].slice(-200) };
+}
+
+/**
+ * (Ben, 31 Oct) On app open: a plan in use that continues a block from earlier plan documents (`applied.block`: a
+ * re-apply, or the 30 Oct repair) gets their week changes (`pbCarryWeekChanges`, oldest document first), once. A
+ * derived op ID, so a second open (or a change Ben makes afterwards) is never overwritten. A newer document's change wins
+ * over an older one's, and the plan's own over both. Nothing to carry: null. Pure.
+ */
+export function pbCarryOnOpenOf(current: PlanDraft, plans: readonly PlanDraft[], rowsOf: (dayIndex: number) => readonly { id: string; exerciseId: string }[] | null, atUtc: string): { next: PlanDraft; expectedVersion: number; opId: string } | null {
+  if (current.status !== 'applied' || current.applied === null) return null;
+  const earlier = current.applied.block?.plans ?? [];
+  if (earlier.length === 0) return null;
+  const opId = deriveId(`plan-week-carry:${current.id}:${current.applied.opId}`);
+  if (current.opIds.includes(opId)) return null;
+  const byId = new Map(plans.map((p) => [p.id, p] as const));
+  const dayIndexes = pbWeekDayIndexes(current);
+  let merged: PbWeekChangeLists = { moves: current.moves ?? [], weekSkips: current.weekSkips ?? [], weekEdits: current.weekEdits ?? [] };
+  for (const e of [...earlier].reverse()) {
+    const prior = byId.get(e.planId);
+    if (prior !== undefined) merged = pbCarryWeekChanges(prior, merged, { dayIndexes, rowsOf });
+  }
+  const same = (a: readonly unknown[] | undefined, b: readonly unknown[]) => JSON.stringify(a ?? []) === JSON.stringify(b);
+  if (same(current.moves, merged.moves) && same(current.weekSkips, merged.weekSkips) && same(current.weekEdits, merged.weekEdits)) return null;
+  return {
+    next: { ...current, ...merged, opIds: [...current.opIds, opId].slice(-PLAN_LIMITS.maxOps), version: current.version + 1, updatedAtUtc: atUtc },
+    expectedVersion: current.version,
+    opId,
+  };
+}
+
+/** The day indexes a plan document's Apply made. */
+function pbWeekDayIndexes(plan: Pick<PlanDraft, 'applied'>): number[] {
+  return [...new Set((plan.applied?.made ?? []).map((m) => m.dayIndex))];
+}

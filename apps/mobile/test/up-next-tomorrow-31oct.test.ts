@@ -205,3 +205,40 @@ describe('Up next: least recently trained of the days left this week, from tomor
     expect((await s.plans.overview())?.days.find((x) => x.state === 'next')?.name).toBe('Push B');
   });
 });
+
+describe('this week’s changes survive a new plan document in the same block (Ben, 31 Oct: “it seems to forget that I have changed the order”)', () => {
+  it('Push B moved to Fri, then the plan re-applied as a new document (the builder path before 30 Oct): Sat reads the same; a relaunch too', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await monToThu(s, gymId);
+    h.clockMs = toMs('2026-10-29T07:00:00.000Z');
+    const ov = await s.plans.overview();
+    if (ov == null) throw new Error('no plan');
+    expect(await s.plans.weekChange({ planId: ov.planId, expectedVersion: ov.planVersion, opId: 'swap-push-b-fri', change: { kind: 'swap_days', dayIndex: 3, withDayIndex: 4 } })).toMatchObject({ ok: true });
+    // Thu evening: a new plan document built from the plan in use and applied over it.
+    h.clockMs = toMs('2026-10-29T20:00:00.000Z');
+    const fresh = await s.planBuilder.open({ fromPlanId: ov.planId });
+    if (fresh === null) throw new Error('no builder');
+    const built = await s.planBuilder.save(fresh, fresh.answers, null, h.ids());
+    if (!built.ok) throw new Error('not built');
+    expect((await s.planBuilder.apply({ planId: built.planId, versionN: built.versionN, expectedVersion: built.version, opId: h.ids() })).ok).toBe(true);
+    const now = await s.plans.overview();
+    expect(now?.planId).toBe(built.planId);
+    // The swap came with it: Push B on Fri, Pull B on Thu.
+    const wk = now?.block?.views[(now.block.current) - 1]?.days.filter((d) => !d.done).map((d) => `${d.name} ${String(d.weekday)}`);
+    expect(wk).toEqual(expect.arrayContaining(['Pull B 3']));
+    await startDay(s, gymId, '2026-10-30T17:00:00.000Z', 'Legs B');
+    h.clockMs = toMs('2026-10-31T10:31:00.000Z');
+    const read = async (x: AppServices) => {
+      const d = await loaded(x);
+      const fri = x.todaySession.daySheet(d, { date: '2026-10-30' }, d.nextKey, (t) => t);
+      return { next: nextName(d), tiles: tileText(x.todaySession.week(d, nextName(d))), fri: `${fri.title} ${fri.statusText}`, count: (await x.plans.overview())?.daysThisWeek.text };
+    };
+    const sat = await read(s);
+    expect(sat).toEqual({ next: 'Pull B', tiles: ['30 done dot:legs', '31 today planned ring:pull', '01 planned ring:push'], fri: 'Fri · Legs B Done', count: '4 of 6' });
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    expect(await read(s2)).toEqual(sat);
+  });
+});
+

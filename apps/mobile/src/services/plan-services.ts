@@ -83,6 +83,7 @@ import {
   type GymEdit,
   pbBlockStartUtc,
   pbKeepBlockOf,
+  pbCarryOnOpenOf,
   finishedGymWorkoutOn,
   setDaysWeekSlots,
   upNextPlanningWeekday,
@@ -941,6 +942,33 @@ export function createPlanServices(deps: PlanServicesDeps) {
       if (pbKeepBlockOf(plan, all, p.timezone, at.utc) === null) return false;
       const r = await controlWrite(plan.id, (c) => {
         const k = pbKeepBlockOf(c, all, p.timezone, at.utc);
+        return k === null ? { kind: 'duplicate', current: c } : { kind: 'write', next: k.next, expectedVersion: k.expectedVersion };
+      });
+      return r.ok && !r.duplicate;
+    },
+
+    /**
+     * (Ben, 31 Oct: "When I upload a new version it seems to forget that I have changed the order") On app open, after
+     * `keepBlock`: a plan in use that continues a block from earlier plan documents gets their week changes (moves,
+     * skips, one-change edits; `pbCarryOnOpenOf`), once, on a derived op ID. Returns whether it wrote.
+     */
+    async carryWeekChanges(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan?.applied == null || (plan.applied.block?.plans ?? []).length === 0) return false;
+      const all = await repo().listByOwner(p.id).catch(() => [] as PlanDraft[]);
+      const rows = new Map<number, { id: string; exerciseId: string }[]>();
+      for (const m of plan.applied.made) {
+        if (rows.has(m.dayIndex)) continue;
+        const r = await deps.store().repos.routines.get(m.routineId).catch(() => null);
+        if (r !== null) rows.set(m.dayIndex, r.exercises.map((e) => ({ id: e.id, exerciseId: e.exerciseId })));
+      }
+      const at = deps.now();
+      const rowsOf = (i: number) => rows.get(i) ?? null;
+      if (pbCarryOnOpenOf(plan, all, rowsOf, at.utc) === null) return false;
+      const r = await controlWrite(plan.id, (c) => {
+        const k = pbCarryOnOpenOf(c, all, rowsOf, at.utc);
         return k === null ? { kind: 'duplicate', current: c } : { kind: 'write', next: k.next, expectedVersion: k.expectedVersion };
       });
       return r.ok && !r.duplicate;
