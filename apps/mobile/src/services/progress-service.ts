@@ -771,6 +771,17 @@ export function createProgressService(deps: ProgressServiceDeps) {
       return { sessions: ctx.sessions, gymNames: ctx.gymNames, today: localDateOf(nowMs, profile.timezone), resume: resumeBar(active, nowMs) };
     },
 
+    /**
+     * (Ben, 31 Oct: block progress) Every finished workout as Progress projects it (the same cache) with each exercise's
+     * name as Ben knows it now. Null with no profile.
+     */
+    async projected(): Promise<{ sessions: readonly ProgressSession[]; nameOf: (exerciseId: string) => string | null } | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const ctx = await context(profile);
+      return { sessions: ctx.sessions, nameOf: (id) => ctx.exercises.get(id)?.name ?? null };
+    },
+
     /** `buildCalendarMonth` (§6.2). `month` is `YYYY-MM`; default: this month. */
     async calendar(month?: string): Promise<{ view: CalendarMonthView; unreadable: number } | null> {
       const profile = await deps.profile();

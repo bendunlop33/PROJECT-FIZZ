@@ -334,6 +334,7 @@ export function TodayCard({
   open,
   why,
   moved,
+  movedByYou = null,
   gymName,
   onGym,
   onTitle,
@@ -348,6 +349,8 @@ export function TodayCard({
   open: boolean;
   why: boolean;
   moved: string | null;
+  /** (Ben, 31 Oct) `Moved by you · Undo` when Up next is a day Ben moved onto today; null otherwise. */
+  movedByYou?: ReactNode;
   gymName: string | null;
   onGym: () => void;
   onTitle: () => void;
@@ -386,6 +389,7 @@ export function TodayCard({
         </Pressable>
         <TextButton label={TODAY_V2_COPY.edit} onPress={onEdit} />
       </View>
+      {movedByYou}
       <ValueRows
         rows={todayCardRows(view, gymLabel)}
         onNote={onTimeNote}

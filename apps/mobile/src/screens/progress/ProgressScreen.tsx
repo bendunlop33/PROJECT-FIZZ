@@ -22,6 +22,7 @@ import type { ActivitySaved } from '../activity/ActivitySheet';
 import { HealthTrends } from './HealthTrends';
 import { BodyweightCard } from './BodyweightCard';
 import { ExercisesTab } from './ExercisesTab';
+import { ThisBlockSection } from '../../progress/ThisBlockSection';
 import { TrainingTab } from './TrainingTab';
 import { HowCountedSheet, TimeSheet } from './sheets';
 
@@ -197,7 +198,9 @@ export function ProgressScreen() {
     // Every tab stays mounted once seen, so each keeps its place (selected exercise, day, scroll) (§3.5).
     body = (
       <>
-        <View style={tab === 'lifts' ? null : { display: 'none' }}>
+        <View style={tab === 'lifts' ? { gap: theme.space['5'] } : { display: 'none' }}>
+          {/* (Ben, 31 Oct; block-progress §1) This block at the top; the per-lift charts below, unchanged. */}
+          <ThisBlockSection active={tab === 'lifts'} />
           <ExercisesTab active={tab === 'lifts'} shared={{ period: bar.preset, range: dates }} />
         </View>
         {seen.has('training') ? (

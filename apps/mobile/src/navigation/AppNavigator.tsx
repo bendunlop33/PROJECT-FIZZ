@@ -65,6 +65,7 @@ import { ExerciseInfoScreen } from '../screens/library/ExerciseInfoScreen';
 import { PlanDayScreen } from '../screens/library/PlanDayScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
+import { BlockScreen, BlocksScreen, LiftBlockScreen } from '../screens/progress/BlockScreens';
 import { MusclesScreen } from '../screens/progress/MusclesScreen';
 import { ProgressScreen } from '../screens/progress/ProgressScreen';
 import { PastWeeksScreen, ReviewDetailScreen } from '../screens/progress/ReviewDetailScreen';
@@ -164,6 +165,10 @@ function ProgressNavigator() {
       <ProgressStack.Screen name="ProgressPastWeeks" component={PastWeeksScreen} options={{ title: 'Past weeks' }} />
       {/* (Redesign v3 C6) All workouts, in this stack so back goes to Progress. */}
       <ProgressStack.Screen name="ProgressHistory" component={HistoryScreen} options={{ title: HISTORY_COPY.title, headerBackTitle: 'Progress' }} />
+      {/* (Ben, 31 Oct) Block progress: a block's view, a lift's block detail, every block kept. */}
+      <ProgressStack.Screen name="ProgressBlock" component={BlockScreen} options={{ title: '', headerBackTitle: 'Progress' }} />
+      <ProgressStack.Screen name="ProgressLiftBlock" component={LiftBlockScreen} options={({ route }) => ({ title: route.params.name ?? '', headerBackTitle: 'Progress' })} />
+      <ProgressStack.Screen name="ProgressBlocks" component={BlocksScreen} options={{ title: 'Blocks', headerBackTitle: 'Progress' }} />
     </ProgressStack.Navigator>
   );
 }

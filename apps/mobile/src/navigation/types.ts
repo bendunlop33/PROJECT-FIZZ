@@ -102,6 +102,12 @@ export type ProgressStackParams = {
    * month (Training's `October workouts ›`).
    */
   ProgressHistory: HistoryParams;
+  /** (Ben, 31 Oct; block-progress §1, §4) One block's `This block` view (Library › Plan's line, a past block). Absent key: the current block. */
+  ProgressBlock: { blockKey?: string | null } | undefined;
+  /** (block-progress §2) One lift's block detail; `blockKey` null: the current block. */
+  ProgressLiftBlock: { blockKey: string | null; exerciseId: string; name?: string };
+  /** (block-progress §4) Every block kept, and one lift compared across them. */
+  ProgressBlocks: undefined;
 };
 
 /** History's list: every workout and activity, or (`month`, `YYYY-MM`) one month's. */

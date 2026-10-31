@@ -218,13 +218,16 @@ export function liftBlockProgress(input: readonly LiftWeekInput[]): LiftBlockPro
     if (run.length >= 2) for (const j of run) states[j] = 'stalled';
   }
   const trained = sorted.filter((_w, i) => TRAINED.has(states[i] ?? 'none'));
-  const values = trained.map((w) => (w.best === null ? 0 : strength(w.best)));
+  // Bar heights: Est. 1RM when every trained week has one (so fewer reps at a load reads lower), else the load.
+  const byEstimate = trained.every((w) => w.best?.e1rm != null);
+  const barValue = (b: BlockBestSet) => (byEstimate && b.e1rm !== null ? kgOf(b.e1rm, b.unit) : strength(b));
+  const values = trained.map((w) => (w.best === null ? 0 : barValue(w.best)));
   const lo = Math.min(...values);
   const hi = Math.max(...values);
   const weeks: LiftWeek[] = sorted.map((w, i) => {
     const state = states[i] ?? 'none';
     const counts = w.best !== null && TRAINED.has(state);
-    const level = !counts || w.best === null ? null : hi === lo ? 1 : (strength(w.best) - lo) / (hi - lo);
+    const level = !counts || w.best === null ? null : hi === lo ? 1 : (barValue(w.best) - lo) / (hi - lo);
     return { ...w, state, level };
   });
   const noGainRun = run.length;
