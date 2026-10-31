@@ -391,6 +391,8 @@ export function daySheetRows(tile: Pick<WeekTile, 'items' | 'marks'>, feed: read
 export interface PairedDaySheetRow extends DaySheetRow {
   /** The source of a paired workout's Health facts (`Garmin`), shown small; null: not paired. */
   source: string | null;
+  /** (Ben, 31 Oct) `Paired with Garmin`, shown small under a paired workout (with `Unpair`); null: not paired. */
+  note: string | null;
   pair: { healthUuid: string; choices: { sessionId: string; label: string }[] } | null;
   unpair: { healthUuid: string; linkVersion: number } | null;
 }
@@ -404,15 +406,15 @@ export function pairedDaySheetRows(rows: readonly DaySheetRow[], pairs: { unpair
       // A paired Health workout shows on its workout's row only.
       if (Object.values(pairs.paired).some((x) => x.healthUuid === o.activityId)) return [];
       const pair = choices.length === 0 ? null : { healthUuid: o.activityId, choices: choices.map((c) => ({ sessionId: c.sessionId, label: [titleOf.get(c.sessionId) ?? 'Workout', c.time].filter((x): x is string => x !== null).join(' · ') })) };
-      return [{ ...r, source: null, pair, unpair: null }];
+      return [{ ...r, source: null, note: null, pair, unpair: null }];
     }
     if (o?.kind === 'summary') {
       const p = pairs.paired[o.sessionId];
-      if (p === undefined) return [{ ...r, source: null, pair: null, unpair: null }];
+      if (p === undefined) return [{ ...r, source: null, note: null, pair: null, unpair: null }];
       const detail = [r.detail, p.facts].filter((x): x is string => x !== null && x !== '').join(' · ') || null;
-      return [{ ...r, detail, source: p.source, pair: null, unpair: { healthUuid: p.healthUuid, linkVersion: p.linkVersion }, accessibilityLabel: [r.accessibilityLabel, p.facts, `paired with ${p.source}`].filter((x): x is string => x !== null).join(', ') }];
+      return [{ ...r, detail, source: p.source, note: `Paired with ${p.source}`, pair: null, unpair: { healthUuid: p.healthUuid, linkVersion: p.linkVersion }, accessibilityLabel: [r.accessibilityLabel, p.facts, `paired with ${p.source}`].filter((x): x is string => x !== null).join(', ') }];
     }
-    return [{ ...r, source: null, pair: null, unpair: null }];
+    return [{ ...r, source: null, note: null, pair: null, unpair: null }];
   });
 }
 

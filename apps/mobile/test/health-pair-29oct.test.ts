@@ -96,7 +96,7 @@ describe('Ben’s Monday (build 484): why it did not pair, and Pair in the day s
     expect(await monTile(s)).toEqual(['dot:done']);
     const rows = await mondayRows(s);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ source: 'Connect', pair: null, unpair: { healthUuid: g } });
+    expect(rows[0]).toMatchObject({ source: 'Garmin', note: 'Paired with Garmin', pair: null, unpair: { healthUuid: g } });
     expect(rows[0]?.detail).toMatch(/· 22 sets · avg 128\u00a0bpm$/);
   });
 
@@ -146,7 +146,7 @@ describe('Ben’s Monday (build 484): why it did not pair, and Pair in the day s
     // The same Pair is on the Summary (linked) and History (the linked mark).
     expect((await s.health.forWorkout(id)).kind).toBe('linked');
     const feed = await s.history.feed();
-    expect(feed.items.find((i) => i.kind === 'workout' && i.sessionId === id)).toMatchObject({ linkedSource: 'Connect' });
+    expect(feed.items.find((i) => i.kind === 'workout' && i.sessionId === id)).toMatchObject({ linkedSource: 'Garmin' });
     // Survives a restart.
     await h.forceClose();
     const s2 = await launch();

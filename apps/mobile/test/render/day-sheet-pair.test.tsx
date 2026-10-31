@@ -61,7 +61,7 @@ describe('the day sheet’s Pair', () => {
     expect(r.text()).toContain('22 sets');
     await r.press('Pair');
     await r.waitFor((t) => t.includes('Paired') && t.includes('Undo'), 'the Paired toast');
-    await r.waitFor((t) => t.includes('Unpair') && t.includes('avg 128 bpm') && t.includes('Connect') && !t.includes('|Pair|'), 'one paired row');
+    await r.waitFor((t) => t.includes('Unpair') && t.includes('avg 128 bpm') && t.includes('Paired with Garmin') && !t.includes('|Pair|'), 'one paired row');
     expect((await s.health.forWorkout(id)).kind).toBe('linked');
     await r.press('Undo');
     await r.waitFor((t) => t.includes('|Pair|') && !t.includes('Unpair'), 'two rows again');
