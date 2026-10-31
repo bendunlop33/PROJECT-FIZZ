@@ -127,11 +127,15 @@ export function classifyHealthWorkout(activityType: number): HealthKindInfo {
   return { kind: 'other', label: OTHER[activityType] ?? 'Workout', strength: false };
 }
 
-/** A source name as shown: control characters out, `Garmin Connect` → `Garmin`, cut short. Data, never read as an instruction (rule 8). */
+/**
+ * A source name as shown: control characters out, `Garmin Connect` → `Garmin`, cut short. Data, never read as an
+ * instruction (rule 8). Garmin Connect's iPhone app is named just `Connect` in Health (Ben, 31 Oct: `Strength · 50 min ·
+ * Connect`): that is `Garmin` too.
+ */
 export function healthSourceText(name: string): string {
   // eslint-disable-next-line no-control-regex -- stripping control characters is the point
   const clean = name.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
-  const short = clean.replace(/\s+Connect$/i, '');
+  const short = /^connect$/i.test(clean) ? 'Garmin' : clean.replace(/\s+Connect$/i, '');
   const cut = short.length > 40 ? `${short.slice(0, 39)}…` : short;
   return cut === '' ? 'Health' : cut;
 }
@@ -315,6 +319,11 @@ export interface LinkableWorkout {
    * on its own date only, never automatically (its start is only an ordering anchor).
    */
   localDate?: string;
+  /**
+   * (Ben, 31 Oct) A date-only workout whose start is a time written in the file (a layout import's `18:02`), not the
+   * 12:00 ordering anchor: it may auto-link by start time (`ASK_WITHIN_MS`).
+   */
+  startAsWritten?: boolean;
 }
 
 /** A workout's local date: its own date-only date, else its start's. */
@@ -373,6 +382,11 @@ function nearInTime(s: HealthInterval, w: HealthInterval): boolean {
  * is exactly one Health strength-family workout with no link record (an unlinked or `Not it` one is never linked or
  * offered again automatically) and exactly one app workout, not linked yet, and the two overlap or are within 2 h.
  * Anything else is offered as a one-tap `Link` (`sameDayLinkCandidates`).
+ *
+ * (Ben, 31 Oct) Run over every Health workout in the read window on each read, so past days pair too (a back-fill),
+ * never across days. A date-only imported workout (no end) auto-links only when its start is a time from the file
+ * (`startAsWritten`) and the Health workout starts within `ASK_WITHIN_MS` of it; one with no time (FitNotes: the
+ * 12:00 anchor) is left for the day sheet's `Pair`.
  */
 export function autoLinkPairs(input: { samples: readonly HealthWorkoutSample[]; workouts: readonly LinkableWorkout[]; links: readonly HealthLink[] }): { healthUuid: string; sessionId: string }[] {
   const recorded = new Set(input.links.map((l) => l.healthUuid));
@@ -395,9 +409,10 @@ export function autoLinkPairs(input: { samples: readonly HealthWorkoutSample[]; 
   for (const d of byDay.values()) {
     const [s] = d.samples;
     const [w] = d.workouts;
-    // A date-only workout has no times to match: it counts (the day is ambiguous) but is only paired by hand.
-    if (d.samples.length !== 1 || d.workouts.length !== 1 || s === undefined || w === undefined || taken.has(w.sessionId) || w.localDate !== undefined) continue;
-    if (nearInTime(s, w)) out.push({ healthUuid: s.uuid, sessionId: w.sessionId });
+    if (d.samples.length !== 1 || d.workouts.length !== 1 || s === undefined || w === undefined || taken.has(w.sessionId)) continue;
+    // A date-only workout has no end: only a start written in the file can match, by start time; the noon anchor never does.
+    const near = w.localDate === undefined ? nearInTime(s, w) : w.startAsWritten === true && Math.abs(toMs(s.startUtc) - toMs(w.startUtc)) <= ASK_WITHIN_MS;
+    if (near) out.push({ healthUuid: s.uuid, sessionId: w.sessionId });
   }
   return out;
 }
@@ -564,6 +579,27 @@ export function dismissHealthLink(current: HealthLink | null, input: { ownerId: 
   };
 }
 
+/**
+ * (Ben, 31 Oct) Live automatic links to the app's own Health copy of a workout (an older build, before 29 Oct, could
+ * auto-link a copy whose source wasn't its bundle): they hold the workout, so the Garmin workout that day never
+ * linked. `ownUuids`: the copies' UUIDs (written by the app, or carrying one of its workouts' IDs). Ben's own links
+ * are left alone. Pure.
+ */
+export function ownCopyLinks(links: readonly HealthLink[], ownUuids: ReadonlySet<string>): HealthLink[] {
+  return links.filter((l) => l.status === 'linked' && l.by === 'auto' && ownUuids.has(l.healthUuid));
+}
+
+/** Release one of `ownCopyLinks`: unlinked, still `auto` (Ben never chose it), versioned and idempotent. */
+export function releaseOwnCopyLink(current: HealthLink, input: { opId: string; atUtc: string; expectedVersion: number }): HealthLinkChange {
+  if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
+  if (current.version !== input.expectedVersion || current.status !== 'linked' || current.by !== 'auto') return { kind: 'stale', current };
+  return {
+    kind: 'write',
+    next: { ...current, version: current.version + 1, updatedAtUtc: input.atUtc, status: 'unlinked', opIds: [...current.opIds, input.opId].slice(-HEALTH_LIMITS.maxOps) },
+    expectedVersion: current.version,
+  };
+}
+
 /** Unlink: the Health activity shows as its own again and is never auto-linked again. */
 export function unlinkHealthActivity(current: HealthLink, input: { opId: string; atUtc: string; expectedVersion: number }): HealthLinkChange {
   if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
@@ -657,7 +693,8 @@ function closeEnough(mine: Activity['fields'], h: Activity['fields']): boolean {
 /**
  * Ben's activities with Health's, as every list shows them (apple-health.md §3.1–§3.5), oldest first:
  * - never the app's own writes, so a workout is never shown twice;
- * - never one linked to an app workout (it shows on that workout instead);
+ * - never one linked to an app workout (it shows on that workout instead), nor another source's recording of that
+ *   same activity (a watch's twin of the linked Garmin workout: Ben, 31 Oct);
  * - two sources recording the same activity are one;
  * - Ben's planned activity and the one Health run (same kind, same day) are one item, done, with Health's time
  *   and distance and his effort word; his done one likewise when the numbers agree (within 15 %, or he gave
@@ -675,7 +712,10 @@ export function activitiesWithHealth(input: {
   appSessionIds: ReadonlySet<string>;
 }): Activity[] {
   const linked = new Set(input.links.filter((l) => l.status === 'linked').map((l) => l.healthUuid));
-  const fresh = input.samples.filter((s) => !isOwnWrite(s, input.ownBundleId, input.writtenUuids, input.appSessionIds) && !linked.has(s.uuid));
+  const notOwn = input.samples.filter((s) => !isOwnWrite(s, input.ownBundleId, input.writtenUuids, input.appSessionIds));
+  const linkedSamples = notOwn.filter((s) => linked.has(s.uuid));
+  const twinOfLinked = (s: HealthWorkoutSample) => linkedSamples.some((l) => l.sourceBundleId !== s.sourceBundleId && familyOf(l.activityType) === familyOf(s.activityType) && overlapShare(l, s) >= AUTO_LINK_MIN_OVERLAP);
+  const fresh = notOwn.filter((s) => !linked.has(s.uuid) && !twinOfLinked(s));
   const { kept } = dedupeHealthSources(fresh);
   const health = kept.map((s) => healthActivityOf(s, input.ownerId)).filter((a): a is Activity => a !== null);
   const mine = input.own.filter((a) => a.deletedAtUtc === null && a.source !== 'health').map((a) => ({ a, out: a }));
