@@ -61,6 +61,7 @@ import {
   setDaysWeekSlots,
   upNextOrder,
   upNextPlanningWeekday,
+  movedRelative,
   weekdayIndexOfDate,
   planFirstLoads,
   plannedVsDone,
@@ -2337,7 +2338,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * earliest), Any days by plan order; done days after (least recently trained), skipped days last (`upNextOrder`).
    * Trained today: the planning day is tomorrow. Any days: with a long or hard run near, leg days go after the others.
    */
-  type SetDaysWeek = { weekdayOf: Map<string, number>; slotsFor: (planningDay: number) => Map<string, number | null> };
+  type SetDaysWeek = { weekdayOf: Map<string, number>; movedTo: ReadonlyMap<string, number>; slotsFor: (planningDay: number) => Map<string, number | null> };
 
   async function planDue(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null, near: LegRunNear | null = null) {
     const input = await planDueInput(p, planDays, training, pin);
@@ -2368,6 +2369,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       lastTrained: last.get(d.routineId) ?? null,
       state: later ? 'open' : input.skipped.has(d.routineId) ? 'skipped' : input.doneThisWeek.has(d.routineId) ? 'done' : 'open',
       tie: weekday === null ? (index.get(d.routineId) ?? 0) : setDaysTieRank(weekday.get(d.routineId) ?? null, planning),
+      moved: later || setDays === null ? null : movedRelative(setDays.movedTo.get(d.routineId), planning),
     }));
     const pinId = input.live?.routineId ?? null;
     const pinDay = ordered.find((d) => d.routineId === pinId);
@@ -2387,11 +2389,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const refs = days.map((d) => planWeekDayOf(plan, d.routine, d.bodyParts));
     const weekdayOf = planWeekdaysNow(plan, block, refs);
     if (weekdayOf === null) return null;
+    // (Ben, 31 Oct) This week's moves are his choice (Move to…, Do today instead).
+    const moveWeek = block === null ? null : pbMoveWeek(block);
+    const movedIdx = new Map((plan.moves ?? []).filter((m) => m.week === moveWeek).map((m) => [m.dayIndex, m.weekday] as const));
+    const movedTo = new Map(refs.flatMap((r) => (r.dayIndex !== null && movedIdx.has(r.dayIndex) ? [[r.routineId, movedIdx.get(r.dayIndex) ?? 0] as const] : [])));
     const slotDays = days.map((d) => {
       const on = doneOn.get(d.routineId);
-      return { key: d.routineId, weekday: weekdayOf.get(d.routineId) ?? null, doneOn: on === undefined ? null : weekdayIndexOfDate(on), skipped: skipped.has(d.routineId) };
+      return { key: d.routineId, weekday: weekdayOf.get(d.routineId) ?? null, doneOn: on === undefined ? null : weekdayIndexOfDate(on), skipped: skipped.has(d.routineId), movedTo: movedTo.get(d.routineId) ?? null };
     });
-    return { weekdayOf, slotsFor: (planningDay) => setDaysWeekSlots({ days: slotDays, planningDay }) };
+    return { weekdayOf, movedTo, slotsFor: (planningDay) => setDaysWeekSlots({ days: slotDays, planningDay }) };
   }
 
   /** `planDue`'s inputs: the plan days (with their planned muscle groups), the window's workouts and the live pin. */

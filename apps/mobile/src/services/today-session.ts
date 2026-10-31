@@ -1964,8 +1964,10 @@ function weekOf(
     // (Ben, 31 Oct) This week's dates follow what he did (a plan day done on another day's weekday is a swap), then Up
     // next on the planning day (today, or tomorrow once he has trained today): `setDaysWeekSlots`, the one rule.
     const wdOf = (d: TodayDay) => (d.dayIndex === null ? undefined : weekdays?.get(d.dayIndex));
+    const moveWeek = pbMoveWeek(block);
+    const movedTo = new Map((plan.moves ?? []).filter((m) => m.week === moveWeek).map((m) => [m.dayIndex, m.weekday] as const));
     const slots = setDaysWeekSlots({
-      days: planDays.map((d) => ({ key: d.key, weekday: wdOf(d) ?? null, doneOn: doneOn[d.key] === undefined ? null : weekdayIndexOfDate(doneOn[d.key] ?? monday), skipped: d.dayIndex !== null && skipped.has(d.dayIndex) })),
+      days: planDays.map((d) => ({ key: d.key, weekday: wdOf(d) ?? null, doneOn: doneOn[d.key] === undefined ? null : weekdayIndexOfDate(doneOn[d.key] ?? monday), skipped: d.dayIndex !== null && skipped.has(d.dayIndex), movedTo: d.dayIndex === null ? null : (movedTo.get(d.dayIndex) ?? null) })),
       planningDay: upNextPlanningWeekday(weekdayIndexOfDate(today), upNext.doneToday),
       upNext: upNext.nextKey,
     });

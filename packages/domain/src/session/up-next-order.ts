@@ -9,7 +9,9 @@
  *    then the earliest scheduled), Any days by plan order;
  * 3. trained today: the planning day is tomorrow (`upNextPlanningWeekday`);
  * 4. every day done this week: the least recently trained overall; a day skipped this week only after those;
- * 5. a day Ben picks himself (the picker, `Make next`) still wins: the caller puts a pin first.
+ * 5. a day Ben picks himself still wins: the caller puts a pin (`Make next`) first; a day he moved onto the planning day
+ *    this week (Do today instead, Move to…) is first of the open days, and one he moved to a later date isn't Up next
+ *    before it (after the other open days).
  *
  * The week's dates (`setDaysWeekSlots`): the schedule (Ben's moves applied), then what he actually did (a plan day
  * done on a weekday scheduled for another is a swap for this week), then Up next on the planning day.
@@ -23,16 +25,24 @@ export interface UpNextOrderItem {
   state: 'open' | 'done' | 'skipped';
   /** Smaller first among ties (`setDaysTieRank`, or plan order on Any days). */
   tie: number;
+  /** Ben moved it this week onto the planning day (`planning`) or a later date (`later`); absent: neither. */
+  moved?: 'planning' | 'later' | null;
 }
 
-const GROUP: Record<UpNextOrderItem['state'], number> = { open: 0, done: 1, skipped: 2 };
+const groupOf = (o: UpNextOrderItem): number => (o.state === 'skipped' ? 4 : o.state === 'done' ? 3 : o.moved === 'planning' ? 0 : o.moved === 'later' ? 2 : 1);
+
+/** Whether Ben's move this week (`movedTo`, Mon = 0) puts a day on the planning day or later. */
+export function movedRelative(movedTo: number | null | undefined, planningDay: number): 'planning' | 'later' | null {
+  if (movedTo == null) return null;
+  return movedTo === planningDay ? 'planning' : movedTo > planningDay ? 'later' : null;
+}
 
 /** The days in Up next's order (rules 1, 2 and 4 above); the first is Up next unless a pin wins. */
 export function upNextOrder<T>(items: readonly T[], of: (t: T) => UpNextOrderItem): T[] {
   return items
     .map((t, i) => ({ t, i, o: of(t) }))
     .sort((a, b) => {
-      const g = GROUP[a.o.state] - GROUP[b.o.state];
+      const g = groupOf(a.o) - groupOf(b.o);
       if (g !== 0) return g;
       const la = a.o.lastTrained ?? '';
       const lb = b.o.lastTrained ?? '';
@@ -56,6 +66,8 @@ export interface WeekSlotDay<K> {
   /** The weekday it was done this week; null: not done. */
   doneOn: number | null;
   skipped?: boolean;
+  /** The weekday Ben moved it to this week (Move to…, Do today instead); absent: not moved. */
+  movedTo?: number | null;
 }
 
 /**
@@ -66,7 +78,8 @@ export interface WeekSlotDay<K> {
  *   free day (no plan day on it, nothing done) from the planning day to Sunday, else none (null: genuinely missed).
  * - **Up next** (`upNext`, absent for the ties): it is the day on the planning day (`upNextPlanningWeekday`). The day
  *   that held that slot takes Up next's slot if it is ahead, else the next free day, else none. A planning day with
- *   no plan day on it keeps its rest day unless Up next's own day has passed.
+ *   no plan day on it keeps its rest day unless Up next's own day has passed. A day still on the date Ben moved it to
+ *   (on or after the planning day) is his choice: Up next never moves it, and is never moved off its own.
  * Skipped days and days with no weekday are left as they are. Plan order breaks every tie. Pure.
  */
 export function setDaysWeekSlots<K>(input: { days: readonly WeekSlotDay<K>[]; planningDay: number; upNext?: K | null }): Map<K, number | null> {
@@ -90,10 +103,12 @@ export function setDaysWeekSlots<K>(input: { days: readonly WeekSlotDay<K>[]; pl
     if (y !== undefined) rehome(y, x.weekday);
   }
   // Up next on the planning day.
+  const bens = (d: WeekSlotDay<K>) => d.movedTo != null && d.movedTo >= p && slot.get(d.key) === d.movedTo;
   const u = input.upNext == null ? undefined : input.days.find((d) => d.key === input.upNext && open(d));
-  if (u !== undefined && p <= 6 && slot.get(u.key) !== p) {
+  if (u !== undefined && p <= 6 && slot.get(u.key) !== p && !bens(u)) {
     const was = slot.get(u.key) ?? null;
     const h = holderOf(p, u.key);
+    if (h !== undefined && bens(h)) return slot;
     if (h !== undefined) {
       slot.set(u.key, p);
       rehome(h, was);

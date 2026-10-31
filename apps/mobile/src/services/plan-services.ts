@@ -318,7 +318,8 @@ export function createPlanServices(deps: PlanServicesDeps) {
     const line = [`${String(a.weeks)} weeks`, EFFORT_WORD[a.effort], ...(deloads.length === 0 ? [] : [`deload ${deloads.length === 1 ? 'week' : 'weeks'} ${deloads.join(', ')}`])].join(' · ');
     const eb = editBlockOf(block);
     const actions: Record<number, { todayKey: string; moveTo: number[] | null }> = {};
-    const thisWeek = eb === null ? undefined : views[eb.week - 1];
+    // Move day's weekdays as `movePlanDay` checks them: the plan's own this week (moves applied).
+    const thisWeek = eb === null ? undefined : planned[eb.week - 1];
     if (eb !== null && thisWeek !== undefined && activePause(plan, nowMs, tz) === null) {
       const taken = new Set(thisWeek.days.flatMap((d) => (d.weekday === null ? [] : [d.weekday])));
       for (const d of thisWeek.days) {
@@ -376,20 +377,22 @@ export function createPlanServices(deps: PlanServicesDeps) {
   }
 
   /** (Ben, 29 Oct) This week's skipped plan days not done anyway (a skipped day done after all counts as done). */
-  /** (Ben, 31 Oct) This week's days with their weekday after `setDaysWeekSlots` (Set days only; done days keep theirs). */
+  /** (Ben, 31 Oct) This week's days with their weekday after `setDaysWeekSlots` (Set days only). */
   function thisWeekSlots<D extends { index: number; weekday: number | null; done: boolean }>(days: readonly D[], plan: PlanDraft, block: PbBlockWeek, week: { doneOn: ReadonlyMap<number, string>; nextDayIndex: number | null; finishedToday: boolean }, nowMs: number, tz: string): D[] {
     if (!days.some((d) => d.weekday !== null)) return [...days];
     const skips = pbSkipsOf(plan, pbMoveWeek(block));
+    const movedTo = new Map((plan.moves ?? []).filter((m) => m.week === pbMoveWeek(block)).map((m) => [m.dayIndex, m.weekday] as const));
     const today = weekdayIndexOfDate(localDateOf(nowMs, tz));
     const slots = setDaysWeekSlots({
       days: days.map((d) => {
         const on = week.doneOn.get(d.index);
-        return { key: d.index, weekday: d.weekday, doneOn: on === undefined ? (d.done ? d.weekday : null) : weekdayIndexOfDate(on), skipped: skips.has(d.index) };
+        return { key: d.index, weekday: d.weekday, doneOn: on === undefined ? (d.done ? d.weekday : null) : weekdayIndexOfDate(on), skipped: skips.has(d.index), movedTo: movedTo.get(d.index) ?? null };
       }),
       planningDay: upNextPlanningWeekday(today, week.finishedToday),
       upNext: week.nextDayIndex,
     });
-    return days.map((d) => (d.done || week.doneOn.has(d.index) || skips.has(d.index) ? d : { ...d, weekday: slots.get(d.index) ?? d.weekday }));
+    // Done days: the weekday they were done; the rest where the slots put them (none left: their own, missed).
+    return days.map((d) => (skips.has(d.index) ? d : { ...d, weekday: slots.get(d.index) ?? d.weekday }));
   }
 
   function skippedNow(plan: PlanDraft, block: PbBlockWeek | null, days: readonly { dayIndex: number | null }[]): number {
