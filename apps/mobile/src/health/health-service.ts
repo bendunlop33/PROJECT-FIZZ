@@ -312,7 +312,7 @@ export function createHealthService(deps: HealthServiceDeps) {
     const ownUuids = new Set([...own.written, ...samples.filter((x) => x.externalId !== null && own.sessions.has(x.externalId.toLowerCase())).map((x) => x.uuid)]);
     for (const l of ownCopyLinks(await repo().links(p.id), ownUuids)) {
       await repo()
-        .changeLink(p.id, l.healthUuid, async (cur) => (cur === null ? { kind: 'stale', current: null } : releaseOwnCopyLink(cur, { opId: `health-own-release:${l.healthUuid}:${String(l.version)}`, atUtc: deps.now().utc, expectedVersion: l.version })))
+        .changeLink(p.id, l.healthUuid, (cur) => (cur === null ? { kind: 'stale', current: null } : releaseOwnCopyLink(cur, { opId: `health-own-release:${l.healthUuid}:${String(l.version)}`, atUtc: deps.now().utc, expectedVersion: l.version })))
         .catch(() => null);
     }
     const links = await repo().links(p.id);
