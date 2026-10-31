@@ -1,4 +1,5 @@
-import { Alert, ScrollView, View } from 'react-native';
+import type { ReactNode } from 'react';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 import { PICKER_COPY, pickerConfirm, suggestionKept, type BroadMuscleGroup, type EquipmentFilter, type PickerIndex, type PickerRowView, type PickerView } from '@fizz/domain';
 
@@ -11,6 +12,7 @@ import { POPUP_COPY } from './exercise-popup-model';
 import { choiceLine, mainLiftSection, swapPainConfirm, SWAP_SHEET_COPY, type ChoiceItem, type ChoiceSection } from './swap-sheet-model';
 import { ChoiceRow, Divider, Table } from './table-parts';
 import { Chip } from './workout';
+import { Icon } from './Icon';
 
 /**
  * Swap / Add (workout-builder-v3 §2.5), one sheet for Your workout, the one workout editor and the active workout
@@ -33,6 +35,8 @@ export function SwapSheet({
   onDismissed,
   picker,
   partners,
+  notHere,
+  toast,
 }: {
   visible: boolean;
   title: string;
@@ -60,6 +64,10 @@ export function SwapSheet({
   };
   /** (Ben, 26 Oct) `Superset with…`: the exercises in the workout it can pair with, first; a tap links them. */
   partners?: { title: string; rows: readonly { key: string; name: string; line: string; onPress: () => void }[] } | null;
+  /** (Ben, 31 Oct) Swap mid-workout: `Not at this gym ›` at the top (tells the gym; the sheet stays open). */
+  notHere?: { label: string; onPress: () => void } | null;
+  /** The host's toast, shown above `Back` while the sheet is open (e.g. `Not at this gym`'s Undo). */
+  toast?: ReactNode;
 }) {
   const theme = useTheme();
   const view = picker.view;
@@ -130,8 +138,28 @@ export function SwapSheet({
           <TextField accessibilityLabel={PICKER_COPY.search} placeholder={PICKER_COPY.search} value={picker.query} onChangeText={picker.onQuery} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
         </>
       }
-      footer={<TextButton label="Back" tone="secondary" onPress={onClose} />}
+      footer={
+        <>
+          {toast ?? null}
+          <TextButton label="Back" tone="secondary" onPress={onClose} />
+        </>
+      }
     >
+      {notHere != null ? (
+        <Table>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={notHere.label}
+            onPress={notHere.onPress}
+            style={({ pressed }) => ({ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingHorizontal: theme.space['4'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+          >
+            <AppText variant="body" style={{ flex: 1 }}>
+              {notHere.label}
+            </AppText>
+            <Icon name="chevron.right" color="text.tertiary" size={14} />
+          </Pressable>
+        </Table>
+      ) : null}
       {partners != null && partnerRows.length > 0 ? (
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>{partners.title}</Eyebrow>

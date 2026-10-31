@@ -8,7 +8,7 @@ import { kg, ms, values } from '../../../packages/domain/test/fixtures';
 import { apply, logCmd, setsFor, startFixture, BENCH } from '../../../packages/domain/test/session-fixture';
 import { boxTextRoom, PREVIOUS_FONT_FLOOR, setColumns, textEms, textFits, VALUE_FONT_FLOOR, type SetColumnsInput } from '../src/workout/set-columns';
 import { buildRounds, type RoundRow } from '../src/workout/rounds';
-import { exerciseMenu, rirMenu } from '../src/workout/exercise-menu';
+import { exerciseMenu, rirMenu, roundExerciseMenu } from '../src/workout/exercise-menu';
 import { AX_FONT_SCALE } from '../src/workout/screen-rules';
 
 /**
@@ -166,11 +166,12 @@ describe('the round page source (Ben, 26 Oct)', () => {
     expect(copy).toContain('rpe: null, rir: null');
   });
 
-  it('the header: name, muscles, progress and ⋯ only; Adjust leads the current exercise’s ⋯', () => {
+  it('the header: name, muscles, progress and ⋯ only; Adjust stays in the current exercise’s ⋯', () => {
     expect(table).not.toContain('p.adjust}');
-    const menu = exerciseMenu(true, false, { adjust: true, round: { moveUp: false, moveDown: false, supersetNext: false, history: true } });
-    expect(menu.options[0]).toBe('Adjust');
-    expect(menu.actionAt(0)).toBe('adjust');
+    // (Ben, 31 Oct) The trimmed round menu keeps Adjust on the current exercise, last before Skip.
+    const menu = roundExerciseMenu({ canSwap: true, doNext: false, moveToEnd: false, plates: false, adjust: true });
+    expect(menu.options.at(-3)).toBe('Adjust');
+    expect(menu.actionAt(menu.options.length - 3)).toBe('adjust');
     expect(exerciseMenu(true, false, {}).options).not.toContain('Adjust');
   });
 });

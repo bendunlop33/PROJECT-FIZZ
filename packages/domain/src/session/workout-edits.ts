@@ -127,6 +127,48 @@ export function roundSteps(state: Pick<SessionAggregate, 'exercises' | 'sets'>, 
 }
 
 /**
+ * The round Ben is on (Ben, 31 Oct, `Do next`): the one holding the open set, else the first with a set
+ * not done yet; -1 when every round is done.
+ */
+export function currentRoundIndex(state: Pick<SessionAggregate, 'session' | 'exercises' | 'sets'>): number {
+  const rounds = sessionRounds(state);
+  const open = state.session.activeSetId === null ? undefined : state.sets.find((s) => s.id === state.session.activeSetId && s.status === 'pending');
+  if (open !== undefined) {
+    const at = roundIndexOf(rounds, open.sessionExerciseId);
+    if (at >= 0) return at;
+  }
+  return rounds.findIndex((r) => state.sets.some((s) => s.status === 'pending' && r.members.some((m) => m.id === s.sessionExerciseId)));
+}
+
+/** (Ben, 31 Oct) `Do next`: straight after the current round. `Move to end`: last. */
+export type RoundJump = 'do_next' | 'to_end';
+
+/**
+ * `Do next` / `Move to end` on an exercise's `⋯` (Ben, 31 Oct): its round (a superset moves as one) goes
+ * straight after the current round, or to the end, as `move_exercise` (versioned, one opId, Undo).
+ * Today's remaining rounds only: the current round, a started or done round, and a move past a started
+ * round are refused by the same rule as Move up / Move down and the drag (§7), so no done set moves
+ * (rule 2). Already there: `nowhere`.
+ */
+export function jumpRoundCommand(state: SessionAggregate, sessionExerciseId: string, jump: RoundJump, op: Op): { ok: true; command: CommandOf<'move_exercise'> } | { ok: false; reason: RoundMoveRefusal | 'current' } {
+  const rounds = sessionRounds(state);
+  const from = roundIndexOf(rounds, sessionExerciseId);
+  if (from < 0) return { ok: false, reason: 'not_found' };
+  const current = currentRoundIndex(state);
+  if (from === current) return { ok: false, reason: 'current' };
+  if (jump === 'do_next' && current < 0) return { ok: false, reason: 'nowhere' };
+  // `to` counts after the round is taken out of its place: ahead of the current one it lands at current + 1, behind it at current.
+  const to = jump === 'to_end' ? rounds.length - 1 : from > current ? current + 1 : current;
+  return moveRoundCommand(state, sessionExerciseId, to, op);
+}
+
+/** Whether `Do next` / `Move to end` would move this exercise's round (the `⋯` offers only these). */
+export function roundJumps(state: SessionAggregate, sessionExerciseId: string): { doNext: boolean; toEnd: boolean } {
+  const probe = { opId: 'probe', at: state.session.startedAt };
+  return { doNext: jumpRoundCommand(state, sessionExerciseId, 'do_next', probe).ok, toEnd: jumpRoundCommand(state, sessionExerciseId, 'to_end', probe).ok };
+}
+
+/**
  * Whether `link_superset` would pair these two rows (the reducer's own preconditions, so a button,
  * menu item or drop target is only offered when it works, review S5): different rounds, both with a
  * set not done yet, not both already in a superset, not split across gyms, at most the builder's

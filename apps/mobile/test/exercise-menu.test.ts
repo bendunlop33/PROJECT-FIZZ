@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { exerciseMenu, targetRpeChips, targetRpeMenu, targetRpeScopeMenu } from '../src/workout/exercise-menu';
+import { exerciseMenu, roundExerciseMenu, targetRpeChips, targetRpeMenu, targetRpeScopeMenu } from '../src/workout/exercise-menu';
 
 /** Review S3: a tap must run the action written on the row, in both menu shapes. */
 describe('exercise ⋯ menu', () => {
@@ -132,18 +132,25 @@ describe('Target RIR', () => {
     expect([0, 1, 2, 3].map((i) => m.scopeAt(i))).toEqual([{ kind: 'set', setId: 'set-1' }, { kind: 'exercise', sessionExerciseId: 'ex-1' }, { kind: 'today' }, null]);
   });
 
-  it('v3 round page (workout-table-v3 §7): History, Move up / Move down under Swap, Superset with next, Unlink, Remove; each mapped', () => {
-    const m = exerciseMenu(true, false, { canSwap: true, canSuperset: true, inSuperset: true, canRemove: true, round: { moveUp: true, moveDown: true, supersetNext: true, history: true } });
-    expect(m.options).toEqual(['How to', 'History', 'Add set', 'Swap exercise', 'Move up', 'Move down', 'Superset with next', 'Superset with…', 'Unlink', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Remove exercise', 'Cancel']);
-    expect(m.actionAt(1)).toBe('history');
-    expect(m.actionAt(4)).toBe('move_up');
-    expect(m.actionAt(5)).toBe('move_down');
-    expect(m.actionAt(6)).toBe('superset_next');
-    expect(m.actionAt(8)).toBe('remove_superset');
-    expect(m.destructiveButtonIndex).toEqual([11, 12, 13]);
-    // A started round doesn't move: no Move rows.
-    const started = exerciseMenu(false, false, { round: { moveUp: false, moveDown: false, supersetNext: false, history: true } });
-    expect(started.options).not.toContain('Move up');
-    expect(started.options).not.toContain('Superset with next');
+  it('(Ben, 31 Oct) the round page’s ⋯: Swap, Do next, Move to end, Add set, History, Plates, Notes, Skip; each mapped', () => {
+    const m = roundExerciseMenu({ canSwap: true, doNext: true, moveToEnd: true, plates: true });
+    expect(m.options).toEqual(['Swap exercise', 'Do next', 'Move to end', 'Add set', 'History', 'Plates', 'Notes', 'Skip exercise', 'Cancel']);
+    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['swap', 'do_next', 'move_to_end', 'add_set', 'history', 'plates', 'notes', 'skip_exercise', null]);
+    expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Skip exercise']);
+    // Gone from it: they live on the set, at the end of the list, in the Swap sheet and the name's pop-up.
+    for (const gone of ['Edit set', 'Target RIR', 'Delete this set', 'Add exercise', 'Not at this gym', 'How to', 'Move up', 'Move down', 'Superset with next', 'Superset with…', 'Unlink', 'Remove exercise']) expect(m.options).not.toContain(gone);
+  });
+
+  it('a done exercise: no Do next / Move to end, no Swap; dumbbells or a stack: no Plates', () => {
+    const done = roundExerciseMenu({ canSwap: false, doNext: false, moveToEnd: false, plates: false });
+    expect(done.options).toEqual(['Add set', 'History', 'Notes', 'Skip exercise', 'Cancel']);
+  });
+
+  it('the current exercise keeps Adjust last before Skip; a pending change shows its Undo', () => {
+    const m = roundExerciseMenu({ canSwap: true, doNext: false, moveToEnd: false, plates: false, coachChange: true, canUndoSwap: true, adjust: true });
+    expect(m.options).toEqual(['Swap exercise', 'Add set', 'History', 'Notes', 'Undo coach change', 'Undo swap', 'Adjust', 'Skip exercise', 'Cancel']);
+    expect(m.actionAt(6)).toBe('adjust');
+    expect(m.actionAt(7)).toBe('skip_exercise');
+    expect(roundExerciseMenu({ canSwap: false, doNext: false, moveToEnd: false, plates: false, coachChange: 'rule' }).options).toContain('Undo change');
   });
 });

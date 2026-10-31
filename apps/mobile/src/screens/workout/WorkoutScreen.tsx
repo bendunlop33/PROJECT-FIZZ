@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, gymLearnToast, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
+import { canDropRound, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundJumps, setMoveSteps, discardCommand, gymLearnDoneText, gymLearnKey, gymLearnToast, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -62,7 +62,7 @@ import { noteWrites } from '../../workout/notes';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
-import { exerciseMenu, rirMenu, targetRpeMenu, targetRpeScopeMenu, type ExerciseMenuAction, type ExerciseMenuOptions } from '../../workout/exercise-menu';
+import { exerciseMenu, rirMenu, roundExerciseMenu, targetRpeMenu, targetRpeScopeMenu, type ExerciseMenu, type ExerciseMenuAction } from '../../workout/exercise-menu';
 import { exerciseActions } from '../../workout/exercise-popup';
 import { cuesWorkEnd, shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
@@ -791,7 +791,7 @@ export function WorkoutScreen() {
       {...(toast.secondary && toast.onSecondary ? { secondary: toast.secondary, onSecondary: toast.onSecondary } : {})}
     />
   ) : null;
-  const editDeps = useRef<Pick<WorkoutEditsInput, 'run' | 'adopt' | 'undoToast' | 'refusalText' | 'addSet' | 'beforeEdit' | 'learnTyped'> | null>(null);
+  const editDeps = useRef<(Pick<WorkoutEditsInput, 'run' | 'adopt' | 'undoToast' | 'refusalText' | 'addSet' | 'beforeEdit' | 'learnTyped'> & Required<Pick<WorkoutEditsInput, 'howTo' | 'notHere'>>) | null>(null);
   const workoutEdits = useWorkoutEdits({
     services,
     sessionId: data === 'loading' || data === null ? '' : data.aggregate.session.id,
@@ -808,6 +808,8 @@ export function WorkoutScreen() {
     refusalText: (code, message) => editDeps.current?.refusalText(code, message) ?? message,
     addSet: (id) => editDeps.current?.addSet(id),
     beforeEdit: () => editDeps.current?.beforeEdit(),
+    howTo: (id) => editDeps.current?.howTo(id) ?? null,
+    notHere: { can: (id) => editDeps.current?.notHere.can(id) ?? false, mark: (id) => editDeps.current?.notHere.mark(id) },
     toast: toastNode,
   });
   openAddRef.current = workoutEdits.openAdd;
@@ -902,6 +904,23 @@ export function WorkoutScreen() {
     beforeEdit: closeCellEditors,
     learnTyped: (learn, ops) => {
       learnTyped(learn, ops);
+    },
+    howTo: (id) => {
+      const ex = loaded.aggregate.exercises.find((e) => e.id === id);
+      const route = ex === undefined ? null : howToRouteFor(ex, bundledHowToSources());
+      return route === null
+        ? null
+        : () => {
+            navigation.navigate('HowTo', route);
+          };
+    },
+    notHere: {
+      can: usesGymItem,
+      mark: (id) => {
+        const ex = loaded.aggregate.exercises.find((e) => e.id === id);
+        // In the Swap sheet already: the gym is told, and the sheet stays open for the swap.
+        if (ex !== undefined) markNotHere({ sessionExerciseId: id, exerciseId: ex.exerciseId, exerciseName: ex.exerciseName }, false);
+      },
     },
   };
 
@@ -1166,15 +1185,21 @@ export function WorkoutScreen() {
   }
 
   /**
-   * v3 §7 (Ben, 20 Oct: "same functionality as when building them"): on the round page the `⋯` adds
-   * History, Plates, Move up / Move down (rounds not started), Superset with next and Unlink, and
-   * Remove for every exercise (with logged sets it asks first and keeps them); Swap and Add use the
-   * builder's sheet. Focus view keeps its own menu.
+   * (Ben, 31 Oct) The round page's `⋯`: Swap, Do next, Move to end, Add set, History, Plates (bar or
+   * plate-loaded only), Notes, Skip (`roundExerciseMenu`). Null off the round page: Focus view keeps its own.
    */
-  function roundMenuFlags(sessionExerciseId: string, plates: boolean): ExerciseMenuOptions['round'] {
-    if (!tableModeNow()) return undefined;
-    const moves = roundSteps(loaded.aggregate, sessionExerciseId);
-    return { moveUp: moves.up, moveDown: moves.down, supersetNext: supersetNextCommand(loaded.aggregate, sessionExerciseId, { opId: 'probe', at: services.now() }) !== null, history: true, plates };
+  function roundMenu(sessionExerciseId: string, facts: { swappable: boolean; plates: readonly string[]; coachActionId: string | null; adjustedBy: 'rule' | 'coach' | null; swappedFrom: { opId: string } | null }, current: boolean): ExerciseMenu | null {
+    if (!tableModeNow()) return null;
+    const jumps = roundJumps(loaded.aggregate, sessionExerciseId);
+    return roundExerciseMenu({
+      canSwap: facts.swappable,
+      doNext: jumps.doNext,
+      moveToEnd: jumps.toEnd,
+      plates: facts.plates.length > 0,
+      coachChange: facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true,
+      canUndoSwap: facts.swappedFrom !== null,
+      adjust: current,
+    });
   }
 
   function tableModeNow(): boolean {
@@ -1193,12 +1218,9 @@ export function WorkoutScreen() {
       case 'plates':
         Alert.alert('Plates', plates.map((x) => x.replaceAll('\u00a0', ' ')).join('\n'));
         return true;
-      case 'move_up':
-      case 'move_down':
-        workoutEdits.moveRound(ex.sessionExerciseId, action === 'move_up' ? 'up' : 'down');
-        return true;
-      case 'superset_next':
-        workoutEdits.supersetNext(ex.sessionExerciseId);
+      case 'do_next':
+      case 'move_to_end':
+        workoutEdits.jumpRound(ex.sessionExerciseId, action === 'do_next' ? 'do_next' : 'to_end');
         return true;
       case 'swap':
         workoutEdits.openSwap(ex.sessionExerciseId);
@@ -1266,8 +1288,9 @@ export function WorkoutScreen() {
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
     const plates = services.workout.cardFacts(loaded, f.sessionExerciseId)?.plates ?? [];
-    const round = roundMenuFlags(f.sessionExerciseId, plates.length > 0);
-    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: round !== undefined ? canRemoveExercise(loaded.aggregate, f.sessionExerciseId) : f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId), ...(round === undefined ? {} : { round, adjust: true }) });
+    const menu =
+      roundMenu(f.sessionExerciseId, { ...f, plates }, true) ??
+      exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId) });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (runMenuAction(action, f, plates)) return;
@@ -1331,8 +1354,9 @@ export function WorkoutScreen() {
     const ex = { sessionExerciseId, exerciseId: facts.exerciseId, exerciseName: facts.exerciseName };
     const next = facts.nextSet;
     const howTo = howToRouteFor(ex, bundledHowToSources());
-    const round = roundMenuFlags(sessionExerciseId, facts.plates.length > 0);
-    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: round !== undefined ? canRemoveExercise(loaded.aggregate, sessionExerciseId) : facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId), ...(round === undefined ? {} : { round }) });
+    const menu =
+      roundMenu(sessionExerciseId, facts, false) ??
+      exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId) });
     ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (runMenuAction(action, ex, facts.plates)) return;
@@ -1380,10 +1404,22 @@ export function WorkoutScreen() {
     return [{ label: 'Reps in reserve', run: () => { enterRir(setId); } }];
   }
 
+  /**
+   * (Ben, 31 Oct) `Target RIR` on a set not done yet that carries one (it left the round page's `⋯`): the same
+   * sheet, then this set, this exercise or today.
+   */
+  function targetRirItem(setId: string): { label: string; run: () => void }[] {
+    const set = loaded.aggregate.sets.find((x) => x.id === setId);
+    const target = set === undefined ? null : services.workout.setTargetRpe(loaded, setId);
+    if (set === undefined || target === null) return [];
+    return [{ label: 'Target RIR', run: () => { pickTargetRpe({ targetRpe: target, setId, sessionExerciseId: set.sessionExerciseId }); } }];
+  }
+
   function setMoreItems(f: FocusView): { label: string; run: () => void }[] {
     return [
       ...(f.previous !== null ? [{ label: `Copy last · ${f.previous.text.replaceAll('\u00a0', ' ')}`, run: () => { copyLast(f); } }] : []),
       ...rirItem(f.setId),
+      ...(tableModeNow() ? targetRirItem(f.setId) : []),
       { label: 'Edit set', run: () => { editSet(f.setId); } },
       ...(f.addWeight ? [{ label: f.addWeight.on ? 'Bodyweight' : '+ Weight', run: () => { toggleWeight(f); } }] : []),
       { label: 'Focus view', run: () => { updatePrefs({ workoutView: 'focus' }); } },
@@ -3179,7 +3215,7 @@ export function WorkoutScreen() {
                   onMenu: (setId) => {
                     // A hold without a drag (§7's fallback): the current set keeps its own items (copy last, Edit set…).
                     if (focus !== null && setId === focus.setId) workoutEdits.setMenu(setId, setMoreItems(focus));
-                    else workoutEdits.setMenu(setId, [...rirItem(setId), { label: 'Edit set', run: () => { editSet(setId); } }]);
+                    else workoutEdits.setMenu(setId, [...rirItem(setId), ...targetRirItem(setId), { label: 'Edit set', run: () => { editSet(setId); } }]);
                   },
                   onMove: (setId, dir) => {
                     workoutEdits.stepSet(setId, dir);
@@ -3543,6 +3579,7 @@ export function WorkoutScreen() {
             workoutEdits.dropRound(from, t.key, t.edge);
           },
         }}
+        toast={toastNode}
         onClose={() => {
           setOverviewOpen(false);
         }}

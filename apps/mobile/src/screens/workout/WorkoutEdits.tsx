@@ -4,6 +4,7 @@ import { ActionSheetIOS, Alert } from 'react-native';
 import {
   addWarmupCommand,
   dropRoundCommand,
+  jumpRoundCommand,
   moveSetCommand,
   stepRoundCommand,
   stepSetCommand,
@@ -13,6 +14,7 @@ import {
   type CommandOutcome,
   type GymLearn,
   type HistoryGlanceView,
+  type RoundJump,
   type SupersetPartner,
 } from '@fizz/domain';
 import type { BuilderGroup, SessionAggregate, SessionCommand, SetType } from '@fizz/schemas';
@@ -26,7 +28,7 @@ import { HistoryGlance } from '../../progress/history-glance';
 import { ExercisePopup } from '../../ui/exercise-popup';
 import { holdMenu, POPUP_COPY, typeMenu, type PopupSetRow } from '../../ui/exercise-popup-model';
 import { SwapSheet } from '../../ui/swap-sheet';
-import type { ChoiceSection } from '../../ui/swap-sheet-model';
+import { SWAP_SHEET_COPY, type ChoiceSection } from '../../ui/swap-sheet-model';
 import { useAddOwn } from '../../ui/use-add-own';
 import { useExercisePicker, usePickerView } from '../../ui/use-exercise-picker';
 import { popupCellWrite, popupRestCommand, POPUP_REFUSAL, removePrompt, sessionPopupView } from '../../workout/exercise-popup';
@@ -79,12 +81,19 @@ export interface WorkoutEditsInput {
   addSet: (sessionExerciseId: string) => void;
   /** Any open cell editor closes (and saves) first. */
   beforeEdit: () => void;
+  /** (Ben, 31 Oct) The pop-up's `How to`: the guide for this exercise, or null when it has none. */
+  howTo?: (sessionExerciseId: string) => (() => void) | null;
+  /**
+   * (Ben, 31 Oct) `Not at this gym ›` in the Swap sheet (it left the `⋯`): offered when `can` holds;
+   * `mark` tells the gym (with its own Undo toast) and the sheet stays open to pick the swap.
+   */
+  notHere?: { can: (sessionExerciseId: string) => boolean; mark: (sessionExerciseId: string) => void };
   /** The screen's toast, shown in the pop-up's footer while it's open. */
   toast: ReactNode;
 }
 
 type Sheet =
-  | { mode: 'swap'; sessionExerciseId: string; name: string; sections: ChoiceSection[] }
+  | { mode: 'swap'; sessionExerciseId: string; name: string; sections: ChoiceSection[]; notHere?: boolean }
   | { mode: 'add'; sections: ChoiceSection[] }
   /** (Ben, 26 Oct; review 26 Oct #2) `Superset with…`: the exercises in the workout it can pair with first, then everything. */
   | { mode: 'superset'; sessionExerciseId: string; name: string; sections: ChoiceSection[]; partners: SupersetPartner[] };
@@ -95,6 +104,8 @@ const sheetFor = (s: Sheet): SheetFor => (s.mode === 'add' ? { mode: 'add' } : {
 export function useWorkoutEdits(p: WorkoutEditsInput) {
   const [popupFor, setPopupFor] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  /** (Ben, 31 Oct) The swap sheet's `Not at this gym ›` was tapped since it opened: the row goes (its toast has Undo). */
+  const [markedHere, setMarkedHere] = useState(false);
   const picker = useExercisePicker();
   // (Ben, 26 Oct) The pop-up's read-only History: read once when it opens on an exercise (stored history, local).
   const [glance, setGlance] = useState<{ for: string; view: HistoryGlanceView | null } | null>(null);
@@ -208,6 +219,20 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
       { advise: true },
     );
 
+  /**
+   * (Ben, 31 Oct) `Do next` / `Move to end`: the round (a superset as one) straight after the current one, or
+   * last; today's remaining rounds only (`jumpRoundCommand`), with Undo. Refused: nothing is sent.
+   */
+  const jumpRound = (sessionExerciseId: string, jump: RoundJump) =>
+    edit(
+      (a, opId) => {
+        const m = jumpRoundCommand(a, sessionExerciseId, jump, { opId, at: at() });
+        return m.ok ? m.command : null;
+      },
+      (after) => (jump === 'do_next' ? UNDO_TOAST.doNext(nameOf(after, sessionExerciseId)) : UNDO_TOAST.movedToEnd(nameOf(after, sessionExerciseId))),
+      { advise: true },
+    );
+
   /** `Unlink` (§7): mid-round the round finishes first (the partner stays current), the rest go one by one. */
   const unlink = (sessionExerciseId: string) => edit((a, opId) => ({ type: 'split_superset', at: at(), opId, expectedVersion: a.session.version, sessionExerciseId }), () => UNDO_TOAST.supersetRemoved);
 
@@ -273,7 +298,10 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
     if (a === null) return;
     // Swap keeps the swapped exercise's kind; Add and `Superset with…` take anything.
     const sessionExerciseId = to.mode === 'swap' ? to.sessionExerciseId : null;
-    if (opts.fresh) picker.open(() => latest.current.services.exercisePicker.forSession(latest.current.sessionId, sessionExerciseId), opts.query ?? '');
+    if (opts.fresh) {
+      picker.open(() => latest.current.services.exercisePicker.forSession(latest.current.sessionId, sessionExerciseId), opts.query ?? '');
+      setMarkedHere(false);
+    }
     const c = await latest.current.services.workoutEdit.choices(latest.current.sessionId, opts.group === undefined ? { sessionExerciseId } : { sessionExerciseId, group: opts.group }).catch(() => null);
     const sections = c?.sections ?? [];
     if (to.mode === 'swap') setSheet({ mode: 'swap', sessionExerciseId: to.sessionExerciseId, name: nameOf(a, to.sessionExerciseId), sections });
@@ -425,6 +453,8 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
   // ---- The pop-up -----------------------------------------------------------
 
   const data = p.data;
+  // (Ben, 31 Oct) `How to` left the round page's `⋯`: the pop-up links the guide.
+  const howTo = popupFor === null ? null : (p.howTo?.(popupFor) ?? null);
   const popupExercise = popupFor === null ? undefined : p.rounds.flatMap((r) => r.exercises).find((e) => e.sessionExerciseId === popupFor);
   const view =
     data === null || popupExercise === undefined
@@ -546,6 +576,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
           setPopupFor(null);
           if (id !== null) void openSwap(id);
         }}
+        onHowTo={howTo ?? undefined}
         onDelete={() => {
           const id = popupFor;
           setPopupFor(null);
@@ -587,6 +618,18 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
               }
             : null
         }
+        notHere={
+          sheet?.mode === 'swap' && !markedHere && p.notHere?.can(sheet.sessionExerciseId) === true
+            ? {
+                label: SWAP_SHEET_COPY.notHere,
+                onPress: () => {
+                  setMarkedHere(true);
+                  latest.current.notHere?.mark(sheet.sessionExerciseId);
+                },
+              }
+            : null
+        }
+        toast={p.toast}
         onPick={pick}
         onClose={closeSheet}
         onDismissed={addOwn.onDismissed}
@@ -622,6 +665,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
     /** (Review 26 Oct #2) `Superset with…` on the shared sheet: partners first, then every exercise. */
     openSupersetWith: (sessionExerciseId: string) => void openSupersetWith(sessionExerciseId),
     moveRound: (sessionExerciseId: string, dir: 'up' | 'down') => void moveRound(sessionExerciseId, dir),
+    jumpRound: (sessionExerciseId: string, jump: RoundJump) => void jumpRound(sessionExerciseId, jump),
     supersetNext: (sessionExerciseId: string) => void supersetNext(sessionExerciseId),
     unlink: (sessionExerciseId: string) => void unlink(sessionExerciseId),
     remove,

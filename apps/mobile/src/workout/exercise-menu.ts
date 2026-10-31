@@ -18,10 +18,9 @@ export type ExerciseMenuAction =
   | 'target_rpe'
   | 'add_set'
   | 'swap'
-  | 'move_up'
-  | 'move_down'
+  | 'do_next'
+  | 'move_to_end'
   | 'not_at_gym'
-  | 'superset_next'
   | 'superset_with'
   | 'remove_superset'
   | 'notes'
@@ -37,7 +36,7 @@ interface MenuItem {
 }
 
 const HOW_TO: MenuItem = { action: 'how_to', label: 'How to', destructive: false };
-/** (Ben, 26 Oct) The coach's `Adjust` chips for the current exercise, moved off the header into `⋯`: first, one tap. */
+/** (Ben, 26 Oct) The coach's `Adjust` chips for the current exercise, moved off the header into the round page's `⋯`. */
 const ADJUST: MenuItem = { action: 'adjust', label: 'Adjust', destructive: false };
 /** While the focused set carries a coach change still pending (coach-adjustments §2.7). */
 const UNDO_COACH: MenuItem = { action: 'undo_coach', label: 'Undo coach change', destructive: false };
@@ -58,20 +57,20 @@ const NOT_AT_GYM: MenuItem = { action: 'not_at_gym', label: 'Not at this gym', d
 const SUPERSET_WITH: MenuItem = { action: 'superset_with', label: 'Superset with…', destructive: false };
 /** (Ben, 19 Oct) Each member back to its own sets. */
 const REMOVE_SUPERSET: MenuItem = { action: 'remove_superset', label: 'Remove superset', destructive: false };
-/** (workout-table-v3 §7) The v3 round page's words, the builder's: the round moves, pairs with the next, unlinks. */
-const MOVE_UP: MenuItem = { action: 'move_up', label: 'Move up', destructive: false };
-const MOVE_DOWN: MenuItem = { action: 'move_down', label: 'Move down', destructive: false };
-const SUPERSET_NEXT: MenuItem = { action: 'superset_next', label: 'Superset with next', destructive: false };
-const UNLINK: MenuItem = { action: 'remove_superset', label: 'Unlink', destructive: false };
+/** (Ben, 31 Oct) Today's order from the `⋯`: straight after the current exercise, or last. */
+const DO_NEXT: MenuItem = { action: 'do_next', label: 'Do next', destructive: false };
+const MOVE_TO_END: MenuItem = { action: 'move_to_end', label: 'Move to end', destructive: false };
 /** The exercise's history (it was on the name's sheet before the name opened the pop-up, v3 §7). */
 const HISTORY: MenuItem = { action: 'history', label: 'History', destructive: false };
 /** Plates for every load in today's targets (also from the name's sheet before v3 §7). */
 const PLATES: MenuItem = { action: 'plates', label: 'Plates', destructive: false };
+const NOTES: MenuItem = { action: 'notes', label: 'Notes', destructive: false };
+const SKIP: MenuItem = { action: 'skip_exercise', label: 'Skip exercise', destructive: true };
 const ITEMS: readonly MenuItem[] = [
-  { action: 'notes', label: 'Notes', destructive: false },
+  NOTES,
   { action: 'add_exercise', label: 'Add exercise', destructive: false },
   { action: 'delete_set', label: 'Delete this set', destructive: true },
-  { action: 'skip_exercise', label: 'Skip exercise', destructive: true },
+  SKIP,
 ];
 /** Only while nothing on the exercise is logged (exercise-library §4.6): no confirm, toast with Undo. */
 const REMOVE: MenuItem = { action: 'remove_exercise', label: 'Remove exercise', destructive: true };
@@ -104,39 +103,73 @@ export interface ExerciseMenuOptions {
   inSuperset?: boolean;
   /** `Not at this gym`: the exercise uses an item of this workout's gym. */
   canMarkNotHere?: boolean;
-  /**
-   * (workout-table-v3 §7) The v3 round page: Move up / Move down (rounds not started only) and
-   * Superset with next, as the builder's pop-up; `Remove superset` reads `Unlink`; History.
-   */
-  round?: { moveUp: boolean; moveDown: boolean; supersetNext: boolean; history: boolean; plates?: boolean };
-  /** (Ben, 26 Oct) The current exercise on the round page: `Adjust` leads the sheet. */
-  adjust?: boolean;
 }
 
+/**
+ * Focus view's `⋯` (active-workout.md §4.4). The round page (Table, the default) has its own, shorter
+ * one: `roundExerciseMenu`.
+ */
 export function exerciseMenu(hasHowTo: boolean, hasCoachChange: boolean | 'rule' = false, o: ExerciseMenuOptions = {}): ExerciseMenu {
   const undo = hasCoachChange === 'rule' ? [UNDO_RULE] : hasCoachChange ? [UNDO_COACH] : [];
-  const r = o.round;
-  const items = [
-    ...(o.adjust === true ? [ADJUST] : []),
+  return menuOf([
     ...(hasHowTo ? [HOW_TO] : []),
-    ...(r?.history === true ? [HISTORY] : []),
-    ...(r?.plates === true ? [PLATES] : []),
     ...undo,
     ...(o.canUndoSwap ? [UNDO_SWAP] : []),
     ...(o.canEditSet ? [EDIT_SET] : []),
     ...(o.hasTargetRpe ? [TARGET_RPE] : []),
     ADD_SET,
     ...(o.canSwap ? [SWAP] : []),
-    ...(r?.moveUp === true ? [MOVE_UP] : []),
-    ...(r?.moveDown === true ? [MOVE_DOWN] : []),
     ...(o.canMarkNotHere ? [NOT_AT_GYM] : []),
-    ...(r?.supersetNext === true ? [SUPERSET_NEXT] : []),
     ...(o.canSuperset ? [SUPERSET_WITH] : []),
-    ...(o.inSuperset ? [r === undefined ? REMOVE_SUPERSET : UNLINK] : []),
+    ...(o.inSuperset ? [REMOVE_SUPERSET] : []),
     ...ITEMS,
     ...(o.canRemove ? [REMOVE] : []),
-    CANCEL,
-  ];
+  ]);
+}
+
+export interface RoundExerciseMenuOptions {
+  /** The exercise has sets to swap (`midSwapSlot`: with sets done, the rest are swapped). */
+  canSwap: boolean;
+  /** `roundJumps`: not the current round, not started, not past a started one, not already there. */
+  doNext: boolean;
+  moveToEnd: boolean;
+  /** Plates: the exercise's targets have a breakdown (a bar or a plate-loaded machine; never dumbbells or a stack). */
+  plates: boolean;
+  /** A coach (true) or built-in rule ('rule') change on the next set can still be undone. */
+  coachChange?: boolean | 'rule';
+  /** Today's swap can still be undone. */
+  canUndoSwap?: boolean;
+  /** The current exercise: the coach's `Adjust` chips (the only way to them on the round page). */
+  adjust?: boolean;
+}
+
+/**
+ * The round page's `⋯` (Ben, 31 Oct: "do we need all this when in workout mode?"): Swap, Do next, Move
+ * to end, Add set, History, Plates, Notes, Skip. Elsewhere now: Edit set, Target RIR and Delete on the
+ * set's own hold menu and swipe; Add exercise at the end of the list; Not at this gym in the Swap sheet;
+ * How to, Move up / down, Superset and Remove in the name's pop-up; pairing by dragging onto an exercise
+ * in Workout. While a change can be undone its Undo shows, and `Adjust` stays on the current exercise
+ * (nowhere else on the round page), last before Skip.
+ */
+export function roundExerciseMenu(o: RoundExerciseMenuOptions): ExerciseMenu {
+  const c = o.coachChange ?? false;
+  return menuOf([
+    ...(o.canSwap ? [SWAP] : []),
+    ...(o.doNext ? [DO_NEXT] : []),
+    ...(o.moveToEnd ? [MOVE_TO_END] : []),
+    ADD_SET,
+    HISTORY,
+    ...(o.plates ? [PLATES] : []),
+    NOTES,
+    ...(c === 'rule' ? [UNDO_RULE] : c ? [UNDO_COACH] : []),
+    ...(o.canUndoSwap === true ? [UNDO_SWAP] : []),
+    ...(o.adjust === true ? [ADJUST] : []),
+    SKIP,
+  ]);
+}
+
+function menuOf(rows: readonly MenuItem[]): ExerciseMenu {
+  const items = [...rows, CANCEL];
   return {
     options: items.map((i) => i.label),
     destructiveButtonIndex: items.flatMap((item, i) => (item.destructive ? [i] : [])),
