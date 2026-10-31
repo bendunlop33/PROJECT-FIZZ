@@ -83,6 +83,10 @@ import {
   type GymEdit,
   pbBlockStartUtc,
   pbKeepBlockOf,
+  pbCarryOnOpenOf,
+  finishedGymWorkoutOn,
+  setDaysWeekSlots,
+  upNextPlanningWeekday,
 } from '@fizz/domain';
 import type { PlanSplitView } from '@fizz/coach';
 import type { PlanWrite, Store } from '@fizz/persistence';
@@ -291,7 +295,15 @@ export function createPlanServices(deps: PlanServicesDeps) {
   }
 
   /** (Ben, 23 Oct: plan length = block 1) The applied builder plan's weeks; null on a coach plan. */
-  async function blockOverview(p: UserProfile, plan: PlanDraft, refs: readonly { routineId: string | null; startedAtUtc: string; planDay?: { planId: string; dayIndex: number } | undefined }[], nowMs: number, tz: string, of: (id: string) => Exercise | null): Promise<PlanBlockOverview | null> {
+  async function blockOverview(
+    p: UserProfile,
+    plan: PlanDraft,
+    refs: readonly { routineId: string | null; startedAtUtc: string; planDay?: { planId: string; dayIndex: number } | undefined }[],
+    nowMs: number,
+    tz: string,
+    of: (id: string) => Exercise | null,
+    week: { doneOn: ReadonlyMap<number, string>; nextDayIndex: number | null; finishedToday: boolean } | null = null,
+  ): Promise<PlanBlockOverview | null> {
     const b = pbAppliedBuilder(plan);
     const block = pbBlockOfPlan(plan, refs, nowMs, tz);
     if (b === null || block === null) return null;
@@ -299,12 +311,16 @@ export function createPlanServices(deps: PlanServicesDeps) {
     const kitOf = await slotKits(deps.store(), p.id);
     const a = b.builder.answers;
     // (Ben, 26 Oct: Edit plan) Each week from the plan's week map; Set days plans show each day's weekday.
-    const views = weekViews({ plan, answers: a, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise', asWorkout: await asWorkoutOf(p, plan, block, of) });
+    const planned = weekViews({ plan, answers: a, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise', asWorkout: await asWorkoutOf(p, plan, block, of) });
+    // (Ben, 31 Oct) This week's days on the dates Today's tiles show: what he did, then Up next on the planning day.
+    const at = editBlockOf(block)?.week ?? null;
+    const views = at === null || week === null || activePause(plan, nowMs, tz) !== null ? planned : planned.map((v, i) => (i === at - 1 ? { ...v, days: thisWeekSlots(v.days, plan, block, week, nowMs, tz) } : v));
     const deloads = views[0]?.deloadWeeks ?? [];
     const line = [`${String(a.weeks)} weeks`, EFFORT_WORD[a.effort], ...(deloads.length === 0 ? [] : [`deload ${deloads.length === 1 ? 'week' : 'weeks'} ${deloads.join(', ')}`])].join(' · ');
     const eb = editBlockOf(block);
     const actions: Record<number, { todayKey: string; moveTo: number[] | null }> = {};
-    const thisWeek = eb === null ? undefined : views[eb.week - 1];
+    // Move day's weekdays as `movePlanDay` checks them: the plan's own this week (moves applied).
+    const thisWeek = eb === null ? undefined : planned[eb.week - 1];
     if (eb !== null && thisWeek !== undefined && activePause(plan, nowMs, tz) === null) {
       const taken = new Set(thisWeek.days.flatMap((d) => (d.weekday === null ? [] : [d.weekday])));
       for (const d of thisWeek.days) {
@@ -362,6 +378,24 @@ export function createPlanServices(deps: PlanServicesDeps) {
   }
 
   /** (Ben, 29 Oct) This week's skipped plan days not done anyway (a skipped day done after all counts as done). */
+  /** (Ben, 31 Oct) This week's days with their weekday after `setDaysWeekSlots` (Set days only). */
+  function thisWeekSlots<D extends { index: number; weekday: number | null; done: boolean }>(days: readonly D[], plan: PlanDraft, block: PbBlockWeek, week: { doneOn: ReadonlyMap<number, string>; nextDayIndex: number | null; finishedToday: boolean }, nowMs: number, tz: string): D[] {
+    if (!days.some((d) => d.weekday !== null)) return [...days];
+    const skips = pbSkipsOf(plan, pbMoveWeek(block));
+    const movedTo = new Map((plan.moves ?? []).filter((m) => m.week === pbMoveWeek(block)).map((m) => [m.dayIndex, m.weekday] as const));
+    const today = weekdayIndexOfDate(localDateOf(nowMs, tz));
+    const slots = setDaysWeekSlots({
+      days: days.map((d) => {
+        const on = week.doneOn.get(d.index);
+        return { key: d.index, weekday: d.weekday, doneOn: on === undefined ? (d.done ? d.weekday : null) : weekdayIndexOfDate(on), skipped: skips.has(d.index), movedTo: movedTo.get(d.index) ?? null };
+      }),
+      planningDay: upNextPlanningWeekday(today, week.finishedToday),
+      upNext: week.nextDayIndex,
+    });
+    // Done days: the weekday they were done; the rest where the slots put them (none left: their own, missed).
+    return days.map((d) => (skips.has(d.index) ? d : { ...d, weekday: slots.get(d.index) ?? d.weekday }));
+  }
+
   function skippedNow(plan: PlanDraft, block: PbBlockWeek | null, days: readonly { dayIndex: number | null }[]): number {
     if (block === null || block.done) return 0;
     const skips = pbSkipsOf(plan, pbMoveWeek(block));
@@ -752,7 +786,11 @@ export function createPlanServices(deps: PlanServicesDeps) {
         tz,
       });
       if (view === null) return null;
-      return { ...view, block: await blockOverview(p, plan, workouts, nowMs, tz, of) };
+      const doneOn = new Map(view.days.flatMap((d) => (d.dayIndex !== null && d.state === 'done' && d.doneOn !== null ? [[d.dayIndex, d.doneOn] as const] : [])));
+      const nextDayIndex = view.days.find((d) => d.next)?.dayIndex ?? null;
+      const today = localDateOf(nowMs, tz);
+      const finishedToday = finishedGymWorkoutOn(week.sessions.map((a) => ({ startedAtUtc: a.session.startedAt.utc, endedAtUtc: a.session.endedAt?.utc ?? null })), today, tz);
+      return { ...view, block: await blockOverview(p, plan, workouts, nowMs, tz, of, { doneOn, nextDayIndex, finishedToday }) };
     },
 
     /** One day of the plan in use (Library › Your plan › a day): its planned sets at this gym and last time's. Null: not a day of it. */
@@ -904,6 +942,33 @@ export function createPlanServices(deps: PlanServicesDeps) {
       if (pbKeepBlockOf(plan, all, p.timezone, at.utc) === null) return false;
       const r = await controlWrite(plan.id, (c) => {
         const k = pbKeepBlockOf(c, all, p.timezone, at.utc);
+        return k === null ? { kind: 'duplicate', current: c } : { kind: 'write', next: k.next, expectedVersion: k.expectedVersion };
+      });
+      return r.ok && !r.duplicate;
+    },
+
+    /**
+     * (Ben, 31 Oct: "When I upload a new version it seems to forget that I have changed the order") On app open, after
+     * `keepBlock`: a plan in use that continues a block from earlier plan documents gets their week changes (moves,
+     * skips, one-change edits; `pbCarryOnOpenOf`), once, on a derived op ID. Returns whether it wrote.
+     */
+    async carryWeekChanges(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan?.applied == null || (plan.applied.block?.plans ?? []).length === 0) return false;
+      const all = await repo().listByOwner(p.id).catch(() => [] as PlanDraft[]);
+      const rows = new Map<number, { id: string; exerciseId: string }[]>();
+      for (const m of plan.applied.made) {
+        if (rows.has(m.dayIndex)) continue;
+        const r = await deps.store().repos.routines.get(m.routineId).catch(() => null);
+        if (r !== null) rows.set(m.dayIndex, r.exercises.map((e) => ({ id: e.id, exerciseId: e.exerciseId })));
+      }
+      const at = deps.now();
+      const rowsOf = (i: number) => rows.get(i) ?? null;
+      if (pbCarryOnOpenOf(plan, all, rowsOf, at.utc) === null) return false;
+      const r = await controlWrite(plan.id, (c) => {
+        const k = pbCarryOnOpenOf(c, all, rowsOf, at.utc);
         return k === null ? { kind: 'duplicate', current: c } : { kind: 'write', next: k.next, expectedVersion: k.expectedVersion };
       });
       return r.ok && !r.duplicate;

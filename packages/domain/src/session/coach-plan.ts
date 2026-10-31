@@ -28,7 +28,7 @@ import { loadText } from '../display';
 import { checkWorkoutProposal, draftSchemeText, draftWorkingSets, painHoldFor, recheckDraftSlot, type WorkoutProposalContext } from './coach-draft';
 import { setRoutineRotation } from './library';
 import { closePausesAt, reopenPausesClosedAt } from './plan-adapt';
-import { pbContinuedBlock } from '../plan-builder/block';
+import { pbContinuedBlock, pbCarryWeekChanges } from '../plan-builder/block';
 import { deleteRoutine, isDeleted, isFromRoutine, isInRotation, type FinishedRef, type RoutineChange } from './routines';
 import type { SubstituteContext } from './substitutes';
 
@@ -349,10 +349,19 @@ export function applyPlan(
       expectedVersion: o.version,
     }));
   // (Ben, 30 Oct: edits never restart the block) Re-applying while a builder plan's block runs continues that block.
-  const block = (input.applied ?? [])
+  const continued = (input.applied ?? [])
     .filter((o) => o.id !== current.id && o.ownerId === current.ownerId && o.status === 'applied' && o.applied !== null)
-    .map((o) => pbContinuedBlock(current, o, input.at.utc, input.at.tz))
-    .find((b) => b !== null);
+    .map((o) => ({ o, b: pbContinuedBlock(current, o, input.at.utc, input.at.tz) }))
+    .find((x) => x.b !== null);
+  const block = continued?.b;
+  // (Ben, 31 Oct) This week's changes on the plan it continues (moves, skips, one-change edits) come with it.
+  const carried =
+    continued === undefined
+      ? null
+      : pbCarryWeekChanges(continued.o, current, {
+          dayIndexes: v.days.map((d) => d.index),
+          rowsOf: (i) => create[v.days.findIndex((d) => d.index === i)]?.exercises.map((e) => ({ id: e.id, exerciseId: e.exerciseId })) ?? null,
+        });
   const applied: PlanApplied = {
     mode: input.mode,
     versionN: v.n,
@@ -363,7 +372,7 @@ export function applyPlan(
     ...(supersede.length > 0 ? { superseded: supersede.map((x) => ({ planId: x.next.id, versionAfter: x.next.version })) } : {}),
     ...(block == null ? {} : { block }),
   };
-  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', applied }), expectedVersion: current.version, create, update, supersede };
+  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', applied, ...(carried ?? {}) }), expectedVersion: current.version, create, update, supersede };
 }
 
 /** `PlanEnded.rotationOff`'s bound. */

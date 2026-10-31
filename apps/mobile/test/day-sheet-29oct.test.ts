@@ -120,26 +120,27 @@ async function templateOf(s: AppServices, d: TodaySessionData, name: string) {
 }
 
 describe('Ben’s week, Thursday 29 (build 478 screenshot)', () => {
-  it('plan days read as the plan names them; Up next is Push B; the tiles: Thu Push B today, Fri Pull B, Sat Legs B; each day’s sheet', async () => {
+  it('plan days read as the plan names them; Up next is Legs B (Ben, 31 Oct: legs last Mon); the tiles: Thu Legs B today, Fri Pull B, Sat Push B; each day’s sheet', async () => {
     const { services: s } = await h.launch();
     await bensWeek(s, await setUpGym(h, s));
     const d = await loaded(s);
     // Bug 3: two Legs days never both read `Legs`: the card's name is its own day's (Legs B leads with the RDL).
     expect(d.days.map((x) => x.name)).toEqual(['Push A', 'Pull A', 'Legs A', 'Push B', 'Pull B', 'Legs B']);
-    expect(nextName(d)).toBe('Push B');
+    // (Ben, 31 Oct) The least recently trained type of the days left: legs (Mon), before pull (Tue) and push (Wed).
+    expect(nextName(d)).toBe('Legs B');
     const legsA = s.todaySession.card(d, { dayKey: dayOf(d, 'Legs A').key, controls: d.initial[dayOf(d, 'Legs A').key] ?? d.initial[''] ?? (() => { throw new Error('x'); })() });
     const legsB = s.todaySession.card(d, { dayKey: dayOf(d, 'Legs B').key, controls: d.initial[dayOf(d, 'Legs B').key] ?? (() => { throw new Error('x'); })() });
     expect([legsA?.title, legsA?.list.find((r) => r.main)?.fullName]).toEqual(['Legs A', 'Back squat']);
     expect([legsB?.title, legsB?.list.find((r) => r.main)?.fullName]).toEqual(['Legs B', 'Romanian deadlift']);
-    // Bug 4: one ring a day, each on its own weekday, never on a past day; Sunday plain.
-    expect(tiles(s, d)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 done dot:push', '29 today planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
+    // Bug 4: one ring a day, never on a past day; Sunday plain. (Ben, 31 Oct) Up next is today's; Push B takes its Sat.
+    expect(tiles(s, d)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 done dot:push', '29 today planned ring:legs', '30 planned ring:pull', '31 planned ring:push', '01 plain']);
     // The sheets.
     const thu = sheetOn(s, d, '2026-10-29');
-    expect([thu.title, thu.statusText, thu.actions.start, thu.actions.doToday]).toEqual(['Thu · Push B', 'Today', true, null]);
+    expect([thu.title, thu.statusText, thu.actions.start, thu.actions.doToday]).toEqual(['Thu · Legs B', 'Today', true, null]);
     expect(thu.list.length).toBeGreaterThan(0);
+    expect(thu.list[0]?.fullName).toBe('Romanian deadlift');
     const sat = sheetOn(s, d, '2026-10-31');
-    expect([sat.title, sat.statusText, sat.actions.start, sat.actions.doToday]).toEqual(['Sat · Legs B', 'Planned', false, { kind: 'swap_days', withDayIndex: 3 }]);
-    expect(sat.list[0]?.fullName).toBe('Romanian deadlift');
+    expect([sat.title, sat.statusText, sat.actions.start, sat.actions.doToday]).toEqual(['Sat · Push B', 'Planned', false, { kind: 'place', moves: [{ dayIndex: 3, weekday: 3 }, { dayIndex: 5, weekday: 5 }, { dayIndex: 4, weekday: 4 }] }]);
     expect(sat.actions.moveTo.map((m) => m.label)).toEqual(['Sun']);
     const mon = sheetOn(s, d, '2026-10-26');
     expect([mon.title, mon.statusText, mon.actions.edit, mon.list]).toEqual(['Mon · Legs A', 'Done', false, []]);
@@ -150,9 +151,9 @@ describe('Ben’s week, Thursday 29 (build 478 screenshot)', () => {
       'Push A 2026-10-28 done',
       'Pull A 2026-10-27 done',
       'Legs A 2026-10-26 done',
-      'Push B 2026-10-29 today',
+      'Push B 2026-10-31 planned',
       'Pull B 2026-10-30 planned',
-      'Legs B 2026-10-31 planned',
+      'Legs B 2026-10-29 today',
     ]);
   });
 
@@ -161,14 +162,17 @@ describe('Ben’s week, Thursday 29 (build 478 screenshot)', () => {
     await bensWeek(s, await setUpGym(h, s), '2026-10-27T20:00:00.000Z');
     const d = await loaded(s);
     expect(d.block?.text).toBe('Starts Mon 2\u00a0Nov');
-    expect(nextName(d)).toBe('Push B');
-    expect(tiles(s, d)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 done dot:push', '29 today planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
+    expect(nextName(d)).toBe('Legs B');
+    expect(tiles(s, d)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 done dot:push', '29 today planned ring:legs', '30 planned ring:pull', '31 planned ring:push', '01 plain']);
     // A this-week change in the lead-in is the lead-in's only.
     const p = await planOf(s);
     expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'skip', dayIndex: 4 } })).toMatchObject({ ok: true });
     expect(tiles(s, await loaded(s))[4]).toBe('30 plain');
+    // Week 1: Pull B is back (ringed this week); Fri 6 is Up next's (legs trained longest ago).
     h.clockMs = Date.parse('2026-11-06T08:00:00.000Z');
-    expect(tiles(s, await loaded(s))[4]).toMatch(/^06 today planned ring:pull$/);
+    const wk1 = tiles(s, await loaded(s));
+    expect(wk1[4]).toBe('06 today planned ring:legs');
+    expect(wk1.some((t) => t.endsWith('ring:pull'))).toBe(true);
   });
 
   it('bug 2: the builder’s superset advice never shows on Today’s card', async () => {
@@ -229,7 +233,7 @@ describe('This week only: one change, nothing else', () => {
     expect((await templateOf(s, after, 'Legs B')).exercises).toEqual(template.exercises);
     expect((await templateOf(s, after, 'Legs B')).version).toBe(template.version);
     expect(after.days.filter((x) => x.name !== 'Legs B').map((x) => JSON.stringify(sheetOf(s, after, x.name).list))).toEqual(otherCards);
-    expect(nextName(after)).toBe('Push B');
+    expect(nextName(after)).toBe('Legs B');
     // The stored rows: rest and sets as the template had them.
     const tplRow = template.exercises.find((e) => e.id === row.id);
     expect(tplRow?.exerciseId).toBe(row.exerciseId);
@@ -344,35 +348,36 @@ describe('Every week: the template from now on, done workouts untouched', () => 
 });
 
 describe('Do today instead, Move to…, Skip this week: each with Undo; the tiles and Up next follow at once', () => {
-  it('Do today instead: Legs B today, Push B on Saturday; Undo', async () => {
+  it('Do today instead (Ben, 31 Oct, on the week as shown): Pull B today, Legs B on Friday; Up next follows; Undo', async () => {
     const { services: s } = await h.launch();
     await bensWeek(s, await setUpGym(h, s));
     let d = await loaded(s);
-    const sat = sheetOn(s, d, '2026-10-31');
-    if (sat.actions.doToday?.kind !== 'swap_days') throw new Error('no swap');
+    const fri = sheetOn(s, d, '2026-10-30');
+    if (fri.actions.doToday?.kind !== 'place') throw new Error('no place');
+    expect(fri.actions.doToday.moves).toEqual([{ dayIndex: 4, weekday: 3 }, { dayIndex: 5, weekday: 4 }, { dayIndex: 3, weekday: 5 }]);
     let p = await planOf(s);
-    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'swap_days', dayIndex: 5, withDayIndex: sat.actions.doToday.withDayIndex } })).toMatchObject({ ok: true });
+    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: fri.actions.doToday })).toMatchObject({ ok: true });
     d = await loaded(s);
-    expect(nextName(d)).toBe('Legs B');
-    expect(tiles(s, d)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 done dot:push', '29 today planned ring:legs', '30 planned ring:pull', '31 planned ring:push', '01 plain']);
+    // Ben's choice wins over the order: Pull B is Up next today.
+    expect(nextName(d)).toBe('Pull B');
+    expect(tiles(s, d)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 done dot:push', '29 today planned ring:pull', '30 planned ring:legs', '31 planned ring:push', '01 plain']);
     p = await planOf(s);
     expect(await s.plans.undoWeekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids() })).toMatchObject({ ok: true });
     d = await loaded(s);
-    expect(nextName(d)).toBe('Push B');
-    expect(tiles(s, d)[3]).toBe('29 today planned ring:push');
+    expect(nextName(d)).toBe('Legs B');
+    expect(tiles(s, d)[3]).toBe('29 today planned ring:legs');
   });
 
-  it('Move to…: Push B to Sunday; Undo', async () => {
+  it('Move to…: Legs B (today) to Sunday: never Up next before Sunday; Pull B (pull last Tue) is today’s; Undo', async () => {
     const { services: s } = await h.launch();
     await bensWeek(s, await setUpGym(h, s));
     let d = await loaded(s);
     expect(sheetOn(s, d, '2026-10-29').actions.moveTo.map((m) => m.label)).toEqual(['Sun']);
     let p = await planOf(s);
-    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'move', dayIndex: 3, weekday: 6 } })).toMatchObject({ ok: true });
+    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'place', moves: [{ dayIndex: 5, weekday: 6 }] } })).toMatchObject({ ok: true });
     d = await loaded(s);
-    expect(tiles(s, d).slice(4)).toEqual(['30 planned ring:pull', '31 planned ring:legs', '01 planned ring:push']);
-    // Thursday has nothing left: a rest day; Up next is the next day on.
     expect(nextName(d)).toBe('Pull B');
+    expect(tiles(s, d).slice(3)).toEqual(['29 today planned ring:pull', '30 planned ring:push', '31 plain', '01 planned ring:legs']);
     p = await planOf(s);
     expect(await s.plans.undoWeekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids() })).toMatchObject({ ok: true });
     expect(tiles(s, await loaded(s))[6]).toBe('01 plain');
@@ -389,10 +394,9 @@ describe('Do today instead, Move to…, Skip this week: each with Undo; the tile
     expect((await s.plans.overview())?.daysThisWeek.text).toBe('3 of 5');
     const fri = sheetOf(s, d, 'Pull B');
     expect([fri.title, fri.statusText, fri.actions.unskip, fri.actions.skip]).toEqual(['Fri · Pull B', 'Skipped', true, false]);
-    // Friday: Pull B was the day; skipped, Legs B (Sat) is next.
+    // Friday: Pull B skipped, never Up next; legs (Mon) were trained longest ago (Ben, 31 Oct).
     h.clockMs = Date.parse('2026-10-30T08:00:00.000Z');
-    // Thursday's Push B missed, still first.
-    expect(nextName(await loaded(s))).toBe('Push B');
+    expect(nextName(await loaded(s))).toBe('Legs B');
     h.clockMs = THU + 60_000;
     p = await planOf(s);
     expect(await s.plans.undoWeekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids() })).toMatchObject({ ok: true });

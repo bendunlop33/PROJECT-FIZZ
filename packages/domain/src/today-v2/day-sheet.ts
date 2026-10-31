@@ -101,7 +101,12 @@ export function weekPlanDays(input: WeekPlanDaysInput): WeekPlanDay[] {
   });
 }
 
-export type DoTodayAction = { kind: 'swap_days'; withDayIndex: number } | { kind: 'move'; weekday: number } | { kind: 'pick' };
+/**
+ * `place` (Set days; Ben, 31 Oct): the day on today and, when another day to do is on today, that one on the day's own
+ * date (or, that date gone, the next free day this week); every other day still to do stays on the date it shows. This
+ * week only, as the sheet shows the week. `pick`: Any days.
+ */
+export type DoTodayAction = { kind: 'place'; moves: { dayIndex: number; weekday: number }[] } | { kind: 'pick' };
 
 export interface DaySheetActions {
   start: boolean;
@@ -136,8 +141,9 @@ export function daySheetOf(input: { at: { date: string } | { dayKey: string }; t
   const byKey = 'dayKey' in input.at ? input.at.dayKey : null;
   const onDate = 'date' in input.at ? input.at.date : null;
   const here = byKey !== null ? input.days.filter((d) => d.key === byKey) : input.days.filter((d) => d.date === onDate);
-  // The day still to do first, then a done one, then a skipped one.
-  const rank = (d: WeekPlanDay) => (d.status === 'today' || d.status === 'planned' || d.status === 'missed' ? 0 : d.status === 'done' ? 1 : 2);
+  // The day still to do first, then a done one, then a missed one (Ben, 31 Oct: the day he trained on its date, never
+  // `Missed` over it), then a skipped one.
+  const rank = (d: WeekPlanDay) => (d.status === 'today' || d.status === 'planned' ? 0 : d.status === 'done' ? 1 : d.status === 'missed' ? 2 : 3);
   const day = [...here].sort((a, b) => rank(a) - rank(b))[0] ?? null;
   const date = day?.date ?? onDate;
   if (day === null) {
@@ -149,16 +155,25 @@ export function daySheetOf(input: { at: { date: string } | { dayKey: string }; t
   const open = day.status === 'today' || day.status === 'planned' || day.status === 'missed';
   const todayWd = weekdayIndexOfDate(input.today);
   let doToday: DoTodayAction | null = null;
-  if (open && day.status !== 'today') {
+  // Weekdays another day still to do (or done) holds this week, as the sheet shows them.
+  const held = new Set(input.days.filter((d) => d.key !== day.key && (d.status === 'today' || d.status === 'planned' || d.status === 'missed') && d.date !== null).map((d) => weekdayIndexOfDate(d.date ?? '')));
+  const own = day.date === null ? -1 : weekdayIndexOfDate(day.date);
+  if (open && day.status !== 'today' && day.dayIndex !== null) {
     if (!input.setDays) doToday = { kind: 'pick' };
     else {
       const partner = input.days.find((d) => d.key !== day.key && d.status === 'today' && d.dayIndex !== null);
-      doToday = partner?.dayIndex != null ? { kind: 'swap_days', withDayIndex: partner.dayIndex } : { kind: 'move', weekday: todayWd };
+      const dayIndex = day.dayIndex;
+      if (partner?.dayIndex == null) doToday = { kind: 'place', moves: [{ dayIndex, weekday: todayWd }] };
+      else {
+        const doneOn = new Set(input.days.filter((d) => d.status === 'done' && d.date !== null).map((d) => weekdayIndexOfDate(d.date ?? '')));
+        const free = Array.from({ length: 6 - todayWd }, (_, i) => todayWd + 1 + i).find((wd) => !held.has(wd) && !doneOn.has(wd));
+        const to = own > todayWd ? own : (free ?? null);
+        // The rest of the week stays as shown: every other day still to do on its date from today on.
+        const rest = input.days.flatMap((d) => (d.key !== day.key && d.key !== partner.key && d.dayIndex !== null && d.status === 'planned' && d.date !== null && weekdayIndexOfDate(d.date) !== to ? [{ dayIndex: d.dayIndex, weekday: weekdayIndexOfDate(d.date) }] : []));
+        doToday = { kind: 'place', moves: [{ dayIndex, weekday: todayWd }, ...(to === null ? [] : [{ dayIndex: partner.dayIndex, weekday: to }]), ...rest] };
+      }
     }
   }
-  // Move to…: Set days, today onwards, never onto a weekday another day still to do holds.
-  const held = new Set(input.days.filter((d) => d.key !== day.key && (d.status === 'today' || d.status === 'planned' || d.status === 'missed') && d.date !== null).map((d) => weekdayIndexOfDate(d.date ?? '')));
-  const own = day.date === null ? -1 : weekdayIndexOfDate(day.date);
   const moveTo = input.setDays && open && day.dayIndex !== null ? Array.from({ length: 7 - todayWd }, (_, i) => todayWd + i).filter((wd) => wd !== own && !held.has(wd)).map((wd) => ({ weekday: wd, label: daySheetWeekday(wd) })) : [];
   const actions: DaySheetActions = { start: day.status === 'today', doToday, moveTo, skip: open && day.dayIndex !== null, unskip: day.status === 'skipped', edit: open && day.dayIndex !== null };
   const statusText = DAY_SHEET_COPY.status[day.status];

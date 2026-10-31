@@ -155,6 +155,24 @@ Weeks run Mon–Sun in the plan's tz. Week 1 = the week the block is applied whe
 
 **(Ben, 30 Oct): edits never restart the block.** The block starts at its first Apply. Changes to the plan in use keep its start, its lead-in, its week numbers and its deload, and keep this week's done days and this week's changes (moves, skips, one-week edits): Edit plan (Goals, Days and time, preferences, exercises), Every week edits, plan swaps, re-applying the same plan from the builder (`Set up a plan` while the block runs is Edit plan on it), Pause/Resume (a fully paused week still holds the number, as above). Only a genuinely new plan restarts: `Start next block` on a finished block, a plan built with none in use, or Previous › `Start again`. If an Apply makes a new plan document over the running block, it continues the block (`applied.block`: the block's first Apply and the earlier documents whose workouts count). A plan re-applied before this rule gets its block start back on app open, derived from the plans it superseded. A restore keeps everything exactly as in the backup.
 
+### 4.1a Up next and this week's days (Ben, 31 Oct)
+**(Ben, 31 Oct): Up next = least recently trained of the days left this week; schedule breaks ties.** Builder plans, Set days and Any days alike (a coach-built plan has no weeks and keeps the 20 Oct rule):
+1. The plan day not done this week whose split type (push, pull, legs, upper, lower, full body; else its body parts) Ben trained longest ago. Every workout of that type counts: plan, off-plan, imported.
+2. Ties (the same last-trained date, or never trained): Set days by the schedule (the planning day's own day first, then the earliest scheduled); Any days by plan order.
+3. The planning day is today, or **tomorrow once a gym workout is finished today**. An open workout or an activity (a run) doesn't count.
+4. Every plan day done this week: the least recently trained day overall. A day skipped this week comes only after those.
+5. Ben's own pick wins: the card picker, `Make next` (a pin), and this week's moves. A day he moved onto the planning day is first; one he moved to a later date isn't Up next before it.
+
+This week's dates on Set days (`setDaysWeekSlots`; tiles, the day sheet, Library › Plan's This week):
+- The schedule, with Ben's moves.
+- **What he did** (implicit swap, this week only, never stored): a plan day done on a weekday scheduled for another day makes that weekday the done day's (never `Missed`). The day it displaced takes the done day's own slot if that is still ahead and free, else the next free day this week, else it is genuinely missed.
+- **Up next is the day on the planning day.** The day that held that slot takes Up next's slot if it is ahead, else the next free day. A rest day (no plan day on it) stays a rest day unless Up next's own day has passed. A day still on the date Ben moved it to is never moved by this.
+- The day sheet's `Do today instead` and `Move to…` place days where the sheet shows them (the `place` week change), so a change made on this view does what it shows.
+
+One domain rule (`upNextOrder`, `planDaysTypeLastTrained`, `setDaysTieRank`, `upNextPlanningWeekday`, `finishedGymWorkoutOn`, `setDaysWeekSlots` in `packages/domain`) feeds Today's card, Library › Plan's NEXT and This week, the tiles, the day sheet, the morning reminder's first day and the coach's Up next. **Ben's week:** Fri 30 before training, Legs B (legs last Mon); after Legs B, and Sat 31, Pull B (pull last Tue, push last Wed) on Saturday's tile.
+
+**Week changes across plan documents (Ben, 31 Oct).** A re-apply that makes a new plan document within the running block brings this week's moves, skips and one-change edits with it. A plan re-applied before this fix gets them back once on app open, after the 30 Oct block-start repair.
+
 ### 4.2 Path (`blockPath`)
 Per main lift: `start` = the working top set from §3.1 at Apply, per (splitDayId, mainLift). Build week k = start + (k−1) steps, where a step is the gym's smallest achievable increase for that lift (`loadDirection`). Muscle goal: reps +1 per week up to the top of the range, then +1 step with reps reset. Deload week = the last build week's value × 0.9, rounded down (plan line only). Assisted lifts step down in assistance. Bodyweight lifts get a reps path.
 

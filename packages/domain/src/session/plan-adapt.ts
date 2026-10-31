@@ -627,21 +627,51 @@ export function aimWithPause(n: number, paused: number): number {
 }
 
 /**
- * (Ben, 28 Oct: "Set weekdays decide Up next") A Set days plan's Up next order this week: the plan day scheduled
- * today (not done this week); then a missed earlier day this week not done (earliest first); then the next scheduled
- * days not done (by weekday); then the rest (done this week, or with no weekday) in `order` (least recently trained,
- * D19). `today`: Mon = 0. "Done" is this week's count (one workout, one plan day), the one Today's tiles read, so Up
- * next and the tiles agree. Pure.
+ * (Ben, 31 Oct: "Up next plans from tomorrow") Whether a gym workout is already finished on `today` (local
+ * `YYYY-MM-DD`, by the date it started in `tz`). Only finished gym workouts count: an open workout (no `endedAtUtc`) or
+ * an activity (a run, never passed here) doesn't. Pure.
  */
-export function setDaysUpNextOrder<T>(order: readonly T[], input: { weekdayOf: (t: T) => number | null; done: (t: T) => boolean; today: number }): T[] {
-  const open = order.filter((t) => !input.done(t) && input.weekdayOf(t) !== null);
-  const by = (pred: (wd: number) => boolean) =>
-    open
-      .filter((t) => pred(input.weekdayOf(t) ?? -1))
-      .map((t, i) => ({ t, i, wd: input.weekdayOf(t) ?? 0 }))
-      .sort((a, b) => a.wd - b.wd || a.i - b.i)
-      .map((x) => x.t);
-  const first = [...by((wd) => wd === input.today), ...by((wd) => wd < input.today), ...by((wd) => wd > input.today)];
-  const taken = new Set(first);
-  return [...first, ...order.filter((t) => !taken.has(t))];
+export function finishedGymWorkoutOn(workouts: readonly { startedAtUtc: string; endedAtUtc: string | null }[], today: string, tz: string): boolean {
+  return workouts.some((w) => w.endedAtUtc !== null && localDateOf(toMs(w.startedAtUtc), tz) === today);
+}
+
+/**
+ * (Ben, 31 Oct) The weekday Up next plans for (Mon = 0): tomorrow once a gym workout is finished today, else today. On
+ * a Sunday after a workout that is 7 (past this week's last day): every day not done this week is a missed one. Pure.
+ */
+export function upNextPlanningWeekday(today: number, finishedToday: boolean): number {
+  return finishedToday ? today + 1 : today;
+}
+
+/**
+ * (Ben, 31 Oct: "Surely I should do the one that I trained the longest ago") A plan day's split type: its split word
+ * (`Push`, `Pull`, `Legs`, `Upper`, `Lower`, `Full body`; Push A and Push B are one type), else its body parts. Pure.
+ */
+export function planDayTypeKey(d: Pick<PlanDueDay, 'name' | 'bodyParts' | 'routineId'>): string {
+  const base = splitNameOf(d.name)?.base;
+  if (base !== undefined) return `split:${base}`;
+  return d.bodyParts.length > 0 ? `parts:${[...d.bodyParts].sort().join('+')}` : `day:${d.routineId}`;
+}
+
+/**
+ * (Ben, 31 Oct) When each plan day's split type was last trained (local date): every workout in `workouts` (plan,
+ * off-plan, imported) counts for each type it trained (the days it is credited with, `planDaysCredited`, by type).
+ * A day never trained in the window is absent. Pure.
+ */
+export function planDaysTypeLastTrained(days: readonly PlanDueDay[], workouts: readonly PlanDueWorkout[], tz: string): Map<string, string> {
+  const typeOf = new Map(days.map((d) => [d.routineId, planDayTypeKey(d)] as const));
+  const lastOfType = new Map<string, number>();
+  for (const w of workouts) {
+    const ms = toMs(w.startedAtUtc);
+    for (const id of planDaysCredited(days, w)) {
+      const t = typeOf.get(id);
+      if (t !== undefined && ms > (lastOfType.get(t) ?? Number.NEGATIVE_INFINITY)) lastOfType.set(t, ms);
+    }
+  }
+  const out = new Map<string, string>();
+  for (const d of days) {
+    const ms = lastOfType.get(typeOf.get(d.routineId) ?? '');
+    if (ms !== undefined) out.set(d.routineId, localDateOf(ms, tz));
+  }
+  return out;
 }

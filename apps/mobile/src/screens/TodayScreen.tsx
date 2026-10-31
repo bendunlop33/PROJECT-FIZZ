@@ -700,8 +700,8 @@ export function TodayScreen() {
   }
 
   // (App review 26 Oct, finding 8) The week and the card's label only change with the session, the selection and the
-  // main state, never with a re-render (a toast, a sheet, the rest tick).
-  const mainKind = data.state === 'ready' ? (data.value.view?.main.kind ?? 'no_plan') : 'no_plan';
+  // main state, never with a re-render (a toast, a sheet, the rest tick). (Ben, 31 Oct) Trained today: the tiles ring
+  // today only for a day Ben picks himself (`buildWeekTiles`).
   const selectedKey = selection?.dayKey ?? null;
   // (Redesign v3 option C) A rest day on a Set days plan: the rest card until Ben picks a day (`picked`).
   const restDay = useMemo(
@@ -709,7 +709,7 @@ export function TodayScreen() {
     [session, picked],
   );
   const chosenName = view === null || restDay !== null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
-  const cardTiles = useMemo(() => (session === null ? [] : services.todaySession.week(session, mainKind === 'done_today' ? null : chosenName, picked && pickedKey.current === selectedKey)), [services, session, mainKind, chosenName, picked, selectedKey]);
+  const cardTiles = useMemo(() => (session === null ? [] : services.todaySession.week(session, chosenName, picked && pickedKey.current === selectedKey)), [services, session, chosenName, picked, selectedKey]);
   // (Ben, 28 Oct) While a workout is open the card's session isn't read, but the week still is (the open workout ringed).
   const openWeek = useOpenWorkoutWeek(data.state === 'ready' ? data.value.active : null);
   const tiles = useMemo(() => (workoutOpen ? (openWeek?.tiles ?? []) : cardTiles), [workoutOpen, openWeek, cardTiles]);

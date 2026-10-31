@@ -365,8 +365,7 @@ export function DaySheetFlow({
                   return;
                 }
                 if (d.kind === 'pick') onPick(day.key);
-                else if (d.kind === 'swap_days') void weekWrite({ kind: 'swap_days', dayIndex: day.dayIndex, withDayIndex: d.withDayIndex }, DAY_SHEET_COPY.doingToday(day.name));
-                else void weekWrite({ kind: 'move', dayIndex: day.dayIndex, weekday: d.weekday }, DAY_SHEET_COPY.doingToday(day.name));
+                else void weekWrite({ kind: 'place', moves: d.moves }, DAY_SHEET_COPY.doingToday(day.name));
               }}
             />
           ) : null}
@@ -379,7 +378,7 @@ export function DaySheetFlow({
         {moving && day?.dayIndex != null ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {a.moveTo.map((m) => (
-              <Chip key={m.weekday} size="min" label={m.label} selected={false} onPress={() => { setMoving(false); void weekWrite({ kind: 'move', dayIndex: day.dayIndex ?? 0, weekday: m.weekday }, DAY_SHEET_COPY.movedTo(day.name, m.label)); }} />
+              <Chip key={m.weekday} size="min" label={m.label} selected={false} onPress={() => { setMoving(false); void weekWrite({ kind: 'place', moves: [{ dayIndex: day.dayIndex ?? 0, weekday: m.weekday }] }, DAY_SHEET_COPY.movedTo(day.name, m.label)); }} />
             ))}
           </View>
         ) : null}

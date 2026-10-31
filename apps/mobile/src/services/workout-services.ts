@@ -43,10 +43,9 @@ import {
   planDayGroups,
   planDaysAhead,
   leadLiftOf,
-  planDayPick,
-  planDaysByDue,
   activePin,
   type PlanAheadDay,
+  type PlanDueDay,
   type PlanDueWorkout,
   workoutGroupsOf,
   pbBlockOfPlan,
@@ -56,7 +55,15 @@ import {
   pbDayWithEdits,
   planDayOf,
   planWeekFills,
-  setDaysUpNextOrder,
+  finishedGymWorkoutOn,
+  planDaysTypeLastTrained,
+  planDaysByDue,
+  pbAppliedBuilder,
+  setDaysTieRank,
+  setDaysWeekSlots,
+  upNextOrder,
+  upNextPlanningWeekday,
+  movedRelative,
   weekdayIndexOfDate,
   planFirstLoads,
   plannedVsDone,
@@ -2327,34 +2334,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /**
-   * (Ben, 20 Oct) The applied plan's days in the order they are due (`planDaysByDue`): each day's body parts from its
-   * exercises (else the split day it was mapped to), every finished workout in the window by the muscles done.
+   * (Ben, 31 Oct) The applied plan's days in Up next's order: a pinned day (`Make next`) first; then the plan day not
+   * done this week whose split type was trained longest ago (`planDaysTypeLastTrained`: every finished workout in the
+   * window, plan, off-plan or imported); ties by the Set days schedule (the planning day's own day first, then the
+   * earliest), Any days by plan order; done days after (least recently trained), skipped days last (`upNextOrder`).
+   * Trained today: the planning day is tomorrow. Any days: with a long or hard run near, leg days go after the others.
    */
+  type SetDaysWeek = { weekdayOf: Map<string, number>; movedTo: ReadonlyMap<string, number>; slotsFor: (planningDay: number) => Map<string, number | null> };
+
   async function planDue(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null, near: LegRunNear | null = null) {
-    const { days, workouts, live, setDays, skipped, doneThisWeek } = await planDueInput(p, planDays, training, pin);
-    // (Ben, 29 Oct) A day skipped this week goes after every other day (a pin on it still wins); with a skip this week,
-    // the days still to do this week come first (its turn goes to the next day not done, never one done this week).
-    const rank = (d: { day: { routineId: string }; pinned: boolean }) => (d.pinned ? 0 : skipped.has(d.day.routineId) ? 3 : doneThisWeek.has(d.day.routineId) ? 2 : 1);
-    const due = planDaysByDue(days, workouts, live)
-      .map((d, i) => ({ d, i }))
-      .sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i)
-      .map((x) => x.d);
-    if (setDays !== null) {
-      // (Ben, 28 Oct) Set days: the weekdays decide (today's day, a missed one, the next); a pinned day stays first. The
-      // run rule doesn't move a day Ben set a weekday for.
-      // Every plan day: D19's pool leaves out the day(s) just trained, but a Push B on Thursday is still Thursday's.
-      const inDue = new Set(due.map((d) => d.day.routineId));
-      const all = [...due.filter((d) => !d.pinned), ...days.filter((d) => !inDue.has(d.routineId)).map((day) => ({ day, pinned: false }))];
-      const ordered = setDaysUpNextOrder(
-        all,
-        { weekdayOf: (d) => setDays.weekdayOf.get(d.day.routineId) ?? null, done: (d) => setDays.done(d.day.routineId) || skipped.has(d.day.routineId), today: setDays.today },
-      );
-      return [...due.filter((d) => d.pinned), ...ordered].map((d) => ({ day: d.day.routine, pinned: d.pinned, legs: isLegDay(d.day.bodyParts) }));
-    }
-    // (Ben, 20 Oct) With a long or hard run near, leg days go after the others; a pinned day (`Make next`) stays first.
-    const pinned = due.filter((d) => d.pinned);
+    const input = await planDueInput(p, planDays, training, pin);
+    const ordered = upNextOrdered(input, null);
+    if (input.setDays !== null) return ordered.map((d) => ({ day: d.day.routine, pinned: d.pinned, legs: isLegDay(d.day.bodyParts) }));
+    const pinned = ordered.filter((d) => d.pinned);
     const rest = avoidLegDays(
-      due.filter((d) => !d.pinned),
+      ordered.filter((d) => !d.pinned),
       (d) => d.day.bodyParts,
       near,
     ).order;
@@ -2362,11 +2356,37 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /**
-   * (Ben, 28 Oct) A Set days builder plan's week for Up next: each plan day's weekday this week (moves applied, the
-   * lead-in's own), which days are done this week (one workout, one plan day: the count Today's tiles read) and
-   * today's weekday. Null: Any days, a coach plan, paused or no block.
+   * (Ben, 31 Oct) `upNextOrder` over the plan days, the pin first. `on`: plan for that date instead (the morning
+   * reminder's later date: its weekday is the planning day; a date in a later week has nothing done yet).
    */
-  async function setDaysWeek(p: UserProfile, plan: PlanDraft | null, days: readonly { routineId: string; bodyParts: readonly SplitBodyPart[]; routine: Routine }[], read: readonly HistoryWorkout[], links: Awaited<ReturnType<typeof readPlanLinks>>, exerciseOf: (id: string) => Exercise | null): Promise<{ weekdayOf: Map<string, number>; done: (routineId: string) => boolean; today: number } | null> {
+  function upNextOrdered<D extends PlanDueDay & { routine: Routine }>(input: { days: readonly D[]; workouts: readonly PlanDueWorkout[]; live: PlanPin | null; setDays: SetDaysWeek | null; skipped: ReadonlySet<string>; doneThisWeek: ReadonlyMap<string, string>; tz: string; today: string; finishedToday: boolean; builder: boolean }, on: string | null): { day: D; pinned: boolean }[] {
+    const { days, setDays } = input;
+    // A coach plan (no weeks, no schedule) keeps the 20 Oct rule: the pin, then trained least recently by muscles,
+    // never the day(s) just trained unless none other is left (`planDaysByDue`).
+    if (!input.builder) return planDaysByDue(days, input.workouts, input.live).map((d) => ({ day: d.day, pinned: d.pinned }));
+    const monday = addDays(input.today, -weekdayIndexOfDate(input.today));
+    const later = on !== null && on > addDays(monday, 6);
+    const planning = on === null ? upNextPlanningWeekday(weekdayIndexOfDate(input.today), input.finishedToday) : later ? 0 : weekdayIndexOfDate(on);
+    const last = planDaysTypeLastTrained(days, input.workouts, input.tz);
+    const weekday: ReadonlyMap<string, number | null> | null = setDays === null ? null : later ? setDays.weekdayOf : setDays.slotsFor(planning);
+    const index = new Map(days.map((d, i) => [d.routineId, i] as const));
+    const ordered = upNextOrder(days, (d) => ({
+      lastTrained: last.get(d.routineId) ?? null,
+      state: later ? 'open' : input.skipped.has(d.routineId) ? 'skipped' : input.doneThisWeek.has(d.routineId) ? 'done' : 'open',
+      tie: weekday === null ? (index.get(d.routineId) ?? 0) : setDaysTieRank(weekday.get(d.routineId) ?? null, planning),
+      moved: later || setDays === null ? null : movedRelative(setDays.movedTo.get(d.routineId), planning),
+    }));
+    const pinId = input.live?.routineId ?? null;
+    const pinDay = ordered.find((d) => d.routineId === pinId);
+    return [...(pinDay === undefined ? [] : [{ day: pinDay, pinned: true }]), ...ordered.filter((d) => d !== pinDay).map((day) => ({ day, pinned: false }))];
+  }
+
+  /**
+   * (Ben, 28 Oct; 31 Oct) A Set days builder plan's week: each plan day's scheduled weekday this week (moves applied,
+   * the lead-in's own) and `slotsFor(planningDay)`, the weekdays after what he actually did (`setDaysWeekSlots`, no Up
+   * next: the ties' view). Null: Any days, a coach plan, paused or no block.
+   */
+  async function setDaysWeek(p: UserProfile, plan: PlanDraft | null, days: readonly { routineId: string; bodyParts: readonly SplitBodyPart[]; routine: Routine }[], doneOn: ReadonlyMap<string, string>, skipped: ReadonlySet<string>): Promise<SetDaysWeek | null> {
     if (plan === null || plan.applied === null) return null;
     const nowMs = toMs(ctx.now().utc);
     const tz = p.timezone;
@@ -2374,12 +2394,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const refs = days.map((d) => planWeekDayOf(plan, d.routine, d.bodyParts));
     const weekdayOf = planWeekdaysNow(plan, block, refs);
     if (weekdayOf === null) return null;
-    const today = localDateOf(nowMs, tz);
-    const monday = addDays(today, -weekdayIndexOfDate(today));
-    const fills = planWeekFills({ days: refs, workouts: read.filter((a) => localDateOf(toMs(a.session.startedAt.utc), tz) >= monday).map((a) => planWeekWorkoutOf(a, links, (x) => workoutGroupsOf(x, exerciseOf))), nowMs, tz });
-    const doneIndexes = new Set(refs.filter((r) => fills.has(r.routineId) && r.dayIndex !== null).map((r) => r.dayIndex));
-    const indexOf = new Map(refs.map((r) => [r.routineId, r.dayIndex] as const));
-    return { weekdayOf, done: (id) => fills.has(id) || (indexOf.get(id) != null && doneIndexes.has(indexOf.get(id) ?? null)), today: weekdayIndexOfDate(today) };
+    // (Ben, 31 Oct) This week's moves are his choice (Move to…, Do today instead).
+    const moveWeek = block === null ? null : pbMoveWeek(block);
+    const movedIdx = new Map((plan.moves ?? []).filter((m) => m.week === moveWeek).map((m) => [m.dayIndex, m.weekday] as const));
+    const movedTo = new Map(refs.flatMap((r) => (r.dayIndex !== null && movedIdx.has(r.dayIndex) ? [[r.routineId, movedIdx.get(r.dayIndex) ?? 0] as const] : [])));
+    const slotDays = days.map((d) => {
+      const on = doneOn.get(d.routineId);
+      return { key: d.routineId, weekday: weekdayOf.get(d.routineId) ?? null, doneOn: on === undefined ? null : weekdayIndexOfDate(on), skipped: skipped.has(d.routineId), movedTo: movedTo.get(d.routineId) ?? null };
+    });
+    return { weekdayOf, movedTo, slotsFor: (planningDay) => setDaysWeekSlots({ days: slotDays, planningDay }) };
   }
 
   /** `planDue`'s inputs: the plan days (with their planned muscle groups), the window's workouts and the live pin. */
@@ -2399,17 +2422,36 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const live = activePin(pin, days, all);
     const workouts = all.filter((w) => toMs(w.startedAtUtc) >= windowFrom);
     const skipped = await skippedThisWeek(p, plan, days);
-    return { days, workouts, live, setDays: await setDaysWeek(p, plan, days, read, links, exerciseOf), skipped, doneThisWeek: skipped.size === 0 || plan === null ? new Set<string>() : doneThisWeekOf(p, plan, days, read, links, exerciseOf) };
+    const tz = p.timezone;
+    const today = localDateOf(toMs(ctx.now().utc), tz);
+    const doneThisWeek = plan === null ? new Map<string, string>() : doneThisWeekOf(p, plan, days, read, links, exerciseOf);
+    // (Ben, 31 Oct) A gym workout finished today: Up next plans from tomorrow (an open workout or a run doesn't count).
+    const finishedToday = finishedGymWorkoutOn(read.map((a) => ({ startedAtUtc: a.session.startedAt.utc, endedAtUtc: a.session.endedAt?.utc ?? null })), today, tz);
+    return { days, workouts, live, setDays: await setDaysWeek(p, plan, days, doneThisWeek, skipped), skipped, doneThisWeek, tz, today, finishedToday, builder: pbAppliedBuilder(plan) !== null };
   }
 
-  /** This week's plan days done (one workout, one plan day), by workout ID: the count Today's tiles read. */
-  function doneThisWeekOf(p: UserProfile, plan: PlanDraft, days: readonly { routineId: string; bodyParts: readonly SplitBodyPart[]; routine: Routine }[], read: readonly HistoryWorkout[], links: Awaited<ReturnType<typeof readPlanLinks>>, exerciseOf: (id: string) => Exercise | null): Set<string> {
+  /**
+   * This week's plan days done (one workout, one plan day: the count Today's tiles read), by workout ID, with the
+   * local date each was done. Templates of one plan day (the same day index) are done together.
+   */
+  function doneThisWeekOf(p: UserProfile, plan: PlanDraft, days: readonly { routineId: string; bodyParts: readonly SplitBodyPart[]; routine: Routine }[], read: readonly HistoryWorkout[], links: Awaited<ReturnType<typeof readPlanLinks>>, exerciseOf: (id: string) => Exercise | null): Map<string, string> {
     const nowMs = toMs(ctx.now().utc);
-    const today = localDateOf(nowMs, p.timezone);
+    const tz = p.timezone;
+    const today = localDateOf(nowMs, tz);
     const monday = addDays(today, -weekdayIndexOfDate(today));
     const refs = days.map((d) => planWeekDayOf(plan, d.routine, d.bodyParts));
-    const fills = planWeekFills({ days: refs, workouts: read.filter((a) => localDateOf(toMs(a.session.startedAt.utc), p.timezone) >= monday).map((a) => planWeekWorkoutOf(a, links, (x) => workoutGroupsOf(x, exerciseOf))), nowMs, tz: p.timezone });
-    return new Set(fills.keys());
+    const fills = planWeekFills({ days: refs, workouts: read.filter((a) => localDateOf(toMs(a.session.startedAt.utc), tz) >= monday).map((a) => planWeekWorkoutOf(a, links, (x) => workoutGroupsOf(x, exerciseOf))), nowMs, tz });
+    const byIndex = new Map<number, string>();
+    const out = new Map<string, string>();
+    for (const r of refs) {
+      const w = fills.get(r.routineId);
+      if (w === undefined) continue;
+      const on = localDateOf(toMs(w.startedAtUtc), tz);
+      out.set(r.routineId, on);
+      if (r.dayIndex !== null) byIndex.set(r.dayIndex, on);
+    }
+    for (const r of refs) if (!out.has(r.routineId) && r.dayIndex !== null && byIndex.has(r.dayIndex)) out.set(r.routineId, byIndex.get(r.dayIndex) ?? '');
+    return out;
   }
 
   /** (Ben, 29 Oct: `Skip this week`) The plan days skipped this block week, by workout ID: never Up next while others are left. */
@@ -4752,7 +4794,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const planDays = planRoutines(plan, live);
         if (!planDays.some((r) => r.id === firstRoutineId)) return null;
         const training = await ctx.store().repos.trainingProfiles.get(p.id).catch(() => null);
-        const { days, workouts, live: pin } = await planDueInput(p, planDays, training, plan?.pin ?? null);
+        const input = await planDueInput(p, planDays, training, plan?.pin ?? null);
+        const { days, workouts, live: pin } = input;
         const startable = new Map<string, boolean>();
         for (const r of planDays) startable.set(r.id, (await routineStart(p, { routineId: r.id, gymId, opId: `preview-next-routine:${r.id}`, preview: true })).r.ok);
         const canStart = (d: { routineId: string }) => startable.get(d.routineId) === true;
@@ -4767,7 +4810,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           return d === undefined ? null : legRunNear(acts, d);
         };
         const row = (d: (typeof days)[number], pinned: boolean): PlanAheadRow => ({ routineId: d.routineId, name: d.name, dayN: planDays.findIndex((r) => r.id === d.routineId) + 1, of: planDays.length, legs: isLegDay(d.bodyParts), pinned });
-        const pick = firstOn === null ? undefined : planDayPick(days, workouts, pin, legRunNear(acts, firstOn), canStart);
+        // (Ben, 31 Oct) The first reminder on a later date names Up next as the one order plans that date (its weekday the
+        // planning day; a pin first). Any days: the run rule for that date too.
+        const pick = firstOn === null ? undefined : firstPickOn(firstOn);
+        function firstPickOn(date: string) {
+          const ordered = upNextOrdered(input, date);
+          const pinned = ordered.filter((d) => d.pinned);
+          const rest = input.setDays !== null ? ordered.filter((d) => !d.pinned) : avoidLegDays(ordered.filter((d) => !d.pinned), (d) => d.day.bodyParts, legRunNear(acts, date)).order;
+          return [...pinned, ...rest].find((d) => canStart(d.day));
+        }
         const startId = pick?.day.routineId ?? firstRoutineId;
         const order = planDaysAhead({ days, workouts, pin, firstRoutineId: startId, count, fromMs: nowMs, windowDays: SPLIT_WINDOW_DAYS, canStart, nearOn });
         return { firstPinned: pin?.routineId === firstRoutineId, first: pick === undefined ? null : row(pick.day, pick.pinned), days: order.map((d) => row(d, false)) };

@@ -1,3 +1,4 @@
+import { PLAN_LIMITS } from '@fizz/schemas';
 import type { Load, Measurement, PlanDayMove, PlanDraft, PlanWeekExerciseEdit, PlanWeekSkip, RoutineExercise, SetTemplate, ZonedTimestamp } from '@fizz/schemas';
 
 import { deriveId } from '../stable';
@@ -28,6 +29,12 @@ export type PbWeekChangeRequest =
   | { kind: 'swap_days'; dayIndex: number; withDayIndex: number }
   /** `Move to…`: `dayIndex` on `weekday` (Mon = 0) this week. */
   | { kind: 'move'; dayIndex: number; weekday: number }
+  /**
+   * (Ben, 31 Oct) `Do today instead` / `Move to…` on this week as the tiles show it (what he did, Up next on today):
+   * each day on the weekday it is to be on, this week only. Each day still to do, on today or later, no two on one
+   * weekday.
+   */
+  | { kind: 'place'; moves: { dayIndex: number; weekday: number }[] }
   | { kind: 'skip'; dayIndex: number }
   | { kind: 'unskip'; dayIndex: number }
   | { kind: 'exercise'; edit: Omit<PlanWeekExerciseEdit, 'week' | 'opId' | 'atUtc'> };
@@ -114,6 +121,17 @@ export function pbWeekChange(current: PlanDraft, input: PbWeekChangeInput): Plan
       // Another day still to do this week holds that weekday: Move to… never doubles a day up.
       if ([...map].some(([i, d]) => i !== c.dayIndex && d === c.weekday && open(i))) return { kind: 'invalid', current };
       next = { moves: moved(moves, c.dayIndex, c.weekday), skips, edits };
+      break;
+    }
+    case 'place': {
+      const ok =
+        c.moves.length >= 1 &&
+        c.moves.length <= PLAN_LIMITS.maxDays &&
+        new Set(c.moves.map((m) => m.dayIndex)).size === c.moves.length &&
+        new Set(c.moves.map((m) => m.weekday)).size === c.moves.length &&
+        c.moves.every((m) => open(m.dayIndex) && !skipped.has(m.dayIndex) && Number.isInteger(m.weekday) && m.weekday >= input.todayWeekday && m.weekday <= 6);
+      if (!ok || pbWeekdaysThisWeek(current, input.block) === null) return { kind: 'invalid', current };
+      next = { moves: c.moves.reduce((list, m) => moved(list, m.dayIndex, m.weekday), moves), skips, edits };
       break;
     }
     case 'skip':

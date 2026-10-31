@@ -67,6 +67,9 @@ PREVIOUS …
   only; the two stat tiles are gone, same values). A deload week shows `Deload: lighter, fewer sets` under it.
 - **Row:** state mark · day name (`Next` tag) · secondary line · trailing · chevron.
   - Mark: ✓ (done that week), a numbered ring (Up next; current week only, not while paused), a plain ring (to do).
+    (Ben, 31 Oct): Up next = least recently trained of the days left this week; schedule breaks ties; from tomorrow
+    once a gym workout is finished today. This week's weekdays follow what he did and put Up next on today
+    (training-blocks.md §4.1a).
     Earlier weeks' days not done get the plain ring: nothing is called missed (D19, see §4).
   - Secondary: the weekday on Set days plans, then the day's main lifts (`Mon · Squat`); no main lift: its first two
     exercises.

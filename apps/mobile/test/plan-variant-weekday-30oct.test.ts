@@ -15,7 +15,7 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
  * - a Set days workout named for variants (`Pull`) is the variant scheduled on its own weekday: Tuesday's Pull A,
  *   whichever lift the file lists first;
  * - Library's days, the day sheet, Today's tiles and Up next all read that one link;
- * - Up next follows the approved Set days order (plan3, 28 Oct): today's day not done (Fri: Pull B), then missed days.
+ * - Up next (Ben, 31 Oct): the least recently trained type of the days left this week (Pull B: pull last Tue).
  */
 
 let h: Harness;
@@ -121,7 +121,8 @@ describe('Ben’s Tue 27 imported pull on his Set days plan (Ben, 30 Oct)', () =
       expect(w.library).toEqual(['Legs A 2026-10-26', 'Legs B 2026-10-30', 'Pull A 2026-10-27', 'Push A 2026-10-28']);
       expect(w.thisWeek).toBe('4 of 6');
       expect(w.tuesday).toBe('Tue · Pull A Done');
-      // Fri evening, Legs B done: Friday's Pull B is today's day not done (plan3 order); Library's NEXT is the same.
+      // Fri evening, Legs B done (Ben, 31 Oct): the least recently trained type of the days left, Pull B (pull last Tue,
+      // push last Wed); Library's NEXT is the same.
       expect(w.todayNext).toBe('Pull B');
       expect(w.libraryNext).toBe('Pull B');
       expect(w.tiles.slice(0, 5)).toEqual(['26 done', '27 done', '28 done', '29 plain', '30 done']);
