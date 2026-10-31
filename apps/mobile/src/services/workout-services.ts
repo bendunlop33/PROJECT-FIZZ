@@ -57,6 +57,8 @@ import {
   planWeekFills,
   finishedGymWorkoutOn,
   planDaysTypeLastTrained,
+  planDaysByDue,
+  pbAppliedBuilder,
   setDaysTieRank,
   setDaysWeekSlots,
   upNextOrder,
@@ -2357,8 +2359,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * (Ben, 31 Oct) `upNextOrder` over the plan days, the pin first. `on`: plan for that date instead (the morning
    * reminder's later date: its weekday is the planning day; a date in a later week has nothing done yet).
    */
-  function upNextOrdered<D extends PlanDueDay & { routine: Routine }>(input: { days: readonly D[]; workouts: readonly PlanDueWorkout[]; live: PlanPin | null; setDays: SetDaysWeek | null; skipped: ReadonlySet<string>; doneThisWeek: ReadonlyMap<string, string>; tz: string; today: string; finishedToday: boolean }, on: string | null): { day: D; pinned: boolean }[] {
+  function upNextOrdered<D extends PlanDueDay & { routine: Routine }>(input: { days: readonly D[]; workouts: readonly PlanDueWorkout[]; live: PlanPin | null; setDays: SetDaysWeek | null; skipped: ReadonlySet<string>; doneThisWeek: ReadonlyMap<string, string>; tz: string; today: string; finishedToday: boolean; builder: boolean }, on: string | null): { day: D; pinned: boolean }[] {
     const { days, setDays } = input;
+    // A coach plan (no weeks, no schedule) keeps the 20 Oct rule: the pin, then trained least recently by muscles,
+    // never the day(s) just trained unless none other is left (`planDaysByDue`).
+    if (!input.builder) return planDaysByDue(days, input.workouts, input.live).map((d) => ({ day: d.day, pinned: d.pinned }));
     const monday = addDays(input.today, -weekdayIndexOfDate(input.today));
     const later = on !== null && on > addDays(monday, 6);
     const planning = on === null ? upNextPlanningWeekday(weekdayIndexOfDate(input.today), input.finishedToday) : later ? 0 : weekdayIndexOfDate(on);
@@ -2422,7 +2427,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const doneThisWeek = plan === null ? new Map<string, string>() : doneThisWeekOf(p, plan, days, read, links, exerciseOf);
     // (Ben, 31 Oct) A gym workout finished today: Up next plans from tomorrow (an open workout or a run doesn't count).
     const finishedToday = finishedGymWorkoutOn(read.map((a) => ({ startedAtUtc: a.session.startedAt.utc, endedAtUtc: a.session.endedAt?.utc ?? null })), today, tz);
-    return { days, workouts, live, setDays: await setDaysWeek(p, plan, days, doneThisWeek, skipped), skipped, doneThisWeek, tz, today, finishedToday };
+    return { days, workouts, live, setDays: await setDaysWeek(p, plan, days, doneThisWeek, skipped), skipped, doneThisWeek, tz, today, finishedToday, builder: pbAppliedBuilder(plan) !== null };
   }
 
   /**
