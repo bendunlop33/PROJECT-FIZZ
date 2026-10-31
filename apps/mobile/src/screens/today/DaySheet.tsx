@@ -206,6 +206,39 @@ export function DaySheetFlow({
   }
 
   /** `Pair`: one versioned link (the workout's sets never change, rule 2), its toast with Undo (unlink on what it wrote). */
+  /** A day sheet choice: `Pair` with a workout, or `Same workout` as a paired one (joins its link). */
+  function choose(healthUuid: string, c: NonNullable<PairedDaySheetRow['pair']>['choices'][number]) {
+    return c.same === undefined ? pair(healthUuid, c.sessionId) : sameAs(healthUuid, c.same.linkUuid, c.same.linkVersion);
+  }
+
+  /** (Ben, 31 Oct) `Same workout`: the Health workout joins the paired one's link; Undo takes it out again. */
+  async function sameAs(healthUuid: string, linkUuid: string, linkVersion: number) {
+    if (busy.current) return;
+    busy.current = true;
+    setChoosing(null);
+    try {
+      const r = await services.health.sameWorkout({ healthUuid, linkUuid, expectedVersion: linkVersion, opId: newUuid() });
+      reread();
+      if (!r.ok) {
+        onToast({ text: r.message });
+        return;
+      }
+      onToast({
+        text: HEALTH_COPY.sameWorkout,
+        action: DAY_SHEET_COPY.undo,
+        onAction: () => {
+          onToast(null);
+          void services.health.notSameWorkout({ healthUuid, linkUuid, expectedVersion: r.version, opId: newUuid() }).then((u) => {
+            reread();
+            if (!u.ok) onToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
+
   async function pair(healthUuid: string, sessionId: string) {
     if (busy.current) return;
     busy.current = true;
@@ -344,10 +377,10 @@ export function DaySheetFlow({
                 onOpen={openRow}
                 onPair={(p) => {
                   const [only] = p.choices;
-                  if (p.choices.length === 1 && only !== undefined) void pair(p.healthUuid, only.sessionId);
+                  if (p.choices.length === 1 && only !== undefined) void choose(p.healthUuid, only);
                   else setChoosing((c) => (c === p.healthUuid ? null : p.healthUuid));
                 }}
-                onChoose={(healthUuid, sessionId) => void pair(healthUuid, sessionId)}
+                onChoose={(healthUuid, c) => void choose(healthUuid, c)}
                 onUnpair={(u, sessionId) => void unpair(u.healthUuid, u.linkVersion, sessionId)}
               />
             ))}
@@ -489,7 +522,7 @@ export function DoneRow({
   choosing: boolean;
   onOpen: (o: NonNullable<DaySheetOpen>) => void;
   onPair: (p: NonNullable<PairedDaySheetRow['pair']>) => void;
-  onChoose: (healthUuid: string, sessionId: string) => void;
+  onChoose: (healthUuid: string, choice: NonNullable<PairedDaySheetRow['pair']>['choices'][number]) => void;
   onUnpair: (u: NonNullable<PairedDaySheetRow['unpair']>, sessionId: string) => void;
 }) {
   const theme = useTheme();
@@ -514,13 +547,18 @@ export function DoneRow({
           </View>
           {open !== null && r.pair === null && r.unpair === null ? <Icon name="chevron.right" size={14} color="text.tertiary" /> : null}
         </Pressable>
-        {r.pair !== null ? <TextButton label={HEALTH_COPY.pair} accessibilityLabel={r.pair.choices.length === 1 ? `${HEALTH_COPY.pair} with ${r.pair.choices[0]?.label ?? ''}` : HEALTH_COPY.pair} onPress={() => { if (r.pair !== null) onPair(r.pair); }} /> : null}
+        {r.pair !== null ? (() => {
+          const [only] = r.pair.choices;
+          const sameOnly = r.pair.choices.length === 1 && only?.same !== undefined;
+          const label = sameOnly ? HEALTH_COPY.sameWorkout : HEALTH_COPY.pair;
+          return <TextButton label={label} accessibilityLabel={r.pair.choices.length === 1 ? (sameOnly ? only.label.replace(/^Same as/, HEALTH_COPY.sameWorkoutAs) : `${HEALTH_COPY.pair} with ${only?.label ?? ''}`) : label} onPress={() => { if (r.pair !== null) onPair(r.pair); }} />;
+        })() : null}
         {r.unpair !== null && sessionId !== null ? <TextButton label={HEALTH_COPY.unpair} tone="secondary" onPress={() => { if (r.unpair !== null) onUnpair(r.unpair, sessionId); }} /> : null}
       </View>
       {choosing && r.pair !== null ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'], paddingHorizontal: theme.space['4'], paddingBottom: theme.space['2'] }}>
           {r.pair.choices.map((c) => (
-            <Chip key={c.sessionId} size="min" label={c.label} selected={false} onPress={() => { if (r.pair !== null) onChoose(r.pair.healthUuid, c.sessionId); }} />
+            <Chip key={`${c.same === undefined ? 'pair' : 'same'}:${c.sessionId}`} size="min" label={c.label} selected={false} onPress={() => { if (r.pair !== null) onChoose(r.pair.healthUuid, c); }} />
           ))}
         </View>
       ) : null}

@@ -335,6 +335,14 @@ export function createWeekServices(deps: WeekServicesDeps) {
     return r as ActionRecord & { detail: Extract<ActionRecord['detail'], { kind: 'propose_week' }> };
   }
 
+  /** This week's activities, Monday to Sunday, with Your plan's line for each. */
+  async function weekItems(): Promise<{ activityId: string; line: string }[]> {
+    const p = await deps.profile();
+    if (p === null) return [];
+    const { mondayLocalDate: monday } = localWeekBounds(toMs(deps.now().utc), p.timezone);
+    return (await between(p.id, monday, addDays(monday, 7))).map((a) => ({ activityId: a.id, line: weekActivityLine(a) }));
+  }
+
   const activities = {
     /** Today › ＋ Activity, or the edit sheet's Save on a new one. `id`: the sheet's own (a double tap saves once). */
     async add(req: { id: string; fields: ActivityFields; opId: string }): Promise<ActivityOutcome> {
@@ -387,11 +395,10 @@ export function createWeekServices(deps: WeekServicesDeps) {
     },
     /** Your plan's week: `Run · Sat · long`, Monday to Sunday. */
     async weekLines(): Promise<string[]> {
-      const p = await deps.profile();
-      if (p === null) return [];
-      const { mondayLocalDate: monday } = localWeekBounds(toMs(deps.now().utc), p.timezone);
-      return (await between(p.id, monday, addDays(monday, 7))).map(weekActivityLine);
+      return (await weekItems()).map((x) => x.line);
     },
+    /** (Ben, 31 Oct) Your plan's week lines with each activity's ID, so a tap opens its sheet. */
+    weekItems: () => weekItems(),
   };
 
   const week = {

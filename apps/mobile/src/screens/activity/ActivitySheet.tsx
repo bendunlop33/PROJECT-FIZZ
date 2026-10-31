@@ -95,8 +95,8 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
         visible={visible}
         activity={activity}
         onClose={onClose}
-        onLinked={() => {
-          onSaved({ kind: 'linked', activityId: activity.id, opId: op.current });
+        onLinked={(r) => {
+          onSaved({ kind: 'linked', activityId: activity.id, opId: op.current, text: r.text, undo: r.undo });
         }}
       />
     );

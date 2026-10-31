@@ -126,6 +126,8 @@ export interface PlanOverview {
   paused: { text: string; untilDate: string | null } | null;
   /** (Ben, 20 Oct) This week's activities, one small line each: `Run · Sat · long`. Never gym days. */
   activities: string[];
+  /** (Ben, 31 Oct) Each line's activity ID, in the same order (a tap opens its sheet); null: none to open. */
+  activityIds: (string | null)[];
   /** (Ben, 20 Oct) This week's change Ben applied (`This week: Push (Chest + Shoulders)`), with its Undo; null: none. */
   weekChange: { text: string; weekPlanId: string; version: number } | null;
 }
@@ -151,6 +153,8 @@ export interface PlanOverviewInput {
   skippedThisWeek?: number;
   /** (Ben, 20 Oct) `weekActivityLine` for each activity this week. */
   activities?: readonly string[];
+  /** Each activity's ID, in the same order as `activities`. */
+  activityIds?: readonly (string | null)[];
   /** (Ben, 20 Oct) This week's change in use: its days merged or skipped come off `Days this week` (`weekDaysRemoved`). */
   weekChange?: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged?: readonly (readonly string[])[]; /** (28 Oct) Each merge's workout, in `merged` order. */ mergedRoutineIds?: readonly (string | null)[] } | null;
   /** (Ben, 28 Oct) Set days plans: each day's weekday this week (a plan started mid-week expects only the days left). */
@@ -223,6 +227,7 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
     setsDone: pct === null ? null : { pct, text: `${String(pct)}%` },
     paused: paused === null ? null : { text: paused.untilDate === null ? PLAN_OVERVIEW_COPY.paused : PLAN_OVERVIEW_COPY.pausedUntil(localDateText(paused.untilDate)), untilDate: paused.untilDate },
     activities: [...(input.activities ?? [])],
+    activityIds: (input.activities ?? []).map((_, i) => input.activityIds?.[i] ?? null),
     weekChange: change === null ? null : { text: change.text, weekPlanId: change.weekPlanId, version: change.version },
   };
 }

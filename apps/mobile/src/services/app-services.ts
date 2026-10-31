@@ -1016,7 +1016,10 @@ export function createAppServices(deps: AppServicesDeps) {
 
   /** Coach-built plans (19 Oct): the card, Apply and Undo, the consistency card. Local only. */
   const plans = createPlanServices({
-    weekInfo: async () => ({ lines: await weekly.activities.weekLines(), change: await weekly.week.change() }),
+    weekInfo: async () => {
+      const items = await weekly.activities.weekItems();
+      return { lines: items.map((x) => x.line), ids: items.map((x) => x.activityId), change: await weekly.week.change() };
+    },
     store: () => deps.manager.store,
     profile: getProfile,
     now: deps.now,

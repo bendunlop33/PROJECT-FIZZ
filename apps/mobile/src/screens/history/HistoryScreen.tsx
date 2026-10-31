@@ -217,7 +217,7 @@ export function HistoryScreen() {
                 });
               }}
               // (Ben, 27 Oct; TrainingPeaks-style) One tap links a Health strength workout to that day's gym workout; Undo.
-              trailing={linkTo !== undefined ? <TextButton label={HEALTH_COPY.link} accessibilityLabel={`${HEALTH_COPY.link} to ${linkTo.title}`} onPress={() => void linkNow(item.activityId, linkTo.sessionId)} /> : null}
+              trailing={linkTo !== undefined ? <TextButton label={HEALTH_COPY.pair} accessibilityLabel={`${HEALTH_COPY.pair} with ${linkTo.title}`} onPress={() => void linkNow(item.activityId, linkTo.sessionId)} /> : null}
             />
           );
         })}

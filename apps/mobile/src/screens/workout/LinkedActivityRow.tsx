@@ -62,7 +62,7 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
     setMessage(null);
     setChoose(false);
     onPickerClose?.();
-    setToast({ text: HEALTH_COPY.linked, undo: () => void unlink(r.healthUuid, r.version, false) });
+    setToast({ text: HEALTH_COPY.paired, undo: () => void unlink(r.healthUuid, r.version, false) });
     changed();
     load();
   }
@@ -75,7 +75,7 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
       return;
     }
     setSheet(false);
-    setToast(offerUndo ? { text: HEALTH_COPY.unlinked, undo: () => void link(healthUuid) } : null);
+    setToast(offerUndo ? { text: HEALTH_COPY.unpaired, undo: () => void link(healthUuid) } : null);
     changed();
     load();
   }
@@ -140,7 +140,7 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
       <AppText variant="title2">{HEALTH_COPY.linkFromHealth}</AppText>
       <Group>
         {choices.map((c) => (
-          <Row key={c.healthUuid} title={c.line} trailing={<TextButton label={HEALTH_COPY.link} accessibilityLabel={`${HEALTH_COPY.link}, ${c.accessibilityLabel}`} onPress={() => void link(c.healthUuid)} />} />
+          <Row key={c.healthUuid} title={c.line} trailing={<TextButton label={HEALTH_COPY.pair} accessibilityLabel={`${HEALTH_COPY.pair}, ${c.accessibilityLabel}`} onPress={() => void link(c.healthUuid)} />} />
         ))}
       </Group>
     </BottomCard>
@@ -175,7 +175,7 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
             <AppText variant="body" numeric style={{ flex: 1 }}>
               {view.line}
             </AppText>
-            <Icon name="chevron.right" size={14} color="text.tertiary" />
+            <TextButton label={HEALTH_COPY.unpair} tone="secondary" onPress={() => void unlink(view.healthUuid, view.linkVersion)} />
           </View>
           {view.heartRate !== null ? (
             <AppText variant="callout" color="text.secondary" numeric>
@@ -197,7 +197,7 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
           footer={
             <>
               {message !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={message} /> : null}
-              <DangerTextButton label={HEALTH_COPY.unlink} onPress={() => void unlink(view.healthUuid, view.linkVersion)} />
+              <DangerTextButton label={HEALTH_COPY.unpair} onPress={() => void unlink(view.healthUuid, view.linkVersion)} />
             </>
           }
         >
@@ -231,7 +231,7 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
           </AppText>
           {/* One tap: links at once (one), or opens the short pick list (several). */}
           <TextButton
-            label={HEALTH_COPY.link}
+            label={HEALTH_COPY.pair}
             onPress={() => {
               if (several) setChoose((c) => !c);
               else void link(first.healthUuid);
@@ -244,7 +244,7 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
                 <AppText variant="callout" numeric style={{ flex: 1 }} accessibilityLabel={c.accessibilityLabel}>
                   {c.line}
                 </AppText>
-                <TextButton label={HEALTH_COPY.link} accessibilityLabel={`${HEALTH_COPY.link}, ${c.accessibilityLabel}`} onPress={() => void link(c.healthUuid)} />
+                <TextButton label={HEALTH_COPY.pair} accessibilityLabel={`${HEALTH_COPY.pair}, ${c.accessibilityLabel}`} onPress={() => void link(c.healthUuid)} />
               </View>
             ))
           : null}
