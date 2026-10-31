@@ -1,41 +1,85 @@
 import { describe, expect, it } from 'vitest';
-import { aheadDates, buildWeekTiles, finishedGymWorkoutOn, setDaysUpNextOrder, upNextPlanningWeekday } from '../src/index';
+import { aheadDates, buildWeekTiles, finishedGymWorkoutOn, setDaysTieRank, setDaysWeekSlots, upNextOrder, upNextPlanningWeekday } from '../src/index';
 
 /**
- * (Ben, 31 Oct: "Yes") Once a gym workout is finished today, Up next plans from tomorrow. Ben's Set days week: Mon Push
- * A, Tue Pull A, Wed Legs, Thu Push B, Fri Pull B, Sat Legs B.
+ * (Ben, 31 Oct) Up next = the least recently trained type among the plan days left this week; the schedule breaks
+ * ties; from tomorrow once he has trained today. Ben's Set days week: Mon Push A, Tue Pull A, Wed Legs, Thu Push B,
+ * Fri Pull B, Sat Legs B. Done: Legs Mon 26, Pull A Tue 27, Push A Wed 28, Legs B Fri 30.
  */
-describe('Up next plans from tomorrow after a finished workout (Ben, 31 Oct)', () => {
-  const wd: Record<string, number> = { pushA: 0, pullA: 1, legs: 2, pushB: 3, pullB: 4, legsB: 5 };
-  // Least recently trained first (D19's order), as the caller passes it.
-  const order = ['pushB', 'pullB', 'legs', 'pullA', 'pushA', 'legsB'];
-  const run = (today: number, done: string[], finishedToday: boolean) => setDaysUpNextOrder(order, { weekdayOf: (t) => wd[t] ?? null, done: (t) => done.includes(t), today, finishedToday });
-  const weekDone = ['legs', 'pullA', 'pushA', 'legsB'];
+const WD: Record<string, number> = { pushA: 0, pullA: 1, legs: 2, pushB: 3, pullB: 4, legsB: 5 };
+const KEYS = ['pushA', 'pullA', 'legs', 'pushB', 'pullB', 'legsB'];
+const TYPE: Record<string, string> = { pushA: 'push', pushB: 'push', pullA: 'pull', pullB: 'pull', legs: 'legs', legsB: 'legs' };
 
-  it('Fri before training: today’s scheduled day (Pull B)', () => {
-    expect(run(4, weekDone, false)[0]).toBe('pullB');
+/** `last`: each type's last-trained date; `done`/`skipped`: keys; `p`: the planning weekday. */
+function order(last: Record<string, string>, done: string[], p: number, skipped: string[] = [], weekday: (k: string) => number | null = (k) => WD[k] ?? null) {
+  return upNextOrder(KEYS, (k) => ({ lastTrained: last[TYPE[k] ?? ''] ?? null, state: skipped.includes(k) ? 'skipped' : done.includes(k) ? 'done' : 'open', tie: setDaysTieRank(weekday(k), p) }));
+}
+
+describe('Up next: least recently trained of the days left this week (Ben, 31 Oct)', () => {
+  const sat = { legs: '2026-10-30', pull: '2026-10-27', push: '2026-10-28' };
+  const weekDone = ['legs', 'pullA', 'pushA', 'legsB'];
+  it('Ben’s Sat 31: Pull B (pull last Tue) before Push B (push last Wed), whatever the schedule says', () => {
+    expect(order(sat, weekDone, upNextPlanningWeekday(5, false)).slice(0, 2)).toEqual(['pullB', 'pushB']);
   });
-  it('Fri after Legs B: Saturday’s Legs B is done, so the earliest missed day up to today (Push B Thu), then Pull B', () => {
-    expect(run(4, weekDone, true).slice(0, 2)).toEqual(['pushB', 'pullB']);
+  it('Fri 30 before training: Legs B (legs last Mon); after Legs B: Pull B', () => {
+    const fri = { legs: '2026-10-26', pull: '2026-10-27', push: '2026-10-28' };
+    expect(order(fri, ['legs', 'pullA', 'pushA'], upNextPlanningWeekday(4, false))[0]).toBe('legsB');
+    expect(order(sat, weekDone, upNextPlanningWeekday(4, true))[0]).toBe('pullB');
   });
-  it('tomorrow’s scheduled day first when it isn’t done', () => {
-    // Wed after Legs: Thursday’s Push B, not Mon’s missed Push A.
-    expect(run(2, ['legs'], true)).toEqual(['pushB', 'pushA', 'pullA', 'pullB', 'legsB', 'legs']);
+  it('ties (never trained, or the same date): the planning day’s own day first, then the earliest scheduled', () => {
+    expect(order({}, [], 3)).toEqual(['pushB', 'pushA', 'pullA', 'legs', 'pullB', 'legsB']);
+    const same = { push: '2026-10-28', pull: '2026-10-28', legs: '2026-10-28' };
+    expect(order(same, ['pushA'], 4)[0]).toBe('pullB');
+    // Trained today (Thu): Friday plans first.
+    expect(order({}, [], upNextPlanningWeekday(3, true))[0]).toBe('pullB');
   });
-  it('the next scheduled day when tomorrow is done and nothing was missed', () => {
-    // Mon after Push A, Pull A already done early: Wed’s Legs.
-    expect(run(0, ['pushA', 'pullA'], true)[0]).toBe('legs');
+  it('Any days: plan order breaks ties', () => {
+    expect(upNextOrder(['a', 'b', 'c'], (k) => ({ lastTrained: null, state: 'open', tie: ['a', 'b', 'c'].indexOf(k) }))).toEqual(['a', 'b', 'c']);
   });
-  it('every day done: least recently trained (D19)', () => {
-    expect(run(5, order, true)).toEqual(order);
+  it('every day done: least recently trained overall; a skipped day only after those', () => {
+    const all = order({ legs: '2026-10-30', pull: '2026-10-27', push: '2026-10-28' }, KEYS.filter((k) => k !== 'pushB'), 6, ['pushB']);
+    expect(all.slice(0, 2)).toEqual(['pullA', 'pullB']);
+    expect(all.at(-1)).toBe('pushB');
   });
-  it('Sunday after a workout: every day not done is a missed one, earliest first', () => {
+  it('the planning weekday: tomorrow once trained today; Sunday after a workout is past the week', () => {
+    expect(upNextPlanningWeekday(4, true)).toBe(5);
     expect(upNextPlanningWeekday(6, true)).toBe(7);
-    expect(run(6, ['pushA', 'pullA', 'legs', 'legsB'], true).slice(0, 2)).toEqual(['pushB', 'pullB']);
-  });
-  it('no finished workout today (absent flag): today’s order, unchanged', () => {
-    expect(setDaysUpNextOrder(order, { weekdayOf: (t) => wd[t] ?? null, done: (t) => weekDone.includes(t), today: 4 })[0]).toBe('pullB');
     expect(upNextPlanningWeekday(4, false)).toBe(4);
+  });
+});
+
+describe('This week’s Set days slots: what he did, then Up next on the planning day (Ben, 31 Oct)', () => {
+  const day = (key: string, weekday: number | null, doneOn: number | null = null) => ({ key, weekday, doneOn });
+  const names = (m: Map<string, number | null>) => Object.fromEntries([...m].map(([k, v]) => [k, v]));
+  it('Ben’s week: Push B moved to Fri (Pull B to Thu), Legs B done Fri: Fri is Legs B’s, Push B takes Sat (Legs B’s own slot)', () => {
+    const days = [day('pushA', 0, 0), day('pullA', 1, 1), day('legs', 2, 0), day('pushB', 4), day('pullB', 3), day('legsB', 5, 4)];
+    // The ties' view (no Up next) on Sat morning.
+    expect(names(setDaysWeekSlots({ days, planningDay: 5 }))).toMatchObject({ legsB: 4, pushB: 5, pullB: 3 });
+    // Up next Pull B (missed Thu) is Saturday’s; Push B goes to the next free day, Sunday.
+    expect(names(setDaysWeekSlots({ days, planningDay: 5, upNext: 'pullB' }))).toMatchObject({ legsB: 4, pullB: 5, pushB: 6 });
+  });
+  it('the displaced day’s own slot passed and no free day left: none (genuinely missed)', () => {
+    const days = [day('a', 0), day('b', 1, 0), day('c', 2), day('d', 3), day('e', 4), day('f', 5), day('g', 6)];
+    // b done Mon on a’s slot; b’s own Tue has passed (today Wed) and Wed–Sun are all held.
+    expect(setDaysWeekSlots({ days, planningDay: 2 }).get('a')).toBeNull();
+  });
+  it('the displaced day takes the done day’s own slot when still ahead', () => {
+    const days = [day('push', 0), day('pull', 2), day('legs', 4, 0)];
+    expect(names(setDaysWeekSlots({ days, planningDay: 1 }))).toEqual({ push: 4, pull: 2, legs: 0 });
+  });
+  it('a planning day with no plan day keeps its rest day unless Up next’s own day has passed', () => {
+    const days = [day('push', 0, 0), day('pull', 3), day('legs', 1)];
+    // Wed (rest), Up next Pull (Thu, ahead): rest day stays. Up next Legs (Tue, passed): on Wed.
+    expect(setDaysWeekSlots({ days, planningDay: 2, upNext: 'pull' }).get('pull')).toBe(3);
+    expect(setDaysWeekSlots({ days, planningDay: 2, upNext: 'legs' }).get('legs')).toBe(2);
+  });
+  it('Up next already on the planning day, skipped days and undated days: unchanged', () => {
+    const days = [day('a', 2), { ...day('b', 3), skipped: true }, day('c', null)];
+    expect(names(setDaysWeekSlots({ days, planningDay: 2, upNext: 'a' }))).toEqual({ a: 2, b: 3, c: null });
+  });
+  it('Sunday after a workout (planning day 7): only what he did moves anything', () => {
+    const days = [day('a', 5), day('b', 6, 5)];
+    expect(names(setDaysWeekSlots({ days, planningDay: 7, upNext: 'a' }))).toEqual({ a: null, b: 5 });
   });
 });
 
