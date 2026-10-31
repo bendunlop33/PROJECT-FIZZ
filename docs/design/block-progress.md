@@ -104,8 +104,8 @@ BLOCK         START       END        CHANGE
 - Blocks are never stored. Each applied plan document (status applied, superseded or ended) belongs to one block: the block of the documents its `applied.block.plans` names (30 Oct: a re-apply that continued the block), else a block that starts at its own Apply. Its start is `applied.block.startedAtUtc ?? applied.atUtc` (`pbBlockStartUtc`). The key is the block's first plan document's ID.
 - **Plans applied before blocks existed (23 Oct and earlier)** have no `block` field: each is its own block. History before the first applied plan is `Earlier training`.
 - A block ends at the next block's start, else at its last document's End or supersede; the one with a plan in use is current.
-- Its weeks are `pbBlockWeekOf`'s at the block's end (the same derivation as Today's header: Monday weeks with a plan workout, pauses skipped, lead-in before week 1). A coach plan with no length counts its weeks so far, with no deload.
-- Every finished workout inside the block's weeks and its window counts for its lifts: plan, off-plan and imported. A calendar week with only off-plan workouts isn't a block week (the block waits, D19), so its sets don't show in a block.
+- Its weeks are `pbBlockWeekOf`'s at the block's end (the same derivation as Today's header: Monday weeks with any finished workout, pauses skipped, lead-in before week 1). A coach plan with no length counts its weeks so far, with no deload.
+- (Ben, 31 Oct: decision 4) A week is a block week **by date**: any finished workout in the block's window counts it (plan, off-plan, empty or imported), and every workout in the block's weeks counts for its lifts. `X of Y sessions` still counts plan days done. Today's header and the deload week follow the same count. An empty week (nothing logged) still doesn't count (D19).
 - Main lifts: the current block reads the plan's templates (a swapped main lift shows); past blocks read the newest plan document's main slots.
 
 ## 7. Up next moved by you (Ben, approved: "it should move everything")
@@ -121,4 +121,5 @@ A day Ben moves onto today (`Move to…`, `Do today instead`) is already Up next
 1. **Next week for top / back-off main lifts.** The Summary's `Next time` lists only exercises with straight working sets, so a builder plan's main lift (top set + back-offs) has no next-time row, and the card can't offer a fix for it. Options: (a) extend the Summary's next-time to top / back-off main lifts (the rule plans the top set; one change for every reader), or (b) a block-only proposal for the main lift (needs a new typed proposal and its own Apply / Undo). Until then the detail shows the stall with no card.
 2. **The built-in rule rarely offers its stall reset with reps from history:** when reps drop, its range follows them, so a miss below the range is rare. With no AI, a stalled lift often has no fix to show.
 3. **One week below the best** (not yet a stall) reads green with a lower bar. Alternative: grey or outline.
-4. **"This block's best"** is the best so far (the prototype's `95×8 → 95×8` after a `95×7` week), and Δ uses it too.
+4. ~~Off-plan-only weeks~~: decided 31 Oct, they count (§6).
+5. **"This block's best"** is the best so far (the prototype's `95×8 → 95×8` after a `95×7` week), and Δ uses it too.

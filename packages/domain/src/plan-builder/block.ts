@@ -20,7 +20,8 @@ import { pbAtWeek, pbIsDeload, type PbWeekTarget } from './weeks';
  *   workouts count for that week (its plan workouts from that Monday count, 28 Oct), but week 1 of the block starts the
  *   next Monday, so the plan's weeks (and its deload) are full weeks after it (training-blocks.md §4.1). Derived from
  *   the stored Apply time, so a plan already in its first week becomes a lead-in with no migration. A calendar week
- *   counts once it has a finished plan workout and isn't fully paused, else the number holds (nothing is "missed",
+ *   counts once it has any finished workout (plan, off-plan, empty or imported; Ben, 31 Oct) and isn't fully paused,
+ *   else the number holds (nothing is "missed",
  *   D19). A correction or a deleted workout re-derives it. Past the plan's length the block is done.
  * - `pbBlockView`: Library › Plan › Your plan's week strip (1…N, D on deload weeks) and the plan days for the week
  *   viewed, each exercise's planned target that week from `pbAtWeek` (snapped to the item's achievable loads, never
@@ -183,14 +184,16 @@ export function pbBlockOfPlan(plan: Pick<PlanDraft, 'id' | 'status' | 'versions'
   const earlier = plan.applied.block?.plans ?? [];
   const made = new Map([...earlier.flatMap((p) => p.made), ...plan.applied.made].map((x) => [x.routineId, x.dayIndex] as const));
   const planIds = new Set([plan.id, ...earlier.map((p) => p.planId)]);
-  const workouts: PbBlockWorkout[] = refs.flatMap((r) => {
+  const workouts: PbBlockWorkout[] = refs.flatMap((r): PbBlockWorkout[] => {
     if (r.planDay !== undefined && planIds.has(r.planDay.planId)) return [{ startedAtUtc: r.startedAtUtc, dayIndex: r.planDay.dayIndex }];
     const day = r.routineId === null ? undefined : made.get(r.routineId);
     const variants = (r.variantRoutineIds ?? []).flatMap((id) => {
       const i = made.get(id);
       return i === undefined ? [] : [i];
     });
-    return day === undefined ? [] : [{ startedAtUtc: r.startedAtUtc, dayIndex: day, ...(variants.length > 1 ? { dayIndexes: variants } : {}) }];
+    // (Ben, 31 Oct: decision 4) A week is a block week by date: an off-plan, empty or imported workout counts it too
+    // (no plan day done by it).
+    return day === undefined ? [{ startedAtUtc: r.startedAtUtc, dayIndex: null }] : [{ startedAtUtc: r.startedAtUtc, dayIndex: day, ...(variants.length > 1 ? { dayIndexes: variants } : {}) }];
   });
   return pbBlockWeekOf({ answers: b.builder.answers, appliedAtUtc: pbBlockStartUtc(plan) ?? plan.applied.atUtc, pauses: plan.pauses, workouts, nowMs, tz });
 }

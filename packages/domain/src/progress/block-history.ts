@@ -31,8 +31,8 @@ import {
  * continued the block), else a block that starts at its own Apply. That covers plans applied before blocks existed
  * (23 Oct and earlier): each is its own block. A block runs from its start to the next block's start, or to its last
  * document's End / supersede; the one with a plan in use is current. History before the first block is
- * `Earlier training`. The block's weeks are `pbBlockWeekOf`'s (the same as Today's header: weeks with a plan workout,
- * pauses skipped), worked out at the block's end; a lead-in (applied after its Monday) is week 0. Every finished
+ * `Earlier training`. The block's weeks are `pbBlockWeekOf`'s (the same as Today's header: weeks with any finished
+ * workout, by date, pauses skipped; Ben, 31 Oct), worked out at the block's end; a lead-in (applied after its Monday) is week 0. Every finished
  * workout inside the block's weeks counts for its lifts: plan, off-plan and imported alike.
  */
 
@@ -87,6 +87,8 @@ export interface TrainingBlock {
   leadInMonday: string | null;
   /** Plan workouts done in it (lead-in included). */
   sessionsDone: number;
+  /** A past block that stopped mid-week: any workout in that last week (it is then a week reached). */
+  lastWeekTrained?: boolean;
   /** Each plan day's main lift, deduplicated, in day order (the newest document's). */
   mainLiftIds: string[];
 }
@@ -109,7 +111,7 @@ export function planMainLiftIds(p: Pick<BlockPlanDoc, 'versions' | 'currentVersi
 const OPEN_LENGTH = 520 as unknown as PlanWeeks;
 
 /** The plan documents' blocks, oldest first. `refs` are Ben's finished workouts as the plan reads them (`linkRefs`). */
-export function trainingBlocks(plans: readonly BlockPlanDoc[], refs: readonly PbFinishedRef[], nowMs: number, tz: string, mainLiftsNow: readonly string[] | null = null): TrainingBlock[] {
+export function trainingBlocks(plans: readonly BlockPlanDoc[], refs: readonly PbFinishedRef[], nowMs: number, tz: string, mainLiftsNow: readonly string[] | null = null, allWorkouts: readonly { startedAtUtc: string }[] = []): TrainingBlock[] {
   const docs = plans.filter((p) => p.applied !== null).sort((a, b) => toMs(a.applied?.atUtc ?? '') - toMs(b.applied?.atUtc ?? ''));
   const groups = new Map<string, BlockPlanDoc[]>();
   const keyOf = new Map<string, string>();
@@ -135,7 +137,7 @@ export function trainingBlocks(plans: readonly BlockPlanDoc[], refs: readonly Pb
     const startMs = toMs(g.startUtc);
     const planIds = new Set(g.members.map((m) => m.id));
     const made = new Map(g.members.flatMap((m) => (m.applied?.made ?? []).map((x) => [x.routineId, x.dayIndex] as const)));
-    const workouts: PbBlockWorkout[] = refs.flatMap((r) => {
+    const workouts: PbBlockWorkout[] = refs.flatMap((r): PbBlockWorkout[] => {
       const ms = toMs(r.startedAtUtc);
       if (ms < localWeekBounds(startMs, tz).startMs || ms > endMs) return [];
       if (r.planDay !== undefined && planIds.has(r.planDay.planId)) return [{ startedAtUtc: r.startedAtUtc, dayIndex: r.planDay.dayIndex }];
@@ -144,16 +146,24 @@ export function trainingBlocks(plans: readonly BlockPlanDoc[], refs: readonly Pb
         const x = made.get(id);
         return x === undefined ? [] : [x];
       });
-      return day === undefined ? [] : [{ startedAtUtc: r.startedAtUtc, dayIndex: day, ...(variants.length > 1 ? { dayIndexes: variants } : {}) }];
+      return day === undefined ? [{ startedAtUtc: r.startedAtUtc, dayIndex: null }] : [{ startedAtUtc: r.startedAtUtc, dayIndex: day, ...(variants.length > 1 ? { dayIndexes: variants } : {}) }];
     });
+    // (Ben, 31 Oct: decision 4) Every finished workout in the window counts its week, by date (imported ones too).
+    for (const w of allWorkouts) {
+      const ms = toMs(w.startedAtUtc);
+      if (ms >= localWeekBounds(startMs, tz).startMs && ms <= endMs) workouts.push({ startedAtUtc: w.startedAtUtc, dayIndex: null });
+    }
     const pauses = g.members.flatMap((m) => m.pauses ?? []);
     const week = pbBlockWeekOf({ answers: answers ?? { weeks: OPEN_LENGTH, effort: 'maintain' }, appliedAtUtc: g.startUtc, pauses, workouts, nowMs: endMs, tz });
     const applyMonday = localWeekBounds(startMs, tz).mondayLocalDate;
     const leadInMonday = localDateOf(startMs, tz) === applyMonday ? null : applyMonday;
     const goal = builder === null ? latest.name : GOAL_WORD[builder.focus];
     const mains = current && mainLiftsNow !== null && mainLiftsNow.length > 0 ? [...new Set(mainLiftsNow)] : planMainLiftIds(latest);
-    const sessionsDone = workouts.filter((w) => toMs(w.startedAtUtc) >= startMs).length;
-    return { key: g.key, n: i + 1, planIds: g.members.map((m) => m.id), current, startedAtUtc: g.startUtc, endedAtUtc, goal, answers, week, leadInMonday, sessionsDone, mainLiftIds: mains };
+    // `X of Y sessions`: the plan's days done (off-plan workouts count their week, not a plan session).
+    const sessionsDone = workouts.filter((w) => w.dayIndex !== null && toMs(w.startedAtUtc) >= startMs).length;
+    const lastMonday = week.mondays[week.mondays.length - 1];
+    const lastWeekTrained = lastMonday !== undefined && workouts.some((w) => localWeekBounds(toMs(w.startedAtUtc), tz).mondayLocalDate === lastMonday && toMs(w.startedAtUtc) <= endMs);
+    return { key: g.key, n: i + 1, planIds: g.members.map((m) => m.id), current, startedAtUtc: g.startUtc, endedAtUtc, goal, answers, week, leadInMonday, sessionsDone, lastWeekTrained, mainLiftIds: mains };
   });
 }
 
@@ -186,12 +196,12 @@ export interface BlockWeekSlot {
 }
 
 /** The block's weeks to show: the lead-in (week 0) when there is one, then 1…N (a coach plan: the weeks so far). */
-export function blockWeekSlots(b: Pick<TrainingBlock, 'week' | 'answers' | 'leadInMonday' | 'current'>): BlockWeekSlot[] {
+export function blockWeekSlots(b: Pick<TrainingBlock, 'week' | 'answers' | 'leadInMonday' | 'current' | 'lastWeekTrained'>): BlockWeekSlot[] {
   const of = b.answers?.weeks ?? Math.max(1, b.week.mondays.length);
   // Done: every week. In the lead-in: none yet. Current: up to this week. A past block that stopped early: its counted
   // weeks, and the week it stopped in when something was done that week.
   const counted = b.week.mondays.length - 1;
-  const reachedWeeks = b.week.done ? of : b.week.leadIn !== undefined ? 0 : b.current ? b.week.week : counted + (hasDays(b.week, counted) ? 1 : 0);
+  const reachedWeeks = b.week.done ? of : b.week.leadIn !== undefined ? 0 : b.current ? b.week.week : counted + ((b.lastWeekTrained ?? hasDays(b.week, counted)) ? 1 : 0);
   const out: BlockWeekSlot[] = [];
   if (b.leadInMonday !== null) out.push({ week: 0, monday: b.leadInMonday, deload: false, reached: true });
   for (let w = 1; w <= of; w += 1) out.push({ week: w, monday: b.week.mondays[w - 1] ?? null, deload: b.answers !== null && pbIsDeload(b.answers, w), reached: w <= reachedWeeks });

@@ -156,6 +156,24 @@ describe('trainingBlocks: identified from the plan documents', () => {
   });
 });
 
+describe('a week is a block week by date (Ben, 31 Oct: decision 4)', () => {
+  it('a week with only an off-plan (or imported) workout counts as a block week, and its sets count for the lift', () => {
+    const h = history();
+    // Week of 16 Nov: one off-plan bench workout, no plan day.
+    const offPlan = session('2026-11-17', h.bench, [[107.5, 6]]);
+    const sessions = [...h.sessions, offPlan];
+    const now = ms('2026-11-25T00:00:00.000Z');
+    const before = trainingBlocks(h.plans, h.refs, now, TZ);
+    expect(before[2]?.week.week).toBe(4);
+    const blocks = trainingBlocks(h.plans, h.refs, now, TZ, null, sessions);
+    expect(blocks[2]?.week.week).toBe(5);
+    const lift = liftInBlock(blocks[2] as NonNullable<(typeof blocks)[2]>, h.bench, sessions, nameOf);
+    expect(liftBlockDetailView(lift).table.find((r) => r.week === '4')?.topSet).toBe('107.5×6 kg');
+    // Off-plan workouts count their week, not a plan session.
+    expect(blocks[2]?.sessionsDone).toBe(before[2]?.sessionsDone);
+  });
+});
+
 describe('the views', () => {
   it('This block: Week 3 of 6, bench 100×6 → 105×6 kg, +5%, an off-plan workout counted', () => {
     const h = history();

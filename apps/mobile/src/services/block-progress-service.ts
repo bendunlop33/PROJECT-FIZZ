@@ -102,7 +102,8 @@ export function createBlockProgressService(deps: BlockProgressDeps) {
     const [plans, applied, projected, mains] = await Promise.all([repos().planDrafts.listByOwner(p.id), repos().planDrafts.applied(p.id).catch(() => null), deps.projected(), mainLiftsNow(p.id)]);
     // Imported and past-logged workouts linked to the plan in use count for it (as Today's header reads them).
     const refs = await planRefs(deps.store(), { ownerId: p.id, plan: applied, nowMs }, REF_LIMIT).catch(() => []);
-    const blocks = trainingBlocks(plans, refs, nowMs, p.timezone, mains);
+    // Every finished workout counts its week by date (off-plan, empty and imported ones too).
+    const blocks = trainingBlocks(plans, refs, nowMs, p.timezone, mains, projected?.sessions ?? []);
     const names = projected?.nameOf ?? (() => null);
     return { p, blocks, sessions: blockSessions(projected?.sessions ?? []), nameOf: (id) => names(id) ?? '' };
   }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { benWithBlocks, type BlockBen } from './block-seed';
+import { logWorkout } from './harness';
 import { CONNECTED, contextWorkout, replyWith, StepModel, toolCall } from './coach-model';
 
 /**
@@ -131,6 +132,20 @@ describe('block progress (real SQLite)', () => {
     const d = await ben.s.blockProgress.liftDetail(blocks?.rows[0]?.key ?? null, (await pulldownId(ben)) ?? '');
     expect(d?.view.latestSessionId).toBe(ben.offPlanSessionId);
     expect(d?.view.table.find((r) => r.week === '3')?.topSet).toBe('59×10 kg');
+  });
+
+  it('a week with only an off-plan workout is a block week by date; its sets count (decision 4)', async () => {
+    ben = await benWithBlocks();
+    const { h, s, gymId } = ben;
+    // Week 4 (26 Oct): no plan day, one off-plan bench workout.
+    h.clockMs = Date.parse('2026-10-27T17:00:00.000Z');
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 72.5, reps: 6, rpe: 8 }] }]);
+    h.clockMs = Date.parse('2026-11-03T12:00:00.000Z');
+    expect((await s.blockProgress.thisBlock())?.meta).toBe('Week 5 of 6');
+    const d = await s.blockProgress.liftDetail(null, ben.plans[2]?.mainId ?? '');
+    expect(d?.view.table.find((r) => r.week === '4')?.topSet).toBe('72.5×6 kg');
+    // A gain after the stall ends it.
+    expect(d?.view.stalled).toBe(false);
   });
 
   it('Library › Plan’s line: `1 stalled` (nothing up yet this block)', async () => {

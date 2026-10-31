@@ -82,7 +82,7 @@ describe('block week (pbBlockWeekOf)', () => {
     expect(pbBlockLine(done).text).toBe('Block done');
   });
 
-  it('pbBlockOfPlan counts the plan’s own workouts only (its plan day, or a workout its Apply made)', () => {
+  it('pbBlockOfPlan: plan days from its own workouts; (Ben, 31 Oct) any other workout counts its week by date', () => {
     const p = build(answers({ split: 'ppl', sessions: 3, days: [0, 2, 4] }));
     const version = pbPlanVersion({ plan: p, answers: answers({ split: 'ppl', sessions: 3, days: [0, 2, 4] }), kitOf: KIT_OF, gymId: null, equipmentVersion: 'v', opId: '00000000-0000-4000-8000-00000000b001', at, planId: 'plan-1' });
     const plan = {
@@ -99,7 +99,9 @@ describe('block week (pbBlockWeekOf)', () => {
       { routineId: 'someone-else', startedAtUtc: '2026-10-29T08:00:00Z' },
       { routineId: null, startedAtUtc: '2026-10-29T09:00:00Z', planDay: { planId: 'other-plan', dayIndex: 0 } },
     ];
-    expect(pbBlockOfPlan(plan, refs, ms('2026-11-03T08:00:00Z'), TZ)).toMatchObject({ week: 3, daysDone: [[0], [1], []] });
+    // The week of 26 Oct has only off-plan workouts: it still counts (no plan day done in it).
+    expect(pbBlockOfPlan(plan, refs, ms('2026-11-03T08:00:00Z'), TZ)).toMatchObject({ week: 4, daysDone: [[0], [1], [], []] });
+    expect(pbBlockOfPlan(plan, refs.slice(0, 2), ms('2026-11-03T08:00:00Z'), TZ)).toMatchObject({ week: 3, daysDone: [[0], [1], []] });
     // A coach plan (no builder answers) has no block.
     expect(pbBlockOfPlan({ ...plan, versions: [{ ...version, builder: undefined }] }, refs, ms('2026-11-03T08:00:00Z'), TZ)).toBeNull();
   });
