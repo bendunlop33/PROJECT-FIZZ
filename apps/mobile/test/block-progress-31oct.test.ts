@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { benWithBlocks, type BlockBen } from './block-seed';
+import { logWorkout } from './harness';
 import { CONNECTED, contextWorkout, replyWith, StepModel, toolCall } from './coach-model';
 
 /**
@@ -100,12 +101,57 @@ describe('block progress (real SQLite)', () => {
     expect(d?.next?.row.actions.some((a) => a.tap === 'apply') ?? false).toBe(false);
   });
 
-  it('a stalled plan main lift with a top set: Stalled 2 weeks, no Next week row (the Summary lists no top/back-off lift; open)', async () => {
+  it('the stalled main lift (top set + back-offs), no AI: the rule’s reset as `Top … · back-off …` with Skip / Apply; Apply changes next week’s plan day, Undo puts it back (decision 1)', async () => {
     ben = await benWithBlocks();
-    const d = await ben.s.blockProgress.liftDetail(null, ben.plans[2]?.mainId ?? '');
+    const mainId = ben.plans[2]?.mainId ?? '';
+    const d = await ben.s.blockProgress.liftDetail(null, mainId);
     expect(d?.view.pill).toEqual({ text: 'Stalled 2 weeks', tone: 'stalled' });
     expect(d?.view.table.every((r) => r.e1rm === '—' || r.e1rm.endsWith(' est.'))).toBe(true);
-    expect(d?.next).toBeNull();
+    const next = d?.next;
+    if (next == null) throw new Error('no Next week row');
+    // 70 × 2 twice against 3–6: the built-in rule's own stall reset (playbook rule 8), snapped to the bar; the back-off moves with it.
+    expect(next.row.line.text).toBe('Top 70×6 → 65×3–6 kg · back-off 65');
+    expect(next.row.info[0]).toBe('Rule');
+    expect(next.row.actions.map((a) => a.tap)).toEqual(['not_now', 'apply']);
+    expect(await ben.s.blockProgress.tapNext(next.sessionId, next.row, 'apply')).toEqual({ ok: true });
+    const after = (await ben.s.blockProgress.liftDetail(null, mainId))?.next;
+    expect(after?.row.actions.map((a) => a.tap)).toEqual(['undo']);
+    // End to end: the plan day's next start plans the top at 65 (the workout started from this one).
+    const plannedTop = async () => {
+      const preview = await ben?.s.workout.start({ gymId: ben.gymId, opId: ben.h.ids(), checkIn: null, routineOf: ben.plans[2]?.routineId ?? '' });
+      if (preview?.ok !== true) throw new Error('not started');
+      const ex = preview.aggregate.exercises.find((e) => e.exerciseId === mainId);
+      const top = preview.aggregate.sets.find((x) => x.sessionExerciseId === ex?.id && x.setType === 'top')?.planned.load?.value;
+      const v = (await ben?.s.workout.load(preview.aggregate.session.id))?.aggregate.session.version ?? 0;
+      await ben?.s.workout.dispatch(preview.aggregate.session.id, { type: 'discard', at: ben.h.now(), opId: ben.h.ids(), expectedVersion: v, confirmedLoggedSets: 0 });
+      return top;
+    };
+    expect(await plannedTop()).toBe(65);
+    if (after == null) throw new Error('no Undo');
+    expect(await ben.s.blockProgress.tapNext(after.sessionId, after.row, 'undo')).toEqual({ ok: true });
+    expect((await ben.s.blockProgress.liftDetail(null, mainId))?.next?.row.actions.map((a) => a.tap)).toEqual(['not_now', 'apply']);
+    expect(await plannedTop()).toBe(70);
+  });
+
+  it('the main lift with the coach connected: its top-set change reads `Top … · back-off …`; lighter + fewer reps is a bigger change, Skip / Apply (rule 3)', async () => {
+    let model = new StepModel([]);
+    ben = await benWithBlocks({ coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
+    const mainId = ben.plans[2]?.mainId ?? '';
+    model = new StepModel([
+      (req) => {
+        const w = contextWorkout(req);
+        return toolCall('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: mainId, target: { load: { value: 67.5, unit: 'kg', convention: 'total' }, reps: { min: 4, max: 6 } }, sets: null, reason: 'Two misses at 70.' }] });
+      },
+      () => replyWith('A little lighter next week.'),
+    ]);
+    expect(await ben.s.coach.runSummaryTurn(ben.accessory.latestSessionId)).not.toBeNull();
+    const next = (await ben.s.blockProgress.liftDetail(null, mainId, 'connected'))?.next;
+    if (next == null) throw new Error('no Next week row');
+    expect(next.row.line.text).toMatch(/^Top 70×6 → 67\.5×4–6 kg · back-off \d+(\.5)?$/);
+    expect(next.row.tag).toBe('Suggested');
+    expect(next.row.actions.map((a) => a.tap)).toEqual(['not_now', 'apply']);
+    expect(await ben.s.blockProgress.tapNext(next.sessionId, next.row, 'apply')).toEqual({ ok: true });
+    expect((await ben.s.blockProgress.liftDetail(null, mainId, 'connected'))?.next?.row.actions.map((a) => a.tap)).toEqual(['undo']);
   });
 
   it('a pain flag on the lift: the coach’s change is not offered to apply (rule 9)', async () => {
@@ -131,6 +177,20 @@ describe('block progress (real SQLite)', () => {
     const d = await ben.s.blockProgress.liftDetail(blocks?.rows[0]?.key ?? null, (await pulldownId(ben)) ?? '');
     expect(d?.view.latestSessionId).toBe(ben.offPlanSessionId);
     expect(d?.view.table.find((r) => r.week === '3')?.topSet).toBe('59×10 kg');
+  });
+
+  it('a week with only an off-plan workout is a block week by date; its sets count (decision 4)', async () => {
+    ben = await benWithBlocks();
+    const { h, s, gymId } = ben;
+    // Week 4 (26 Oct): no plan day, one off-plan bench workout.
+    h.clockMs = Date.parse('2026-10-27T17:00:00.000Z');
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 72.5, reps: 6, rpe: 8 }] }]);
+    h.clockMs = Date.parse('2026-11-03T12:00:00.000Z');
+    expect((await s.blockProgress.thisBlock())?.meta).toBe('Week 5 of 6');
+    const d = await s.blockProgress.liftDetail(null, ben.plans[2]?.mainId ?? '');
+    expect(d?.view.table.find((r) => r.week === '4')?.topSet).toBe('72.5×6 kg');
+    // A gain after the stall ends it.
+    expect(d?.view.stalled).toBe(false);
   });
 
   it('Library › Plan’s line: `1 stalled` (nothing up yet this block)', async () => {

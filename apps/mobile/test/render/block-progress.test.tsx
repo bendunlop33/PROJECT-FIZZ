@@ -50,8 +50,12 @@ describe('block progress screens', () => {
     const r = await renderScreen(ben.h, ben.launched, LiftBlockScreen, { name: 'ProgressLiftBlock', params: { blockKey: null, exerciseId: mainId, name: 'Bench press' } }, (t) => t.includes('Stalled 2 weeks'));
     const text = r.text();
     for (const w of ['Stalled 2 weeks', 'Top set 70×6 kg, 3 weeks running.', 'W1', 'W3', 'Week', 'Top set', 'Sets', 'Est. 1RM', '70×2 kg', ' est.']) expect(text).toContain(w);
-    // No fix offered for a top/back-off main lift (nothing invented).
-    expect(text).not.toContain('Apply');
+    // (Decision 1) The main lift's Next week: the rule's reset as one line, Why? / Skip / Apply; Apply then Undo.
+    for (const w of ['Next week', 'Top 70×6 → 65×3–6 kg · back-off 65', 'Why?', 'Skip', 'Apply']) expect(text).toContain(w);
+    await r.press('Apply');
+    await r.waitFor((t) => t.includes('Undo') && !t.includes('Apply'), 'Undo after Apply');
+    await r.press('Undo');
+    await r.waitFor((t) => t.includes('Apply'), 'Apply back after Undo');
     expectHealthy(r);
     await r.unmount();
   });
