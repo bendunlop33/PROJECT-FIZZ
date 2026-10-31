@@ -493,7 +493,7 @@ export interface PlanEditApplyInput {
   routines: readonly Routine[];
 }
 
-function builderAnswersOf(plan: PlanDraft): PlanBuilderAnswers | null {
+export function builderAnswersOf(plan: PlanDraft): PlanBuilderAnswers | null {
   return pbVersionOf(plan, plan.currentVersion)?.builder?.answers ?? null;
 }
 
