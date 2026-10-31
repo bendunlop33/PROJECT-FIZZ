@@ -119,8 +119,14 @@ function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
 
+/** (ADR 0004) The app's bundle before any SideStore suffix; `FIZZ_BUNDLE_BASE` in @fizz/schemas. */
+const FIZZ_BUNDLE_BASE = 'com.projectfizz.fizz';
+
+/** This install's bundle, or any install or build of the app (`com.projectfizz.fizz`, `.<suffix>`, `-<suffix>`). */
 function isOwn(bundleId: string, ownBundleId: string): boolean {
-  return ownBundleId !== '' && (bundleId === ownBundleId || bundleId.startsWith(`${ownBundleId}.`));
+  const b = bundleId.toLowerCase();
+  const of = (base: string) => base !== '' && (b === base || b.startsWith(`${base}.`) || b.startsWith(`${base}-`));
+  return of(FIZZ_BUNDLE_BASE) || of(ownBundleId.toLowerCase());
 }
 
 function validZone(tz: string | null, fallback: string): string {

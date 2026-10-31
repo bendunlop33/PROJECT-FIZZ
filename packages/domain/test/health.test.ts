@@ -14,6 +14,11 @@ import {
   dismissHealthLink,
   dayPairs,
   linkableSamples,
+  linkedTwins,
+  linksToRelink,
+  twinsToRecord,
+  changeLinkAlso,
+  sameSessionSamples,
   linkQuestions,
   linkChoicesFor,
   mergeFeed,
@@ -378,7 +383,8 @@ describe('Links', () => {
   });
 
   it('two candidates on one app workout: nothing auto-links; the Summary asks with a list', () => {
-    const second = { ...garminStrength, uuid: U2, startUtc: '2026-10-27T17:20:00.000Z', endUtc: '2026-10-27T18:30:00.000Z' };
+    // Overlapping less than half of the shorter: two sessions, not one recorded twice.
+    const second = { ...garminStrength, uuid: U2, startUtc: '2026-10-27T17:30:00.000Z', endUtc: '2026-10-27T18:30:00.000Z' };
     expect(autoLinkPairs({ samples: [second, garminStrength], workouts: [workout()], links: [] })).toEqual([]);
     expect(linkQuestions(workout(), [second, garminStrength], []).map((x) => x.uuid)).toEqual([U1, U2]);
   });
@@ -562,8 +568,11 @@ describe('pairing a day (Ben, 29 Oct: "Why no option to pair workouts together")
 
   it('the app’s own copy (written, or its external ID is an app workout) never counts: one Garmin workout auto-links', () => {
     const copy = sample({ uuid: U2, activityType: 50, startUtc: legs.startUtc, endUtc: legs.endUtc, sourceBundleId: 'com.projectfizz.fizz-old', externalId: S1.toUpperCase() });
-    expect(autoLinkPairs({ samples: [garmin, copy], workouts: [legs], links: [] })).toEqual([]);
+    // Unfiltered, the copy and the Garmin workout are one session recorded twice (Ben, 31 Oct): one link, never none.
+    expect(autoLinkPairs({ samples: [garmin, copy], workouts: [legs], links: [] })).toHaveLength(1);
     expect(linkableSamples([garmin, copy], new Set(), new Set([S1]))).toEqual([garmin]);
+    // Any install's bundle is the app's own (a SideStore suffix), with no external ID or record.
+    expect(linkableSamples([garmin, { ...copy, externalId: null, sourceBundleId: 'com.projectfizz.fizz.ABCDE12345' }], new Set(), new Set())).toEqual([garmin]);
     expect(linkableSamples([garmin, copy], new Set([U2]), new Set())).toEqual([garmin]);
     expect(autoLinkPairs({ samples: linkableSamples([garmin, copy], new Set(), new Set([S1])), workouts: [legs], links: [] })).toEqual([{ healthUuid: U1, sessionId: S1 }]);
   });
@@ -594,8 +603,13 @@ describe('pairing a day (Ben, 29 Oct: "Why no option to pair workouts together")
     const d = dayPairs({ date: '2026-10-26', samples: [garmin], workouts: [legs], links: [linked] });
     expect(d.unpaired).toEqual([]);
     expect(d.paired.map((x) => [x.workout.sessionId, x.sample.uuid, x.link.version])).toEqual([[S1, U1, 2]]);
+    // (Ben, 31 Oct) A second strength workout that day, apart from the paired one: no workout is free, but it may be
+    // the same session recorded again: `Same workout` is offered.
     const second = sample({ uuid: U2, activityType: 50, startUtc: '2026-10-26T19:30:00.000Z', endUtc: '2026-10-26T20:00:00.000Z' });
-    expect(dayPairs({ date: '2026-10-26', samples: [garmin, second], workouts: [legs], links: [linked] }).unpaired).toEqual([]);
+    const left = dayPairs({ date: '2026-10-26', samples: [garmin, second], workouts: [legs], links: [linked] }).unpaired;
+    expect(left.map((u) => [u.sample.uuid, u.choices.length, u.same.map((x) => [x.workout.sessionId, x.link.healthUuid])])).toEqual([[U2, 0, [[S1, U1]]]]);
+    // A run that day: nothing offered.
+    expect(dayPairs({ date: '2026-10-26', samples: [garmin, { ...second, activityType: 37 }], workouts: [legs], links: [linked] }).unpaired).toEqual([]);
   });
 });
 
@@ -676,5 +690,91 @@ describe('linked Health workouts never show apart; back-fill pairing (Ben, 31 Oc
     // Released, the workout is free: the Garmin workout that day links.
     expect(autoLinkPairs({ samples: [garmin], workouts: [push], links: [r.next] })).toEqual([{ healthUuid: U1, sessionId: S1 }]);
     expect(autoLinkPairs({ samples: [garmin], workouts: [push], links: [toCopy] })).toEqual([]);
+  });
+});
+
+describe('one session recorded twice; a bad automatic link (Ben, 31 Oct: "These should link")', () => {
+  // Synthetic. Wed: Push 18:04–18:50, linked to a Garmin `Strength` 18:01–18:51. Garmin writes it again, 18:02–18:52.
+  const U4 = 'a0000000-0000-4000-8000-000000000004';
+  const push = workout({ startUtc: '2026-10-28T18:04:00.000Z', endUtc: '2026-10-28T18:50:00.000Z' });
+  const garmin = sample({ activityType: 50, startUtc: '2026-10-28T18:01:00.000Z', endUtc: '2026-10-28T18:51:00.000Z', durationS: 3000, distanceM: null, avgHeartRate: 128 });
+  const again = { ...garmin, uuid: U2, startUtc: '2026-10-28T18:02:00.000Z', endUtc: '2026-10-28T18:52:00.000Z' };
+  const watch = { ...garmin, uuid: U3, sourceName: 'Apple Watch', sourceBundleId: 'com.apple.health.ABC', avgHeartRate: null };
+  const later = { ...garmin, uuid: U4, startUtc: '2026-10-28T20:30:00.000Z', endUtc: '2026-10-28T21:10:00.000Z', durationS: 2400 };
+  const linked = link({ healthUuid: U1, sessionId: S1 });
+  const shown = (samples: HealthWorkoutSample[], links: HealthLink[]) =>
+    activitiesWithHealth({ ownerId: OWNER, samples, links, own: [], ownBundleId: BUNDLE, writtenUuids: new Set(), appSessionIds: new Set() }).map((a) => a.id);
+
+  it('the same session: strength, same day, overlapping most of the shorter; a run or a later session is not', () => {
+    expect(sameSessionSamples(again, garmin)).toBe(true);
+    expect(sameSessionSamples(watch, garmin)).toBe(true);
+    expect(sameSessionSamples(later, garmin)).toBe(false);
+    expect(sameSessionSamples({ ...again, activityType: 37 }, garmin)).toBe(false);
+  });
+
+  it('a linked Garmin workout and Garmin’s duplicate: shown once (the workout), on the day sheet too; recorded in the link', () => {
+    expect(shown([garmin, again], [linked])).toEqual([]);
+    const d = dayPairs({ date: '2026-10-28', samples: [garmin, again], workouts: [push], links: [linked] });
+    expect(d.unpaired).toEqual([]);
+    expect(d.paired.map((x) => x.sample.uuid)).toEqual([U1]);
+    expect([...linkedTwins([garmin, again], [linked]).keys()]).toEqual([U2]);
+    expect(twinsToRecord([garmin, again], [linked])).toEqual([{ healthUuid: U1, add: [U2] }]);
+    const rec = changeLinkAlso(linked, { add: [U2], opId: 'twin-1', atUtc: '2026-10-31T18:00:00.000Z', expectedVersion: null });
+    if (rec.kind !== 'write') throw new Error('no write');
+    expect(rec.next).toMatchObject({ also: [U2], version: 2 });
+    expect(HealthLinkSchema.parse(rec.next).also).toEqual([U2]);
+    // Recorded: nothing more to record; the same op again changes nothing (rule 5).
+    expect(twinsToRecord([garmin, again], [rec.next])).toEqual([]);
+    expect(changeLinkAlso(rec.next, { add: [U2], opId: 'twin-1', atUtc: '2026-10-31T18:00:00.000Z', expectedVersion: null }).kind).toBe('duplicate');
+    expect(changeLinkAlso(rec.next, { remove: [U2], opId: 'undo-1', atUtc: '2026-10-31T18:00:00.000Z', expectedVersion: 1 }).kind).toBe('stale');
+  });
+
+  it('a duplicate from another source: the same, shown once', () => {
+    expect(shown([garmin, watch], [linked])).toEqual([]);
+    expect(dayPairs({ date: '2026-10-28', samples: [garmin, watch], workouts: [push], links: [linked] }).unpaired).toEqual([]);
+  });
+
+  it('a second session that day that doesn’t overlap: stays apart, with Same workout (no free workout) or Pair (one free)', () => {
+    expect(shown([garmin, later], [linked])).toEqual([U4]);
+    const d = dayPairs({ date: '2026-10-28', samples: [garmin, later], workouts: [push], links: [linked] });
+    expect(d.unpaired.map((u) => [u.sample.uuid, u.choices.map((c) => c.sessionId), u.same.map((x) => x.workout.sessionId)])).toEqual([[U4, [], [S1]]]);
+    const evening = workout({ sessionId: S2, startUtc: '2026-10-28T20:31:00.000Z', endUtc: '2026-10-28T21:09:00.000Z' });
+    const two = dayPairs({ date: '2026-10-28', samples: [garmin, later], workouts: [push, evening], links: [linked] });
+    expect(two.unpaired.map((u) => [u.sample.uuid, u.choices.map((c) => c.sessionId), u.same.map((x) => x.workout.sessionId)])).toEqual([[U4, [S2], [S1]]]);
+    // `Same workout` by hand: it joins the link and shows nowhere on its own; its Undo puts it back.
+    const joined = changeLinkAlso(linked, { add: [U4], opId: 'same-1', atUtc: '2026-10-31T18:00:00.000Z', expectedVersion: 1 });
+    if (joined.kind !== 'write') throw new Error('no write');
+    expect(shown([garmin, later], [joined.next])).toEqual([]);
+    const undone = changeLinkAlso(joined.next, { remove: [U4], opId: 'undo-same-1', atUtc: '2026-10-31T18:00:01.000Z', expectedVersion: 2 });
+    if (undone.kind !== 'write') throw new Error('no write');
+    expect(undone.next.also).toBeUndefined();
+    expect(shown([garmin, later], [undone.next])).toEqual([U4]);
+  });
+
+  it('Ben’s own Unpair keeps a duplicate apart', () => {
+    const apart = link({ id: healthLinkId(U2), healthUuid: U2, status: 'unlinked', by: 'ben' });
+    expect(shown([garmin, again], [linked, apart])).toEqual([U2]);
+  });
+
+  it('two unlinked recordings of one session: one auto-link (the fuller), the other recorded with it', () => {
+    expect(autoLinkPairs({ samples: [watch, garmin], workouts: [push], links: [] })).toEqual([{ healthUuid: U1, sessionId: S1, also: [U3] }]);
+  });
+
+  it('the link holds the app’s own copy (any install), or a workout no longer in Health: released so the real one links; a real link is kept', () => {
+    const copy = { ...garmin, uuid: U3, sourceName: 'GymSmarter', sourceBundleId: 'com.projectfizz.fizz.XYZ', avgHeartRate: null };
+    const toCopy = link({ id: healthLinkId(U3), healthUuid: U3 });
+    const relink = (links: HealthLink[], samples: HealthWorkoutSample[], own: string[] = []) => linksToRelink({ links, samples, workouts: [push], ownUuids: new Set(own), readFromUtc: '2026-10-01T00:00:00.000Z' }).map((l) => l.healthUuid);
+    expect(relink([toCopy], [copy, garmin])).toEqual([U3]);
+    expect(relink([toCopy], [{ ...copy, sourceBundleId: 'com.other' }, garmin], [U3])).toEqual([U3]);
+    // Not in this read (deleted in Health, or this install's own copy, never stored): released when a real one overlaps.
+    expect(relink([toCopy], [garmin])).toEqual([U3]);
+    expect(relink([toCopy], [])).toEqual([]);
+    // A real (third-party) link is kept; the overlapping one is its duplicate.
+    expect(relink([linked], [garmin, again])).toEqual([]);
+    // Ben's own link is left alone.
+    expect(relink([{ ...toCopy, by: 'ben' }], [copy, garmin])).toEqual([]);
+    const r = releaseOwnCopyLink(toCopy, { opId: 'rel-1', atUtc: '2026-10-31T18:00:00.000Z', expectedVersion: 1 });
+    if (r.kind !== 'write') throw new Error('no write');
+    expect(autoLinkPairs({ samples: linkableSamples([copy, garmin, again], new Set(), new Set()), workouts: [push], links: [r.next] })).toEqual([{ healthUuid: U1, sessionId: S1, also: [U2] }]);
   });
 });

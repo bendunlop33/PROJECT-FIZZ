@@ -22,9 +22,24 @@ export const HEALTH_LIMITS = {
   /** Text read from Health (source names) is cut to this; it is shown as data only. */
   sourceNameMax: 60,
   maxOps: 40,
+  /** (Ben, 31 Oct) Other Health workouts recorded for one linked workout (`HealthLink.also`). */
+  maxAlso: 8,
   /** Workouts written with a duration outside this aren't written (a broken clock, not a workout). */
   maxWorkoutS: 24 * 3600,
 } as const;
+
+/**
+ * (ADR 0004) The app's bundle ID before any SideStore suffix: a Health workout from this bundle or any
+ * `com.projectfizz.fizz.<suffix>` (another install or build of the app) is the app's own copy.
+ */
+export const FIZZ_BUNDLE_BASE = 'com.projectfizz.fizz';
+
+/** Whether a Health source bundle is this app's, from any install (`FIZZ_BUNDLE_BASE`, or `own` and its suffixes). */
+export function isFizzBundle(bundleId: string, own: string | null = null): boolean {
+  const b = bundleId.toLowerCase();
+  const of = (base: string) => base !== '' && (b === base || b.startsWith(`${base}.`) || b.startsWith(`${base}-`));
+  return of(FIZZ_BUNDLE_BASE) || (own !== null && of(own.toLowerCase()));
+}
 
 /** Health's own sample ID (`HKObject.uuid`), lowercased. */
 export const HealthUuidSchema = IdSchema;
@@ -140,6 +155,11 @@ export const HealthLinkSchema = RecordMetaSchema.extend({
   /** `auto`: a clear overlap linked it on reading; `ben`: his tap. */
   by: z.enum(['auto', 'ben']),
   opIds: z.array(OperationIdSchema).max(HEALTH_LIMITS.maxOps),
+  /**
+   * (Ben, 31 Oct) Other Health workouts that are this same workout recorded again (Garmin writing it twice, a watch's
+   * twin): shown nowhere on their own. Absent: none.
+   */
+  also: z.array(HealthUuidSchema).max(HEALTH_LIMITS.maxAlso).optional(),
 });
 export type HealthLink = z.infer<typeof HealthLinkSchema>;
 

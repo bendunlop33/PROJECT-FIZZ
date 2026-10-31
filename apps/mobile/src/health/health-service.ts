@@ -5,6 +5,11 @@ import {
   releaseOwnCopyLink,
   dayPairs,
   linkableSamples,
+  linksToRelink,
+  isOwnCopy,
+  twinsToRecord,
+  changeLinkAlso,
+  deriveId,
   classifyHealthWorkout,
   dismissHealthLink,
   healthActivityOf,
@@ -18,8 +23,8 @@ import {
   linkChoicesFor,
   localDateOf,
   sameDayLinkCandidates,
-  linkSuggestion,
-  nearbyWorkouts,
+  HK_STRENGTH_TYPES,
+  HK_OTHER_TYPE,
   planHealthWrites,
   timingUndoCommand,
   type CommandOutcome,
@@ -44,10 +49,10 @@ import {
 import type { HealthLinkWrite, Store } from '@fizz/persistence';
 import { healthCapability, restingHrSamplesFrom, sleepSamplesFrom, weightSamplesFrom, workoutSamplesFrom, type HealthCapability, type HealthPort, type HealthType } from '@fizz/providers';
 import type { LinkedActivityContext } from '@fizz/coach';
-import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthLink, type HealthReadWindow, type HealthSettings, type HealthWorkoutSample, type SessionCommand, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
+import { DEFAULT_HEALTH_SETTINGS, type HealthLink, type HealthReadWindow, type HealthSettings, type HealthWorkoutSample, type SessionCommand, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 
 import { NATIVE_PAUSED_COPY, type NativePause } from '../diagnostics/launch-guard';
-import { HEALTH_COPY, healthScreenView, linkCandidateLine, linkedActivityView, NO_DAY_PAIRS, pairedFacts, type DayPairsView, type HealthScreenView, type HealthSwitch, type LinkCandidateView, type WorkoutHealthView } from './health-view';
+import { HEALTH_COPY, healthScreenView, linkCandidateLine, linkedActivityView, NO_DAY_PAIRS, pairedFacts, type DayPairsView, type HealthActivityDetail, type HealthScreenView, type HealthSwitch, type LinkCandidateView, type WorkoutHealthView } from './health-view';
 import { formatTime } from '../format/dates';
 
 /**
@@ -272,7 +277,7 @@ export function createHealthService(deps: HealthServiceDeps) {
         const samples = workoutSamplesFrom(rows, port.bundleId, tz);
         await repo().replaceSamples(p.id, 'workout', toIso(sinceMs), samples);
         fresh += samples.filter((x) => !before.has(x.uuid)).length;
-        await autoLink(p, samples);
+        await autoLink(p, samples, toIso(sinceMs));
       }
       if (s.readRestingHeartRate) {
         const sinceMs = readSinceMs(s.readWindow, nowMs);
@@ -301,29 +306,43 @@ export function createHealthService(deps: HealthServiceDeps) {
     if (cur !== null) await repo().updateSettings(p.id, cur.version, (x) => (ok ? { ...x, lastReadUtc: at, lastReadFailedUtc: null } : { ...x, lastReadFailedUtc: at })).catch(() => null);
   }
 
-  async function autoLink(p: UserProfile, samples: Parameters<typeof autoLinkPairs>[0]['samples']): Promise<void> {
+  async function autoLink(p: UserProfile, samples: Parameters<typeof autoLinkPairs>[0]['samples'], readFromUtc: string): Promise<void> {
     if (samples.length === 0) return;
     const nowMs = toMs(deps.now().utc);
     const first = samples.reduce((m, x) => Math.min(m, toMs(x.startUtc)), nowMs);
-    const workouts = await repo().linkableWorkouts(p.id, toIso(first - 2 * 86_400_000), toIso(nowMs + 86_400_000));
+    const workouts = await repo().linkableWorkouts(p.id, toIso(Math.min(first, toMs(readFromUtc)) - 2 * 86_400_000), toIso(nowMs + 86_400_000));
     // Never the app's own copies (an older build's source passes the bundle check): one Garmin workout is then one.
     const own = await ownCopies(p.id, samples);
-    // (Ben, 31 Oct) An older build's automatic link to the app's own copy holds the workout: release it first.
-    const ownUuids = new Set([...own.written, ...samples.filter((x) => x.externalId !== null && own.sessions.has(x.externalId.toLowerCase())).map((x) => x.uuid)]);
-    for (const l of ownCopyLinks(await repo().links(p.id), ownUuids)) {
+    // (Ben, 31 Oct) An automatic link to the app's own copy (any install), or to a workout no longer in Health, holds
+    // the workout while a real one overlaps it: release it first, so the real one links below.
+    const ownUuids = new Set([...own.written, ...samples.filter((x) => isOwnCopy(x, own.written, own.sessions)).map((x) => x.uuid)]);
+    const before = await repo().links(p.id);
+    const release = new Map([...ownCopyLinks(before, ownUuids), ...linksToRelink({ links: before, samples, workouts, ownUuids, readFromUtc })].map((l) => [l.healthUuid, l] as const));
+    for (const l of release.values()) {
       await repo()
         .changeLink(p.id, l.healthUuid, (cur) => (cur === null ? { kind: 'stale', current: null } : releaseOwnCopyLink(cur, { opId: `health-own-release:${l.healthUuid}:${String(l.version)}`, atUtc: deps.now().utc, expectedVersion: l.version })))
         .catch(() => null);
     }
     const links = await repo().links(p.id);
+    const linkable = linkableSamples(samples, own.written, own.sessions);
     // Every Health workout in the read window, so past days pair too (a back-fill; Ben, 31 Oct).
-    for (const pair of autoLinkPairs({ samples: linkableSamples(samples, own.written, own.sessions), workouts, links })) {
-      await repo()
+    for (const pair of autoLinkPairs({ samples: linkable, workouts, links })) {
+      const r = await repo()
         .changeLink(p.id, pair.healthUuid, async (cur, elsewhere) =>
           linkHealthActivity(cur, { ownerId: p.id, healthUuid: pair.healthUuid, sessionId: pair.sessionId, by: 'auto', opId: `health-autolink:${pair.healthUuid}`, atUtc: deps.now().utc, expectedVersion: null, sessionLinkedElsewhere: await elsewhere(pair.sessionId) }),
         )
         .catch(() => null);
+      if (r?.status === 'written' && pair.also !== undefined) await recordTwins(p.id, r.link.healthUuid, pair.also);
     }
+    // (Ben, 31 Oct) A linked workout recorded again (Garmin writing it twice, a watch's twin) is part of that link.
+    for (const t of twinsToRecord(linkable, await repo().links(p.id))) await recordTwins(p.id, t.healthUuid, t.add);
+  }
+
+  /** Record `add` in a link's `also` (deterministic op ID per recording, so a re-read changes nothing). */
+  async function recordTwins(ownerId: string, healthUuid: string, add: readonly string[]): Promise<void> {
+    await repo()
+      .changeLink(ownerId, healthUuid, (cur) => changeLinkAlso(cur, { add, opId: `health-twin:${healthUuid}:${deriveId([...add].sort().join(','))}`, atUtc: deps.now().utc, expectedVersion: null }))
+      .catch(() => null);
   }
 
   /** The app's own Health copies among `samples`: UUIDs it wrote, and external IDs that are its workouts. */
@@ -391,11 +410,6 @@ export function createHealthService(deps: HealthServiceDeps) {
 
   function candidateView(x: HealthWorkoutSample, tz: string): LinkCandidateView {
     return { healthUuid: x.uuid, ...linkCandidateLine(x, classifyHealthWorkout(x.activityType).label, tz) };
-  }
-
-  async function linkableAround(ownerId: string, startUtc: string): Promise<LinkableWorkout[]> {
-    const ms = toMs(startUtc);
-    return repo().linkableWorkouts(ownerId, toIso(ms - 2 * 86_400_000), toIso(ms + 2 * 86_400_000));
   }
 
   return {
@@ -641,8 +655,13 @@ export function createHealthService(deps: HealthServiceDeps) {
       };
     },
 
-    /** The Health activity sheet: its facts and source, a one-tap suggestion and the `Link to a workout` list. */
-    async activity(healthUuid: string): Promise<{ activity: Activity; suggestion: LinkableWorkout | null; nearby: LinkableWorkout[]; showHeartRate: boolean } | null> {
+    /**
+     * The Health activity sheet: its facts and source, and (Ben, 31 Oct: "make it easier to pair") its one action,
+     * that day only (never across days): `pair`, the day's workouts with no linked activity, nearest first; `same`, the
+     * day's paired workouts (a strength workout may be the same one recorded again); `paired`, the workout it is
+     * linked to (Unpair).
+     */
+    async activity(healthUuid: string): Promise<HealthActivityDetail | null> {
       const p = await owner();
       if (p === null) return null;
       const sample = await repo()
@@ -651,16 +670,59 @@ export function createHealthService(deps: HealthServiceDeps) {
       if (sample === null) return null;
       const activity = healthActivityOf(sample, p.id);
       if (activity === null) return null;
-      const links = await repo()
-        .links(p.id)
-        .catch(() => []);
-      const workouts = await linkableAround(p.id, sample.startUtc).catch(() => []);
       const s = await settings(p.id);
-      const nearby = nearbyWorkouts(sample, workouts, links);
-      const sameDay = nearby.filter((w) => localDateOf(toMs(w.startUtc), w.tz) === localDateOf(toMs(sample.startUtc), w.tz));
-      // One tap (Ben, 27 Oct): the near match, else the day's only workout.
-      const suggestion = linkSuggestion(sample, workouts, links) ?? (sameDay.length === 1 ? (sameDay[0] ?? null) : null);
-      return { activity, suggestion, nearby, showHeartRate: s?.readHeartRate === true };
+      const date = localDateOf(toMs(sample.startUtc), sample.tz);
+      const base = { activity, showHeartRate: s?.readHeartRate === true };
+      const none = { ...base, pair: [], same: [], paired: null };
+      if (!HK_STRENGTH_TYPES.has(sample.activityType) && sample.activityType !== HK_OTHER_TYPE) return none;
+      try {
+        const from = toIso(localMidnightUtcMs(date, p.timezone) - 86_400_000);
+        const to = toIso(localMidnightUtcMs(date, p.timezone) + 2 * 86_400_000);
+        const all = await repo().workoutSamples(p.id, from, to);
+        const own = await ownCopies(p.id, all);
+        const samples = linkableSamples(all, own.written, own.sessions);
+        const workouts = await repo().linkableWorkouts(p.id, from, to);
+        const links = await repo().links(p.id);
+        const d = dayPairs({ date, samples: samples.some((x) => x.uuid === sample.uuid) ? samples : [...samples, sample], workouts, links });
+        // `18:04–18:50`; a date-only workout has no times.
+        const time = (w: LinkableWorkout) => (w.localDate !== undefined ? null : `${formatTime(toMs(w.startUtc), p.timezone)}–${formatTime(toMs(w.endUtc), p.timezone)}`);
+        const pairedTo = d.paired.find((x) => x.sample.uuid === sample.uuid);
+        if (pairedTo !== undefined) return { ...base, pair: [], same: [], paired: { sessionId: pairedTo.workout.sessionId, title: pairedTo.workout.title, time: time(pairedTo.workout), linkVersion: pairedTo.link.version } };
+        const u = d.unpaired.find((x) => x.sample.uuid === sample.uuid);
+        if (u === undefined) return none;
+        return {
+          ...base,
+          pair: u.choices.map((w) => ({ sessionId: w.sessionId, title: w.title, time: time(w) })),
+          same: u.same.map((x) => ({ sessionId: x.workout.sessionId, title: x.workout.title, time: time(x.workout), linkUuid: x.link.healthUuid, linkVersion: x.link.version })),
+          paired: null,
+        };
+      } catch {
+        return none;
+      }
+    },
+
+    /**
+     * (Ben, 31 Oct: "Same workout") A Health workout is the same session as a paired workout's, recorded again: it
+     * joins that link (`also`) and shows nowhere on its own. On the link's version as read; `notSameWorkout` is its
+     * Undo.
+     */
+    async sameWorkout(req: { healthUuid: string; linkUuid: string; expectedVersion: number; opId: string }): Promise<HealthLinkOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, message: 'Couldn’t save. Try again.' };
+      const r = await repo()
+        .changeLink(p.id, req.linkUuid, (cur) => changeLinkAlso(cur, { add: [req.healthUuid], opId: req.opId, atUtc: deps.now().utc, expectedVersion: req.expectedVersion }))
+        .catch(() => null);
+      return linkOutcome(r);
+    },
+
+    /** `Same workout`'s Undo: the Health workout shows on its own again. */
+    async notSameWorkout(req: { healthUuid: string; linkUuid: string; expectedVersion: number; opId: string }): Promise<HealthLinkOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, message: 'Couldn’t save. Try again.' };
+      const r = await repo()
+        .changeLink(p.id, req.linkUuid, (cur) => changeLinkAlso(cur, { remove: [req.healthUuid], opId: req.opId, atUtc: deps.now().utc, expectedVersion: req.expectedVersion }))
+        .catch(() => null);
+      return linkOutcome(r);
     },
 
     /**
@@ -685,6 +747,7 @@ export function createHealthService(deps: HealthServiceDeps) {
         const time = (w: LinkableWorkout) => (w.localDate !== undefined ? null : formatTime(toMs(w.startUtc), p.timezone));
         return {
           unpaired: Object.fromEntries(d.unpaired.map((u) => [u.sample.uuid, u.choices.map((w) => ({ sessionId: w.sessionId, time: time(w) }))])),
+          same: Object.fromEntries(d.unpaired.filter((u) => u.same.length > 0).map((u) => [u.sample.uuid, u.same.map((x) => ({ sessionId: x.workout.sessionId, linkUuid: x.link.healthUuid, linkVersion: x.link.version }))])),
           paired: Object.fromEntries(
             d.paired.map((x) => {
               const prov = healthProvenanceOf(x.sample);
