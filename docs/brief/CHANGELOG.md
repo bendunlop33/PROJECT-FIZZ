@@ -1056,3 +1056,13 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Focus view's `⋯`** is unchanged.
 - **Ben to confirm:** Move to end isn't offered on the exercise he is on (it would stay current at the end); he moves on to the next exercise first, then moves it from Workout or its `⋯`.
 - **Open:** not run on Ben's iPhone. The design specs (`active-workout.md` §4.4, `workout-table-v3.md` §7) still describe the old menu.
+## 2026-10-31: Coach answers plan questions in time, does the quick part first, and adds to the plan (Ben, 31 Oct, build 493)
+
+- **Ben's words:** "Why does this fail? Also the coach said this but then couldn't change everything still? It should be more solution focused."
+- **Why it failed:** "Change my plan: …" forced a rewrite of the whole plan at high effort, and a reasoning model is silent while it thinks: the 20 s first-event and stall windows cut it off, three times. The live "add them after the raises, fix the plan too" also went to the whole-plan rewrite, with today's add waiting behind it, and nothing could add an exercise across the plan.
+- **Time limits:** 30 s for a simple live edit, 90 s live about the plan or two things at once, 120 s for a plan question elsewhere; 60 s per step at high effort. `Thinking…` with the time shows while it works. One timeout gets one shorter retry, labelled `Short answer (ran out of time).`; a second fails honestly. Which timer fired is kept on the turn.
+- **Quick part first:** today's change is made first (applied with Undo when Ben asked, straight after the exercise he named), then the plan proposal. A slow plan part never blocks or undoes today's change.
+- **Plan-wide add:** the coach can add one exercise to chosen plan days, every week, at a chosen place, as a proposal card with each day, Apply and Undo. A weight Ben names is kept as typed; never a not-preferred exercise. ADR 0039 amendment (31 Oct). No migration.
+- **Solution-first:** a gap the coach finds comes with its fix as a card (offer or proposal), not a "Want me to …?" question; "Can u fix the plan too?" counts as asked.
+- **Hidden lines:** a true restatement of a change the card shows no longer counts as `1 line hidden`.
+- **Open:** not run on Ben's iPhone; real first-token latency at high effort on the plan route is unmeasured. The plan card shows each day's place (`Pull A: after Hanging leg raise`); the stored before/after lists aren't drawn on the card yet.

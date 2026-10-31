@@ -456,7 +456,10 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     },
     note() {
       const numberHidden = hidden.filter((h) => h.reason === 'unverified_number').length;
-      const note = claimNoteFor(options.ledger(), hidden.length - numberHidden, options.surface, numberHidden);
+      // (Ben, 31 Oct, build 493: "Only the changes shown were made · 1 line hidden") A true restatement of this turn's
+      // saved change is hidden (its card says it) but never counted: the note is for lines that weren't true.
+      const restated = hidden.filter((h) => h.detail === CARD_ONLY_DETAIL).length;
+      const note = claimNoteFor(options.ledger(), hidden.length - numberHidden - restated, options.surface, numberHidden);
       if (note !== null) return note;
       const mode = options.noChangeLine ?? 'structural';
       const text = said.join(' ');

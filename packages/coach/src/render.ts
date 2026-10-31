@@ -551,7 +551,9 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
     case 'propose_plan_swap': {
       // (Ben, 30 Oct) Every day of his plan with it, always a proposal: the card has each day, Apply and Undo.
       if (st === 'proposed') {
-        const text = `Every week: ${d.removeName} → ${d.addName} (${d.days.map((x) => x.routineName).join(', ')}).`;
+        // (Ben, 31 Oct) An add: what goes in and where, in every day listed.
+        const what = d.op === 'add' ? `+ ${d.addName}${d.afterName == null ? '' : ` after ${d.afterName}`}` : `${d.removeName ?? 'Exercise'} → ${d.addName}`;
+        const text = `Every week: ${what} (${d.days.map((x) => x.routineName).join(', ')}).`;
         return make(status, text, speakable(text));
       }
       if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');

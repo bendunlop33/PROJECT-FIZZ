@@ -51,7 +51,9 @@ import {
   classifyBenRequest,
   isStructuralRequest,
   createPausePlanExecutor,
+  createPlanAddExecutor,
   createPlanSwapExecutor,
+  type PlanAddRequest,
   type PlanSwapPrepared,
   createActivityExecutor,
   renderActionResult,
@@ -70,9 +72,7 @@ import {
   changesPlanInUse,
   type PlanContextView,
   type PlanPauseView,
-  COACH_BUILD_TIMEOUT_MS,
-  COACH_WORKOUT_TIMEOUT_MS,
-  DEFAULT_COACH_TIMING,
+  coachTurnTiming,
   asksForBuild,
   buildFollowUpIn,
   buildQuestionChain,
@@ -512,6 +512,8 @@ export interface CoachServiceDeps {
   planSwap?: {
     context(): Promise<{ days: { name: string; exercises: { catalogueId: string; name: string }[] }[]; notPreferred: { catalogueId: string; name: string }[] } | null>;
     prepare(req: { remove: string; add: string }): Promise<PlanSwapPrepared>;
+    /** (Ben, 31 Oct) `propose_plan_add`'s checks. Absent: that tool isn't wired. */
+    prepareAdd?(req: PlanAddRequest): Promise<PlanSwapPrepared>;
   };
   /**
    * (Ben, 28 Oct) The app's foreground state (`AppState`): time in the background doesn't count towards a turn's
@@ -1860,6 +1862,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat while a plan is in use.
       const swap = deps.planSwap;
       if (swap !== undefined) Object.assign(executors, createPlanSwapExecutor({ store: coachStore(), prepare: (r) => swap.prepare(r) }));
+      // (Ben, 31 Oct, build 493) One exercise added to chosen plan days at a chosen place, from every chat while a plan is in use.
+      if (swap?.prepareAdd !== undefined) Object.assign(executors, createPlanAddExecutor({ store: coachStore(), prepare: (r) => swap.prepareAdd?.(r) ?? Promise.resolve({ kind: 'refused', line: 'No plan in use' }) }));
     }
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first. Review exlist
@@ -1946,7 +1950,9 @@ export function createCoachService(deps: CoachServiceDeps) {
           now: deps.now,
           newId: deps.newId,
           ...(deps.lifecycle === undefined ? {} : { lifecycle: deps.lifecycle }),
-          ...(build?.inPlay === true ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : kind === 'workout' ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_WORKOUT_TIMEOUT_MS } } : {}),
+          // (Ben, 31 Oct, build 493) Limits that fit the work: 30 s for a simple live edit, 90 s live about the plan or two
+          // things at once, 120 s for a plan analysis elsewhere, 60 s for a build; 60 s to the first event at high effort.
+          timing: coachTurnTiming({ liveWorkout: kind === 'workout', words: req.input.kind === 'words' ? said : null, buildInPlay: build?.inPlay === true, planBuild: planWanted }),
           // Coach v3: Adjust on an offered edit applies exactly that offer (no model call); stale when the workout moved on.
           ...(liveNow ? { acceptOffer: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptEditOffer(editDepsFor(p, session, ctx.gymName, ctx.checkIn), proposal, c) } : {}),
           // Review lift-targets B1: Apply (or "yes") on the coach's target offer sets exactly that target; stale when his targets changed.

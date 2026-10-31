@@ -1267,8 +1267,54 @@ export function asksLiveChange(text: string): boolean {
     // "Is it too heavy?" asks for an opinion; "Can you fix them?" asks outright.
     if (/\?\s*$/.test(s) && !OUTRIGHT_ASK.test(s)) return false;
     if (INFO_QUESTION.test(s) && !OUTRIGHT_ASK.test(s)) return false;
-    return LOAD_COMPLAINT.test(s) || FIX_ASK.test(s) || WARMUP_CHANGE.test(s);
+    return LOAD_COMPLAINT.test(s) || FIX_ASK.test(s) || WARMUP_CHANGE.test(s) || (ADD_HERE_ASK.test(s) && !PLAN_NOUN_HERE.test(s));
   });
+}
+
+/**
+ * (Ben, 31 Oct, build 493: "Can we just add them in after the raises") An add with a place in today's workout: "add them
+ * in after the raises", "put curls in after rows", "stick some curls at the end", "can we add them before dips". Not
+ * when the same sentence names the plan (that part is the plan's).
+ */
+const ADD_HERE_ASK = /\b(?:add|put|stick|throw|chuck|slot|fit|squeeze|pop)\b[^.?!;]{0,40}?\b(?:in )?(?:after|before|at the end|on the end|to the end|next|between|first|last)\b|^(?:(?:so|ok|okay|right|yes|yeah)[,!]?\s+)?(?:can|could) (?:we|you|u) (?:just |also )?(?:add|put in|throw in|squeeze in|fit in)\b/;
+const PLAN_NOUN_HERE = /\b(?:my|the|this|our) (?:training |workout |gym )?(?:plan|programme|program)\b|\b(?:every|each) (?:week|pull day|push day|leg day|day)\b/;
+
+/**
+ * (Ben, 31 Oct, build 493: "Can u fix the plan too?") Ben asks for his plan to be changed or fixed, said as a question or
+ * an aside: "can u fix the plan too", "sort my plan as well", "and the plan", "update the plan too", "do the same in my
+ * plan". Counts as asked for a plan proposal (rule 3: a proposal he applies). Code, never the model's reading.
+ */
+const PLAN_NOUN_FIX = '(?:my|the|this|our) (?:training |workout |gym )?(?:plan|programme|program)';
+const PLAN_FIX = new RegExp(
+  `\\b(?:fix|sort(?: out)?|update|change|adjust|tweak|amend|correct|add (?:them|it|those|that|these|\\w+) to|put (?:them|it|those|that) in(?:to)?|do the same (?:in|for|to)|same for)\\s+${PLAN_NOUN_FIX}\\b|\\b${PLAN_NOUN_FIX} (?:too|as well|also)\\b`,
+);
+
+export function asksPlanFix(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'");
+  if (declinesChange(t) || multiWeekBlock(t)) return false;
+  return PLAN_FIX.test(t) || changesPlanInUse(text);
+}
+
+/**
+ * (Ben, 31 Oct) A rebuild of the plan itself (days, split, a new plan), as opposed to a targeted change to the plan in use
+ * (add, swap or fix one thing) or a question about it. Only a rebuild makes the whole-plan proposal the forced answer.
+ */
+const PLAN_REBUILD = /\b\d+[- ]?days?\b|\b(?:one|two|three|four|five|six|seven)[- ]days?\b|\b(?:ppl|push[ ,/-]*pull[ ,/-]*legs?|upper[ ,/-]*lower|full[ -]body|bro split|split)\b|\b(?:new|different|fresh) (?:plan|split|programme|program)\b|\b(?:rebuild|rewrite|redo|rework|start over|from scratch|restructure)\b|\b(?:fewer|more|less) (?:days|sessions)\b|\b(?:shorter|longer) (?:sessions|workouts|days)\b|\bdays? (?:a|per) week\b/;
+
+export function asksPlanRebuild(text: string): boolean {
+  return PLAN_REBUILD.test(lower(text).replace(/[‘’]/g, "'"));
+}
+
+/**
+ * (Ben, 31 Oct) Ben's words are about his plan as a whole: a plan he asks for, a change to the plan in use, a fix to it,
+ * or a question about what it trains ("does the plan train enough biceps throughout?"). These turns need the plan's
+ * context and several steps, so they get the plan-level time limits (ADR 0039 amendment, 31 Oct).
+ */
+const PLAN_QUESTION = /\b(?:my|the|this|our) (?:training |workout |gym )?(?:plan|programme|program|split)\b[^.?!]{0,60}\b(?:enough|train|trains|cover|covers|hit|hits|work|works|missing|lack|lacks|balanced?|gap|gaps)\b|\b(?:enough|train|trains|cover|covers|hit|hits|missing|lack|lacks)\b[^.?!]{0,60}\b(?:my|the|this|our) (?:training |workout |gym )?(?:plan|programme|program|split)\b/;
+
+export function planLevelAsk(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'");
+  return asksForPlan(text) || revisesPlan(text) || asksPlanFix(text) || PLAN_QUESTION.test(t);
 }
 
 /** A short follow-up that repeats an open request ("Try again", "Go on then", "Yes do it"), read only after one. */

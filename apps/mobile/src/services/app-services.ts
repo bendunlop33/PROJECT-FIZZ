@@ -669,7 +669,7 @@ export function createAppServices(deps: AppServicesDeps) {
     // `builder` is made below and only called after startup.
     nextWorkout: { revert: (applyActionId, check) => builder.revertCoachLanding(applyActionId, check) },
     // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat. `planSwap` is made below.
-    planSwap: { context: () => planSwap.context(), prepare: (r) => planSwap.prepare(r) },
+    planSwap: { context: () => planSwap.context(), prepare: (r) => planSwap.prepare(r), prepareAdd: (r) => planSwap.prepareAdd(r) },
     // ADR 0039 (Ben, 29 Oct): the builder's powers in every chat. `builder`, `builderCoach` and `builderPorts` are made
     // below; these run only on a coach turn or a card tap (after startup).
     builder: {
@@ -1072,7 +1072,7 @@ export function createAppServices(deps: AppServicesDeps) {
       const equipment = await repos().equipment.listByGym(gym.id).catch(() => [] as EquipmentInstance[]);
       return doableHere(exercise, { id: gym.id, name: gym.name, equipment });
     },
-    editDayEveryWeek: (req) => plans.editDayEveryWeek({ ...req, edit: { ...req.edit, afterRowId: null } }),
+    editDayEveryWeek: (req) => plans.editDayEveryWeek({ ...req, edit: { ...req.edit, afterRowId: req.edit.afterRowId ?? null } }),
     revertRoutine: async (req) => ({ ok: (await loop.routines.revert(req)).ok }),
     swapToday: async (req) => ({ ok: (await loop.workout.swapExercise(req)).ok }),
     undoToday: async (req) => ({ ok: (await loop.workout.undoOp(req)).ok }),
