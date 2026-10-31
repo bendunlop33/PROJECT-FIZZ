@@ -1,3 +1,4 @@
+import { PLAN_LIMITS } from '@fizz/schemas';
 import type { Load, Measurement, PlanDayMove, PlanDraft, PlanWeekExerciseEdit, PlanWeekSkip, RoutineExercise, SetTemplate, ZonedTimestamp } from '@fizz/schemas';
 
 import { deriveId } from '../stable';
@@ -30,8 +31,8 @@ export type PbWeekChangeRequest =
   | { kind: 'move'; dayIndex: number; weekday: number }
   /**
    * (Ben, 31 Oct) `Do today instead` / `Move to…` on this week as the tiles show it (what he did, Up next on today):
-   * each day on the weekday Ben chose, this week only. One or two days, each still to do, on today or later, no two
-   * on one weekday.
+   * each day on the weekday it is to be on, this week only. Each day still to do, on today or later, no two on one
+   * weekday.
    */
   | { kind: 'place'; moves: { dayIndex: number; weekday: number }[] }
   | { kind: 'skip'; dayIndex: number }
@@ -125,7 +126,7 @@ export function pbWeekChange(current: PlanDraft, input: PbWeekChangeInput): Plan
     case 'place': {
       const ok =
         c.moves.length >= 1 &&
-        c.moves.length <= 2 &&
+        c.moves.length <= PLAN_LIMITS.maxDays &&
         new Set(c.moves.map((m) => m.dayIndex)).size === c.moves.length &&
         new Set(c.moves.map((m) => m.weekday)).size === c.moves.length &&
         c.moves.every((m) => open(m.dayIndex) && !skipped.has(m.dayIndex) && Number.isInteger(m.weekday) && m.weekday >= input.todayWeekday && m.weekday <= 6);

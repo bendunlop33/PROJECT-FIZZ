@@ -166,7 +166,7 @@ describe('Up next: least recently trained of the days left this week, from tomor
     expect(`${fri.title} ${fri.statusText}`).toBe('Fri · Legs B Done');
     const sat = s.todaySession.daySheet(d, { date: '2026-10-31' }, d.nextKey, (x) => x);
     expect(sat.title).toBe('Sat · Pull B');
-    expect(await libraryRows(s)).toEqual(['Push A done 0', 'Pull A done 1', 'Legs A done 2', 'Push B todo 6', 'Pull B next 5', 'Legs B done 5']);
+    expect(await libraryRows(s)).toEqual(['Push A done 2', 'Pull A done 1', 'Legs A done 0', 'Push B todo 6', 'Pull B next 5', 'Legs B done 4']);
     expect((await s.plans.overview())?.daysThisWeek.text).toBe('4 of 6');
     expect(await readers(s, gymId)).toMatchObject({ today: 'Pull B', library: 'Pull B', preview: 'Pull B', coach: 'Pull B' });
 

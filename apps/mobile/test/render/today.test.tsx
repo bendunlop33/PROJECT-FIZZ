@@ -23,7 +23,9 @@ describe('Today', () => {
   it('a plan day: Up next with Start', async () => {
     const ben = await benWithHistory(h);
     await withPlan(h, ben);
-    const day = (await todayData(ben.s)).days[0]?.name ?? 'no day';
+    // (Ben, 31 Oct) Up next is the least recently trained type of the days left (not always day 1).
+    const data = await todayData(ben.s);
+    const day = data.days.find((d) => d.key === data.nextKey)?.name ?? 'no day';
     const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Up next') && t.includes(day));
     expect(r.text()).toContain('Start Plan Workout');
     expectHealthy(r);
@@ -41,14 +43,17 @@ describe('Today', () => {
 
   it('(Ben, 28 Oct) the plan days left this week show as planned rings on the coming tiles, never on a past day', async () => {
     const ben = await benWithHistory(h);
-    // An Any days 4-day plan applied Monday: Up next today, the other three one a day from Tuesday.
+    // An Any days 4-day plan applied Monday: Up next today, the other three one a day from Tuesday in plan order.
+    // (Ben, 31 Oct) Up next is Lower A: the history's full-body workouts were mostly upper, so lower was trained longest ago.
     await withPlan(h, ben);
+    const data = await todayData(ben.s);
+    expect(data.days.find((d) => d.key === data.nextKey)?.name).toBe('Lower A');
     const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Up next'));
     const labels = r.all((n) => n.props.accessibilityRole === 'button' && typeof n.props.accessibilityLabel === 'string' && /^(Today, )?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) \d+(: .*)?$/.test(n.props.accessibilityLabel)).map((n) => n.props.accessibilityLabel as string);
     const tiles = [...new Set(labels)];
     expect(tiles).toHaveLength(7);
     expect(tiles[0]).toMatch(/^Today, Monday 19: .+, today's workout$/);
-    expect(tiles.slice(1, 4)).toEqual(['Tuesday 20: Lower A, Planned', 'Wednesday 21: Upper B, Planned', 'Thursday 22: Lower B, Planned']);
+    expect(tiles.slice(1, 4)).toEqual(['Tuesday 20: Upper A, Planned', 'Wednesday 21: Upper B, Planned', 'Thursday 22: Lower B, Planned']);
     for (const t of tiles.slice(4)) expect(t).not.toContain('Planned');
     // Drawn as 7 pt empty rings (transparent, 1.5 pt outline): today's and the three coming days'.
     const rings = r.all((n) => {

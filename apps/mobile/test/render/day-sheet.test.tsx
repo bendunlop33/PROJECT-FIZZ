@@ -86,8 +86,9 @@ describe('the card picker', () => {
     const labels = r.all((n) => n.props.accessibilityRole === 'button' && typeof n.props.accessibilityLabel === 'string' && /^(Monday|Wednesday|Friday|Saturday), /.test(n.props.accessibilityLabel)).map((n) => n.props.accessibilityLabel as string);
     const rows = [...new Set(labels)];
     expect(rows).toHaveLength(4);
-    expect(rows[0]).toMatch(/^Monday, .+, Up next, selected$/);
-    for (const x of rows.slice(1)) expect(x).toMatch(/, Planned$/);
+    // Up next is today's (Monday's) day, whichever day it is (Ben, 31 Oct); the rest Planned.
+    expect(rows.filter((x) => x.startsWith('Monday, '))).toHaveLength(1);
+    for (const x of rows) expect(x).toMatch(x.startsWith('Monday, ') ? /^Monday, .+, Up next, selected$/ : /, Planned$/);
     for (const w of ['Mon', 'Wed', 'Fri', 'Sat']) expect(r.text()).toContain(w);
     expectHealthy(r);
     await r.unmount();

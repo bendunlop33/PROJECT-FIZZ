@@ -103,7 +103,8 @@ export function weekPlanDays(input: WeekPlanDaysInput): WeekPlanDay[] {
 
 /**
  * `place` (Set days; Ben, 31 Oct): the day on today and, when another day to do is on today, that one on the day's own
- * date (or, that date gone, the next free day this week), this week only, as the sheet shows the week. `pick`: Any days.
+ * date (or, that date gone, the next free day this week); every other day still to do stays on the date it shows. This
+ * week only, as the sheet shows the week. `pick`: Any days.
  */
 export type DoTodayAction = { kind: 'place'; moves: { dayIndex: number; weekday: number }[] } | { kind: 'pick' };
 
@@ -167,7 +168,9 @@ export function daySheetOf(input: { at: { date: string } | { dayKey: string }; t
         const doneOn = new Set(input.days.filter((d) => d.status === 'done' && d.date !== null).map((d) => weekdayIndexOfDate(d.date ?? '')));
         const free = Array.from({ length: 6 - todayWd }, (_, i) => todayWd + 1 + i).find((wd) => !held.has(wd) && !doneOn.has(wd));
         const to = own > todayWd ? own : (free ?? null);
-        doToday = { kind: 'place', moves: [{ dayIndex, weekday: todayWd }, ...(to === null ? [] : [{ dayIndex: partner.dayIndex, weekday: to }])] };
+        // The rest of the week stays as shown: every other day still to do on its date from today on.
+        const rest = input.days.flatMap((d) => (d.key !== day.key && d.key !== partner.key && d.dayIndex !== null && d.status === 'planned' && d.date !== null && weekdayIndexOfDate(d.date) !== to ? [{ dayIndex: d.dayIndex, weekday: weekdayIndexOfDate(d.date) }] : []));
+        doToday = { kind: 'place', moves: [{ dayIndex, weekday: todayWd }, ...(to === null ? [] : [{ dayIndex: partner.dayIndex, weekday: to }]), ...rest] };
       }
     }
   }

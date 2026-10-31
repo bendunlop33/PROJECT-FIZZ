@@ -114,11 +114,11 @@ describe('Ben’s week on a 6-day Set days plan', () => {
     expect(ov?.daysThisWeek.text).toBe('3 of 6');
     expect(ov?.days.filter((x) => x.state === 'done').map((x) => x.dayIndex)).toEqual([0, 1, 2]);
     d = await loaded(s);
-    expect(await tiles(s, null)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today done dot:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
+    // (Ben, 31 Oct) Up next is the least recently trained type of the days left (legs, Mon): Legs B, planned from
+    // tomorrow, so it is Thursday's; Push B takes Legs B's Saturday. The tiles agree.
+    expect(await tiles(s, null)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today done dot:push', '29 planned ring:legs', '30 planned ring:pull', '31 planned ring:push', '01 plain']);
     expect((await s.plans.consistency())?.planThisWeek?.text).toBe('3 of 6');
-    // (Ben, 28 Oct) Set weekdays decide Up next: Wednesday's Legs is done (Monday's legs), Mon and Tue are done, so the
-    // next scheduled day, Push B (Thu); it agrees with the tiles.
-    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(3);
+    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(5);
 
     // A force-close re-derives the same week.
     await h.forceClose();
@@ -145,7 +145,7 @@ describe('switching between Set days and Any days (Days and time) while Push A i
     const w = await s.todaySession.weekWhileOpen({ planDay: { planId: (await s.plans.overview())?.block?.planId ?? '', dayIndex: 0 }, title: 'Push A' });
     return w?.tiles.map((t) => `${t.date.slice(8)} ${t.today ? 'today ' : ''}${t.state}${t.marks.length === 0 ? '' : ` ${t.marks.map((m) => `${m.shape}:${m.colour}`).join(',')}`}`);
   };
-  it('both ways the open workout’s week shows the days left planned (Thu Push B, Fri Pull B, Sat Legs B), today ringed; Up next follows the weekdays on Set days', async () => {
+  it('both ways the open workout’s week shows the days left planned (Thu Push B, Fri Pull B, Sat Legs B), today ringed; then Up next is the least recently trained type (Ben, 31 Oct)', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     await applyPlan(s, 'any');
@@ -163,16 +163,14 @@ describe('switching between Set days and Any days (Days and time) while Push A i
     expect(await open(s)).toEqual(want);
     await finishWorkout(h, s, pushA);
     const d = await loaded(s);
-    // Set days: Thu's Push B is next (tiles: Thu push ring).
-    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(3);
-    // Thursday: today's scheduled day.
+    // Legs (Mon) were trained longest ago: Legs B, whatever the weekday says, Wed evening, Thu and Fri.
+    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(5);
     h.clockMs = Date.parse('2026-10-29T08:00:00.000Z');
     const thu = await loaded(s);
-    expect(thu.days.find((x) => x.key === thu.nextKey)?.dayIndex).toBe(3);
-    // Friday with Thursday missed: Friday's Pull B first; once done, the missed Push B.
+    expect(thu.days.find((x) => x.key === thu.nextKey)?.dayIndex).toBe(5);
     h.clockMs = Date.parse('2026-10-30T08:00:00.000Z');
     const fri = await loaded(s);
-    expect(fri.days.find((x) => x.key === fri.nextKey)?.dayIndex).toBe(4);
+    expect(fri.days.find((x) => x.key === fri.nextKey)?.dayIndex).toBe(5);
   });
 
   it('a restored backup keeps the Set days rings', async () => {
@@ -207,8 +205,8 @@ describe('the same week on a 6-day Any days plan', () => {
     expect(await tiles(s, 'Push A')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
     await finishWorkout(h, s, pushA);
     expect((await s.plans.overview())?.daysThisWeek.text).toBe('3 of 6');
-    // Done today: the 3 left from tomorrow.
-    expect(await tiles(s, null)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today done dot:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
+    // Done today: the 3 left from tomorrow, Up next first (Ben, 31 Oct: Legs B, legs trained longest ago), then plan order.
+    expect(await tiles(s, null)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today done dot:push', '29 planned ring:legs', '30 planned ring:push', '31 planned ring:pull', '01 plain']);
     // Saturday with 3 left: only Sunday is left to show one on.
     h.clockMs = Date.parse('2026-10-31T08:00:00.000Z');
     const sat = await tiles(s, null);
