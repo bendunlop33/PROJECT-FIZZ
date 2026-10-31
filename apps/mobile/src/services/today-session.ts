@@ -1876,6 +1876,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       plannedDays: data.week.planned.map((d) => ({ localDate: d.localDate, name: d.name })),
       ahead: data.week.ahead.map((d) => d.name),
       chosen,
+      upNext: data.status === 'paused' || data.nextKey === null ? null : (data.days.find((d) => d.key === data.nextKey)?.name ?? null),
     });
   }
 
