@@ -27,7 +27,8 @@ export function choiceLine(item: Pick<ChoiceItem, 'works' | 'similarTo'>): strin
 }
 
 /** (Ben, 25 Oct) The heading over the ranked suggestions, above the full list. */
-export const SWAP_SHEET_COPY = { suggested: 'Suggested' } as const;
+/** `notHere` (Ben, 31 Oct): the row that marks the swapped exercise not at this gym (it left the workout's `⋯`). */
+export const SWAP_SHEET_COPY = { suggested: 'Suggested', notHere: 'Not at this gym' } as const;
 
 /**
  * (Ben, 27 Oct; redesign §E3) Swapping the main lift: the plan's main-lift alternatives (`mainLiftFirst`'s first

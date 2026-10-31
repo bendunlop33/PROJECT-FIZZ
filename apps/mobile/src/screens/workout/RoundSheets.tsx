@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, View, type PressableProps } from 'react-native';
 
 import { useTheme } from '../../theme';
@@ -26,8 +26,8 @@ function HeldPressable(props: PressableProps) {
  * `Top set (kg)`, `3a` / `3b` rows without a box; done rounds dimmed with ✓,
  * the shown round bright. A row tap jumps to its round; its `⋯` opens that
  * exercise's menu (Swap, Superset, Remove…; §4, review S3) once the sheet
- * has closed. `＋ Add exercise` at the end (today only). Reorder comes with
- * the drag slice.
+ * has closed. `＋ Add exercise` at the end (today only). Hold and drag
+ * reorders what isn't started (a superset as one); the toast's Undo shows here.
  */
 export function WorkoutRoundsSheet(p: {
   visible: boolean;
@@ -44,6 +44,8 @@ export function WorkoutRoundsSheet(p: {
    * the exercise's menu. Absent: off.
    */
   drag?: { draggable: (sessionExerciseId: string) => boolean; canDrop: (from: string, t: DropTarget) => boolean; onDrop: (from: string, t: DropTarget) => void };
+  /** (Ben, 31 Oct) The screen's toast while the sheet is open: a drag's `<name> moved · Undo`. */
+  toast?: ReactNode;
 }) {
   const theme = useTheme();
   const [dragging, setDragging] = useState(false);
@@ -55,7 +57,7 @@ export function WorkoutRoundsSheet(p: {
     </AppText>
   );
   return (
-    <BottomCard visible={p.visible} onClose={p.onClose} onDismissed={p.onDismissed} scroll={false}>
+    <BottomCard visible={p.visible} onClose={p.onClose} onDismissed={p.onDismissed} scroll={false} footer={p.toast ?? null}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>
         <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
           {p.title}

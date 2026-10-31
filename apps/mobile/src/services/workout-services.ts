@@ -194,7 +194,9 @@ import {
   notCopiedText,
   routineLastDone,
   ruleTargetRpes,
+  targetRpeOf,
   type RuleExerciseInfo,
+  type TargetRpe,
   type ExerciseCardFacts,
   type FinishedRef,
   type RoutineChange,
@@ -3378,6 +3380,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const info = data.exerciseInfo ?? {};
       const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
       return exerciseCardFacts({ aggregate: data.aggregate, ruleTargetRpe }, sessionExerciseId);
+    },
+
+    /**
+     * (Ben, 31 Oct) A set's target RPE for its hold menu's `Target RIR` (it left the round page's `⋯`): Ben's own,
+     * the coach's, the plan's or the built-in rule's. Null for a done set or one that carries none (warm-up, drop).
+     */
+    setTargetRpe(data: ActiveWorkoutData, setId: string): TargetRpe | null {
+      const set = data.aggregate.sets.find((s) => s.id === setId);
+      if (set === undefined || set.status !== 'pending') return null;
+      return targetRpeOf(set, ruleRpes(data)[set.sessionExerciseId] ?? null);
     },
 
     /** `buildSetEditView` over loaded data: the correction sheet, with the built-in target RPE as the default (CHANGELOG 2026-10-11 (b)). */
