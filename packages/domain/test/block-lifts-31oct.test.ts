@@ -10,6 +10,7 @@ import {
   bestSetWithUnit,
   compareBest,
   liftBlockProgress,
+  topBackoffLine,
   weekBestSet,
   type BlockBestSet,
   type BlockLoadKind,
@@ -178,5 +179,27 @@ describe('liftBlockProgress: up, held, stalled', () => {
     expect(compareBest(best(100, 5), best(97.5, 10))).toBeGreaterThan(0);
     expect(compareBest(best(100, 5), best(100, 6))).toBeLessThan(0);
     expect(compareBest(best(100, 5), best(100, 5))).toBe(0);
+  });
+});
+
+describe('topBackoffLine (decision 1): the main lift’s one line', () => {
+  const kgL = (v: number) => ({ value: v, unit: 'kg' as const, convention: 'total' as const });
+  const side = (v: number, r: number, r2 = r) => ({ target: { load: kgL(v), reps: { min: r, max: r2 } }, sets: null });
+  it('Top 100×5 → 102.5×5 kg · back-off 85', () => {
+    expect(topBackoffLine(side(100, 5), side(102.5, 5), { from: kgL(82.5), to: kgL(85) }).text).toBe('Top 100×5 → 102.5×5 kg · back-off 85');
+  });
+  it('nothing changed: same, the target alone', () => {
+    const l = topBackoffLine(side(100, 5), side(100, 5), { from: kgL(85), to: kgL(85) });
+    expect(l).toMatchObject({ text: 'Top 100×5 kg · back-off 85', same: true });
+  });
+  it('the back-off alone changed is a change; per hand keeps ea; lb stays lb', () => {
+    expect(topBackoffLine(side(100, 5), side(100, 5), { from: kgL(80), to: kgL(85) }).same).toBe(false);
+    const ea = { target: { load: { value: 32, unit: 'kg' as const, convention: 'per_hand' as const }, reps: { min: 8, max: 8 } }, sets: null };
+    expect(topBackoffLine(ea, { ...ea, target: { ...ea.target, load: { ...ea.target.load, value: 34 } } }, { from: null, to: { value: 30, unit: 'kg', convention: 'per_hand' } }).text).toBe('Top 32×8 → 34×8 kg ea · back-off 30');
+    const lbs = (v: number) => ({ target: { load: { value: v, unit: 'lb' as const, convention: 'total' as const }, reps: { min: 5, max: 5 } }, sets: null });
+    expect(topBackoffLine(lbs(225), lbs(230), { from: null, to: { value: 205, unit: 'lb', convention: 'total' } }).text).toBe('Top 225×5 → 230×5 lb · back-off 205');
+  });
+  it('no back-off known: the top alone', () => {
+    expect(topBackoffLine(side(100, 5), side(102.5, 5), { from: null, to: null }).text).toBe('Top 100×5 → 102.5×5 kg');
   });
 });

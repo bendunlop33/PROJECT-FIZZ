@@ -44,7 +44,7 @@ Lead-in   92.5×8 kg   3      117 est.
 2         95×8 kg     3      120 est.
 3         95×7 kg     3      117 est.
 ┌ Next week ────────────────────────────┐
-│ Barbell row        3×8 → 4×6 · 97.5   │
+│ Bench press  Top 100×5 → 102.5×5 kg · back-off 85 │
 │ Why?   Skip   Apply                   │
 └───────────────────────────────────────┘
 ```
@@ -53,6 +53,7 @@ Lead-in   92.5×8 kg   3      117 est.
 - Weekly chart of the best set (one column per week reached; `Lead-in` and `Deload` labelled).
 - Table: Week · Top set · Sets · Est. 1RM. Estimates always read `est.` (rule 6). The lead-in row reads `Lead-in`, never week 1. Weeks with no session read `—`.
 - **Next week** (a stalled lift in the current block): one concrete fix with `Why?`, `Skip`, `Apply`; after Apply, `Undo`. It is the existing next-time machinery, not a new decision: the Summary's own `Next time` row for that lift on its newest workout in the block (the coach's small change or bigger offer; with no AI, the built-in rule's stall reset, ADR 0006). Its taps are the Summary's own writes (versioned, one op ID per tap, offline). It changes the next session of that workout only (next week). Loads are the machinery's, snapped to the gym (rule 4). A pain flag on the lift hides Apply and shows `Held · pain` (rule 9). With no fix from the machinery, the card isn't shown (nothing invented).
+- (Ben, 31 Oct: decision 1) A main lift logged as a top set + back-offs has its own `Next time` row on the Summary too (and so the card): `Top 100×5 → 102.5×5 kg · back-off 85` (`Same · Top 100×5 kg · back-off 85` when nothing moves; always listed, it's the row that matters most). The top is the rule's (or the coach's) target; the back-off is the rule's, moved by the same step as the top, never heavier than it, snapped down to the kit; with the rule's reset offered, the back-off moves with the reset. A coach change shows the coach's top with the rule's back-off (as Start plans it).
 
 ## 3. Library › Plan
 
@@ -118,8 +119,8 @@ A day Ben moves onto today (`Move to…`, `Do today instead`) is already Up next
 
 ## 9. Open (Ben to decide)
 
-1. **Next week for top / back-off main lifts.** The Summary's `Next time` lists only exercises with straight working sets, so a builder plan's main lift (top set + back-offs) has no next-time row, and the card can't offer a fix for it. Options: (a) extend the Summary's next-time to top / back-off main lifts (the rule plans the top set; one change for every reader), or (b) a block-only proposal for the main lift (needs a new typed proposal and its own Apply / Undo). Until then the detail shows the stall with no card.
-2. **The built-in rule rarely offers its stall reset with reps from history:** when reps drop, its range follows them, so a miss below the range is rare. With no AI, a stalled lift often has no fix to show.
+1. ~~Next week for top / back-off main lifts~~: decided 31 Oct, the Summary's `Next time` covers them (§2). Open: Today's plan-day draft works its back-offs out from the top by the plan's band (D4), so on that path the back-off can land a step from the one shown.
+2. **(Ben deciding)** The built-in rule rarely offers its stall reset with reps from history:** when reps drop, its range follows them, so a miss below the range is rare. With no AI, a stalled lift often has no fix to show.
 3. **One week below the best** (not yet a stall) reads green with a lower bar. Alternative: grey or outline.
 4. ~~Off-plan-only weeks~~: decided 31 Oct, they count (§6).
 5. **"This block's best"** is the best so far (the prototype's `95×8 → 95×8` after a `95×7` week), and Δ uses it too.

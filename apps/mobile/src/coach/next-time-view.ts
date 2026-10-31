@@ -9,7 +9,7 @@
  */
 
 import { targetPhrase } from '@fizz/coach';
-import { briefLine, EXERCISE_SHORT_FORMS, fromToLine, pctText, shortFormMeans, type ChangeSide, type LineText, type NextTimeRow } from '@fizz/domain';
+import { briefLine, EXERCISE_SHORT_FORMS, fromToLine, pctText, shortFormMeans, topBackoffLine, type ChangeSide, type LineText, type NextTimeRow } from '@fizz/domain';
 import type { CoachTarget, NextSessionTargetRecord } from '@fizz/schemas';
 
 import type { CoachAvailability } from './coach-service';
@@ -86,12 +86,21 @@ function sameOr(l: { text: string; spoken: string; same: boolean }): LineText {
 /** The built-in rule's own line for a row: from → to, or its words when it has no load target (`No load target · 8–10 reps`). */
 function ruleLine(b: NextTimeRow, to: ChangeSide | null = b.to): LineText {
   if (to === null) return { text: b.target, spoken: b.target };
+  // (Ben, 31 Oct: decision 1) A top set + back-offs main lift: `Top 100×5 → 102.5×5 kg · back-off 85`.
+  if (b.topBackoff !== undefined) return sameOr(topBackoffLine(b.from, to, b.topBackoff));
   return sameOr(fromToLine(b.from, to));
 }
 
 /** A coach row's line: the basis today (`from`) to the coach's target, with its set count when it set one. */
-function coachLine(target: CoachTarget, sets: number | null, from: ChangeSide | undefined): LineText {
-  return sameOr(fromToLine(from ?? null, { target, sets: sets ?? from?.sets ?? null, ...(from?.plates === true ? { plates: true as const } : {}) }));
+function coachLine(target: CoachTarget, sets: number | null, from: ChangeSide | undefined, backoff?: NextTimeRow['topBackoff']): LineText {
+  const plates = from?.plates === true ? { plates: true as const } : {};
+  // A top set + back-offs main lift: the coach's top, the back-offs as Start plans them (the built-in rule's).
+  if (backoff !== undefined) {
+    const l = topBackoffLine(from === undefined ? null : { ...from, sets: null }, { target, sets: null, ...plates }, backoff);
+    const withSets = sets === null ? l : { ...l, text: `${l.text} · ${String(sets)} sets`, spoken: `${l.spoken}, ${String(sets)} sets`, same: false };
+    return sameOr(withSets);
+  }
+  return sameOr(fromToLine(from ?? null, { target, sets: sets ?? from?.sets ?? null, ...plates }));
 }
 
 /** `info` and `trailing` from a row's tag, %, note and reasons. */
@@ -118,7 +127,7 @@ function coachRowBase(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefin
   const ruleTarget = builtIn?.target ?? (r.builtIn === null ? 'Same targets' : `Target ${targetPhrase(r.builtIn)}`);
   // The rule's line where the rule decides: its row's, else the rule's target the coach row carries, else no change.
   const ruleLineHere: LineText = builtIn !== undefined ? ruleLine(builtIn) : r.builtIn !== null ? coachLine(r.builtIn, r.builtInSets, from) : from !== undefined ? sameOr(fromToLine(from, from)) : { text: ruleTarget, spoken: ruleTarget };
-  const coachLineHere = coachLine(r.target, r.sets, from);
+  const coachLineHere = coachLine(r.target, r.sets, from, builtIn?.topBackoff);
   // The workout's sets changed since the review (a correction): the next workout won't use it, so neither does this row.
   if (stale && !used) return { ...base, target: ruleTarget, line: ruleLineHere, pct: null, tag: 'Rule', why: [`Coach target: ${targetPhrase(r.target)}${setsPart(r.sets)}`, ...why.filter((w) => w !== builtInLine)], actions: [] };
   switch (r.status) {
@@ -178,7 +187,8 @@ function ruleRowBase(b: NextTimeRow, sourceTag: string, answer: NextSessionTarge
   if (offer === undefined) return changedSince ? { ...base, note: NEXT_TIME_COPY.changedSince } : base;
   const reset = { exerciseId: b.exerciseId, exerciseName: b.exerciseName, target: { load: offer.load, reps: offer.reps }, hold: { load: offer.hold.load, reps: offer.hold.reps }, row: answer, ...(changedSince ? { again: true as const } : {}) };
   // (Ben, 30 Oct) An open offer's line is the reset itself (`100 → 90 kg`) with Skip / Apply beside it.
-  const offerLine = b.to === null ? base.line : ruleLine(b, { ...b.to, target: { load: offer.load, reps: offer.reps } });
+  const offerRow = b.topBackoff === undefined ? b : { ...b, topBackoff: { ...b.topBackoff, to: offer.backoff ?? null } };
+  const offerLine = b.to === null ? base.line : ruleLine(offerRow, { ...b.to, target: { load: offer.load, reps: offer.reps } });
   if (changedSince) return { ...base, line: offerLine, note: `${NEXT_TIME_COPY.changedSince} · ${offer.text}`, actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }], reset };
   const open = !used && (answer === null || answer.status === 'proposed');
   return open ? { ...base, line: offerLine, note: offer.text, actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }], reset } : { ...base, note: used ? 'Used' : null, reset };

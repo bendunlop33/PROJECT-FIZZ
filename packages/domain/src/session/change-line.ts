@@ -193,3 +193,38 @@ export function doneLine(sets: readonly { load: Load | null; reps: number | null
   const at = num(top.load, plates);
   return { text: `${n} sets · best ${at.text}×${String(top.reps)} ${u.text}`, spoken: `${n} sets, best ${at.spoken} ${u.spoken} for ${String(top.reps)}` };
 }
+
+/**
+ * (Ben, 31 Oct: decision 1) A top set + back-offs main lift's one line: `Top 100×5 → 102.5×5 kg · back-off 85`, or
+ * with nothing changed `Top 100×5 kg · back-off 85` (`same`). The top set from → to (load and reps, always both, the
+ * unit once), then the back-off load next time (same unit). A back-off of another unit or convention is spelled in
+ * full; none known: the top alone.
+ */
+export function topBackoffLine(from: ChangeSide | null, to: ChangeSide, backoff: { from: Load | null; to: Load | null }): FromToLine {
+  const t = to.target;
+  const plates = to.plates === true;
+  const tl = isBodyweight(t.load) ? null : t.load;
+  const f = from?.target ?? null;
+  const fl = f === null || isBodyweight(f.load) ? null : f.load;
+  const comparable = fl !== null && tl !== null && sameUnit(fl, tl) && f?.reps != null && t.reps !== null;
+  let top: Num;
+  let same: boolean;
+  if (comparable && f !== null && fl !== null && tl !== null && f.reps !== null && t.reps !== null) {
+    same = fl.value === tl.value && sameReps(f.reps, t.reps);
+    const u = unit(tl);
+    const a = { text: `${num(fl, from?.plates === true).text}×${reps(f.reps).text}`, spoken: `${num(fl, from?.plates === true).spoken} for ${reps(f.reps).spoken}` };
+    const b = { text: `${num(tl, plates).text}×${reps(t.reps).text}`, spoken: `${num(tl, plates).spoken} for ${reps(t.reps).spoken}` };
+    top = same ? { text: `${b.text} ${u.text}`, spoken: `${b.spoken} ${u.spoken}` } : { text: `${a.text}${ARROW}${b.text} ${u.text}`, spoken: `${a.spoken} to ${b.spoken} ${u.spoken}` };
+  } else {
+    const l = fromToLine(from, to);
+    top = { text: l.text, spoken: l.spoken };
+    same = l.same;
+  }
+  const back = backoff.to === null || isBodyweight(backoff.to) ? null : backoff.to;
+  const backSame = back === null || (backoff.from !== null && !isBodyweight(backoff.from) && sameUnit(backoff.from, back) && backoff.from.value === back.value);
+  const head: Num = { text: `Top ${top.text}`, spoken: `Top set ${top.spoken}` };
+  if (back === null) return { ...head, same };
+  const bn = num(back, plates);
+  const tail: Num = tl !== null && sameUnit(tl, back) ? { text: `back-off ${bn.text}`, spoken: `back-off ${bn.spoken}` } : { text: `back-off ${bn.text} ${unit(back).text}`, spoken: `back-off ${bn.spoken} ${unit(back).spoken}` };
+  return { ...join([head, tail]), same: same && backSame };
+}

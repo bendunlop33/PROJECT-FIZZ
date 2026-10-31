@@ -4,7 +4,7 @@ import { painMentionedNotFlagged, reasonsText, scoreText } from '../checkin';
 import type { RuleExerciseInfo } from '../default-rule';
 import { unspecifiedPain } from '../next-target';
 import { formatMinutes, loadText, NBSP, repRangeText, valuesText } from '../display';
-import { loadDirection } from '../equipment';
+import { loadDirection, roundToAvailableLoad } from '../equipment';
 import type { HistorySession, NextTargets } from '../progression';
 import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
@@ -77,6 +77,11 @@ export interface NextTimeResetOffer {
   reps: RepRange;
   /** What the rule holds at without it (its first working set). */
   hold: { load: Load | null; reps: RepRange };
+  /**
+   * (Ben, 31 Oct) A top set + back-offs lift: the back-off load with the reset (lowered by the same step as the top,
+   * never heavier than it, snapped down to the gym's kit, rule 4). Absent: a straight-sets exercise.
+   */
+  backoff?: Load | null;
 }
 
 export interface NextTimeRow {
@@ -101,6 +106,30 @@ export interface NextTimeRow {
    */
   from: ChangeSide | null;
   to: ChangeSide | null;
+  /**
+   * (Ben, 31 Oct: decision 1) A top set + back-offs main lift: today's back-off load and the rule's next one (the
+   * back-offs follow the top by the same step, snapped down to the gym). `from` / `to` are then the top set. Absent: a
+   * straight-sets exercise.
+   */
+  topBackoff?: { from: Load | null; to: Load | null };
+}
+
+/** The back-off with the rule's reset: moved by the same step as the top, never harder than it, snapped easier. */
+function resetBackoff(back: Load | null, top: Load | null, reset: Load, eq: EquipmentInstance | null): Load | null {
+  if (back === null || top === null || back.unit !== reset.unit || back.convention !== reset.convention || top.unit !== reset.unit) return null;
+  const resistance = loadDirection(reset.convention) === 'resistance';
+  let raw = back.value + (reset.value - top.value);
+  if (resistance ? raw > reset.value : raw < reset.value) raw = reset.value;
+  if (!(raw > 0)) return null;
+  if (eq === null) return { ...back, value: raw };
+  const r = roundToAvailableLoad({ ...back, value: raw }, eq, 'easier');
+  return r.ok ? r.load : null;
+}
+
+/** Today's back-off load: its plan where it had one, else what the first back-off did. */
+function backoffToday(sets: readonly WorkoutSet[]): Load | null {
+  const b = sets.filter((x) => x.setType === 'backoff').sort((a, c) => a.index - c.index)[0];
+  return b === undefined ? null : (b.planned.load ?? b.actual?.load ?? null);
 }
 
 export interface WorkoutSummary {
@@ -392,7 +421,13 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   for (const b of imported ? [] : nextSessionBases(state, new Map())) {
     nextFrom[b.exercise.exerciseId] = { target: b.last, sets: b.lastSets, ...(isPlatesAddedKind(b.equipment?.kind) ? { plates: true as const } : {}) };
   }
-  for (const block of targetBlocks) {
+  for (const planBlock of targetBlocks) {
+    // (Ben, 31 Oct: decision 1) A main lift logged as a top set and back-offs (the builder's shape) has no `working`
+    // sets: its top and back-offs are the sets the rule reads (it plans the top, and the back-offs follow it).
+    const parts = new Set(state.exercises.filter((e) => e.exerciseId === planBlock.root.exerciseId).map((e) => e.id));
+    const topSets = planBlock.prescribedSets > 0 ? [] : state.sets.filter((x) => parts.has(x.sessionExerciseId) && x.status !== 'deleted' && (x.setType === 'top' || x.setType === 'backoff'));
+    const topBackoff = topSets.some((x) => x.setType === 'top');
+    const block = topBackoff ? { ...planBlock, prescribedSets: topSets.length } : planBlock;
     if (block.prescribedSets === 0 || (blocksOf.get(block.root.exerciseId) ?? 0) > 1) continue;
     if (doneSince(block.root.exerciseId)) {
       skippedNewer += 1;
@@ -417,7 +452,8 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       },
       gymId === null ? null : (input.gymNames?.[gymId] ?? (gymId === s.gymId ? input.gymName : null)),
     );
-    const kind = listedKind(result);
+    // A top-set main lift is always listed (the main lift is the row that matters most): a hold reads `Same · …`.
+    const kind = listedKind(result) ?? (topBackoff && result.decision === 'hold' ? 'held' : null);
     if (kind === null) continue;
     const first = result.sets.find((x) => x.setType === 'working' || x.setType === 'top') ?? result.sets[0];
     const offer = result.resetOffer;
@@ -434,10 +470,11 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       facts: result.explanation.facts,
       ruleName: rule.name,
       decision: result.decision,
-      ...(offer !== undefined && first !== undefined ? { resetOffer: { text: `Reset to ${loadText(offer, ex.loadConvention, eq)}${NBSP}×${NBSP}${repRangeText(first.reps)}?`, load: offer, reps: first.reps, hold: { load: first.load, reps: first.reps } } } : {}),
+      ...(offer !== undefined && first !== undefined ? { resetOffer: { text: `Reset to ${loadText(offer, ex.loadConvention, eq)}${NBSP}×${NBSP}${repRangeText(first.reps)}?`, load: offer, reps: first.reps, hold: { load: first.load, reps: first.reps }, ...(topBackoff ? { backoff: resetBackoff(result.sets.find((x, i) => i > 0 && x.setType !== 'warmup')?.load ?? null, first.load, offer, eq) } : {}) } } : {}),
       ...(result.decision === 'reduce_load' && input.acceptedResets?.has(ex.exerciseId) === true ? { resetApplied: true as const } : {}),
-      from: loadTarget && basis !== undefined ? { ...basis, sets: block.prescribedSets } : null,
-      to: loadTarget ? { target: { load: first.load, reps: first.reps }, sets: block.prescribedSets, ...plates } : null,
+      from: loadTarget && basis !== undefined ? { ...basis, sets: topBackoff ? null : block.prescribedSets } : null,
+      to: loadTarget ? { target: { load: first.load, reps: first.reps }, sets: topBackoff ? null : block.prescribedSets, ...plates } : null,
+      ...(topBackoff && loadTarget ? { topBackoff: { from: backoffToday(topSets), to: result.sets.find((x, i) => i > 0 && x.setType !== 'warmup')?.load ?? null } } : {}),
     });
   }
 
