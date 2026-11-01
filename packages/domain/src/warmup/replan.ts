@@ -51,11 +51,12 @@ export function warmupPrefsCommand(input: WarmupPrefsCommandInput): CommandOf<'a
 /** The stored `warmups` field after a change (null: the defaults). */
 export function warmupPrefsAfter(before: WarmupPrefs | null | undefined, change: Extract<TrainingChange, { kind: 'warmup_prefs' }>): WarmupPrefs | null {
   const simpleLoads = change.simpleLoads ?? before?.simpleLoads ?? true;
-  const per: Record<string, 'off' | 'normal'> = { ...(before?.perExercise ?? {}) };
-  for (const [id, v] of Object.entries(change.perExercise ?? {})) {
-    if (v === null) delete per[id];
-    else per[id] = v;
-  }
+  const changes = Object.entries(change.perExercise ?? {});
+  const cleared = new Set(changes.filter(([, v]) => v === null).map(([id]) => id));
+  const per: Record<string, 'off' | 'normal'> = Object.fromEntries([
+    ...Object.entries(before?.perExercise ?? {}).filter(([id]) => !cleared.has(id)),
+    ...changes.flatMap(([id, v]) => (v === null ? [] : [[id, v] as const])),
+  ]);
   const out: WarmupPrefs = { ...(simpleLoads ? {} : { simpleLoads: false }), ...(Object.keys(per).length === 0 ? {} : { perExercise: per }) };
   return Object.keys(out).length === 0 ? null : out;
 }

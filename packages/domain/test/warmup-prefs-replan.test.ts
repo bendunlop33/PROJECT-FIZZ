@@ -64,7 +64,7 @@ describe('warm-up preferences re-plan today’s pending warm-ups', () => {
     const r = reduceSession(s, cmd ?? (() => { throw new Error('no command'); })());
     if (!r.ok) throw new Error(r.error.message);
     expect(warmLoads(r.state)).toEqual([]);
-    const back = reduceSession(r.state, { type: 'revert_target_adjustment', at: at(40), opId: 'undo-2', actionId: id(9903), removedSetIds: cmd?.removeSetIds ?? [], addedSetIds: [] });
+    const back = reduceSession(r.state, { type: 'revert_target_adjustment', at: at(40), opId: 'undo-2', actionId: id(9903), removedSetIds: cmd.removeSetIds, addedSetIds: [] });
     if (!back.ok) throw new Error(back.error.message);
     expect(warmLoads(back.state)).toEqual([15, 20, 30]);
   });

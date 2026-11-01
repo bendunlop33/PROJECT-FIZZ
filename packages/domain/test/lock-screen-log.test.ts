@@ -393,7 +393,7 @@ describe('warm-ups from the Lock Screen (Ben, 1 Nov: "I can\u2019t log warm up s
     expect(plain(log?.label)).toMatch(/^Log warm-up \d+(\.\d+)? kg × \d+$/);
     // The same values the active set view prefills for the warm-up.
     const view = buildActiveSetView({ aggregate: s, nowMs: ms(1), gymName: null, previous: {}, painFlagged: new Set(), edits: null, warmupFacts: { [BENCH]: lookup.warmup.facts() }, mainExerciseIds: new Set([BENCH]) });
-    expect(plain(view?.primary.label)).toBe(plain(log?.label).replace('Log warm-up ', 'Log '));
+    expect(plain(view.primary.label)).toBe(plain(log?.label).replace('Log warm-up ', 'Log '));
   });
 
   it('the tap logs exactly those values, once, and a newer set version is ignored (rule 5)', () => {

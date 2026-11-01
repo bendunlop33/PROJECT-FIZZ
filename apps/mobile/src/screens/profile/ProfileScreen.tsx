@@ -176,7 +176,7 @@ export function ProfileScreen() {
                 accessibilityLabel={WARMUP_PREFS_COPY.simpleLoads}
                 value={data.value.warmups.simpleLoads}
                 onValueChange={(on) => {
-                  const version = data.state === 'ready' ? (data.value.warmups?.version ?? 1) : 1;
+                  const version = data.value.warmups?.version ?? 1;
                   void services.warmupPrefs.setSimpleLoads(on, version, newUuid()).finally(reload);
                 }}
               />

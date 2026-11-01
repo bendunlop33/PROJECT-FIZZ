@@ -276,13 +276,13 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
       // (Ben, 1 Nov) Simple warm-up weights and per-exercise warm-ups; stored only where they differ from the default.
       const prev = p.warmups ?? {};
       const simpleLoads = c.simpleLoads ?? prev.simpleLoads ?? true;
-      const per: Record<string, WarmupExerciseSetting> = { ...(prev.perExercise ?? {}) };
-      for (const [id, v] of Object.entries(c.perExercise ?? {})) {
-        if (id.trim() === '' || id.length > 64) return null;
-        if (v === null) delete per[id];
-        else if (WarmupExerciseSettingSchema.safeParse(v).success) per[id] = v;
-        else return null;
-      }
+      const changes = Object.entries(c.perExercise ?? {});
+      if (changes.some(([id, v]) => id.trim() === '' || id.length > 64 || (v !== null && !WarmupExerciseSettingSchema.safeParse(v).success))) return null;
+      const cleared = new Set(changes.filter(([, v]) => v === null).map(([id]) => id));
+      const per: Record<string, WarmupExerciseSetting> = Object.fromEntries([
+        ...Object.entries(prev.perExercise ?? {}).filter(([id]) => !cleared.has(id)),
+        ...changes.flatMap(([id, v]) => (v === null ? [] : [[id, v] as const])),
+      ]);
       if (Object.keys(per).length > TRAINING_LIMITS.warmupExercisesMax) return null;
       const next = { ...p };
       const prefs: WarmupPrefs = { ...(simpleLoads ? {} : { simpleLoads: false }), ...(Object.keys(per).length === 0 ? {} : { perExercise: per }) };
