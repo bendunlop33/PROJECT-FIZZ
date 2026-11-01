@@ -67,7 +67,7 @@ async function kgFields(v: PopupView): Promise<{ value: string; width: number; p
     );
     await Promise.resolve();
   });
-  const flat = (s: unknown): Record<string, unknown> => (Array.isArray(s) ? Object.assign({}, ...s.map(flat)) : ((s ?? {}) as Record<string, unknown>));
+  const flat = (s: unknown): Record<string, unknown> => (Array.isArray(s) ? (Object.assign({}, ...(s as unknown[]).map(flat)) as Record<string, unknown>) : ((s ?? {}) as Record<string, unknown>));
   const fields = root.container.queryAll((n) => n.type === 'TextInput' && typeof n.props.accessibilityLabel === 'string' && n.props.accessibilityLabel.endsWith(`, ${v.kgHeader}`));
   const out = fields.map((f) => {
     const st = flat(f.props.style);
