@@ -62,8 +62,11 @@ reconciled to these: Muscle was 6–20 (a Proposal reading), now 6–10.
 | `workoutGroups` / `workoutGroupsOf` (Up next, plan-day matching, D19 ticks) | first primary group | untouched |
 | `pbRange`, `PB_EFFORT` (builder bands, rates) | builder's own | untouched |
 
-Tests changed: `weekly-review.test.ts` (two expectations: Muscle range 6–20 → 6–10, reconciled). Tests that asserted
-½ numbers as Progress's primary display: none needed changing (they assert `sets`, which is unchanged).
+Tests changed (and why): `packages/domain/test/weekly-review.test.ts` (2) and `packages/coach/test/weekly-review.test.ts`
+(1): Muscle's range 6–20 → approved 6–10. `packages/domain/test/progress.test.ts` check 15: Triceps from bench now reads
+`0 sets, plus 2 sets assisted` (it asserted the ½ number as the primary display; `sets` is still 2).
+`apps/mobile/test/plan-adapt.test.ts`: the coach's plan context gains `muscles`. Pins for what didn't change:
+`packages/domain/test/muscle-count-pins-1nov.test.ts` (Up next / plan-day groups, builder bands, review bands).
 
 ## 5. Rebalance (one proposal for the whole plan)
 
