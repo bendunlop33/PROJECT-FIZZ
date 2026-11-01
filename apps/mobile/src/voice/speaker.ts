@@ -1,8 +1,9 @@
 import { getLocales } from 'expo-localization';
 
-import AudioCoach from '../../modules/audio-coach';
+import AudioCoach, { type SpeakOptions } from '../../modules/audio-coach';
 import { createSpeechArbiter, type RawSpeaker } from './arbiter';
 import type { CueSpeaker } from './cue-controller';
+import { createNativeCueScheduler } from './native-cues';
 import type { ReplySpeaker } from './read-aloud';
 import { DEFAULT_VOICE_PREFS, type VoicePrefs } from './settings';
 import { parseVoices, resolveVoice, type VoiceOption } from './voices';
@@ -59,6 +60,12 @@ export function phoneLocale(): string {
   }
 }
 
+/** The chosen Apple voice and speed (Settings › Voice), for JS-spoken and natively scheduled cues alike. */
+function speakOptions(): SpeakOptions {
+  const { voice } = resolveVoice(installedVoices() ?? [], prefs.voiceId);
+  return { ...(voice ? { voice: voice.id, language: voice.language } : { language: 'en-GB' }), rate: prefs.rate, deactivateAfter: true };
+}
+
 /** The module itself: one synthesizer, one queue. */
 const appleRaw: RawSpeaker = {
   available: () => AudioCoach !== null,
@@ -67,8 +74,7 @@ const appleRaw: RawSpeaker = {
     if (m === null) return null;
     // Re-applied each time (only when idle, natively), so a probe run's playAndRecord never lingers.
     await m.configureSession({ category: 'playback', duckOthers: true, interruptSpokenAudioAndMixWithOthers: true });
-    const { voice } = resolveVoice(installedVoices() ?? [], prefs.voiceId);
-    return m.speak(text, { ...(voice ? { voice: voice.id, language: voice.language } : { language: 'en-GB' }), rate: prefs.rate, deactivateAfter: true });
+    return m.speak(text, speakOptions());
   },
   async stop() {
     await AudioCoach?.stop();
@@ -77,3 +83,6 @@ const appleRaw: RawSpeaker = {
 
 /** Cues and replies share it through the arbiter: a cue always wins, stopping a reply never cuts a cue (review S1). */
 export const appleSpeaker: CueSpeaker & ReplySpeaker = createSpeechArbiter(appleRaw);
+
+/** Rest cues spoken natively while the app is in the background (ADR 0040); unavailable in older builds. */
+export const nativeRestCueScheduler = createNativeCueScheduler(AudioCoach, speakOptions);
