@@ -197,7 +197,7 @@ export function stampedKeys(rows: readonly ThreadRow[], clock: (atUtc: string, t
 // ---------------------------------------------------------------------------
 // Cards (coach-sheet §2.6): status word and icon, never colour alone
 
-export type CardStatusWord = 'Applied' | 'Added' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested' | 'Deleted';
+export type CardStatusWord = 'Applied' | 'No change' | 'Added' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested' | 'Deleted';
 
 export interface CardView {
   actionId: string;
@@ -397,6 +397,9 @@ function statusOf(r: ActionRecord): CardView['status'] {
     case 'stale':
       return { word: 'Out of date', icon: 'clock.badge.xmark' };
     case 'rejected':
+      // (Ben, 1 Nov, build 500) "Stick to 100" when they are 100 kg: `Already 100 kg`, not a failure.
+      if (r.detail.kind === 'edit_today' && r.detail.noop === true) return { word: 'No change', icon: 'minus.circle' };
+      return { word: 'Couldn’t apply', icon: 'xmark.octagon' };
     case 'failed':
       return { word: 'Couldn’t apply', icon: 'xmark.octagon' };
   }

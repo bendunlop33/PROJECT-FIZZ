@@ -84,7 +84,8 @@ export type CoachEditPlan =
       used: Exercise[];
     }
   | { status: 'stale'; guardNotes: GuardNote[] }
-  | { status: 'rejected'; failure: string; guardNotes: GuardNote[] };
+  /** `already` (Ben, 1 Nov): nothing to do, not a failure: every set asked for already is that (`Already 100 kg`). */
+  | { status: 'rejected'; failure: string; guardNotes: GuardNote[]; already?: true };
 
 const working = (s: WorkoutSet): boolean => s.setType !== 'warmup';
 const liveRow = (state: SessionAggregate, id: string): SessionExercise | undefined => state.exercises.find((e) => e.id === id && e.removed === undefined);
@@ -311,6 +312,8 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       steps.push({ type: 'adjust_pending_targets', at: input.at, opId: nextOpId(), expectedVersion: input.args.baseVersion, actionId: input.actionId, reason: input.args.reason, changes, removeSetIds, addSets });
       lines.push(...countLines);
     } else if (ops.every((op) => op.op === 'set' || op.op === 'set_count' || op.op === 'sets')) {
+      // (Ben, 1 Nov, build 500) "Stick to 100" when they are 100 kg: a no-op, said as one, never a failure.
+      if (v?.status === 'unchanged' && v.already === true && skipped.length === 0) return { status: 'rejected', failure: v.outcome, guardNotes: notes, already: true };
       // Nothing structural, and no target changed: the checks' own line.
       return reject(skipped[0] ?? (v?.status === 'unchanged' ? v.outcome.replace(/\s*(?:Sets unchanged|Nothing changed)\.?$/i, '') : 'no change'));
     }

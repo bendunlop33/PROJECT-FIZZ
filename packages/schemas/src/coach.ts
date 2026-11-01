@@ -902,6 +902,11 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
      * taken back by its Undo. Absent: nothing learned.
      */
     learned: GymEditSchema.optional(),
+    /**
+     * (Ben, 1 Nov, build 500: "stick to 100" when they were 100 kg) Nothing to change: every set asked for already has
+     * that target. Saved `rejected` (nothing was written) but shown as `Already 100 kg`, never as a failure.
+     */
+    noop: z.literal(true).optional(),
   }),
   /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
   z.object({
