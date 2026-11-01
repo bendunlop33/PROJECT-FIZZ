@@ -69,7 +69,7 @@ export function planCardView(d: PlanCardData): PlanCardView {
     rationale: d.rationale,
     action,
     replaces: d.replaces.length === 0 ? null : d.replaces.join(', '),
-    muscles: d.muscles,
+    muscles: d.muscles ?? [],
   };
 }
 

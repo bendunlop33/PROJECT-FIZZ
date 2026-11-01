@@ -196,8 +196,8 @@ export interface PlanCardData {
   state: PlanCardState;
   /** Workouts in the rotation now that `Replace my workouts` would take out (kept in Workouts). */
   replaces: string[];
-  /** (Ben, 1 Nov) The weekly muscle check: one line per group out of range (`Biceps 2/wk · below 4–8`). */
-  muscles: string[];
+  /** (Ben, 1 Nov) The weekly muscle check: one line per group out of range (`Biceps 2/wk · below 4–8`). Absent: none. */
+  muscles?: string[];
 }
 
 export interface PlanDayData {

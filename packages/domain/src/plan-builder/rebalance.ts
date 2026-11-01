@@ -273,6 +273,12 @@ export interface RebalanceNewSlot {
   reps: { min: number; max: number };
 }
 
+function withoutLoad(t: DraftSetTemplate): DraftSetTemplate {
+  const out = { ...t };
+  delete out.load;
+  return out;
+}
+
 /** Plain working sets for a new slot: no load (the workout plans it from Ben's history on the day's kit, rule 4). */
 function newSlotTemplates(sets: number, reps: { min: number; max: number }): DraftSetTemplate[] {
   return Array.from({ length: Math.max(1, Math.min(10, sets)) }, () => ({ setType: 'working' as const, reps: { ...reps }, durationS: null, targetRpe: null, restS: null }));
@@ -297,8 +303,11 @@ export function pbRebalanceDays(days: readonly PlanDayDraft[], ops: readonly Reb
         if (to === null || slots.some((s) => s.exerciseId === o.toExerciseId)) continue;
         slots = slots.map((s) => {
           if (s.exerciseId !== o.fromExerciseId || s.main) return s;
-          const { builder: _b, checkedHistoryVersion: _h, ...rest } = s;
-          return { ...rest, exerciseId: o.toExerciseId, catalogueId: to.catalogueId, checkedOn: null, setTemplates: s.setTemplates.map(({ load: _l, ...t }) => t) };
+          // The old exercise's builder state, checked history and loads don't carry over to another exercise.
+          const next: DraftSlot = { ...s, exerciseId: o.toExerciseId, catalogueId: to.catalogueId, checkedOn: null, setTemplates: s.setTemplates.map((t) => withoutLoad(t)) };
+          delete next.builder;
+          delete next.checkedHistoryVersion;
+          return next;
         });
       } else {
         const add = ctx.slotOf(o.exerciseId);

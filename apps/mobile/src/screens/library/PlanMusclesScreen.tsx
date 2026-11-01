@@ -34,7 +34,6 @@ export function PlanMusclesScreen() {
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
   useEffect(() => {
     reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new week chip reads again
   }, [selected]);
   useEffect(() => {
     if (toast === null) return;
@@ -215,7 +214,6 @@ function RebalancePanel({ onDone, onCancel, onToast, reloadAll }: { onDone: (t: 
   const op = useRef<string | null>(null);
   useEffect(() => {
     reloadCard();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- a skipped line reads again
   }, [rejected]);
   const c: RebalanceCardData | null = card.state === 'ready' ? card.value : null;
   if (card.state === 'error') return <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t work it out." action={<TextButton label="Try again" onPress={reloadCard} />} />;

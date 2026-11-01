@@ -23,6 +23,7 @@ import {
   type PlanMuscleRow,
   type PlanMuscleWeek,
   type ProgressSession,
+  type RebalanceOp,
 } from '../src';
 
 /** Catalogue values (packages/catalogue/data/exercises), trimmed to what counting reads. */
@@ -214,13 +215,13 @@ describe('Rebalance (Ben, 1 Nov: holistic)', () => {
   it('Ben’s PPL A/B: Biceps covered by a superset on the pull days, to the lower edge (4); Back stays in range; no day past its minutes', () => {
     const res = rebalancePlan({ ...MUSCLE, days: benPpl(), ports });
     expect(res.flagsAfter).toEqual([]);
-    const adds = res.ops.filter((o) => o.kind === 'add');
-    expect(adds.map((o) => [o.dayIndex, o.kind === 'add' ? o.exerciseId : '', o.kind === 'add' ? o.sets : 0])).toEqual([
+    const adds = res.ops.filter((o): o is Extract<RebalanceOp, { kind: 'add' }> => o.kind === 'add');
+    expect(adds.map((o) => [o.dayIndex, o.exerciseId, o.sets])).toEqual([
       [1, 'curl', 2],
       [4, 'curl', 2],
     ]);
     // Paired with the day's non-competing accessory (the crunch), after the main lift.
-    for (const a of adds) expect(a.kind === 'add' && a.supersetWith).toBeTruthy();
+    for (const a of adds) expect(a.supersetWith).toBeTruthy();
     expect(res.after.get('Biceps')?.direct).toBe(4);
     expect(res.after.get('Back')?.direct).toBe(res.before.get('Back')?.direct);
     for (const d of res.days) expect(rebalanceDayMinutes(d)).toBeLessThanOrEqual(d.minutes ?? Infinity);
@@ -233,8 +234,8 @@ describe('Rebalance (Ben, 1 Nov: holistic)', () => {
   it('with 2 direct sets already, the fix sizes to the lower edge: +2, split across the pull days', () => {
     const days = benPpl().map((d) => (d.name === 'Pull A' ? { ...d, rows: [...d.rows, { key: 'h', exerciseId: 'hammer', sets: 2, main: false, order: 9, superset: null }] } : d));
     const res = rebalancePlan({ ...MUSCLE, days, ports: { ...ports, isolationsFor: () => ['curl'] } });
-    const adds = res.ops.filter((o) => o.kind === 'add');
-    expect(adds.reduce((s, o) => s + (o.kind === 'add' ? o.sets : 0), 0)).toBe(2);
+    const adds = res.ops.filter((o): o is Extract<RebalanceOp, { kind: 'add' }> => o.kind === 'add');
+    expect(adds.reduce((s, o) => s + o.sets, 0)).toBe(2);
     expect(adds.map((o) => o.dayIndex)).toEqual([1, 4]);
   });
 

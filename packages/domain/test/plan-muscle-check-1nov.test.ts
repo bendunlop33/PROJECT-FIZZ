@@ -14,7 +14,7 @@ const INFO: Record<string, MuscleCreditInfo> = {
   curl: { primaryMuscles: ['biceps'], secondaryMuscles: ['forearms'], movementPattern: 'isolation' },
 };
 const slot = (exerciseId: string, sets: number, order: number) => ({ slotKey: `${exerciseId}-${String(order)}`, exerciseId, catalogueId: exerciseId, order, main: order === 0, supersetGroup: null, setTemplates: Array.from({ length: sets }, () => ({ setType: 'working' as const, reps: { min: 8, max: 12 }, durationS: null, targetRpe: null, restS: null })) });
-const day = (index: number, name: string, slots: ReturnType<typeof slot>[]): PlanDayDraft => ({ index, name, splitDayId: null, focus: 'coach_picks', minutes: 60, plan: { slots } as never, checks: [] });
+const day = (index: number, name: string, slots: ReturnType<typeof slot>[]): PlanDayDraft => ({ index, name, splitDayId: null, focus: 'coach_picks', minutes: 60, plan: { slots }, checks: [] });
 
 describe('planMuscleGapLines', () => {
   it('a pull plan with no curls: Biceps below its range (assisted 6 → 4–8); with curls, no Biceps line', () => {
