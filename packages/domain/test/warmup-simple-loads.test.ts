@@ -143,12 +143,14 @@ describe('simple loads on dumbbells, stacks and machines', () => {
 
 describe('prehab: no warm-up sets', () => {
   const ctx = { main: false, itemKind: 'dumbbells', convention: 'per_hand' as const };
-  it('rotator cuff, Y raises and band pull-aparts are prehab; cable face pulls and rows are not', () => {
+  it('rotator cuff, Y raises, band pull-aparts and face pulls are prehab; rows are not', () => {
     expect(isPrehabExercise({ catalogueKey: 'dumbbell-side-lying-external-rotation', family: 'shoulder_external_rotation', primaryMuscles: ['rotator_cuff'] })).toBe(true);
     expect(isPrehabExercise({ catalogueKey: 'cable-external-rotation' })).toBe(true);
     expect(isPrehabExercise({ catalogueKey: 'band-pull-apart', family: 'rear_delt_fly', primaryMuscles: ['rear_delts'] })).toBe(true);
     expect(isPrehabExercise({ catalogueKey: 'dumbbell-incline-y-raise', family: 'y_raise' })).toBe(true);
-    expect(isPrehabExercise({ catalogueKey: 'cable-face-pull', family: 'face_pull', primaryMuscles: ['rear_delts'] })).toBe(false);
+    // Face pulls (any equipment) are shoulder-health work too (coordinator review, 1 Nov).
+    expect(isPrehabExercise({ catalogueKey: 'cable-face-pull', family: 'face_pull', primaryMuscles: ['rear_delts'] })).toBe(true);
+    expect(isPrehabExercise({ catalogueKey: null, family: 'face_pull' })).toBe(true);
     expect(isPrehabExercise({ catalogueKey: 'dumbbell-row', family: 'row', primaryMuscles: ['lats'] })).toBe(false);
   });
   it('side-lying external rotation gets class none (no warm-ups); `normal` gives it WU7’s one step; other isolation keeps one step', () => {

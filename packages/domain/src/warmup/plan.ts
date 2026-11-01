@@ -80,11 +80,12 @@ const FLOOR_KEYS: ReadonlySet<string> = new Set(['barbell-bent-over-row', 'barbe
 /**
  * (Ben, 1 Nov) Rotator cuff, prehab and shoulder-health work: no warm-up sets, and the coach's next-session increases
  * are capped at one load step (`validateNextSessionTargets`). The catalogue has no prehab flag, so it is read from
- * the rotator cuff as a primary muscle, these families and these keys. Cable face pulls are a loaded rear-delt
- * exercise in the catalogue and aren't listed; Ben can turn their warm-ups off per exercise.
+ * the rotator cuff as a primary muscle, these families and these keys. Face pulls (any equipment) count: Ben named
+ * them as prehab (1 Nov), and they're light, high-rep shoulder work with an external-rotation finish. Where he uses
+ * them as a loaded rear-delt exercise, he sets that exercise back to `normal` warm-ups.
  */
-const PREHAB_FAMILIES: ReadonlySet<string> = new Set(['shoulder_external_rotation', 'external_rotation', 'shoulder_internal_rotation', 'internal_rotation', 'y_raise', 't_raise', 'ytw_raise', 'band_pull_apart']);
-const PREHAB_KEYS: ReadonlySet<string> = new Set(['band-pull-apart', 'band-external-rotation', 'cable-external-rotation', 'dumbbell-side-lying-external-rotation', 'dumbbell-incline-y-raise', 'band-face-pull']);
+const PREHAB_FAMILIES: ReadonlySet<string> = new Set(['shoulder_external_rotation', 'external_rotation', 'shoulder_internal_rotation', 'internal_rotation', 'y_raise', 't_raise', 'ytw_raise', 'band_pull_apart', 'face_pull']);
+const PREHAB_KEYS: ReadonlySet<string> = new Set(['band-pull-apart', 'band-external-rotation', 'cable-external-rotation', 'dumbbell-side-lying-external-rotation', 'dumbbell-incline-y-raise', 'band-face-pull', 'cable-face-pull']);
 const PREHAB_MUSCLES: ReadonlySet<string> = new Set(['rotator_cuff']);
 
 /** (Ben, 1 Nov) The catalogue's prehab entries by exercise ID (`catalogueExerciseId` of `PREHAB_KEYS`). */

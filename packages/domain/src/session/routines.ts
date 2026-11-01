@@ -419,6 +419,8 @@ export interface RoutineStartInput {
   gymName?: string;
   /** GS3 step 2: the item an exercise last used at this gym. */
   lastUsedHere?: StartWorkoutInput['lastUsedHere'];
+  /** (Ben, 1 Nov) His warm-up settings for the warm-ups Start plans; absent = simple loads on. */
+  warmupPrefs?: StartWorkoutInput['warmupPrefs'];
   /**
    * (19 Oct, plans) A plan workout's first start (`planFirstLoads`): per row, each set template's
    * planned set from the plan's checked loads. Used only on rows with no targets; a template with a
@@ -516,6 +518,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     newId: input.newId,
     ...(input.gymName !== undefined ? { gymName: input.gymName } : {}),
     ...(input.lastUsedHere ? { lastUsedHere: input.lastUsedHere } : {}),
+    ...(input.warmupPrefs ? { warmupPrefs: input.warmupPrefs } : {}),
     ...(input.checkIn !== undefined ? { checkIn: input.checkIn } : {}),
   });
   const notes = routineStartNotes(out.snap);

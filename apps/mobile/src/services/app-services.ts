@@ -33,6 +33,7 @@ import {
   todayDraftState,
   currentDraftVersion,
   type BuilderEditOp,
+  warmupPrefsOf,
 } from '@fizz/domain';
 import { bundledCatalogue, toExerciseRow, type CatalogueEntry } from '@fizz/catalogue';
 import {
@@ -430,7 +431,7 @@ export function createAppServices(deps: AppServicesDeps) {
     return outcome;
   }
 
-  const domainSessions = () => createSessionService(repos(), deps.newId, { deloadAt: deloadAtOf(repos) });
+  const domainSessions = () => createSessionService(repos(), deps.newId, { deloadAt: deloadAtOf(repos), warmupPrefs: async (ownerId) => warmupPrefsOf(await deps.manager.store.repos.trainingProfiles.get(ownerId).catch(() => null)) });
 
   const sessions = {
     active: async (): Promise<SessionAggregate | null> => {

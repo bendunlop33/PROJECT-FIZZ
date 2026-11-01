@@ -1,3 +1,4 @@
+import type { ResolvedWarmupPrefs } from './training-profile';
 import {
   SessionCommandSchema,
   validate,
@@ -64,6 +65,8 @@ export interface StartRequest {
   checkIn?: SessionCheckIn | null;
   /** GS3 step 2: the item an exercise last used at this gym (from history). */
   lastUsedHere?: (exerciseId: string) => string | null;
+  /** (Ben, 1 Nov) His warm-up settings (`warmupPrefsOf`) for the warm-ups Start plans; absent = simple loads on. */
+  warmupPrefs?: ResolvedWarmupPrefs;
   /**
    * (Ben, 25 Oct) `Log a past workout`: the date and start time Ben picked. The workout is planned
    * at `at` as any start, then starts at this time and is marked a past log (`asPastLog`); its
@@ -115,6 +118,8 @@ async function trySave<R extends SaveResult | FencedResult>(save: () => Promise<
  * Retrying after a write conflict is safe because commands are idempotent.
  */
 export interface SessionServiceOptions {
+  /** (Ben, 1 Nov) The owner's warm-up settings (`warmupPrefsOf` on the training profile), read at Start; absent or null = simple loads on. */
+  warmupPrefs?: (ownerId: string) => Promise<ResolvedWarmupPrefs | null>;
   /**
    * (PM, 23 Oct) The applied plan's deload week at `at`, if it is one (`pbDeloadAtStart`); null otherwise. Read once per
    * real start (never a preview) and stamped on the new session, so the built-in rule, targets and estimates can skip
@@ -133,6 +138,12 @@ function pastStartError(req: Pick<StartRequest, 'at' | 'pastStart'>): SessionErr
 }
 
 export function createSessionService(repos: Repositories, newId: () => string, options: SessionServiceOptions = {}) {
+  /** (Ben, 1 Nov) The warm-up settings Start plans warm-ups with: the request's, else the owner's (`options.warmupPrefs`); a failed read is the default. */
+  async function warmupPrefsFor(req: Pick<StartRequest, 'ownerId' | 'warmupPrefs'>): Promise<ResolvedWarmupPrefs | undefined> {
+    if (req.warmupPrefs !== undefined) return req.warmupPrefs;
+    return (await options.warmupPrefs?.(req.ownerId).catch(() => null)) ?? undefined;
+  }
+
   /** The new session, marked when it starts in the plan's deload week. */
   async function stampDeload(aggregate: SessionAggregate, req: Pick<StartRequest, 'ownerId' | 'at'>): Promise<SessionAggregate> {
     if (options.deloadAt === undefined) return aggregate;
@@ -181,6 +192,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       if (eq) routineEquipment.set(eq.id, eq);
     }
     const gym = await repos.gyms.get(req.gymId);
+    const warmupPrefs = await warmupPrefsFor(req);
     const { aggregate, warnings } = startWorkout({
       opId: req.opId,
       owner,
@@ -194,6 +206,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       checkIn: req.checkIn ?? null,
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
+      ...(warmupPrefs ? { warmupPrefs } : {}),
     });
     const stamped = await finalise(aggregate, req);
     const saved = await trySave(() => repos.sessions.save(stamped, null));
@@ -253,6 +266,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       if (e) exercises.set(e.id, e);
     }
     const gym = await repos.gyms.get(req.gymId);
+    const warmupPrefs = await warmupPrefsFor(req);
     const out = planWithTodayEdits({ kind: 'next', input: {
       opId: req.opId,
       owner,
@@ -267,6 +281,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       ...(req.name !== undefined ? { name: req.name } : {}),
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
+      ...(warmupPrefs ? { warmupPrefs } : {}),
       ...(req.includeNotDone === true ? { includeNotDone: true } : {}),
     } }, req.today ?? NO_EDITS);
     const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
@@ -335,6 +350,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       if (eq) knownEquipment.set(eq.id, eq);
     }
     const gym = await repos.gyms.get(req.gymId);
+    const warmupPrefs = await warmupPrefsFor(req);
     const out = planWithTodayEdits({ kind: 'routine', input: {
       opId: req.opId,
       owner,
@@ -350,6 +366,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       ...(req.firstLoads && req.firstLoads.size > 0 ? { firstLoads: req.firstLoads } : {}),
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
+      ...(warmupPrefs ? { warmupPrefs } : {}),
     } }, req.today ?? NO_EDITS);
     const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
@@ -399,6 +416,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     const knownEquipment = new Map<string, EquipmentInstance>();
     for (const g of await repos.gyms.listByOwner(req.ownerId)) for (const e of await repos.equipment.listByGym(g.id)) knownEquipment.set(e.id, e);
     const gym = await repos.gyms.get(req.gymId);
+    const warmupPrefs = await warmupPrefsFor(req);
     const out = planCoachDraft({
       draft: req.draft,
       start: {
@@ -413,6 +431,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
         checkIn: req.checkIn ?? null,
         ...(gym ? { gymName: gym.name } : {}),
         ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
+        ...(warmupPrefs ? { warmupPrefs } : {}),
       },
       histories: req.histories,
       substitute: req.substitute,
