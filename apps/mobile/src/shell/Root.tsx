@@ -19,7 +19,7 @@ import { createLockScreenTapHandler } from '../live-activity/taps';
 import { activePainFlagged } from '../workout/pain-flagged';
 import { lazyLiveActivityPort } from '../live-activity/lazy-port';
 import type { LiveActivityPort } from '../live-activity/controller';
-import { guardNativeCall, guardNativeCallAsync, launchSafeMode, nativeFeatureOn, nativeFeaturePause, setLaunchGuardBackground } from '../diagnostics/crash-capture';
+import { guardNativeCall, guardNativeCallAsync, launchSafeMode, nativeFeatureOn, nativeFeaturePause, recordContainedError, setLaunchGuardBackground } from '../diagnostics/crash-capture';
 import type { HealthPort } from '@fizz/providers';
 import { launchSettler } from '../diagnostics/launch-settle';
 import { AppBoundary, AppErrorScreen, SafeStartScreen } from './SafeStart';
@@ -264,7 +264,7 @@ function Launch() {
       // (ADR 0035) Apple Health: the HealthKit module if this build has it; usable only if the install's signing kept the entitlement.
       // A safe start (or a crash in HealthKit on this build) leaves Health off for the run: `Paused for this launch` /
       // `Paused on this build` (Ben, 28 Oct), never `Not available on this install` (that is a build without Health).
-      health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild(), paused: () => (healthInBuild() ? nativeFeaturePause('health') : null) },
+      health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild(), paused: () => (healthInBuild() ? nativeFeaturePause('health') : null), logError: recordContainedError },
       dataLedger: containerTextFile(DATA_LEDGER),
       credentials: deviceCredentials(),
       interruptedDelete: attempt.interruptedDelete,
