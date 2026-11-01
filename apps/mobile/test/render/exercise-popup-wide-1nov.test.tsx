@@ -62,7 +62,7 @@ async function kgFields(v: PopupView): Promise<{ value: string; width: number; p
   await act(async () => {
     root.render(
       <ThemeProvider savedDirection={null} onChangeDirection={noop}>
-        <ExercisePopup view={v} resetKey="x" onEditCell={none} onType={none} onDeleteRow={noop} onAddWarmup={none} onAddSet={noop} onRestStep={noop} onMove={noop} onSupersetNext={noop} onUnlink={noop} onSwap={noop} onDelete={noop} onClose={noop} />
+        <ExercisePopup view={v} resetKey="x" onEditCell={none} onType={none} onDeleteRow={noop} onAddWarmup={none} onAddSet={noop} onRestStep={noop} onMove={noop} onSupersetNext={noop} onUnlink={noop} onSwap={noop} onDelete={noop} onClose={noop} kgStep={() => Promise.resolve(null)} />
       </ThemeProvider>,
     );
     await Promise.resolve();
