@@ -53,7 +53,7 @@ const ok = (p: TrainingProfile, c: TrainingChange): TrainingProfile => {
 };
 
 /** Ben's: main 4:00, top 4:30, back-off 3:30, compound 3:00, isolation 2:00, round 1:00, warm-up 1:30. */
-const BENS: Required<RestDefaults> = { workingMain: 240, top: 270, backoff: 210, workingCompound: 180, workingIsolation: 120, round: 60, warmup: 90 };
+const BENS: Required<Omit<RestDefaults, 'shortenMain'>> = { workingMain: 240, top: 270, backoff: 210, workingCompound: 180, workingIsolation: 120, round: 60, warmup: 90 };
 
 const all = (w: BuilderWorkout) => w.blocks.flatMap((b) => b.slots);
 const chest = (ctx: BuilderContext) => buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [...BUILDER_DAY_MIXES.chest] }, pool, ctx).workout;

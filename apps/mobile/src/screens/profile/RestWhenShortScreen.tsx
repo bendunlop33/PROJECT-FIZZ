@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { Switch, View } from 'react-native';
 
-import { FIT_REST_LEVEL_OPTIONS, fitRestLevelOf, mainLiftRestLine, REST_LEVEL_NAMES, restDefaultsOf, restLevelTimesLine } from '@fizz/domain';
-import type { FitRestLevel, TrainingProfile } from '@fizz/schemas';
+import { FIT_REST_LEVEL_OPTIONS, fitRestLevelOf, mainLiftRestLine, REST_LEVEL_NAMES, restDefaultsOf, restLevelTimesLine, SHORTEN_MAIN_COPY } from '@fizz/domain';
+import type { FitRestLevel, TrainingChange, TrainingProfile } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, ChoiceCard, Screen, StatusLine, TextButton } from '../../ui';
+import { AppText, ChoiceCard, Group, Row, Screen, StatusLine, TextButton } from '../../ui';
 
 /**
  * Profile › Training › Rest when short on time (Ben, 27 Oct; fit-to-time.md revision 27 Oct): how far Time may
@@ -16,6 +16,8 @@ import { AppText, ChoiceCard, Screen, StatusLine, TextButton } from '../../ui';
  * rule 5); a stale write reloads. Values only (minimal copy).
  * (Ben, 28 Oct) Each option shows its accessory rests from Ben's Rest times (`Compound 2:00 · Isolation 1:30`); the
  * main lift's rest, which never shortens, once below.
+ * (Ben, 1 Nov) `Shorten main lift too` (off by default): Medium and Minimum also shorten the main lift's rests; the
+ * main-lift line then shows each level's value (`Main lift 3:00 · 2:30 · 2:00`). One versioned write per tap.
  */
 export function RestWhenShortScreen() {
   const theme = useTheme();
@@ -50,10 +52,14 @@ export function RestWhenShortScreen() {
   const defaults = restDefaultsOf(profile);
 
   async function save(next: FitRestLevel) {
+    await write({ kind: 'fit_rest_level', level: next });
+  }
+
+  async function write(change: TrainingChange) {
     if (profile === null || profile === 'error' || busy.current) return;
     busy.current = true;
     try {
-      const r = await services.training.change({ kind: 'fit_rest_level', level: next }, profile.version, newUuid());
+      const r = await services.training.change(change, profile.version, newUuid());
       setFailed(!r.ok);
       if (r.ok) {
         setProfile(r.profile);
@@ -71,6 +77,12 @@ export function RestWhenShortScreen() {
           <ChoiceCard key={l} title={REST_LEVEL_NAMES[l]} subtitle={restLevelTimesLine(l, defaults)} selected={level === l} onPress={() => void save(l)} />
         ))}
       </View>
+      <Group>
+        <Row
+          title={SHORTEN_MAIN_COPY.label}
+          trailing={<Switch testID="shorten-main" accessibilityLabel={SHORTEN_MAIN_COPY.label} value={profile.fitShortenMain === true} onValueChange={(on) => void write({ kind: 'fit_shorten_main', on })} />}
+        />
+      </Group>
       <AppText variant="callout" color="text.secondary">
         {mainLiftRestLine(defaults)}
       </AppText>
