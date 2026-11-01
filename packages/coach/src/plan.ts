@@ -13,6 +13,7 @@ import {
   type Exercise,
   type GuardNote,
   type MuscleGroup,
+  type PlanDayDraft,
   type PlanDraft,
   type PlanDraftVersion,
   type ProposedPlanDay,
@@ -86,6 +87,8 @@ export interface PlanDeps {
   exerciseOf?: (exerciseId: string) => Pick<Exercise, 'primaryMuscles'> | null;
   /** A muscle as its group (`chest` → `Chest`). */
   groupOf?: (muscle: string) => MuscleGroup | null;
+  /** (Ben, 1 Nov) The weekly muscle-volume check on the proposed days (`planMuscleGapLines`); absent: not checked. */
+  muscleGaps?: (days: readonly PlanDayDraft[]) => readonly string[];
   contextHash: string;
   equipmentVersion: string;
   gyms?: readonly string[];
@@ -163,6 +166,7 @@ export function createPlanExecutor(deps: PlanDeps): CoachExecutors {
       },
       minutesFor: (d) => planDayMinutes(d, args.minutes, deps.request),
       ...(deps.exerciseOf !== undefined && deps.groupOf !== undefined ? { topGroupOf: (p: DraftPlan) => planTopGroup(p, deps) } : {}),
+      ...(deps.muscleGaps === undefined ? {} : { muscleGaps: deps.muscleGaps }),
     });
     const rationale = checkedRationale(args.message, ctx.facts === undefined ? undefined : planFacts(ctx.facts, check.days, deps.request.text));
     const parentN = deps.plan?.currentVersion ?? null;

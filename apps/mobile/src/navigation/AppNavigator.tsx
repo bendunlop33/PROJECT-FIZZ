@@ -18,6 +18,7 @@ import { BuilderSetupScreen } from '../screens/builder/BuilderSetupScreen';
 import { BuilderWorkoutScreen } from '../screens/builder/BuilderWorkoutScreen';
 import { PlanSetupScreen } from '../screens/plan/PlanSetupScreen';
 import { ChangesScreen, EarlierChangesScreen, EarlierWeekScreen } from '../screens/library/ChangesScreen';
+import { PlanMusclesScreen } from '../screens/library/PlanMusclesScreen';
 import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
 import { DataBackupScreen } from '../screens/data/DataBackupScreen';
 import { EquipmentEditorScreen } from '../screens/gym/EquipmentEditorScreen';
@@ -186,6 +187,7 @@ function LibraryNavigator() {
       <LibraryStack.Screen name="LibraryChanges" component={ChangesScreen} options={{ title: 'Changes', headerBackTitle: 'Plan' }} />
       <LibraryStack.Screen name="LibraryEarlierChanges" component={EarlierChangesScreen} options={{ title: 'Earlier changes', headerBackTitle: 'Changes' }} />
       <LibraryStack.Screen name="LibraryEarlierWeek" component={EarlierWeekScreen} options={{ title: 'Changes', headerBackTitle: 'Earlier' }} />
+      <LibraryStack.Screen name="LibraryPlanMuscles" component={PlanMusclesScreen} options={{ title: 'Muscles', headerBackTitle: 'Plan' }} />
     </LibraryStack.Navigator>
   );
 }

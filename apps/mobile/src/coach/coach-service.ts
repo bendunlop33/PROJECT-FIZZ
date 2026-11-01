@@ -230,6 +230,8 @@ import {
   type HistoryLike,
   type HistoryWorkout,
   missingEquipmentNoun,
+  planMuscleGapLines,
+  type MuscleGoalInput,
 } from '@fizz/domain';
 import { TurnAlreadyRunningError, type CandidateWrite, type MemoryWrite, type SqliteRepositories, type Store } from '@fizz/persistence';
 import { createRunningTurns, type TurnScope } from './running-turns';
@@ -270,6 +272,7 @@ import type {
   ProgressPeriodKey,
   SessionAggregate,
   SetType,
+  PlanDayDraft,
   UserProfile,
   ZonedTimestamp,
 } from '@fizz/schemas';
@@ -448,6 +451,13 @@ export interface BuildChips {
 const WEEK_OFFER_LOOKBACK = 200;
 
 export interface CoachServiceDeps {
+  /**
+   * (Ben, 1 Nov) The goal and priority groups weekly muscle ranges are read for (Plan › Muscles'), for the plan
+   * proposal's muscle check; absent or null: not checked.
+   */
+  muscleGoal?: () => Promise<MuscleGoalInput | null>;
+  /** (Ben, 1 Nov) The plan in use's typical week, direct (assisted) sets per group vs range: YOUR DATA plan.inUse.muscles. */
+  planMuscleLines?: () => Promise<string[] | null>;
   /** (Ben, 27 Oct, Q4; ADR 0035) The watch workout linked to a workout, as the coach sees it; absent or null: none. */
   healthLinked?: (sessionId: string) => Promise<LinkedActivityContext | null>;
   /** Check-in settings (check-in.md §2.8); absent, the defaults. */
@@ -1674,6 +1684,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const g: SnapGym = other.id === gym.id ? gym : { id: other.id, name: other.name, equipment: await repos().equipment.listByGym(other.id).catch(() => []) };
       return { gymId: g.id, gymName: g.name, checkContext: checkContextAt(g), equipmentVersion: equipmentVersionOf(g) };
     };
+    const muscleGoal = planRequest === null ? null : ((await deps.muscleGoal?.().catch(() => null)) ?? null);
     const planExecutors =
       planRequest === null
         ? {}
@@ -1690,6 +1701,8 @@ export function createCoachService(deps: CoachServiceDeps) {
             },
             exerciseOf: (id) => byId.get(id) ?? null,
             groupOf: muscleGroupOf,
+            // (Ben, 1 Nov) The proposal's weekly muscle check: one line per group out of range, on the card and to the coach.
+            ...(muscleGoal === null ? {} : { muscleGaps: (days: readonly PlanDayDraft[]) => planMuscleGapLines(days, muscleGoal, (id) => byId.get(id) ?? null) }),
             contextHash: deriveId(stableStringify(view)),
             equipmentVersion: equipmentVersionOf(gym),
             gyms: savedGyms.map((x) => x.name),
@@ -1862,7 +1875,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       const nowMs = toMs(deps.now().utc);
       const running = activePause(inUse, nowMs, p.timezone);
       swapView = deps.planSwap === undefined ? null : await deps.planSwap.context().catch(() => null);
-      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate }, ...(swapView === null ? {} : { days: swapView.days }) } };
+      const muscles = (await deps.planMuscleLines?.().catch(() => null)) ?? null;
+      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate }, ...(swapView === null ? {} : { days: swapView.days }), ...(muscles === null ? {} : { muscles }) } };
       Object.assign(executors, createPausePlanExecutor({ store: coachStore(), loadPlan: () => repos().planDrafts.applied(p.id), tz: p.timezone }));
       // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat while a plan is in use.
       const swap = deps.planSwap;

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CHANGE_TAP_LABEL, changeRowTaps, LIBRARY_CHANGES_COPY as C, type ChangeRowView, type ChangeTap, type LibraryChangeRow } from '@fizz/domain';
+import { CHANGE_TAP_LABEL, changeRowTaps, LIBRARY_CHANGES_COPY as C, toMs, weeklyReviewWeek, type ChangeRowView, type ChangeTap, type LibraryChangeRow } from '@fizz/domain';
+import { MuscleOffer } from './MuscleOffer';
 
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
@@ -81,6 +82,8 @@ export function ChangesScreen() {
                   {v.note}
                 </AppText>
               ) : null}
+              {/* (Ben, 1 Nov) The weekly review's muscle-gap offer, once per plan state (never also after Apply). */}
+              <MuscleOffer surface="review" weekMonday={weeklyReviewWeek(toMs(services.now().utc), services.now().tz)} />
               {v.tweaks.length === 0 && v.offers.length === 0 ? (
                 <AppText variant="body" color="text.secondary">
                   {C.none}

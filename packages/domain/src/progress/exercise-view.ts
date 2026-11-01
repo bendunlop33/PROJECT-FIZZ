@@ -32,7 +32,8 @@ import {
   type TrendRange,
 } from './exercise';
 import { MUSCLE_GROUPS, type MuscleGroup } from './muscle-groups';
-import { muscleGroupCredits, type MuscleInfo } from './muscles';
+import { muscleGroupCredits } from './muscle-sets';
+import type { MuscleInfo } from './muscles';
 import type { ProgressSession, ProgressSet } from './projection';
 import { exerciseRecords, RECORD_LABEL, type ExerciseRecord } from './records';
 import type { NewBestRecords } from '../review/progress-page';

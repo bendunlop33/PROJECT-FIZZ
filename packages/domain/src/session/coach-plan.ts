@@ -89,6 +89,8 @@ export interface PlanProposalContext {
   minutesFor(day: ProposedPlanDay): number;
   /** The muscle group most of a day's working sets train, for the `same muscles in a row` note. Absent: not checked. */
   topGroupOf?: (plan: DraftPlan) => MuscleGroup | null;
+  /** (Ben, 1 Nov) The weekly muscle-volume check on the checked days (`planMuscleGapLines`). Absent: not checked. */
+  muscleGaps?: (days: readonly PlanDayDraft[]) => readonly string[];
 }
 
 export type PlanProposalCheck = { status: 'ok' | 'partial'; days: PlanDayDraft[]; checks: PlanCheck[] } | { status: 'unusable'; days: []; checks: PlanCheck[] };
@@ -139,6 +141,8 @@ export function checkPlanProposal(args: ProposePlanArgs, ctx: PlanProposalContex
     }
   }
   if (days.length === 0) return { status: 'unusable', days: [], checks: checks.slice(0, 20) };
+  // (Ben, 1 Nov) A group out of its weekly range: one line each, never a refusal (his explicit choices stand).
+  for (const line of ctx.muscleGaps?.(days) ?? []) add({ kind: 'muscle_gap', dayIndex: null, text: line });
   const partial = checks.some((c) => c.kind === 'day_dropped') || days.some((d) => d.checks.some((c) => c.leftOut));
   return { status: partial ? 'partial' : 'ok', days, checks: checks.slice(0, 20) };
 }

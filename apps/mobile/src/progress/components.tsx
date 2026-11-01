@@ -23,7 +23,8 @@ import { AppText, Icon, PrimaryButton } from '../ui';
 import { AX_FONT_SCALE } from '../workout/screen-rules';
 import { useAxisWidth } from './axis-measure';
 import { TICK_MAX_SCALE } from './axis-width';
-import { ACTIVITY_LINE_DIMS, activityLineLayout, countBarWidth, guessLabelWidth, measuredLabelBox, thinLabelsByWidth } from './chart-layout';
+import { MuscleBar } from '../ui/muscle-bar';
+import { ACTIVITY_LINE_DIMS, activityLineLayout, guessLabelWidth, measuredLabelBox, thinLabelsByWidth } from './chart-layout';
 import { FREQUENCY_COLUMNS, FREQUENCY_HEADERS } from './frequency-columns';
 import { loadTrendCanvas } from './load-charts';
 import { nearestPointIndex } from './trend-layout';
@@ -470,7 +471,6 @@ export function FrequencyHeader({ perWeek }: { perWeek: boolean }) {
 export function FrequencyRow({ row, onPress, expanded, perWeek, hint }: { row: FrequencyRowView; onPress: () => void; expanded?: boolean; perWeek: boolean; hint?: string }) {
   const theme = useTheme();
   const ax = useAx();
-  const [track, setTrack] = useState(0);
   const numColor = row.zero ? 'text.tertiary' : 'text.primary';
   const numbers = (
     <>
@@ -498,20 +498,21 @@ export function FrequencyRow({ row, onPress, expanded, perWeek, hint }: { row: F
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'] }}>
         <View style={{ flex: 1, gap: theme.space['1'] }}>
-          <AppText variant="body" color={row.zero ? 'text.secondary' : 'text.primary'}>
-            {row.label}
-          </AppText>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', columnGap: theme.space['2'] }}>
+            <AppText variant="body" color={row.zero ? 'text.secondary' : 'text.primary'}>
+              {row.label}
+            </AppText>
+            {row.assistedText !== null ? (
+              <AppText variant="callout" color="text.tertiary" numeric>
+                {row.assistedText}
+              </AppText>
+            ) : null}
+          </View>
           {ax ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>{numbers}</View>
           ) : (
-            <View
-              onLayout={(e) => {
-                setTrack(Math.floor(e.nativeEvent.layout.width));
-              }}
-              style={{ height: theme.chart.countBar.height, borderRadius: theme.chart.countBar.radius, backgroundColor: theme.colors['bg.raised'] }}
-            >
-              <View style={{ width: countBarWidth(row.fraction, track), height: theme.chart.countBar.height, borderRadius: theme.chart.countBar.radius, backgroundColor: theme.colors['chart.bar'] }} />
-            </View>
+            // (Ben, 1 Nov) The one muscle bar, shared with Plan › Muscles: direct sets, the goal range shaded.
+            <MuscleBar look={row.look} />
           )}
         </View>
         {ax ? null : numbers}

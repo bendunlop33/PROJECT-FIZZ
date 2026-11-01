@@ -1,8 +1,11 @@
-import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
+import type { MuscleGroup, ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
 import { EXCLUSION_WORD } from '../exclusions';
 import { deriveWorkoutTitle } from '../session/first-run';
 import { countAxisTicks, countSessions, timeInGym, type LeftOutSession } from './activity';
 import { muscleFrequency, type MuscleInfo } from './muscles';
+import { directRange, MUSCLE_FLAG_CEILING, PLAN_MUSCLE_GROUPS, type MuscleRange, type VolumeGoal } from './muscle-sets';
+import { muscleBarLook, muscleWhyText, PLAN_MUSCLES_COPY, type MuscleBarLook } from './plan-muscles';
+import { oneDecimal } from './activity';
 import type { ProgressSession } from './projection';
 import { recordsInWindow, type ProgressRecord } from './records';
 import type { NewBestRecords } from '../review/progress-page';
@@ -54,6 +57,13 @@ export interface ProgressHomeInput {
    * phrase (`in October`). When set it replaces `period` and `range`.
    */
   bar?: { window: ProgressWindow; title: string; phrase: string } | null;
+  /**
+   * (Ben, 1 Nov) The goal the muscle bars' shaded range is read for (`directRange`, per week × the window's weeks);
+   * absent or null: no range shown.
+   */
+  volumeGoal?: VolumeGoal | null;
+  /** Priority groups (10–20 a week). Absent: none. */
+  priorities?: ReadonlySet<MuscleGroup>;
 }
 
 export interface StatView {
@@ -124,11 +134,22 @@ export interface FrequencyRowView {
   key: string;
   label: string;
   sessions: number;
+  /** V1's count (direct + assisted), in halves. */
   sets: number;
+  /** (Ben, 1 Nov: option C) Direct sets: what the row shows first. */
+  direct: number;
+  /** Direct sets (`12`). */
   setsText: string;
+  /** `+7 assisted` (V1's ½ credit and other primary groups); null with none. */
+  assistedText: string | null;
+  /** Direct sets a week. */
   perWeek: string | null;
-  /** 0–1 of the largest row's sets in this view. */
+  /** 0–1 of the largest row's direct sets in this view. */
   fraction: number;
+  /** The shared muscle bar (fill, shaded range, tone): the same look as Plan › Muscles. */
+  look: MuscleBarLook;
+  /** Why? `Biceps 2 direct · +7 assisted · range 4–8: other lifts cover some`. */
+  why: string;
   zero: boolean;
   words: string;
   /** `Last trained 8 Oct` · `Not trained yet`. */
@@ -332,17 +353,30 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
 
   // Muscles (PG26, PG27)
   const freq = muscleFrequency(input.sessions, input.exercises, window, input.grouping);
-  const maxSets = Math.max(0, ...freq.rows.map((r) => r.sets));
-  const rows: FrequencyRowView[] = freq.rows.map((r) => ({
+  const weeksIn = window.days / 7;
+  const rangeFor = (r: (typeof freq.rows)[number]): MuscleRange | null => {
+    if (input.grouping !== 'body_part' || (input.volumeGoal ?? null) === null) return null;
+    const g = r.key as MuscleGroup;
+    if (!PLAN_MUSCLE_GROUPS.includes(g)) return null;
+    const per = directRange(input.volumeGoal ?? null, { priority: input.priorities?.has(g) === true, assisted: r.assisted / weeksIn });
+    return per === null ? null : { ...per, min: oneDecimal(per.min * weeksIn), max: oneDecimal(per.max * weeksIn) };
+  };
+  const ranges = freq.rows.map(rangeFor);
+  const maxSets = Math.max(0, ...freq.rows.map((r) => r.direct), ...ranges.map((x) => x?.max ?? 0));
+  const rows: FrequencyRowView[] = freq.rows.map((r, i) => ({
     key: r.key,
     label: r.label,
     sessions: r.sessions,
     sets: r.sets,
-    setsText: setsText(r.sets),
-    perWeek: r.perWeek === null ? null : perWeekText(r.perWeek),
-    fraction: maxSets === 0 ? 0 : r.sets / maxSets,
+    direct: r.direct,
+    setsText: setsText(r.direct),
+    assistedText: r.assisted > 0 ? PLAN_MUSCLES_COPY.assisted(r.assisted) : null,
+    perWeek: r.directPerWeek === null ? null : perWeekText(r.directPerWeek),
+    fraction: maxSets === 0 ? 0 : r.direct / maxSets,
+    look: muscleBarLook(r.direct, ranges[i] ?? null, { scaleMax: maxSets, ceiling: MUSCLE_FLAG_CEILING * weeksIn }),
+    why: muscleWhyText(r.label as MuscleGroup, { direct: r.direct, assisted: r.assisted }, ranges[i] ?? null, r.contributors.filter((c) => c.factor === 0.5).slice(0, 3).map((c) => c.name)),
     zero: r.sets === 0 && r.sessions === 0,
-    words: `${r.label}, ${countNoun(r.sessions, 'session', 'sessions')}, ${setsWords(r.sets)}.`,
+    words: `${r.label}, ${countNoun(r.sessions, 'session', 'sessions')}, ${setsWords(r.direct)}${r.assisted > 0 ? `, plus ${setsWords(r.assisted)} assisted` : ''}.`,
     lastTrained: r.lastTrained === null ? 'Not trained yet' : `Last trained ${dayMonth(r.lastTrained)}`,
     contributors: r.contributors.map((c) => ({
       exerciseId: c.exerciseId,

@@ -84,7 +84,8 @@ export type PlanDayDraft = z.infer<typeof PlanDayDraftSchema>;
 
 /** A check about the plan as a whole (code text): a day dropped, a split day used twice, a name changed. */
 export const PlanCheckSchema = z.object({
-  kind: z.enum(['day_dropped', 'day_renamed', 'split_unknown', 'split_repeated', 'too_many_days', 'same_muscles_in_a_row']),
+  /** `muscle_gap` (Ben, 1 Nov): a muscle group out of its weekly range on the plan's typical week (never blocks the plan). */
+  kind: z.enum(['day_dropped', 'day_renamed', 'split_unknown', 'split_repeated', 'too_many_days', 'same_muscles_in_a_row', 'muscle_gap']),
   dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1).nullable(),
   text: z.string().min(1).max(200),
 });
