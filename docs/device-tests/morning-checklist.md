@@ -117,7 +117,7 @@ Run these after the checklist. They are the open rows from build 7.
 | R1 | Live Activity | Run it first, then lock the phone | A countdown on the lock screen. If it fails again, note whether App Group (R2) passed |
 | R2 | App Group | Run it | Pass with the SideStore-renamed group (`group.com.projectfizz.fizz.<TEAMID>`) |
 | R3 | AlarmKit | **Request permission**, then run | A permission prompt; result recorded (it's a runtime capability flag, never required) |
-| R4 | Spoken cue while locked | Run it, lock the phone | Only if this build was made with the background-audio experiment (`FIZZ_BACKGROUND_AUDIO=1`); otherwise it reports UNAVAILABLE, which is correct |
+| R4 | Spoken cues in the background | Start Spotify, Run it, switch to Spotify (or lock) within 20 s, come back after ~55 s | Both cues heard on time, music lowered only while each spoke. UNAVAILABLE only in a build made with `FIZZ_BACKGROUND_AUDIO=0` |
 | R5 | On-device speech (en-GB) | Run it and say "Bench one hundred kilos for eight" | The probe reports the locale it used (should be en-GB from the device) and the transcript |
 
 ---
@@ -154,5 +154,5 @@ Run these after the checklist. They are the open rows from build 7.
 | R1 | Live Activity | | |
 | R2 | App Group | | |
 | R3 | AlarmKit permission | | |
-| R4 | Spoken cue while locked | | |
+| R4 | Spoken cues in the background | | |
 | R5 | Speech en-GB | | |

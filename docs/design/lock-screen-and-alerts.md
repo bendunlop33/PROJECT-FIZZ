@@ -202,6 +202,8 @@ Name and priming copy match onboarding.md §4.6: setting `Loud rest alerts`.
 
 ### 2.4 Spoken cues while locked (experiment, opt-in)
 
+> **Revision 1 Nov 2026 (Ben; ADR 0040):** built differently from the text below. Background audio is on by default, with no separate setting: the cue mode (Off / Timer only / Timer and set details) decides. The rest's "15 seconds …" and "Rest over." are scheduled natively and speak when the app isn't on screen; a silent, mixable player keeps the app running only while a rest's cues wait in the background, never from first set to Finish. The notification is not removed (no "exactly one alert" yet). No `Stopped by iOS` line is shown.
+
 Visible in Voice & alerts **only** when the build includes background audio (`FIZZ_BACKGROUND_AUDIO=1`, ADR 0007) and cue mode is `Set cues` or `Conversation`. Off by default. Turning it on as a product feature still needs Ben's approval as a brief change (ADR 0007).
 
 - **What it does:** `audio-coach` keeps a silent, mixable audio session alive from the first set to Finish (not while paused), so Fizz stays running when locked and can speak the rest-end cue from rest-state.md §5 ("Ready when you are. Bench press, 100 kilos, target 6 to 8 reps.") with music ducked.
@@ -387,7 +389,7 @@ From the brief and existing specs:
 - `scheduleTimerCue(timerId, version)` with the arbitration in §4.1; `cancelObsoleteCues(sessionId, version)`; `buildSetCue(event, sessionVersion)` for the spoken text.
 - `getActiveSession(userId)` for reconcile on launch.
 - `buildActiveSetView(sessionId)` for the next set's committed values.
-- `audio-coach`: `speak`, `startKeepAlive`, `stopKeepAlive`, interruption events (ADR 0007).
+- `audio-coach`: `speak`, `scheduleRestCues`, `cancelRestCues`, interruption events (ADR 0007, ADR 0040).
 
 **Proposed new functions:**
 
