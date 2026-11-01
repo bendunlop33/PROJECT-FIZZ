@@ -340,6 +340,8 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
         ) : null}
         {/* (Ben, 31 Oct; block-progress §3) `5 lifts up · 1 stalled ›`: this block's lifts in Progress. */}
         {circles !== null ? <BlockLiftsLine /> : null}
+        {/* (Ben, 1 Nov) `Muscles · Biceps low ›` / `Muscles · all in range ›`: Plan › Muscles. */}
+        <PlanMusclesLine />
         {pausing !== null ? (
           <View style={{ gap: theme.space['2'], paddingTop: theme.space['2'] }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
@@ -706,6 +708,30 @@ function BlockLiftsLine() {
       accessibilityLabel={line}
       onPress={() => {
         navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressBlock', params: {} } });
+      }}
+      style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
+    >
+      <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
+        {line}
+      </AppText>
+      <Icon name="chevron.right" color="text.tertiary" size={14} />
+    </Pressable>
+  );
+}
+
+/** (Ben, 1 Nov) `Muscles · Biceps low ›`: the plan's typical week against its goal ranges; nothing with no goal. */
+export function PlanMusclesLine() {
+  const theme = useTheme();
+  const stack = useNavigation<NativeStackNavigationProp<LibraryStackParams, 'LibraryHome'>>();
+  const [data] = useScreenData((s) => s.planMuscles.line().catch(() => null));
+  const line = data.state === 'ready' ? data.value : null;
+  if (line === null) return null;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={line}
+      onPress={() => {
+        stack.navigate('LibraryPlanMuscles');
       }}
       style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
     >

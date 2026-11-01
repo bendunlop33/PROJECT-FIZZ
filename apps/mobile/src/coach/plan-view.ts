@@ -35,6 +35,8 @@ export interface PlanCardView {
   action: { kind: 'apply' } | { kind: 'undo'; text: string } | { kind: 'resume'; text: string } | { kind: 'ended'; text: string };
   /** `Replace my workouts` takes these out of the rotation (they stay in Workouts); empty: nothing to replace. */
   replaces: string | null;
+  /** (Ben, 1 Nov) `Biceps 2/wk · below 4–8`, one per group out of range. */
+  muscles: string[];
 }
 
 export function planCardView(d: PlanCardData): PlanCardView {
@@ -67,6 +69,7 @@ export function planCardView(d: PlanCardData): PlanCardView {
     rationale: d.rationale,
     action,
     replaces: d.replaces.length === 0 ? null : d.replaces.join(', '),
+    muscles: d.muscles,
   };
 }
 

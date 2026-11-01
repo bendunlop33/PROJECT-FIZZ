@@ -86,7 +86,8 @@ export type ProfileStackParams = {
 /** The Progress tab's stack (progress.md §2.1, slice A). */
 export type ProgressStackParams = {
   /** `focus: 'reviews'` (Today's Reviews link): scroll to the top, where Reviews are; `n` makes a repeat tap do it again. */
-  ProgressHome: { focus?: 'reviews'; n?: number } | undefined;
+  /** `weekOf` (Ben, 1 Nov): Plan › Muscles' `Done by week ›`: Training on that week (its Monday). */
+  ProgressHome: { focus?: 'reviews'; n?: number; weekOf?: string } | undefined;
   /** `group`: the row to open expanded (a body-part group such as `Chest`, or `push` / `pull` / `legs` / `core` / `other`). */
   ProgressMuscles: { group?: string };
   /** Exercise detail inside the Progress tab (slice B, §2.7). */
@@ -129,6 +130,8 @@ export type LibraryStackParams = {
   LibraryEarlierChanges: undefined;
   /** One earlier week's changes (Undo / Redo while they still apply; offers Apply / Skip). */
   LibraryEarlierWeek: { reviewId: string };
+  /** (Ben, 1 Nov) Plan › Muscles: planned working sets per muscle group a week, Rebalance. */
+  LibraryPlanMuscles: undefined;
 };
 
 /** (Ben, 22 Oct) Library tabs `Plan | Workouts | Exercises`. */

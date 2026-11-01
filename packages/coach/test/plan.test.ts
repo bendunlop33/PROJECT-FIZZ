@@ -300,3 +300,20 @@ describe('a plan turn end to end (fake model)', () => {
     await store.close();
   });
 });
+
+describe('(Ben, 1 Nov) the plan proposal’s weekly muscle check', () => {
+  it('a scripted plan with a gap gets the line on its version (card) and in the guard notes the coach gets back; the plan is still made', async () => {
+    const store = await memoryStore();
+    const model = new ScriptedCoachModel([[call('propose_plan', PLAN_ARGS), { type: 'completed' }], reply('Here is your week.')]);
+    const req = request({ input: words('build me a 3-day plan'), context: { session: null, gymName: 'Main gym', painFlags: [FLAG], checkIn: null, memories: [], catalogue: [], build: view() } });
+    const gaps = (days: readonly { plan: { slots: readonly { exerciseId: string }[] } }[]) => (days.some((d) => d.plan.slots.some((s) => s.exerciseId === PULLUP.id)) ? ['Biceps 0/wk · below 6–10'] : []);
+    const result = await runCoachTurn(req, ports(store, model, createPlanExecutor(deps(store, null, { muscleGaps: gaps }))));
+    expect(result.status).toBe('completed');
+    const card = result.cards[0]?.record;
+    expect(card?.status).toBe('committed');
+    expect(card?.guardNotes.map((n) => n.text)).toContain('Biceps 0/wk · below 6–10');
+    const v = (await store.repos.planDrafts.listByOwner(OWNER))[0]?.versions[0];
+    expect(v?.checks).toContainEqual({ kind: 'muscle_gap', dayIndex: null, text: 'Biceps 0/wk · below 6–10' });
+    await store.close();
+  });
+});

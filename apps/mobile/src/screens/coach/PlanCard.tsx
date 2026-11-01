@@ -8,6 +8,7 @@ import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Icon, SecondaryButton, TextButton } from '../../ui';
 import { CardActions, CoachCardFrame } from './CoachCardFrame';
+import { MuscleOffer } from '../library/MuscleOffer';
 
 /**
  * The coach plan card (Ben, 19 Oct): one card with every day; tap a day to
@@ -158,6 +159,13 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
             ) : null}
           </View>
         ))}
+        {/* (Ben, 1 Nov) The weekly muscle check: one line per group out of range; never blocks Apply. */}
+        {card.muscles.map((m) => (
+          <AppText key={m} variant="callout" color="status.warning" numeric>
+            {m}
+          </AppText>
+        ))}
+        {card.action.kind === 'undo' ? <MuscleOffer surface="apply" weekMonday={null} /> : null}
         {notice !== null ? (
           <AppText variant="callout" color="text.secondary">
             {notice}

@@ -256,6 +256,8 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
       else next.pinnedNotes = rest;
       return next;
     }
+    case 'muscle_offer':
+      return { ...p, muscleOffer: { key: c.key.slice(0, 4000), by: c.by, weekMonday: c.weekMonday, status: c.status, atUtc } };
   }
 }
 

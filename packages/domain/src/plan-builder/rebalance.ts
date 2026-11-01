@@ -2,10 +2,10 @@ import type { DraftSetTemplate, DraftSlot, MuscleGroup, PlanDayDraft, PlanDraft 
 
 import { deriveId } from '../stable';
 import { PRESET_SPLITS } from '../training-profile';
-import { pbResizeSlot, pbWeekDaysOf, type PbEditBlock } from './edit';
+import { pbResizeSlot, pbSlotSets, pbWeekDaysOf, type PbEditBlock } from './edit';
 
 import { directMuscleGroup, muscleSetCredits, muscleStatus, PLAN_MUSCLE_GROUPS, type MuscleSetTotals } from '../progress/muscle-sets';
-import { muscleFlags, plannedMuscleSets, rangesOf, type InfoOf, type MuscleFlag, type MuscleGoalInput, type PlanMuscleDay, type PlanMuscleRow } from '../progress/plan-muscles';
+import { muscleFlags, plannedMuscleSets, PLAN_MUSCLES_COPY, rangesOf, type InfoOf, type MuscleFlag, type MuscleGoalInput, type PlanMuscleDay, type PlanMuscleRow } from '../progress/plan-muscles';
 
 /**
  * (Ben, 1 Nov: "You need to look at it holistically") **Rebalance**: one proposal for the whole plan that brings every
@@ -367,4 +367,18 @@ export function rebalanceDaysWith(days: readonly PlanMuscleDay[], ops: readonly 
     }
     return { ...d, rows };
   });
+}
+
+/** A plan version's days as Plan › Muscles rows (each slot's working sets; warm-ups never count). */
+export function planMuscleDaysOf(days: readonly PlanDayDraft[]): PlanMuscleDay[] {
+  return days.map((d) => ({ dayIndex: d.index, name: d.name, minutes: d.minutes, rows: [...d.plan.slots].sort((a, b) => a.order - b.order).map((s) => ({ key: s.slotKey, exerciseId: s.exerciseId, sets: pbSlotSets(s), main: s.main, order: s.order, superset: s.supersetGroup })) }));
+}
+
+/**
+ * (Ben, 1 Nov: "the coach should have caught" it) The deterministic check on a proposed or built plan: each group out
+ * of its range on the plan's typical week, one line each (`Biceps 2/wk · below 4–8`). Shown on the plan card and fed
+ * back to the coach (its guard notes) so it can adjust before replying. Never blocks the plan: Ben's own choices stand.
+ */
+export function planMuscleGapLines(days: readonly PlanDayDraft[], g: MuscleGoalInput, infoOf: InfoOf): string[] {
+  return muscleFlags(plannedMuscleSets(planMuscleDaysOf(days), infoOf), g).map((f) => PLAN_MUSCLES_COPY.gap(f));
 }

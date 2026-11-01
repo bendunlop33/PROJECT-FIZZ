@@ -116,3 +116,38 @@ describe('Plan › Muscles and Rebalance on Ben’s PPL A/B (real SQLite)', () =
     expect((await s.planMuscles.muscles())?.view.flagLines).toContain('Biceps 0/wk · below 6–10');
   });
 });
+
+describe('the coach’s muscle-gap offer: once per plan state (Ben, 1 Nov)', () => {
+  it('raised after Apply; the weekly review doesn’t raise it again; Skip holds; a plan change raises it afresh', async () => {
+    const { s, days } = await bensPlan();
+    // Strip the build's biceps work (as above) so Biceps is out of range.
+    pool = await s.coachingKnowledge.exercises();
+    for (const id of [days.get('Pull A') ?? '', days.get('Pull B') ?? '']) {
+      for (const e of (await template(s, id)).exercises.filter((x) => isBicepsLed(s, x.exerciseId))) {
+        const now = await template(s, id);
+        const r = await s.plans.editDayEveryWeek({ routineId: id, expectedVersion: now.version, opId: h.ids(), edit: { kind: 'remove', rowId: e.id, fromExerciseId: e.exerciseId, toExerciseId: null, afterRowId: null } });
+        if (!r.ok) throw new Error(r.message);
+      }
+    }
+    const first = await s.planMuscles.offer({ surface: 'apply', weekMonday: null, opId: 'offer-1' });
+    expect(first?.text).toMatch(/only 0 sets a week · Rebalance\?$/);
+    // The same surface shows the same one offer again (it is still open); a retried write is the same write.
+    expect(await s.planMuscles.offer({ surface: 'apply', weekMonday: null, opId: 'offer-1' })).toEqual(first);
+    // The weekly review doesn't raise the same gap again.
+    expect(await s.planMuscles.offer({ surface: 'review', weekMonday: '2026-10-26', opId: 'offer-2' })).toBeNull();
+    expect(await s.planMuscles.skipOffer({ key: first?.key ?? '', opId: 'skip-1' })).toBe(true);
+    expect(await s.planMuscles.offer({ surface: 'apply', weekMonday: null, opId: 'offer-3' })).toBeNull();
+    expect(await s.planMuscles.offer({ surface: 'review', weekMonday: '2026-11-02', opId: 'offer-4' })).toBeNull();
+    // The plan changes (Pull A loses a set's exercise): a new plan state, raised once more by the review.
+    const pullA = await template(s, days.get('Pull A') ?? '');
+    const last = pullA.exercises.filter((e) => e.main !== true).at(-1);
+    if (last === undefined) throw new Error('no accessory');
+    const r = await s.plans.editDayEveryWeek({ routineId: pullA.id, expectedVersion: pullA.version, opId: h.ids(), edit: { kind: 'remove', rowId: last.id, fromExerciseId: last.exerciseId, toExerciseId: null, afterRowId: null } });
+    expect(r.ok).toBe(true);
+    const again = await s.planMuscles.offer({ surface: 'review', weekMonday: '2026-11-02', opId: 'offer-5' });
+    expect(again).not.toBeNull();
+    expect(again?.key).not.toBe(first?.key);
+    // The coach's YOUR DATA lines: from the same count.
+    expect((await s.planMuscles.coachLines())?.find((l) => l.startsWith('Biceps'))).toMatch(/^Biceps 0 direct .*· below$/);
+  });
+});

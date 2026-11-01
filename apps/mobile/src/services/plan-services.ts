@@ -95,7 +95,7 @@ import { createVersionMemo } from './version-memo';
 import { readPlanLinks } from './plan-day-links';
 import { planWeekDayOf, planWeekWorkoutOf, planWeekdaysNow } from './plan-week';
 import { editBlockOf, readPlanBlock, slotKits, weekViews, type WeekViewsInput } from './plan-edit-read';
-import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, PlanDraft, PlanWeekExerciseEdit, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, PlanDayDraft, PlanDraft, PlanWeekExerciseEdit, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
@@ -107,6 +107,8 @@ import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, P
 
 export interface PlanServicesDeps {
   store: () => Store;
+  /** (Ben, 1 Nov) The weekly muscle check on a version's days (`planMuscleGapLines`); absent: not shown. */
+  muscleGapsOf?: (days: readonly PlanDayDraft[]) => Promise<string[]>;
   profile: () => Promise<UserProfile | null>;
   now: () => ZonedTimestamp;
   catalogueExercises?: () => readonly Exercise[];
@@ -194,6 +196,8 @@ export interface PlanCardData {
   state: PlanCardState;
   /** Workouts in the rotation now that `Replace my workouts` would take out (kept in Workouts). */
   replaces: string[];
+  /** (Ben, 1 Nov) The weekly muscle check: one line per group out of range (`Biceps 2/wk · below 4–8`). */
+  muscles: string[];
 }
 
 export interface PlanDayData {
@@ -602,6 +606,8 @@ export function createPlanServices(deps: PlanServicesDeps) {
         gymName: gym?.name ?? null,
         state: stateOf(plan, req.versionN, deps.now().utc, plan.status === 'ended' && (await repo().applied(p.id).catch(() => null)) !== null),
         replaces: rotationRoutines(routines).filter((r) => !madeIds.has(r.id)).map((r) => r.name),
+        // The coach's own check as stored with the version; a builder version (no such line stored) is checked now.
+        muscles: v.checks.some((c) => c.kind === 'muscle_gap') ? v.checks.filter((c) => c.kind === 'muscle_gap').map((c) => c.text) : ((await deps.muscleGapsOf?.(v.days).catch(() => [])) ?? []),
       };
     },
 

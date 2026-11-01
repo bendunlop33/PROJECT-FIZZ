@@ -170,6 +170,20 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
   restDefaultsS: z.partialRecord(RestDefaultKeySchema, z.int().min(REST_DEFAULT_LIMITS.minS).max(REST_DEFAULT_LIMITS.maxS)).optional(),
   /** (Ben, 26 Oct) Pinned exercise notes, one per exercise and gym (null gym: every gym). Absent: none. */
   pinnedNotes: z.array(PinnedNoteSchema).max(TRAINING_LIMITS.pinnedNotesMax).optional(),
+  /**
+   * (Ben, 1 Nov) The coach's one muscle-gap offer (`Biceps only 2 sets a week · Rebalance?`): for which plan state
+   * (`key`, the plan and its typical week), where it was raised (after Apply, or in the weekly review of `weekMonday`),
+   * and whether Ben skipped it. Raised once per key: never again after Skip until the plan changes. Absent: none.
+   */
+  muscleOffer: z
+    .object({
+      key: z.string().min(1).max(4000),
+      by: z.enum(['apply', 'review']),
+      weekMonday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+      status: z.enum(['raised', 'skipped']),
+      atUtc: UtcTimestampSchema,
+    })
+    .optional(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
   recentOps: z.array(OperationIdSchema).max(TRAINING_LIMITS.recentOpsMax),
 });
@@ -212,4 +226,6 @@ export type TrainingChange =
   /** (Ben, 26 Oct) Pin a note on an exercise (at one gym, or every gym with `gymId` null), replacing that pin. */
   | { kind: 'pin_note'; exerciseId: string; gymId: string | null; text: string }
   /** (Ben, 26 Oct) Unpin it (the text is kept as today's note by the caller when Ben asks). */
-  | { kind: 'unpin_note'; exerciseId: string; gymId: string | null };
+  | { kind: 'unpin_note'; exerciseId: string; gymId: string | null }
+  /** (Ben, 1 Nov) The coach's muscle-gap offer raised (once per plan state) or skipped. */
+  | { kind: 'muscle_offer'; key: string; by: 'apply' | 'review'; weekMonday: string | null; status: 'raised' | 'skipped' };

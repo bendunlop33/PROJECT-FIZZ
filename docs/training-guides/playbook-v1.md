@@ -96,6 +96,16 @@ The main focus picks a profile. "Also matters" goals add floors. A named event l
 
 General fitness and Support other training as main-focus options are part of the D13 design, pending Ben's bulk approval. Until he approves, they're used as set, because Ben chose them himself.
 
+**V1 / V4 amendment (Ben, 1 Nov 2026; approved).** Option C: every muscle number comes from one count with two
+parts. **Direct** sets count in full for each exercise's lead group (the curl and extension exercises for arms);
+**assisted** sets are the rest of V1's credit (½ for a secondary muscle, 1 for another primary group). **Bars and
+flags use direct sets only**; assisted is shown alongside ("the 6–10 range is judged against direct sets only,
+meaning the curl and extension exercises"). **The direct range drops when assisted volume is substantial:** with
+≥ 6 assisted sets a week, a group's direct range is **4–8**, otherwise **6–10**; priority groups keep 10–20 (Ben:
+"if they're trained a bit with other muscles then clearly we could have fewer sets eg 4"). Strength's other groups
+and General fitness stay 4–10. Arms are not a priority (Ben, 1 Nov). Code: `packages/domain/src/progress/muscle-sets.ts`;
+design: `docs/design/plan-muscles.md`.
+
 ### Profile targets (defaults; exact band edges are Practice)
 
 | | Strength | Muscle | General fitness | Maintain | Support other training |

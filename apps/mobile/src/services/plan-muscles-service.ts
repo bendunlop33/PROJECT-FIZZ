@@ -6,6 +6,7 @@ import {
   isArchivedExercise,
   liveRoutines,
   localWeekBounds,
+  localDateOf,
   addDays,
   muscleFlags,
   muscleStatus,
@@ -224,7 +225,7 @@ export function createPlanMusclesService(deps: PlanMusclesDeps) {
     const goalWord: VolumeGoal | null = training?.goal ?? (answers === null ? null : volumeGoalOfFocus(answers.focus));
     const goal: MuscleGoalInput = { goal: goalWord, priorities: priorityGroupsOf(answers?.priorities ?? []) };
     const block = b === null ? null : await readPlanBlock(deps.store(), p.id, plan, nowMs, p.timezone).catch(() => null);
-    const weekOf = (w: number, rows: (d: PlanMuscleDay) => PlanMuscleRow[]): PlanMuscleDay[] => {
+    const weekOf = (w: number, rows: (d: PlanMuscleDay) => readonly PlanMuscleRow[]): PlanMuscleDay[] => {
       const skips = pbSkipsOf(plan, w);
       return typical.map((d) => ({ ...d, rows: withEdits(rows(d), pbWeekEditsOf(plan, w, d.dayIndex)), ...(skips.has(d.dayIndex) ? { skipped: true } : {}) }));
     };
@@ -391,6 +392,46 @@ export function createPlanMusclesService(deps: PlanMusclesDeps) {
       const flags = muscleFlags(plannedMuscleSets(r.typical, r.of), r.goal);
       const first = flags[0];
       return { key: planMuscleKey(r.plan.id, r.typical), lines: flags.map((f) => PLAN_MUSCLES_COPY.gap(f)), offer: first === undefined ? null : PLAN_MUSCLES_COPY.offer(first) };
+    },
+
+    /**
+     * (Ben, 1 Nov) The coach's own offer, raised **once** per plan state (rule 3: unprompted means an offer, never a
+     * change): after Apply (`apply`) or in the weekly review (`review`, that week). Whichever surface raises it first
+     * keeps it; the other shows nothing for the same plan state, and after Skip nothing shows until the plan changes.
+     * Null: nothing out of range, already raised elsewhere, skipped, or it can't be recorded (then it isn't raised).
+     */
+    async offer(req: { surface: 'apply' | 'review'; weekMonday: string | null; opId: string }): Promise<{ key: string; text: string } | null> {
+      const r = await read();
+      if (r === null) return null;
+      const flags = muscleFlags(plannedMuscleSets(r.typical, r.of), r.goal);
+      const first = flags[0];
+      if (first === undefined) return null;
+      const key = planMuscleKey(r.plan.id, r.typical);
+      const text = PLAN_MUSCLES_COPY.offer(first);
+      const t = await repos().trainingProfiles.get(r.p.id).catch(() => undefined);
+      if (t === undefined) return null;
+      const o = t?.muscleOffer;
+      if (o !== undefined && o.key === key) {
+        return o.status === 'raised' && o.by === req.surface && (req.surface === 'apply' || o.weekMonday === req.weekMonday) ? { key, text } : null;
+      }
+      const at = deps.now();
+      const w = await repos()
+        .trainingProfiles.change(r.p.id, { kind: 'muscle_offer', key, by: req.surface, weekMonday: req.weekMonday, status: 'raised' }, { opId: req.opId, expectedVersion: t?.version ?? 1, atUtc: at.utc, nowYear: Number(at.utc.slice(0, 4)), today: localDateOf(toMs(at.utc), r.p.timezone) })
+        .catch(() => null);
+      return w !== null && (w.status === 'written' || w.status === 'replayed') ? { key, text } : null;
+    },
+
+    /** `Skip` on the offer: not raised again until the plan changes (its key). */
+    async skipOffer(req: { key: string; opId: string }): Promise<boolean> {
+      const p = await deps.profile().catch(() => null);
+      if (p === null) return false;
+      const t = await repos().trainingProfiles.get(p.id).catch(() => null);
+      if (t === null || t.muscleOffer?.key !== req.key) return false;
+      const at = deps.now();
+      const w = await repos()
+        .trainingProfiles.change(p.id, { kind: 'muscle_offer', key: req.key, by: t.muscleOffer.by, weekMonday: t.muscleOffer.weekMonday, status: 'skipped' }, { opId: req.opId, expectedVersion: t.version, atUtc: at.utc, nowYear: Number(at.utc.slice(0, 4)), today: localDateOf(toMs(at.utc), p.timezone) })
+        .catch(() => null);
+      return w !== null && (w.status === 'written' || w.status === 'replayed');
     },
 
     /** The Rebalance card for the plan in use, with these lines skipped. Null: no plan in use. */
