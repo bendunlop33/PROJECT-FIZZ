@@ -1,7 +1,7 @@
-import { PB_PREF_QUESTIONS, currentPlanVersion, deriveId, liveRoutines, notPreferredInPlan, painFlagCovering, pbAppliedBuilder, pbNotPreferred, pbNotPreferredReplacement, planAddPreview, planRoutines, planSwapDirection, planSwapPreview, toMs, isArchivedExercise, type PlanSwapDayInput } from '@fizz/domain';
+import { PB_PREF_QUESTIONS, currentPlanVersion, planDayEditPreview, type PlanDayEdit, deriveId, liveRoutines, notPreferredInPlan, painFlagCovering, pbAppliedBuilder, pbNotPreferred, pbNotPreferredReplacement, planAddPreview, planRoutines, planSwapDirection, planSwapPreview, toMs, isArchivedExercise, type PlanSwapDayInput } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { ActionDetail, ActionRecord, Exercise, Load, PainFlag, PlanBuilderAnswers, PlanDraft, Routine, UserProfile, ZonedTimestamp } from '@fizz/schemas';
-import type { PlanAddRequest, PlanSwapPrepared } from '@fizz/coach';
+import type { PlanAddRequest, PlanDayEditRequest, PlanSwapPrepared } from '@fizz/coach';
 
 /**
  * (Ben, 30 Oct, build 486: "won't change full plan … my preferences to remove leg extension in setting as non preferred
@@ -22,6 +22,9 @@ import type { PlanAddRequest, PlanSwapPrepared } from '@fizz/coach';
  *   place (`planAddPreview`), checked the same way (not preferred, pain flag). Apply writes each day's add through the
  *   same `Every week` write; a load only when Ben named one (kept as typed; the gym learns it), else the workout plans
  *   it from his history. Undo is the same routine revert.
+ * - `prepareDayEdit` (Ben, 1 Nov, build 500): the coach's `propose_plan_day_edit`, one plan day's order and its
+ *   exercises' sets, reps, target RPE and main mark (`planDayEditPreview`), with the day's before/after and one line per
+ *   change. Apply is one versioned write of the day (`plans.editDayRowsEveryWeek`); Undo the same routine revert.
  */
 
 export type PlanSwapDetail = Extract<ActionDetail, { kind: 'propose_plan_swap' }>;
@@ -36,6 +39,8 @@ export interface PlanSwapServiceDeps {
   /** Whether the current gym can do it (no gym: yes). Replace's pick only; Ben's own ask is never refused on kit (ADR 0038). */
   usableHere: (exercise: Exercise) => Promise<boolean>;
   editDayEveryWeek: (req: { routineId: string; expectedVersion: number; opId: string; edit: { kind: 'swap' | 'remove' | 'add'; rowId: string; fromExerciseId: string | null; toExerciseId: string | null; afterRowId?: string | null; sets?: number; reps?: { min: number; max: number }; load?: Load | null } }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
+  /** (Ben, 1 Nov) A whole plan-day change, every week (`plans.editDayRowsEveryWeek`). Absent: day edits aren't wired. */
+  editDayRowsEveryWeek?: (req: { routineId: string; expectedVersion: number; opId: string; edit: PlanDayEdit; lines: readonly string[] }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
   revertRoutine: (req: { actionId: string; opId: string }) => Promise<{ ok: boolean }>;
   swapToday?: (req: { sessionId: string; sessionExerciseId: string; exerciseId: string; opId: string }) => Promise<{ ok: boolean }>;
   undoToday?: (req: { sessionId: string; targetOpId: string }) => Promise<{ ok: boolean }>;
@@ -207,6 +212,60 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
     };
   }
 
+  /** (Ben, 1 Nov) The proposal for one plan day's change, after the checks; or why not, in one line. */
+  async function proposeDayEdit(p: UserProfile, req: PlanDayEditRequest): Promise<PlanSwapPrepared> {
+    const { of } = await pool(p);
+    const inUse = await planInUse(p);
+    const names = { remove: '', add: req.day };
+    if (inUse === null) return { kind: 'refused', line: 'No plan in use', names };
+    const key = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+    const day = inUse.days.find((d) => key(d.name) === key(req.day));
+    if (day === undefined) return { kind: 'refused', line: `No plan day called ${req.day}; the days are ${inUse.days.map((d) => d.name).join(', ')}`, names };
+    const idOf = (x: string): string | null => of(x)?.id ?? null;
+    const unknown = [...(req.order ?? []), ...req.changes.map((c) => c.exercise)].filter((x) => idOf(x) === null);
+    if (unknown.length > 0) return { kind: 'refused', line: `${unknown.join(', ')} isn’t an exercise in ${day.name}; use catalogueIds from plan.inUse.days`, names };
+    const rows = day.routine.exercises;
+    const nameOf = (id: string): string => of(id)?.name ?? 'Exercise';
+    const preview = planDayEditPreview(rows, {
+      order: req.order === null ? null : req.order.map((x) => idOf(x) ?? x),
+      changes: req.changes.map((c) => {
+        const id = idOf(c.exercise) ?? c.exercise;
+        return { exerciseId: id, sets: c.sets, reps: c.reps, targetRpe: c.targetRpe, main: c.main, load: c.load === null ? null : { value: c.load, unit: p.preferredUnit, convention: of(id)?.defaultLoadConvention ?? 'total' } };
+      }),
+    });
+    if (preview.kind === 'order_mismatch') return { kind: 'refused', line: `The order must list every exercise of ${day.name} once: ${[...rows].sort((a, b) => a.order - b.order).map((r) => of(r.exerciseId)?.catalogueKey ?? r.exerciseId).join(', ')}`, names };
+    if (preview.kind === 'not_in_day') return { kind: 'refused', line: `${preview.exerciseIds.map(nameOf).join(', ')} isn’t in ${day.name}`, names };
+    if (preview.kind === 'splits_superset') return { kind: 'refused', line: `That order splits a superset in ${day.name}`, names };
+    if (preview.kind === 'no_change') return { kind: 'refused', line: `${day.name} is already like that`, names };
+    // The held-for-pain check (rule 9): never more work on a flagged movement.
+    const flagged = await flagsNow(p);
+    const more = preview.edit.rows.find((r) => {
+      const row = rows.find((x) => x.id === r.rowId);
+      return row !== undefined && flagged(row.exerciseId) && ((r.sets ?? 0) > row.setTemplates.filter((t) => t.setType !== 'warmup').length || r.load !== undefined || (r.targetRpe ?? 0) > (row.setTemplates.find((t) => t.setType !== 'warmup')?.targetRpe ?? 10));
+    });
+    if (more !== undefined) return { kind: 'refused', line: `${nameOf(rows.find((x) => x.id === more.rowId)?.exerciseId ?? '')} has a pain flag`, names };
+    const sorted = [...rows].sort((a, b) => a.order - b.order);
+    const before = sorted.map((r) => nameOf(r.exerciseId).slice(0, 120));
+    const afterRows = preview.edit.order === null ? sorted : preview.edit.order.map((id) => sorted.find((r) => r.id === id)).filter((r): r is NonNullable<typeof r> => r !== undefined);
+    const after = afterRows.map((r) => nameOf(r.exerciseId).slice(0, 120));
+    const lines = [...(preview.edit.order === null ? [] : [`Order: ${after.join(', ')}`]), ...preview.edit.rows.map((c) => dayEditLine(rows.find((x) => x.id === c.rowId), c, nameOf))].map((l) => l.slice(0, 200));
+    const head = rows.find((x) => x.id === (preview.edit.rows[0]?.rowId ?? preview.edit.order?.[0]));
+    return {
+      kind: 'ok',
+      detail: {
+        kind: 'propose_plan_swap',
+        op: 'day_edit',
+        planId: inUse.plan.id,
+        planName: inUse.plan.name.slice(0, 120),
+        addId: head?.exerciseId ?? day.routineId,
+        addName: (head === undefined ? day.name : nameOf(head.exerciseId)).slice(0, 120),
+        days: [{ routineId: day.routineId, routineName: day.name.slice(0, 120), versionBefore: day.version, edits: [{ kind: 'edit', rowId: head?.id ?? sorted[0]?.id ?? day.routineId }], before: before.slice(0, 30), after: after.slice(0, 30) }],
+        dayEdit: { order: preview.edit.order, rows: preview.edit.rows, lines },
+        today: null,
+      },
+    };
+  }
+
   async function owner(): Promise<UserProfile | null> {
     return deps.profile().catch(() => null);
   }
@@ -242,14 +301,15 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
 
   return {
     /** YOUR DATA: each plan day's exercises (catalogueIds) and his not-preferred exercises. Null: no plan in use. */
-    async context(): Promise<{ days: { name: string; exercises: { catalogueId: string; name: string }[] }[]; notPreferred: { catalogueId: string; name: string }[] } | null> {
+    async context(): Promise<{ days: { name: string; exercises: { catalogueId: string; name: string; sets?: number; reps?: string; targetRpe?: number; main?: boolean }[] }[]; notPreferred: { catalogueId: string; name: string }[] } | null> {
       const p = await owner();
       if (p === null) return null;
       const inUse = await planInUse(p);
       if (inUse === null) return null;
       const { of } = await pool(p);
       const cid = (id: string) => of(id)?.catalogueKey ?? id;
-      const days = inUse.days.map((d) => ({ name: d.name, exercises: [...d.rows].sort((a, b) => a.order - b.order).map((r) => ({ catalogueId: cid(r.exerciseId), name: of(r.exerciseId)?.name ?? 'Exercise' })) }));
+      // (Ben, 1 Nov) Each exercise's working sets, reps, target RPE and main mark: what `propose_plan_day_edit` changes.
+      const days = inUse.days.map((d) => ({ name: d.name, exercises: [...d.routine.exercises].sort((a, b) => a.order - b.order).map((r) => ({ catalogueId: cid(r.exerciseId), name: of(r.exerciseId)?.name ?? 'Exercise', ...rowShape(r) })) }));
       const no = notPreferredIds(answersOf(inUse.plan), of);
       return { days, notPreferred: [...no.entries()].map(([id, key]) => ({ catalogueId: key, name: of(id)?.name ?? key })) };
     },
@@ -266,6 +326,13 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
       const p = await owner();
       if (p === null) return { kind: 'refused', line: 'No plan in use' };
       return proposeAdd(p, req);
+    },
+
+    /** (Ben, 1 Nov) The coach's `propose_plan_day_edit` (catalogueIds or exercise IDs). */
+    async prepareDayEdit(req: PlanDayEditRequest): Promise<PlanSwapPrepared> {
+      const p = await owner();
+      if (p === null) return { kind: 'refused', line: 'No plan in use' };
+      return proposeDayEdit(p, req);
     },
 
     /**
@@ -333,10 +400,19 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
     async apply(actionId: string): Promise<{ ok: true } | { ok: false; line: string }> {
       const x = await proposal(actionId);
       if (x === null) return { ok: false, line: PLAN_SWAP_COPY.stale };
+      // (Ben, 1 Nov) A day edit: one versioned write of the day (a double tap or a restart writes once, rule 5).
+      if (x.d.op === 'day_edit') {
+        const day = x.d.days[0];
+        const edit = x.d.dayEdit;
+        if (day === undefined || edit === undefined || deps.editDayRowsEveryWeek === undefined) return { ok: false, line: PLAN_SWAP_COPY.stale };
+        const r = await deps.editDayRowsEveryWeek({ routineId: day.routineId, expectedVersion: day.versionBefore, opId: planSwapOpId(actionId, day.routineId, 0), edit: { order: edit.order, rows: edit.rows }, lines: edit.lines }).catch(() => ({ ok: false as const, reason: 'failed', message: PLAN_SWAP_COPY.failed }));
+        return r.ok ? { ok: true } : { ok: false, line: r.reason === 'failed' ? PLAN_SWAP_COPY.failed : PLAN_SWAP_COPY.stale };
+      }
       const done: string[] = [];
       for (const day of x.d.days) {
         let expected = day.versionBefore;
         for (const [i, e] of day.edits.entries()) {
+          if (e.kind === 'edit') continue;
           const edit =
             e.kind === 'add'
               ? { kind: 'add' as const, rowId: e.rowId, fromExerciseId: null, toExerciseId: x.d.addId, afterRowId: e.afterRowId ?? null, ...(x.d.sets === undefined ? {} : { sets: x.d.sets }), ...(x.d.reps == null ? {} : { reps: x.d.reps }), load: x.d.load ?? null }
@@ -377,6 +453,29 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
       return r.ok;
     },
   };
+}
+
+/** (Ben, 1 Nov) A plan row's working sets, reps, target RPE and main mark, as the coach reads them. */
+function rowShape(r: Routine['exercises'][number]): { sets: number; reps?: string; targetRpe?: number; main?: boolean } {
+  const work = r.setTemplates.filter((t) => t.setType !== 'warmup');
+  const reps = work[0]?.targetReps ?? null;
+  const rpe = work[0]?.targetRpe ?? null;
+  return { sets: work.length, ...(reps === null ? {} : { reps: reps.min === reps.max ? String(reps.min) : `${String(reps.min)}–${String(reps.max)}` }), ...(rpe === null ? {} : { targetRpe: rpe }), ...(r.main === undefined ? {} : { main: r.main }) };
+}
+
+/** (Ben, 1 Nov) One line per changed exercise: `Dumbbell bench press: 3 → 2 sets · RPE 8 → 7 · secondary`. */
+function dayEditLine(row: Routine['exercises'][number] | undefined, c: PlanDayEdit['rows'][number], nameOf: (id: string) => string): string {
+  if (row === undefined) return 'Exercise';
+  const was = rowShape(row);
+  const reps = (r: { min: number; max: number }) => (r.min === r.max ? String(r.min) : `${String(r.min)}–${String(r.max)}`);
+  const parts = [
+    ...(c.sets === undefined ? [] : [`${String(was.sets)} → ${String(c.sets)} sets`]),
+    ...(c.reps === undefined ? [] : [`${was.reps === undefined ? '' : `${was.reps} → `}${reps(c.reps)} reps`]),
+    ...(c.targetRpe === undefined ? [] : [`RPE ${was.targetRpe === undefined ? '' : `${String(was.targetRpe)} → `}${String(c.targetRpe)}`]),
+    ...(c.load === undefined ? [] : [`@ ${String(c.load.value)} ${c.load.unit}${c.load.convention === 'per_hand' ? ' each' : ''}`]),
+    ...(c.main === undefined ? [] : [c.main ? 'main lift' : 'secondary']),
+  ];
+  return `${nameOf(row.exerciseId)}: ${parts.join(' · ')}`;
 }
 
 /** Every exercise his answers pick (an option or Other), Replace's first choice. */

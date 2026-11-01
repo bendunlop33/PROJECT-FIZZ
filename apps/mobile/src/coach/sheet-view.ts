@@ -807,6 +807,8 @@ export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<B
 export function planSwapLines(r: ActionRecord): { head: string; days: string[] } | null {
   if (r.detail.kind !== 'propose_plan_swap') return null;
   const d = r.detail;
+  // (Ben, 1 Nov) A day edit: the day, then one line per change (`Order: …`, `Dumbbell bench press: 3 → 2 sets · secondary`).
+  if (d.op === 'day_edit') return { head: d.days.map((x) => x.routineName).join(', ') || d.addName, days: [...(d.dayEdit?.lines ?? [])] };
   // (Ben, 31 Oct) An add: `+ Dumbbell curl · 3 × 10–12`, then each day's place (`Pull B: after Hanging leg raise`).
   if (d.op === 'add') {
     const reps = d.reps == null ? '' : d.reps.min === d.reps.max ? ` × ${String(d.reps.min)}` : ` × ${String(d.reps.min)}–${String(d.reps.max)}`;
