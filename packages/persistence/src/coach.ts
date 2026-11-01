@@ -21,7 +21,7 @@ import {
   type PlaybookCandidate,
   type TrainingChange,
 } from '@fizz/schemas';
-import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTargetSourceBasis, planRevertGymEdit, reduceSession, suggestionInDate, undoActivity, undoPlanControl, type GymEdit } from '@fizz/domain';
+import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTargetSourceBasis, planRevertGymEdit, reduceSession, sameWarmupPrefs, suggestionInDate, undoActivity, undoPlanControl, warmupPrefsRevert, type GymEdit } from '@fizz/domain';
 import { ACTIVITY_SPEC } from './activities';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
@@ -118,6 +118,8 @@ function sessionOf(record: ActionRecord): string | null {
     case 'propose_plan_swap':
     case 'undo':
       return null;
+    case 'update_warmup_prefs':
+      return record.detail.sessionId;
   }
 }
 
@@ -634,6 +636,20 @@ export class SqliteCoachStore {
         if (r.status === 'stale' || r.status === 'invalid') throw new Rollback('stale_version');
         return null;
       }
+      case 'warmup_prefs': {
+        // (Ben, 1 Nov) His warm-up preferences on the profile version read, and the open workout's pending warm-ups
+        // planned again on the session version read, with the record: all or nothing (rule 5).
+        const r = await changeTrainingProfileIn(tx, ownerId, write.change, profileWrite(write.action.opId, write.expectedVersion, write.action.createdAt.utc, write.action.createdAt.utc.slice(0, 10)));
+        if (r.status === 'stale' || r.status === 'invalid') throw new Rollback('stale_version');
+        if (write.session !== null) {
+          const agg = await readAggregate(tx, write.session.sessionId);
+          if (agg === null || agg.session.ownerId !== ownerId) throw new Rollback('missing');
+          const s = reduceSession(agg, write.session.command);
+          if (!s.ok) throw new Rollback(s.error.code === 'stale_version' ? 'stale_version' : 'missing');
+          if (s.state !== agg) await writeAggregate(tx, s.state);
+        }
+        return null;
+      }
       case 'activity': {
         // (Ben, 20 Oct) An activity the coach logged (Ben asked, or tapped its offer), with its record.
         if (write.activity.ownerId !== ownerId) throw new Error('Activity owner differs from the store owner');
@@ -843,6 +859,22 @@ export class SqliteCoachStore {
         const change: TrainingChange = d.before === null ? { kind: 'remove_lift_target', exerciseId: d.exerciseId } : { kind: 'set_lift_target', target: d.before };
         const r = await changeTrainingProfileIn(tx, ownerId, change, profileWrite(`undo:${target.actionId}`, p.version, atUtc, atUtc.slice(0, 10)));
         return r.status === 'written' || r.status === 'replayed' ? 'ok' : 'changed_since';
+      }
+      case 'update_warmup_prefs': {
+        // (Ben, 1 Nov) The preferences back, only while they are still as this action left them; the workout's
+        // warm-ups it planned again come back on sets still pending (a set logged since stays, rule 2).
+        const p = await readTrainingProfileIn(tx, ownerId);
+        if (p === null || !sameWarmupPrefs(p.warmups, d.after)) return 'changed_since';
+        const r = await changeTrainingProfileIn(tx, ownerId, warmupPrefsRevert(d.before, d.after), profileWrite(`undo:${target.actionId}`, p.version, atUtc, atUtc.slice(0, 10)));
+        if (r.status !== 'written' && r.status !== 'replayed') return 'changed_since';
+        if (d.sessionId !== null) {
+          const agg = await readAggregate(tx, d.sessionId);
+          if (agg !== null && agg.session.ownerId === ownerId && agg.session.status === 'active') {
+            const s = reduceSession(agg, { type: 'revert_target_adjustment', at: { utc: atUtc, tz: target.createdAt.tz }, opId: `undo:${target.actionId}`, actionId: target.actionId, removedSetIds: [...d.removedSetIds], addedSetIds: [] });
+            if (s.ok && s.state !== agg && !s.duplicate) await writeAggregate(tx, s.state);
+          }
+        }
+        return 'ok';
       }
       case 'log_activity': {
         // (Ben, 20 Oct) The activity the coach logged comes out (a tombstone), or one it marked done is planned again

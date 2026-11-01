@@ -112,21 +112,40 @@ function loggedWarmup(): SessionAggregate {
 }
 
 describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
-  it('Start shows Ready; Log switches the same activity to Resting with the system countdown to the deadline, Until hh:mm and the next target', async () => {
+  it('(Ben, 1 Nov) a warm-up with no load of its own: with the app’s planner lookup, Ready offers `Log warm-up …` (no lookup: no Log)', async () => {
+    const { state } = startFixture();
+    const warm = setsFor(state, BENCH)[0]?.id ?? '';
+    const s = { ...state, sets: state.sets.map((x) => (x.id === warm ? { ...x, planned: { ...x.planned, load: null } } : x)) };
+    const facts = { mechanic: 'compound' as const, movementPattern: 'horizontal_push', primaryMuscles: ['chest'], measurement: 'reps' };
+    const without = fakeActivities();
+    await createLiveActivityController(without.port, { tz: () => FIXTURE_TZ, buttons: () => true, log: () => true }).reconcile(s, ms(1));
+    expect(without.only().props.log).toBe('');
+    const fake = fakeActivities();
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ, buttons: () => true, log: () => true, warmup: (id) => (id === s.session.id ? { facts: () => facts, main: () => true } : undefined) });
+    await la.reconcile(s, ms(1));
+    const p = fake.only().props;
+    expect(p.state).toBe('ready');
+    expect(plain(p.logLabel)).toMatch(/^Log warm-up \d+(\.\d+)? kg × \d+$/);
+    expect(plain(p.line1)).toBe(plain(p.logLabel).replace('Log warm-up ', 'Next  warm-up '));
+    expect(p.log.startsWith('fizz.log|')).toBe(true);
+  });
+
+
+  it('Start shows Ready; Log switches the same activity to Resting with the system countdown to the deadline and the next target (Ben, 1 Nov: `Rest · <exercise>`, `Next  …`)', async () => {
     const fake = fakeActivities();
     const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
     const { state } = startFixture();
     await la.reconcile(state, ms(1));
-    expect(fake.only().props).toMatchObject({ state: 'ready', title: 'Ready · Push A', startMs: 0, endMs: 0 });
+    expect(fake.only().props).toMatchObject({ state: 'ready', title: 'Ready · Bench press', startMs: 0, endMs: 0 });
 
     const resting = loggedWarmup();
     await la.reconcile(resting, ms(31));
     const deadline = toMs(resting.restTimer?.deadlineUtc ?? '');
     const a = fake.only();
-    expect(a.props).toMatchObject({ state: 'resting', title: 'Rest', endMs: deadline, startMs: toMs(resting.restTimer?.startedAtUtc ?? '') });
+    expect(a.props).toMatchObject({ state: 'resting', title: 'Rest · Bench press', endMs: deadline, startMs: toMs(resting.restTimer?.startedAtUtc ?? '') });
     expect(a.staleAtMs).toBe(deadline);
-    expect(plain(a.props.line1)).toBe(`Until ${clockText(deadline, FIXTURE_TZ)} · Bench press · Set 2 of 3 next`);
-    expect(plain(a.props.line2)).toBe('Target 100 kg × 6–8');
+    expect(plain(a.props.line1)).toBe('Next  100 kg × 6–8');
+    expect(a.props.a11y.startsWith(`Rest, until ${clockText(deadline, FIXTURE_TZ)}`)).toBe(true);
     // One activity for the workout, updated in place: never one per rest.
     expect(fake.calls).toEqual(['start la-1 ready', 'update la-1 resting']);
   });
@@ -267,9 +286,9 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
     const a = fake.only();
     expect(a.props.state).toBe('resting');
     expect(a.staleAtMs).toBe(deadline);
-    expect(a.props.afterTitle).toBe('Ready · Push A');
-    expect(plain(a.props.afterLine1)).toBe('Bench press · Set 2 of 3');
-    expect(plain(a.props.afterLine2)).toBe('Target 100 kg × 6–8');
+    expect(a.props.afterTitle).toBe('Ready · Bench press');
+    expect(plain(a.props.afterLine1)).toBe('Next  100 kg × 6–8');
+    expect(a.props.afterSide).toBe('Set 2');
     expect(a.props.afterSide).toBe('Set 2');
     // What the app writes itself once it runs again is the same text, so nothing jumps.
     await la.reconcile(s, deadline + 5_000);
@@ -443,7 +462,7 @@ describe('Live Activity through the app services (real SQLite, force-close)', ()
     await h.settle(s);
     const deadline = toMs(logged.aggregate.restTimer?.deadlineUtc ?? '');
     expect(fake.only().props).toMatchObject({ state: 'resting', endMs: deadline });
-    expect(fake.only().props.line1.startsWith(`Until ${clockText(deadline, TZ)}`)).toBe(true);
+    expect(fake.only().props.a11y.startsWith(`Rest, until ${clockText(deadline, TZ)}`)).toBe(true);
     // The rest-done notification is scheduled alongside it (the safety net, §4.1).
     expect([...h.pending.values()].map((a) => a.fireAtMs)).toEqual([deadline]);
 
@@ -568,7 +587,7 @@ describe('Live Activity through the app services: late reads, Undo, coach change
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const { ready } = await benchWorkout(h, s, gymId);
-    const readyLine2 = fake.only().props.line2;
+    const readyLine2 = fake.only().props.line1;
     const { logged, setId } = await logFirst(h, s, ready);
     expect(fake.only().props.state).toBe('resting');
     const setVersion = logged.sets.find((x) => x.id === setId)?.version ?? 0;
@@ -578,9 +597,9 @@ describe('Live Activity through the app services: late reads, Undo, coach change
     await h.settle(s);
     // The undone set keeps what Ben logged as its draft (Log prefills it), so the line shows those values as
     // the table does, not the bare target (weight-revert B2, 21 Oct).
-    expect(readyLine2.replaceAll('\u00a0', ' ')).toBe('Target 3–6 reps');
+    expect(readyLine2.replaceAll('\u00a0', ' ')).toBe('Next  3–6 reps');
     expect(fake.only().props).toMatchObject({ state: 'ready', startMs: 0, endMs: 0 });
-    expect(fake.only().props.line2.replaceAll('\u00a0', ' ')).toBe('Your edit 60 kg × 8');
+    expect(fake.only().props.line1.replaceAll('\u00a0', ' ')).toBe('Next  your edit 60 kg × 8');
     expect(fake.calls.filter((c) => c.startsWith('start'))).toHaveLength(1);
     expect(h.pending.size).toBe(0);
   });
@@ -670,8 +689,8 @@ describe('Live Activity through the app services: late reads, Undo, coach change
     await h.settle(s);
     const after = fake.only().props;
     expect(after).toMatchObject({ state: 'resting', startMs: before.startMs, endMs: before.endMs });
-    expect(plain(after.line2)).toContain('52.5 kg');
-    expect(after.line2).not.toBe(before.line2);
+    expect(plain(after.line1)).toContain('52.5 kg');
+    expect(after.line1).not.toBe(before.line1);
     // Updated in place: no new activity for the coach's change.
     expect(fake.calls.slice(callsBefore).every((c) => c.startsWith('update la-'))).toBe(true);
   });

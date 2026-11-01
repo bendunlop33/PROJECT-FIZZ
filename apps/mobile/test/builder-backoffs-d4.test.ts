@@ -155,8 +155,10 @@ describe('D4: back-offs in Your workout follow Ben’s goal', () => {
     const b0 = backoffsOf(snap);
     expect(t0).toBeGreaterThan(0);
     const main = mainOf(snap);
-    const ti = main.rows.findIndex((r) => r.type === 'top');
+    // The top's row is found on the snapshot each time: its warm-ups are planned again for each top, and with simple
+    // warm-up weights their count can change with it (Ben, 1 Nov).
     const typeTop = async (value: number, opId: string) => {
+      const ti = mainOf(snap).rows.findIndex((r) => r.type === 'top');
       snap = ok(await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: main.key, index: ti, patch: { kind: 'load', value } }, { opId, basis: { version: snap.version } })).snapshot;
     };
     // Heavier, then back to the built top, three times over: the back-offs end where they were built.
@@ -181,7 +183,7 @@ describe('D4: back-offs in Your workout follow Ben’s goal', () => {
     expect(backoffsOf(snap)).toEqual(b0);
 
     // The last write again (a lost acknowledgement) is a replay: nothing moves twice.
-    const again = await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: main.key, index: ti, patch: { kind: 'load', value: t0 } }, { opId: 'back-final', basis: { version: snap.version - 1 } });
+    const again = await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: main.key, index: mainOf(snap).rows.findIndex((r) => r.type === 'top'), patch: { kind: 'load', value: t0 } }, { opId: 'back-final', basis: { version: snap.version - 1 } });
     expect(again.status).toBe('replayed');
     expect(backoffsOf(ok(again).snapshot)).toEqual(b0);
 

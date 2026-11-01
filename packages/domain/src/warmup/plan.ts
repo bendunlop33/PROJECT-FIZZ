@@ -1,4 +1,6 @@
-import { muscleGroupOf, type LoadConvention, type PlanWarmups } from '@fizz/schemas';
+import { muscleGroupOf, type LoadConvention, type PlanWarmups, type WarmupExerciseSetting } from '@fizz/schemas';
+import type { SimpleWarmupLoads } from './simple';
+import { catalogueExerciseId } from '../catalogue-id';
 
 /**
  * The one warm-up planner (playbook WU1–WU12, approved by Ben 22 Oct 2026;
@@ -14,7 +16,11 @@ import { muscleGroupOf, type LoadConvention, type PlanWarmups } from '@fizz/sche
  * - WU3 Band: heavy = R ≤ 6, rep = R ≥ 7, R the first working set's reps.
  * - WU4–WU7 `rawSteps`: the table by class (`warmupClassOf`).
  * - WU8 Snapping down on the gym's achievable loads (`loads`), (a)–(f), then
- *   WU4's gap check. Nothing ever reaches W (rule 4).
+ *   WU4's gap check. Nothing ever reaches W (rule 4). Amended (Ben, 1 Nov):
+ *   with `simple` (Simple warm-up weights, on by default) each step rounds to
+ *   the nearest simple load (`simple.ts`) before the gap check.
+ * - Prehab (Ben, 1 Nov): rotator cuff and prehab work (`isPrehabExercise`) has
+ *   no warm-up sets; Ben's per-exercise setting (`off` / `normal`) overrides.
  * - WU9 Floor-start lifts: no bar step; plates-on start when known.
  * - WU10 Rep caps, ≤ 25 reps, singles only in the heavy band with R ≤ 3.
  * - WU11 `warmupTimeS`, `planSessionWarmups`: the D17 budget and its cuts.
@@ -71,6 +77,31 @@ const MACHINE_KINDS: ReadonlySet<string> = new Set(['plate_loaded_machine', 'smi
 const FLOOR_FAMILIES: ReadonlySet<string> = new Set(['deadlift', 'power_clean', 'clean', 'clean_and_jerk', 'snatch']);
 const FLOOR_KEYS: ReadonlySet<string> = new Set(['barbell-bent-over-row', 'barbell-pendlay-row']);
 
+/**
+ * (Ben, 1 Nov) Rotator cuff, prehab and shoulder-health work: no warm-up sets, and the coach's next-session increases
+ * are capped at one load step (`validateNextSessionTargets`). The catalogue has no prehab flag, so it is read from
+ * the rotator cuff as a primary muscle, these families and these keys. Face pulls (any equipment) count: Ben named
+ * them as prehab (1 Nov), and they're light, high-rep shoulder work with an external-rotation finish. Where he uses
+ * them as a loaded rear-delt exercise, he sets that exercise back to `normal` warm-ups.
+ */
+const PREHAB_FAMILIES: ReadonlySet<string> = new Set(['shoulder_external_rotation', 'external_rotation', 'shoulder_internal_rotation', 'internal_rotation', 'y_raise', 't_raise', 'ytw_raise', 'band_pull_apart', 'face_pull']);
+const PREHAB_KEYS: ReadonlySet<string> = new Set(['band-pull-apart', 'band-external-rotation', 'cable-external-rotation', 'dumbbell-side-lying-external-rotation', 'dumbbell-incline-y-raise', 'band-face-pull', 'cable-face-pull']);
+const PREHAB_MUSCLES: ReadonlySet<string> = new Set(['rotator_cuff']);
+
+/** (Ben, 1 Nov) The catalogue's prehab entries by exercise ID (`catalogueExerciseId` of `PREHAB_KEYS`). */
+const PREHAB_IDS: ReadonlySet<string> = new Set([...PREHAB_KEYS].map(catalogueExerciseId));
+export function isPrehabExerciseId(exerciseId: string): boolean {
+  return PREHAB_IDS.has(exerciseId);
+}
+
+/** (Ben, 1 Nov) Rotator cuff, prehab and mobility work: no warm-up ramp, small coach progression. */
+export function isPrehabExercise(facts: Pick<WarmupExerciseFacts, 'catalogueKey' | 'family' | 'primaryMuscles'> | null | undefined): boolean {
+  if (facts == null) return false;
+  if (facts.catalogueKey != null && PREHAB_KEYS.has(facts.catalogueKey)) return true;
+  if (facts.family != null && PREHAB_FAMILIES.has(facts.family)) return true;
+  return (facts.primaryMuscles ?? []).some((m) => PREHAB_MUSCLES.has(m));
+}
+
 export interface WarmupProfileContext {
   /** The main lift of the workout (WU4/WU5 whatever its equipment). */
   main: boolean;
@@ -82,6 +113,8 @@ export interface WarmupProfileContext {
   bodyweightExercise?: boolean;
   /** Fallbacks when the exercise's catalogue facts are missing (a builder lookup without them). */
   fallback?: { compound?: boolean; group?: string | null; barbell?: boolean };
+  /** (Ben, 1 Nov) Ben's per-exercise warm-ups: `off` none; `normal` the table even for prehab work; absent = the default. */
+  setting?: WarmupExerciseSetting | null;
 }
 
 /**
@@ -106,6 +139,9 @@ export function warmupProfileOf(facts: WarmupExerciseFacts | null, ctx: WarmupPr
   const floorStart = bar && ((family !== null && FLOOR_FAMILIES.has(family)) || (key !== null && FLOOR_KEYS.has(key)));
   const of = (cls: WarmupClass): WarmupProfile => ({ cls, floorStart, ...base });
   if (measurement !== 'reps' || cardio) return of('none');
+  // (Ben, 1 Nov) His per-exercise setting, then prehab work: no warm-up sets.
+  if (ctx.setting === 'off') return of('none');
+  if (ctx.setting !== 'normal' && isPrehabExercise(facts)) return of('none');
   if (ctx.convention === 'assistance' || ctx.convention === 'bodyweight') return of('bodyweight');
   if (ctx.convention === 'added' && (ctx.bodyweightExercise === true || facts?.defaultLoadConvention === 'bodyweight')) return of('weighted_bodyweight');
   const compound = facts?.mechanic != null ? facts.mechanic === 'compound' : ctx.fallback?.compound === true;
@@ -154,6 +190,8 @@ export interface WarmupPlanInput {
   /** WU9: the lightest load with full-diameter plates, when the gym profile records it (it doesn't yet: null). */
   fullPlateStart?: number | null;
   cut?: WarmupCut;
+  /** (Ben, 1 Nov) Simple warm-up weights (`simpleWarmupLoads`); null/absent = the 22 Oct snapping only. */
+  simple?: SimpleWarmupLoads | null;
 }
 
 const EPS = 1e-6;
@@ -209,6 +247,50 @@ function rawSteps(i: WarmupPlanInput, W: number): Raw[] {
  * below W. Empty when W is unknown, nothing fits below W, or the class takes none.
  */
 export function planWarmups(i: WarmupPlanInput): WarmupStep[] {
+  const simple = i.simple ?? null;
+  if (simple === null) return planOn(i, null);
+  const fine = planOnGrid(i, { step: simple.step, loads: simple.loads });
+  const W = i.load;
+  const coarse = simple.coarse;
+  if (coarse === null || W === null || W < coarse.from - EPS || coarse.loads.length === 0) return fine;
+  // 20 kg (40 lb) steps for a heavy W when the gaps allow it: no more steps than the 10 kg ladder, and in the heavy
+  // band no jump over WU4's 25 % of W.
+  const big = planOnGrid(i, { step: coarse.step, loads: coarse.loads });
+  const heavyLadder = i.cls === 'heavy' && heavyBand(Math.max(1, Math.round(i.reps)));
+  const gapsOk = !heavyLadder || maxGap(big, W) <= 0.25 * W + EPS;
+  // Every step on the 20 kg ladder (the bar included), else the 10 kg one, which needs no off-ladder step.
+  const onLadder = big.every((s) => coarse.loads.some((l) => Math.abs(l - s.load) < EPS) || (i.barMass !== null && Math.abs(s.load - i.barMass) < EPS));
+  return big.length > 0 && big.length <= fine.length && gapsOk && onLadder ? big : fine;
+}
+
+function maxGap(steps: readonly WarmupStep[], W: number): number {
+  const points = [...steps.map((s) => s.load), W];
+  let max = 0;
+  for (let k = 1; k < points.length; k += 1) max = Math.max(max, (points[k] ?? 0) - (points[k - 1] ?? 0));
+  return max;
+}
+
+type Grid = { step: number; loads: readonly number[] };
+
+/** How a step goes to the grid: nearest (ties lighter, but a ladder's top step heavier), nearest with every tie heavier, or the next simple load up. */
+type Rounding = 'nearest' | 'ties_up' | 'up';
+
+/**
+ * A WU4 ladder (the heavy band) tries the roundings in order and keeps the first with the fewest steps (WU4's gap check adds fewer:
+ * 30 kg dumbbells × 6 → 15, 20, 25 rather than 10, 15, 20, 25). Other classes round to the nearest, ties lighter.
+ */
+function planOnGrid(i: WarmupPlanInput, grid: Grid): WarmupStep[] {
+  let best = planOn(i, grid, 'nearest');
+  // Only WU4's heavy band has the gap check; in WU5's rep band a rounding that loses a step is never preferred.
+  if (i.cls !== 'heavy' || !heavyBand(Math.max(1, Math.round(i.reps)))) return best;
+  for (const r of ['ties_up', 'up'] as const) {
+    const alt = planOn(i, grid, r);
+    if (alt.length > 0 && alt.length < best.length) best = alt;
+  }
+  return best;
+}
+
+function planOn(i: WarmupPlanInput, grid: Grid | null, rounding: Rounding = 'nearest'): WarmupStep[] {
   const R = Math.max(1, Math.round(i.reps));
   if (i.cls === 'weighted_bodyweight') {
     // WU7: bodyweight only (no weight added) × min(5, ⌈R/2⌉).
@@ -233,6 +315,32 @@ export function planWarmups(i: WarmupPlanInput): WarmupStep[] {
     return best;
   };
   const above = (v: number): number | null => ladder.find((l) => l > v + EPS) ?? null;
+  // (Ben, 1 Nov) Simple loads: the nearest on the grid within one step, else the 22 Oct snap. A tie goes to the lighter
+  // load, except a WU4/WU5 ladder's top step (a smaller last jump, so WU4's gap check adds fewer steps); (c) still caps it.
+  const simpleLoads = grid === null ? [] : [...grid.loads].sort((a, b) => a - b);
+  const simpleNear = (v: number, heavierTie: boolean): number | null => {
+    if (grid === null) return null;
+    let best: number | null = null;
+    for (const l of simpleLoads) {
+      if (Math.abs(l - v) > grid.step + EPS) continue;
+      const d = Math.abs(l - v);
+      const bd = best === null ? Infinity : Math.abs(best - v);
+      if (best === null || d < bd - EPS || (heavierTie && Math.abs(d - bd) <= EPS)) best = l;
+    }
+    return best;
+  };
+  const simpleUp = (v: number): number | null => (grid === null ? null : (simpleLoads.find((l) => l >= v - EPS && l - v <= grid.step + EPS) ?? null));
+  const snap = (v: number, heavierTie = false): number => (rounding === 'up' ? simpleUp(v) : null) ?? simpleNear(v, heavierTie) ?? down(v);
+  /** The heaviest simple load ≤ v within one step of it, else the heaviest achievable ≤ v. */
+  const belowSimple = (v: number): number | null => {
+    if (grid !== null) {
+      let best: number | null = null;
+      for (const l of simpleLoads) if (l <= v + EPS && v - l <= grid.step + EPS) best = l;
+      if (best !== null) return best;
+    }
+    return below(v);
+  };
+  const aboveSimple = (v: number): number | null => (grid === null ? null : (simpleLoads.find((l) => l > v + EPS) ?? null));
   const heavy = heavyBand(R);
   const ladderClass = i.cls === 'heavy';
   const repBandWarmup = !heavy;
@@ -242,7 +350,7 @@ export function planWarmups(i: WarmupPlanInput): WarmupStep[] {
     let v = r.pct * W;
     // WU9: the first step of a floor lift is at least the plates-on start, when the gym profile records it.
     if (k === 0 && i.floorStart && i.fullPlateStart != null) v = Math.max(v, i.fullPlateStart);
-    return { load: down(v), reps: r.reps };
+    return { load: snap(v, rounding === 'ties_up' || (i.cls === 'heavy' && k === raw.length - 1)), reps: r.reps };
   });
   steps.sort((a, b) => a.load - b.load);
 
@@ -251,15 +359,25 @@ export function planWarmups(i: WarmupPlanInput): WarmupStep[] {
   const lastOf = (): WarmupStep | undefined => steps[steps.length - 1];
   const top = lastOf();
   if (top !== undefined && top.load > cap + EPS) {
-    const b = below(cap);
+    const b = belowSimple(cap);
     if (b === null) steps.pop();
     else top.load = b;
+  }
+  // (Ben, 1 Nov) Rounding to simple loads can lift an earlier step past the cap too (two steps on one load above it):
+  // those go to the same load down, and (b) merges them.
+  if (grid !== null && steps.some((x) => x.load > cap + EPS)) {
+    const b = belowSimple(cap);
+    steps = b === null ? steps.filter((x) => x.load <= cap + EPS) : steps.map((x) => (x.load > cap + EPS ? { ...x, load: b } : x));
+    steps.sort((x, y) => x.load - y.load);
   }
   // (d) WU4/WU5: a last step below 70 % of W goes to the next load up, if that stays within (c) and below W.
   const t2 = lastOf();
   if (ladderClass && t2 !== undefined && t2.load < 0.7 * W - EPS) {
+    const fits = (v: number | null): v is number => v !== null && v <= cap + EPS && v < W - EPS;
+    const upSimple = aboveSimple(t2.load);
     const up = above(t2.load);
-    if (up !== null && up <= cap + EPS && up < W - EPS) t2.load = up;
+    if (fits(upSimple)) t2.load = upSimple;
+    else if (fits(up)) t2.load = up;
   }
   steps = tidy(steps, W);
   // (f) rep band: a step before the top step at ≥ 60 % of W is dropped.
@@ -279,7 +397,13 @@ export function planWarmups(i: WarmupPlanInput): WarmupStep[] {
       if (at < 0) break;
       const lo = steps[at - 1];
       if (lo === undefined) break;
-      const mid = down(((points[at - 1] ?? 0) + (points[at] ?? 0)) / 2);
+      const a = points[at - 1] ?? 0;
+      const b = points[at] ?? 0;
+      // (Ben, 1 Nov) A simple load strictly inside the gap, nearest its middle (ties lighter), else the 22 Oct snap.
+      // Within (c)'s cap: a midpoint step never lands above the top step's limit.
+      const inside = simpleLoads.filter((l) => l > a + EPS && l < b - EPS && l <= cap + EPS);
+      const m = (a + b) / 2;
+      const mid = inside.length > 0 ? inside.reduce((x, y) => (Math.abs(y - m) < Math.abs(x - m) - EPS ? y : x)) : down(m);
       if (steps.some((s) => Math.abs(s.load - mid) < EPS) || mid >= W - EPS) break;
       steps = tidy([...steps, { load: mid, reps: lo.reps }], W);
     }
@@ -429,12 +553,13 @@ export function planSessionWarmupsAs(items: readonly SessionWarmupItem[], mode: 
  * for a number): the planner's heaviest `n` steps (WU11 cuts the light ones first), and when it has fewer, the
  * rest fill the biggest gaps below W on the same loads (`gapFill`). Lightest first.
  */
-export function fitWarmupCount(full: readonly WarmupStep[], n: number, W: number, loads: readonly number[]): WarmupStep[] {
+export function fitWarmupCount(full: readonly WarmupStep[], n: number, W: number, loads: readonly number[], simpleLoads: readonly number[] = []): WarmupStep[] {
   if (n <= 0) return [];
   const out = full.slice(Math.max(0, full.length - n)).map((s) => ({ ...s }));
   // Bounded (hang fix, 27 Oct): never more than the planner's own step cap allows, whatever count is stored.
   while (out.length < Math.min(n, MAX_FIT_COUNT)) {
-    const gap = gapFill(out, W, loads);
+    // (Ben, 1 Nov) A simple load first when one fits the gap.
+    const gap = (simpleLoads.length > 0 ? gapFill(out, W, simpleLoads) : null) ?? gapFill(out, W, loads);
     if (gap === null) break;
     out.push(gap);
     out.sort((a, b) => a.load - b.load);

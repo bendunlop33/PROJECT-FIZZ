@@ -33,6 +33,7 @@ import {
   todayDraftState,
   currentDraftVersion,
   type BuilderEditOp,
+  warmupPrefsOf,
   pbAppliedBuilder,
   priorityGroupsOf,
   volumeGoalOfFocus,
@@ -72,6 +73,7 @@ import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
 import { createLiftTargetService } from './lift-target-service';
+import { createWarmupPrefsService } from './warmup-prefs-service';
 import { createPlanServices } from './plan-services';
 import { createPlanSwapService } from './plan-swap-service';
 import { createPlanMusclesService } from './plan-muscles-service';
@@ -435,7 +437,7 @@ export function createAppServices(deps: AppServicesDeps) {
     return outcome;
   }
 
-  const domainSessions = () => createSessionService(repos(), deps.newId, { deloadAt: deloadAtOf(repos) });
+  const domainSessions = () => createSessionService(repos(), deps.newId, { deloadAt: deloadAtOf(repos), warmupPrefs: async (ownerId) => warmupPrefsOf(await deps.manager.store.repos.trainingProfiles.get(ownerId).catch(() => null)) });
 
   const sessions = {
     active: async (): Promise<SessionAggregate | null> => {
@@ -600,6 +602,20 @@ export function createAppServices(deps: AppServicesDeps) {
     now: deps.now,
   });
 
+  /** (Ben, 1 Nov) Warm-up preferences (Simple warm-up weights, warm-ups per exercise); the open workout's warm-ups follow. */
+  const warmupPrefs = createWarmupPrefsService({
+    training,
+    // `loop` is made above; read only when Ben switches or the coach asks.
+    replan: (prefs, op) => loop.workout.warmupPrefsCommand(prefs, op),
+    dispatch: (sessionId, command) => loop.workout.dispatch(sessionId, command),
+    exercises: async () => {
+      const own = await repos().exercises.list().catch(() => [] as Exercise[]);
+      const ids = new Set(own.map((e) => e.id));
+      return [...own, ...catalogueExercises().filter((e) => !ids.has(e.id))];
+    },
+    now: deps.now,
+  });
+
   /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
   /** (Ben, 20 Oct) Activities (runs, rides, swims, sport) and this week's shape. Local only. */
   const weekly = createWeekServices({
@@ -653,6 +669,8 @@ export function createAppServices(deps: AppServicesDeps) {
       return views.length === 0 ? t : { ...t, liftTargets: views };
     },
     liftTargets: { on: () => liftTargets.on(), prepare: (args, at) => liftTargets.prepare(args, at) },
+    // (Ben, 1 Nov) The coach's warm-up settings tool, in every chat.
+    warmupPrefs: { prepare: (args, at) => warmupPrefs.prepare(args, at) },
     week: {
       view: () => weekly.week.contextView(),
       tool: async () => {
@@ -1438,6 +1456,7 @@ export function createAppServices(deps: AppServicesDeps) {
     bodyweight,
     health,
     liftTargets,
+    warmupPrefs,
     gyms,
     imports,
     importLayouts,

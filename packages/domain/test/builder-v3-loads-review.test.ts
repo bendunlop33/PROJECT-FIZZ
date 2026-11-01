@@ -56,9 +56,11 @@ describe('B1: a kg slot on lb equipment works in lb and says so', () => {
     }
     const warm = r.rows.filter((x) => x.type === 'warmup').map((x) => x.load ?? 0);
     expect(warm[0]).toBe(45);
-    expect(warm).toHaveLength(4);
-    // 220.46 → 220 lb; 95 kg = 209.4 → 205 lb; 40 / 60 / 80 % of 220 = 88, 132, 176 → 80, 130, 170 on these plates (down).
-    expect(r.rows.map((x) => x.load)).toEqual([45, 80, 130, 170, 220, 205, 205, 205]);
+    // 220.46 → 220 lb; 95 kg = 209.4 → 205 lb. Warm-ups on simple loads (Ben, 1 Nov: the bar + 20 lb steps, was
+    // 80, 130, 170): WU4's gap check then needs one more step (no jump over 55 lb).
+    expect(warm).toHaveLength(5);
+    for (const w of warm) expect((w - 45) % 20).toBe(0);
+    expect(r.rows.map((x) => x.load)).toEqual([45, 65, 105, 145, 185, 220, 205, 205, 205]);
     for (const [i, pct] of [0.4, 0.6, 0.8].entries()) expect(warm[i + 1]).toBeLessThanOrEqual(top * pct + 1e-6);
   });
 

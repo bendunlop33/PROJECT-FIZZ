@@ -17,12 +17,28 @@ import {
   type TrainingChange,
   type TrainingProfile,
   type TrainingSplit,
+  type WarmupExerciseSetting,
+  WarmupExerciseSettingSchema,
+  type WarmupPrefs,
   type WeightEntry,
 } from '@fizz/schemas';
 import { withLiftTarget, withoutLiftTarget } from './lift-targets';
 import { CHECK_IN_WEEKDAYS } from './checkin';
 import { toMs } from './time';
 import { convertMass, KG_PER_LB } from './units';
+
+/** (Ben, 1 Nov) Warm-up preferences as the planner reads them: simple loads on unless he turned them off. */
+export interface ResolvedWarmupPrefs {
+  simpleLoads: boolean;
+  perExercise: Readonly<Record<string, WarmupExerciseSetting>>;
+}
+export function warmupPrefsOf(profile: { warmups?: WarmupPrefs | undefined } | null | undefined): ResolvedWarmupPrefs {
+  return { simpleLoads: profile?.warmups?.simpleLoads ?? true, perExercise: profile?.warmups?.perExercise ?? {} };
+}
+/** Ben's setting for one exercise's warm-ups, or null (the planner's default). */
+export function warmupSettingOf(prefs: Pick<ResolvedWarmupPrefs, 'perExercise'> | null | undefined, exerciseId: string): WarmupExerciseSetting | null {
+  return prefs?.perExercise[exerciseId] ?? null;
+}
 
 /**
  * Ben's training details and split (Ben 13 Oct: D5, D7, D8; F19). Pure:
@@ -261,6 +277,24 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
       const rest = (p.pinnedNotes ?? []).filter((n) => !(n.exerciseId === c.exerciseId && n.gymId === c.gymId));
       if (rest.length === 0) delete next.pinnedNotes;
       else next.pinnedNotes = rest;
+      return next;
+    }
+    case 'warmup_prefs': {
+      // (Ben, 1 Nov) Simple warm-up weights and per-exercise warm-ups; stored only where they differ from the default.
+      const prev = p.warmups ?? {};
+      const simpleLoads = c.simpleLoads ?? prev.simpleLoads ?? true;
+      const changes = Object.entries(c.perExercise ?? {});
+      if (changes.some(([id, v]) => id.trim() === '' || id.length > 64 || (v !== null && !WarmupExerciseSettingSchema.safeParse(v).success))) return null;
+      const cleared = new Set(changes.filter(([, v]) => v === null).map(([id]) => id));
+      const per: Record<string, WarmupExerciseSetting> = Object.fromEntries([
+        ...Object.entries(prev.perExercise ?? {}).filter(([id]) => !cleared.has(id)),
+        ...changes.flatMap(([id, v]) => (v === null ? [] : [[id, v] as const])),
+      ]);
+      if (Object.keys(per).length > TRAINING_LIMITS.warmupExercisesMax) return null;
+      const next = { ...p };
+      const prefs: WarmupPrefs = { ...(simpleLoads ? {} : { simpleLoads: false }), ...(Object.keys(per).length === 0 ? {} : { perExercise: per }) };
+      if (Object.keys(prefs).length === 0) delete next.warmups;
+      else next.warmups = prefs;
       return next;
     }
     case 'muscle_offer':

@@ -282,7 +282,8 @@ describe('B2: the rest Next card, lock screen and next lines show Ben’s draft,
     const { s } = restingBeforeDraftedSet();
     const c = buildLockScreenContent(s, ms(110), 'UTC');
     expect(c?.state).toBe('resting');
-    expect(plain(c?.line2)).toBe('Your edit 105 kg × 6–8');
+    // (Ben, 1 Nov) `Next  …`, still saying it's his edit.
+    expect(plain(c?.line1)).toBe('Next  your edit 105 kg × 6–8');
     expect(c?.a11y).toContain('your edit 105 kilograms, 6 to 8 reps');
     expect(lockScreenTargetWords('Your edit 105 kg × 8')).toBe('your edit 105 kilograms, 8 reps');
   });
@@ -317,7 +318,7 @@ describe('B2: the rest Next card, lock screen and next lines show Ben’s draft,
     s = apply(s, logCmd(w.id, values(kg(60), 10), 10));
     s = apply(s, logCmd(b1.id, values(kg(100), 8), 100));
     expect(plain(restSetsView(s).next?.value)).toBe('100 kg × 6–8');
-    expect(plain(buildLockScreenContent(s, ms(110), 'UTC')?.line2)).toBe('Target 100 kg × 6–8');
+    expect(plain(buildLockScreenContent(s, ms(110), 'UTC')?.line1)).toBe('Next  100 kg × 6–8');
     expect(row(s, b2.id).cells.load).toBe('100');
   });
 });

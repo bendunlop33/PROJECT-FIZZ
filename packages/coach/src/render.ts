@@ -601,6 +601,16 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Lift target not set: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
+    case 'update_warmup_prefs': {
+      // (Ben, 1 Nov) What changed, one line each; Undo on the card.
+      if (st === 'committed') {
+        const text = d.lines.join(' · ');
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not changed: your settings or workout changed.', 'Not changed. Your settings or workout changed.');
+      const text = `Warm-ups not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
     case 'build_question': {
       // workout-builder v2 §4.2: the card shows the checked question and its answers; nothing else was written.
       const text = d.question;

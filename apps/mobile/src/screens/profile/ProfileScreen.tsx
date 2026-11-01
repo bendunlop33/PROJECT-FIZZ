@@ -25,6 +25,7 @@ import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { voiceCapability } from '../../voice/speaker';
 import { voiceRowLine } from '../../voice/settings';
 import { MorningReminderRow } from './MorningReminderRow';
+import { WARMUP_PREFS_COPY } from '../../services/warmup-prefs-service';
 
 /** (Rule 10) Profile's two data groups, with Data & backup's names. */
 export const PROFILE_SECTIONS = { yourData: 'Your data', knowledge: 'Coaching knowledge' } as const;
@@ -42,7 +43,7 @@ export function ProfileScreen() {
   const probe = useProbeResults();
   const { prefs, update } = useDevicePrefs();
   const [data, reload] = useScreenData(async (s) => {
-    const [backup, banners, pain, gyms, coach, training, planInUse, health] = await Promise.all([
+    const [backup, banners, pain, gyms, coach, training, planInUse, health, warmups] = await Promise.all([
       s.backups.getStatus(),
       loadBanners(s, install),
       s.pain.active(),
@@ -54,11 +55,13 @@ export function ProfileScreen() {
       s.plans.inUse().then((x) => x !== null, () => null),
       // (ADR 0035) Apple Health's line: `On · last read 07:42`, `Off`, `Not available on this install`.
       s.health.screen().then((v) => v.line, () => null),
+      // (Ben, 1 Nov) `Simple warm-up weights`; a failed read shows no switch.
+      s.warmupPrefs.view().catch(() => null),
     ]);
     const [snap, owner] = training;
     const split = snap === null || planInUse === null ? null : profileSplitRow(snap.profile, snap.mainLifts, planInUse);
     const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg', healthWeights: snap.healthWeights }).summary, split, checkIn: checkInScheduleLine(checkInSettingsFor(snap.profile).schedule), restWhenShort: REST_LEVEL_NAMES[fitRestLevelOf(snap.profile)], restTimes: hasOwnRestDefaults(restDefaultsOf(snap.profile)) ? REST_TIMES_COPY.own : REST_TIMES_COPY.standard };
-    return { backup, banners, pain, gyms, coach, training: lines, health };
+    return { backup, banners, pain, gyms, coach, training: lines, health, warmups };
   });
   useEffect(() => {
     reload();
@@ -163,6 +166,23 @@ export function ProfileScreen() {
             navigation.navigate('RestWhenShort');
           }}
         />
+        {/* (Ben, 1 Nov) Warm-ups round to easy-to-load weights (default on); today's warm-ups not yet done follow. */}
+        {data.state === 'ready' && data.value.warmups !== null ? (
+          <Row
+            title={WARMUP_PREFS_COPY.simpleLoads}
+            icon="scalemass"
+            trailing={
+              <Switch
+                accessibilityLabel={WARMUP_PREFS_COPY.simpleLoads}
+                value={data.value.warmups.simpleLoads}
+                onValueChange={(on) => {
+                  const version = data.value.warmups?.version ?? 1;
+                  void services.warmupPrefs.setSimpleLoads(on, version, newUuid()).finally(reload);
+                }}
+              />
+            }
+          />
+        ) : null}
         {/* Ben, 20 Oct: `Targets hit 5 of last 6` on main lifts only, when on (this phone; default off). */}
         <Row
           title="Targets hit"

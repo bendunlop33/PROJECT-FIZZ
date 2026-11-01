@@ -78,11 +78,11 @@ describe('buildLockScreenContent with last time', () => {
   const resting = apply(state, logCmd(warm.id, values(kg(60), 10), 30));
   const lookup = (exId: string) => (exId === w1.sessionExerciseId ? history([100, 8], [100, 7]) : undefined);
 
-  it('Resting: `Last 100 kg × 8` under the next set’s target, read aloud after it; and the rest the buttons act on', () => {
+  it('Resting: `Last  100 kg × 8` under `Next  …` (Ben, 1 Nov), read aloud after it; and the rest the buttons act on', () => {
     const c = buildLockScreenContent(resting, ms(31), TZ, { lastComparable: lookup });
     expect(c?.state).toBe('resting');
-    expect(plain(c?.line2 ?? '')).toBe('Target 100 kg × 6–8');
-    expect(plain(c?.line3 ?? '')).toBe('Last 100 kg × 8');
+    expect(plain(c?.line1 ?? '')).toBe('Next  100 kg × 6–8');
+    expect(plain(c?.line2 ?? '')).toBe('Last  100 kg × 8');
     expect(c?.a11y.endsWith('target 100 kilograms, 6 to 8 reps. Last time 100 kilograms, 8 reps.')).toBe(true);
     expect(c?.rest).toEqual({ timerId: resting.restTimer?.id, timerVersion: resting.restTimer?.version });
   });
@@ -90,16 +90,16 @@ describe('buildLockScreenContent with last time', () => {
   it('without history (not read yet, or none) the line is empty and nothing else changes', () => {
     const without = buildLockScreenContent(resting, ms(31), TZ);
     const withNone = buildLockScreenContent(resting, ms(31), TZ, { lastComparable: () => undefined });
-    expect(without?.line3).toBe('');
+    expect(without?.line2).toBe('');
     expect(withNone).toEqual(without);
   });
 
   it('Ready for a working set shows it too; Ready for a warm-up does not', () => {
-    expect(buildLockScreenContent(state, ms(1), TZ, { lastComparable: lookup })?.line3).toBe('');
+    expect(buildLockScreenContent(state, ms(1), TZ, { lastComparable: lookup })?.line2).toBe('');
     const skipped = apply(resting, { type: 'skip_rest', at: { utc: new Date(ms(40)).toISOString(), tz: TZ }, opId: 'skip', timerId: resting.restTimer?.id ?? '' });
     const c = buildLockScreenContent(skipped, ms(41), TZ, { lastComparable: lookup });
     expect(c?.state).toBe('ready');
-    expect(plain(c?.line3 ?? '')).toBe('Last 100 kg × 8');
+    expect(plain(c?.line2 ?? '')).toBe('Last  100 kg × 8');
     expect(c?.rest).toBeNull();
   });
 

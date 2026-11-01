@@ -64,6 +64,8 @@ export interface RepeatInput {
   /** The gym's name, for notes (`No Olympic bar at Hotel · Lisbon …`); absent = "here". */
   gymName?: string;
   lastUsedHere?: StartWorkoutInput['lastUsedHere'];
+  /** (Ben, 1 Nov) His warm-up settings for the warm-ups Start plans; absent = simple loads on. */
+  warmupPrefs?: StartWorkoutInput['warmupPrefs'];
   /**
    * Today's swaps (ADR 0022), by the source's part-root row ID: the slot is
    * planned as the substitute, from its own targets (or last time's reps with
@@ -358,6 +360,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       knownEquipment,
       ...(input.gymName !== undefined ? { gymName: input.gymName } : {}),
       ...(input.lastUsedHere ? { lastUsedHere: input.lastUsedHere } : {}),
+      ...(input.warmupPrefs ? { warmupPrefs: input.warmupPrefs } : {}),
       ...(input.checkIn !== undefined ? { checkIn: input.checkIn } : {}),
     },
     'repeat',

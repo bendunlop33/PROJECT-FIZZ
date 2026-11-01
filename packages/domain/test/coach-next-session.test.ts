@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CoachTarget, NextSessionTarget, PainFlag, SessionAggregate, SessionExercise } from '@fizz/schemas';
-import { classifyNextSessionChange, isStallReset, nextSessionBases, nextTargetFitsSource, nextTargetSourceBasis, pctText, STALL_RESET_REASON, EXTRA_SET_REASON, validateNextSessionTargets, type NextSessionBasis } from '../src/index';
+import { catalogueExerciseId, classifyNextSessionChange, isStallReset, nextSessionBases, nextTargetFitsSource, nextTargetSourceBasis, pctText, STALL_RESET_REASON, EXTRA_SET_REASON, validateNextSessionTargets, type NextSessionBasis } from '../src/index';
 import { assisted, barbell, dumbbells, id, kg, lb, OWNER } from './fixtures';
 
 const t = (load: number | null, min: number, max: number, convention: 'total' | 'per_hand' | 'assistance' = 'total', unit: 'kg' | 'lb' = 'kg'): CoachTarget => ({
@@ -171,5 +171,22 @@ describe('nextTargetFitsSource (a rename doesn’t make the coach’s targets st
     expect(nextTargetFitsSource({ sourceVersion: 5, sourceBasis: basis }, { version: 5, basis: 'other' })).toBe(false);
     expect(nextTargetFitsSource({ sourceVersion: 5 }, { version: 5, basis })).toBe(true);
     expect(nextTargetFitsSource({ sourceVersion: 5 }, { version: 6, basis })).toBe(false);
+  });
+});
+
+describe('prehab stays easy (Ben, 1 Nov): the coach’s increase is one dumbbell step at a time', () => {
+  const ER = { ...CURL, exerciseId: catalogueExerciseId('dumbbell-side-lying-external-rotation'), exerciseName: 'Side-lying dumbbell external rotation' };
+  const rack = dumbbells({ loads: [2, 3, 4, 5, 6, 8, 10] });
+  const erBases: NextSessionBasis[] = [{ exercise: ER, equipment: rack, last: t(4, 12, 15, 'per_hand'), lastSets: 2, builtIn: null }];
+  it('4 → 8 kg each is kept to 5 kg each (one step) with a capped note; one step and decreases pass as asked', () => {
+    const r = validateNextSessionTargets({ source, bases: erBases, targets: [ask(ER.exerciseId, t(8, 12, 15, 'per_hand'))], painFlags: [], gymName: null, ctx });
+    expect(r.rows[0]?.after.load).toEqual(kg(5, 'per_hand'));
+    expect(r.rows[0]?.guardNotes.map((n) => n.kind)).toContain('capped');
+    expect(validateNextSessionTargets({ source, bases: erBases, targets: [ask(ER.exerciseId, t(5, 12, 15, 'per_hand'))], painFlags: [], gymName: null, ctx }).rows[0]?.after.load).toEqual(kg(5, 'per_hand'));
+    expect(validateNextSessionTargets({ source, bases: erBases, targets: [ask(ER.exerciseId, t(3, 12, 15, 'per_hand'))], painFlags: [], gymName: null, ctx }).rows[0]?.after.load).toEqual(kg(3, 'per_hand'));
+  });
+  it('other exercises are not capped', () => {
+    const r = validateNextSessionTargets({ source, bases, targets: [ask(CURL.exerciseId, t(20, 8, 10, 'per_hand'))], painFlags: [], gymName: null, ctx });
+    expect(r.rows[0]?.after.load).toEqual(kg(20, 'per_hand'));
   });
 });

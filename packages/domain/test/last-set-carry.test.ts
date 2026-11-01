@@ -105,7 +105,7 @@ describe('log b2 at 105 against 100: b3 and b4 start at 105', () => {
     // Rest `Next` card, lock screen, the spoken cue.
     expect(plain(restSetsView(s).next?.value)).toBe('105 kg × 6–8');
     expect(plain(setGlance(s, b4.id)?.value)).toBe('105 kg × 6–8');
-    expect(plain(buildLockScreenContent(s, ms(700), 'UTC')?.line2)).toBe('Your edit 105 kg × 6–8');
+    expect(plain(buildLockScreenContent(s, ms(700), 'UTC')?.line1)).toBe('Next  your edit 105 kg × 6–8');
     expect(spokenSetOf(s, b3.id)?.load).toEqual(kg(105));
     // The Edit set sheet opens on what the row shows.
     expect(buildPlannedSetEditView(s, b4.id)?.loadField?.value).toBe(105);
@@ -277,7 +277,7 @@ describe('coach and rule targets', () => {
     s = coach(s, [b3.id, b4.id], 102.5, 700);
     expect(loadOf(s, b3.id)).toBe(102.5);
     expect(rowOf(s, b4.id).cells.load).toBe('102.5');
-    expect(plain(buildLockScreenContent(s, ms(710), 'UTC')?.line2)).toContain('102.5');
+    expect(plain(buildLockScreenContent(s, ms(710), 'UTC')?.line1)).toContain('102.5');
   });
 
   it('a coach target set before the log is older: his log wins', () => {
@@ -298,7 +298,7 @@ describe('guardrails', () => {
     expect(loadOf(s, b3.id, pain)).toBe(100);
     expect(rowOf(s, b4.id, { painFlagged: pain }).cells.load).toBe('100');
     expect(plain(restSetsView(s, {}, { painFlagged: pain }).next?.value)).toBe('100 kg × 6–8');
-    expect(plain(buildLockScreenContent(s, ms(700), 'UTC', { painFlagged: pain })?.line2)).toBe('Target 100 kg × 6–8');
+    expect(plain(buildLockScreenContent(s, ms(700), 'UTC', { painFlagged: pain })?.line1)).toBe('Next  100 kg × 6–8');
     expect(spokenSetOf(s, b3.id, [], { painFlagged: pain })?.load).toEqual(kg(100));
     // From the view input's flag list too.
     const flag = newPainFlag({ id: id(990), ownerId: profile().id, opId: 'pain-op', exerciseId: BENCH, exerciseName: 'Bench press', area: null, source: 'workout', checkInId: null, at: at(0) });

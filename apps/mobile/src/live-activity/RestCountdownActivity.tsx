@@ -24,9 +24,17 @@ import type { WorkoutActivityProps } from './controller';
  * The workout's Lock Screen / Dynamic Island activity (lock-screen-and-alerts
  * §2.1): Ready, Resting, Working or Paused. The system renders the countdown
  * from the two instants, so it keeps counting with the app suspended or
- * killed; `Until 18:42` keeps `0:00` unambiguous. Local updates only, no push
- * (ADR 0004). Direction D: dark canvas, warm off-white text, a large light
- * numeral (D-Rest), monospaced digits so the countdown doesn't jitter.
+ * killed. Local updates only, no push (ADR 0004). Direction D: dark canvas,
+ * warm off-white text, monospaced digits so the countdown doesn't jitter.
+ *
+ * (Ben, 1 Nov, build 500: the text was cut off: `Until 19:53 · Dumbb…`,
+ * `Target 32 kg eac…`) Layout: line 1 full width, `⏱ Rest · DB shoulder press`
+ * with the timer top right and smaller; line 2 `Next  32 kg ea × 6–8`; line 3
+ * `Last  35 kg ea × 7`; then −15 s / +15 s / Skip, or Log. No `Until` line.
+ * Every text line is one line that shrinks to fit (`lineLimit(1)` +
+ * `minimumScaleFactor`) rather than truncating at normal sizes. The Dynamic
+ * Island's expanded view follows the same lines. Not render-tested here; see
+ * the device check in the 1 Nov handoff.
  *
  * The widget function is serialised and run in the extension on its own: it
  * can't call helpers or read constants from this file, so the colours are
@@ -78,11 +86,13 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
   const numeralWeight = dim ? 'ultraLight' : 'light';
   const icon = p.state === 'paused' ? 'pause.circle.fill' : p.state === 'ready' ? 'figure.strengthtraining.traditional' : 'timer';
   const iconColour = p.state === 'paused' ? '#F2B84B' : '#EDE5DA';
-  const big = counting ? (
-    <Text timerInterval={range} countsDown modifiers={[font({ size: 56, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.6)]} />
+  // (Ben, 1 Nov) Top right of line 1, smaller than before (was 56pt beside the lines).
+  const corner = counting ? (
+    <Text timerInterval={range} countsDown modifiers={[font({ size: 28, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.6), frame({ minWidth: 64 })]} />
   ) : p.side !== '' ? (
-    <Text modifiers={[font({ size: 40, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{p.side}</Text>
+    <Text modifiers={[font({ size: 17, weight: 'semibold' }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.side}</Text>
   ) : null;
+
   const buttons =
     counting && p.state === 'resting' && p.tap !== '' ? (
       <HStack spacing={8} modifiers={[buttonStyle('bordered'), controlSize('small'), tint('#EDE5DA')]}>
@@ -104,19 +114,17 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
   return {
     banner: (
       <VStack alignment="leading" spacing={8} modifiers={[padding({ horizontal: 18, vertical: controls === null ? 14 : 12 }), activityBackgroundTint('#0D0C0B')]}>
-        <HStack alignment="center" spacing={12}>
-          <VStack alignment="leading" spacing={4} modifiers={[accessibilityElement('ignore'), accessibilityLabel(p.a11y)]}>
-            <HStack spacing={6}>
-              <Image systemName={icon} color={iconColour} />
-              <Text modifiers={[font({ size: 17, weight: 'semibold' }), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{p.title}</Text>
-            </HStack>
-            {p.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(controls === null ? 2 : 1)]}>{p.line1}</Text> : null}
-            {p.line2 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{p.line2}</Text> : null}
-            {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1)]}>{p.line3}</Text> : null}
-          </VStack>
-          <Spacer />
-          {big}
-        </HStack>
+        <VStack alignment="leading" spacing={4} modifiers={[accessibilityElement('ignore'), accessibilityLabel(p.a11y)]}>
+          <HStack alignment="center" spacing={6}>
+            <Image systemName={icon} color={iconColour} />
+            <Text modifiers={[font({ size: 17, weight: 'semibold' }), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.title}</Text>
+            <Spacer />
+            {corner}
+          </HStack>
+          {p.line1 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line1}</Text> : null}
+          {p.line2 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line2}</Text> : null}
+          {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line3}</Text> : null}
+        </VStack>
         {controls}
       </VStack>
     ),
@@ -130,19 +138,19 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
     expandedLeading: (
       <HStack spacing={6} modifiers={[padding({ leading: 8 })]}>
         <Image systemName={icon} color={iconColour} />
-        <Text modifiers={[font({ size: 17, weight: 'semibold' }), lineLimit(1)]}>{p.title}</Text>
+        <Text modifiers={[font({ size: 17, weight: 'semibold' }), lineLimit(1), minimumScaleFactor(0.7)]}>{p.title}</Text>
       </HStack>
     ),
     expandedTrailing: counting ? (
-      <Text timerInterval={range} countsDown modifiers={[font({ size: 44, weight: numeralWeight }), monospacedDigit(), lineLimit(1), minimumScaleFactor(0.6), padding({ trailing: 8 })]} />
+      <Text timerInterval={range} countsDown modifiers={[font({ size: 28, weight: numeralWeight }), monospacedDigit(), lineLimit(1), minimumScaleFactor(0.6), padding({ trailing: 8 })]} />
     ) : (
-      <Text modifiers={[font({ size: 34, weight: numeralWeight }), monospacedDigit(), padding({ trailing: 8 })]}>{p.side}</Text>
+      <Text modifiers={[font({ size: 17, weight: 'semibold' }), monospacedDigit(), lineLimit(1), padding({ trailing: 8 })]}>{p.side}</Text>
     ),
     expandedBottom: (
       <VStack alignment="leading" spacing={2} modifiers={[padding({ horizontal: 8 })]}>
-        {p.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), lineLimit(1)]}>{p.line1}</Text> : null}
-        {p.line2 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), lineLimit(1)]}>{p.line2}</Text> : null}
-        {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1)]}>{p.line3}</Text> : null}
+        {p.line1 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line1}</Text> : null}
+        {p.line2 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line2}</Text> : null}
+        {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line3}</Text> : null}
         {controls}
       </VStack>
     ),

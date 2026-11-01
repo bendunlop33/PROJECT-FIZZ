@@ -20,6 +20,7 @@ import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SplitDayIdSchem
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
+import { WarmupPrefsSchema, type TrainingChange } from './training-profile';
 import { ActivityEffortSchema, ActivityFieldsShapeSchema, ActivityKindSchema, ActivityStatusSchema, WeekBasisSchema, WeekMergeSchema, WeekRowSchema, WeekSkipSchema, type Activity } from './activity';
 import { LocalDateSchema } from './import';
 import { BuilderProposalSchema } from './builder-coach';
@@ -97,6 +98,8 @@ export const CoachEntityKindSchema = z.enum([
   'week_plan',
   /** ADR 0039: today's Set up (day, length, main lift) filled from Ben's words (`fill_setup`); Undo on Set up. */
   'builder_setup',
+  /** (Ben, 1 Nov) His warm-up preferences on the training profile (`update_warmup_prefs`), with today's pending warm-ups re-planned; Undo puts both back. */
+  'warmup_prefs',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -433,6 +436,21 @@ export const SetLiftTargetArgsSchema = z.strictObject({
 });
 export type SetLiftTargetArgs = z.infer<typeof SetLiftTargetArgsSchema>;
 
+/**
+ * (Ben, 1 Nov) `update_warmup_prefs`: "use simple warm-up weights", "no warm-ups on face pulls". `simpleLoads`: the
+ * `Simple warm-up weights` setting (null: unchanged). `exercises`: warm-ups per exercise, `off` none, `normal` the
+ * planner's, `default` back to the default. Applies at once with Undo when Ben asked (rule 3); today's not-yet-done
+ * warm-ups are planned again; logged sets never change (rule 2).
+ */
+export const UpdateWarmupPrefsArgsSchema = z.strictObject({
+  simpleLoads: z.boolean().nullable(),
+  exercises: z
+    .array(z.strictObject({ exercise: z.string().min(1).max(120), warmups: z.enum(['off', 'normal', 'default']) }))
+    .max(20),
+  ...askClaim,
+});
+export type UpdateWarmupPrefsArgs = z.infer<typeof UpdateWarmupPrefsArgsSchema>;
+
 export const RenameWorkoutArgsSchema = z.strictObject({
   /** The session version the coach read (rule 5). */
   baseVersion: z.int().min(1),
@@ -689,6 +707,8 @@ export const CoachToolNameSchema = z.enum([
   'propose_plan_swap',
   /** (Ben, 31 Oct) One exercise added to chosen days of the plan in use, at a chosen place: a proposal he applies, with Undo. */
   'propose_plan_add',
+  /** (Ben, 1 Nov) Warm-up preferences (simple loads, warm-ups per exercise), applied with Undo when Ben asks. */
+  'update_warmup_prefs',
   /** (Ben, 1 Nov) One plan day's order and sets/reps/RPE/main every week: a proposal he applies, with Undo. */
   'propose_plan_day_edit',
 ]);
@@ -733,6 +753,7 @@ export const COACH_TOOL_ARGS = {
   fill_setup: FillSetupTodayArgsSchema,
   propose_plan_swap: ProposePlanSwapArgsSchema,
   propose_plan_add: ProposePlanAddArgsSchema,
+  update_warmup_prefs: UpdateWarmupPrefsArgsSchema,
   propose_plan_day_edit: ProposePlanDayEditArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
@@ -1165,6 +1186,21 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     exerciseName: z.string().min(1).max(120),
     before: LiftTargetSchema.nullable(),
     after: LiftTargetSchema,
+  }),
+  /**
+   * (Ben, 1 Nov) His warm-up preferences changed because he asked (`update_warmup_prefs`). `before`/`after`: the
+   * profile's `warmups` (null: the defaults). `sessionId`: the open workout whose pending warm-ups were planned again
+   * (its sets carry this action's ID, so Undo puts back exactly those still pending); `removedSetIds`: pending
+   * warm-ups taken out (warm-ups off for an exercise). Undo needs the profile still at `after`.
+   */
+  z.object({
+    kind: z.literal('update_warmup_prefs'),
+    lines: z.array(z.string().min(1).max(200)).min(1).max(21),
+    before: WarmupPrefsSchema.nullable(),
+    after: WarmupPrefsSchema.nullable(),
+    sessionId: IdSchema.nullable(),
+    changedSetIds: z.array(IdSchema).max(60),
+    removedSetIds: z.array(IdSchema).max(60),
   }),
   /**
    * (Ben, 20 Oct) An activity the coach logged (committed: `activityId` names it) or offered (proposed:
@@ -1682,6 +1718,11 @@ export type CoachWrite =
   | { kind: 'gym_edit'; action: ActionRecord; edit: GymEditRecord }
   /** (Ben, 20 Oct) A lift target on the owner's training profile, on `expectedVersion` (rule 5). */
   | { kind: 'lift_target'; action: ActionRecord; target: LiftTarget; expectedVersion: number }
+  /**
+   * (Ben, 1 Nov) His warm-up preferences on `expectedVersion` (rule 5) and, when a workout is open, its pending
+   * warm-ups planned again (`command`, an `adjust_pending_targets` on the session version read), with the record.
+   */
+  | { kind: 'warmup_prefs'; action: ActionRecord; change: TrainingChange; expectedVersion: number; session: { sessionId: string; command: SessionCommand } | null }
   /** (Ben, 20 Oct) An activity the coach logged and its record, in one write (`expectedVersion` null: new). */
   | { kind: 'activity'; action: ActionRecord; activity: Activity; expectedVersion: number | null };
 

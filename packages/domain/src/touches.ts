@@ -3,6 +3,7 @@ import { formatNumber, NBSP } from './display';
 import { isSetCountable } from './exclusions';
 import { buildPlateSetup, getAchievableLoads, isBarLoaded } from './equipment';
 import { planWarmups } from './warmup/plan';
+import { simpleWarmupLoads } from './warmup/simple';
 import { matchesEquipment, type HistorySession } from './progression';
 import { toMs } from './time';
 import { toScaled } from './units';
@@ -64,6 +65,8 @@ export function warmUpRamp(workingLoad: Load | null, eq: EquipmentInstance | nul
     floorStart: eq.kind === 'trap_bar',
     barMass: eq.kind === 'barbell' ? eq.barMass : null,
     loads: getAchievableLoads(eq).loads,
+    // (Ben, 1 Nov) Simple warm-up weights (the default).
+    simple: simpleWarmupLoads(eq),
   });
 }
 

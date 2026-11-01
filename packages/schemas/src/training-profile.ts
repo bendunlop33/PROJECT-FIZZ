@@ -51,6 +51,8 @@ export const TRAINING_LIMITS = {
   /** (Ben, 26 Oct) Pinned exercise notes: one per exercise and gym (or every gym), each at most `pinnedNoteMax` characters. */
   pinnedNotesMax: 300,
   pinnedNoteMax: 500,
+  /** (Ben, 1 Nov) Per-exercise warm-up settings kept. */
+  warmupExercisesMax: 300,
 } as const;
 
 export const SplitDaySchema = z.object({
@@ -114,6 +116,20 @@ export type RestDefaultKey = z.infer<typeof RestDefaultKeySchema>;
  */
 export const REST_DEFAULT_LIMITS = { minS: 30, maxS: 360, stepS: 15 } as const;
 
+/** (Ben, 1 Nov) One exercise's warm-ups: `off` none; `normal` the planner's table (even for prehab work). */
+export const WarmupExerciseSettingSchema = z.enum(['off', 'normal']);
+export type WarmupExerciseSetting = z.infer<typeof WarmupExerciseSettingSchema>;
+
+/**
+ * (Ben, 1 Nov) Warm-up preferences (WU8 amendment). `simpleLoads`: `Simple warm-up weights` (absent = on);
+ * `perExercise`: his per-exercise setting by exercise ID (absent = the planner's default for it).
+ */
+export const WarmupPrefsSchema = z.object({
+  simpleLoads: z.boolean().optional(),
+  perExercise: z.record(z.string().min(1).max(64), WarmupExerciseSettingSchema).refine((r) => Object.keys(r).length <= TRAINING_LIMITS.warmupExercisesMax).optional(),
+});
+export type WarmupPrefs = z.infer<typeof WarmupPrefsSchema>;
+
 export const TrainingProfileSchema = RecordMetaSchema.extend({
   about: z.object({
     birthYear: z.int().min(TRAINING_LIMITS.birthYearMin).max(2100).optional(),
@@ -176,6 +192,8 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
   restDefaultsS: z.partialRecord(RestDefaultKeySchema, z.int().min(REST_DEFAULT_LIMITS.minS).max(REST_DEFAULT_LIMITS.maxS)).optional(),
   /** (Ben, 26 Oct) Pinned exercise notes, one per exercise and gym (null gym: every gym). Absent: none. */
   pinnedNotes: z.array(PinnedNoteSchema).max(TRAINING_LIMITS.pinnedNotesMax).optional(),
+  /** (Ben, 1 Nov) Warm-up preferences. Absent: simple loads on, no per-exercise settings. Your data (rule 10). */
+  warmups: WarmupPrefsSchema.optional(),
   /**
    * (Ben, 1 Nov) The coach's one muscle-gap offer (`Biceps only 2 sets a week · Rebalance?`): for which plan state
    * (`key`, the plan and its typical week), where it was raised (after Apply, or in the weekly review of `weekMonday`),
@@ -234,5 +252,7 @@ export type TrainingChange =
   | { kind: 'pin_note'; exerciseId: string; gymId: string | null; text: string }
   /** (Ben, 26 Oct) Unpin it (the text is kept as today's note by the caller when Ben asks). */
   | { kind: 'unpin_note'; exerciseId: string; gymId: string | null }
+  /** (Ben, 1 Nov) `Simple warm-up weights`, and/or warm-ups per exercise (`null` = back to the default). */
+  | { kind: 'warmup_prefs'; simpleLoads?: boolean; perExercise?: Readonly<Record<string, WarmupExerciseSetting | null>> }
   /** (Ben, 1 Nov) The coach's muscle-gap offer raised (once per plan state) or skipped. */
   | { kind: 'muscle_offer'; key: string; by: 'apply' | 'review'; weekMonday: string | null; status: 'raised' | 'skipped' };

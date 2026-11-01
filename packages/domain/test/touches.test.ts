@@ -38,9 +38,12 @@ describe('warm-up ramp (deterministic, labelled, skippable)', () => {
     ]);
     expect(plain(warmUpText(steps, bar))).toBe('bar × 5 · 40 × 5 · 60 × 3 · 80 × 2 (kg)');
     // The set's reps pick the band (WU3): 3 reps → the 1–3 ladder; 12 reps → WU5's two steps, no bar.
-    expect(warmUpRamp(kg(100), bar, 3).map((x) => [x.load, x.reps])).toEqual([[20, 5], [40, 5], [60, 3], [75, 2], [87.5, 1]]);
-    expect(warmUpRamp(kg(100), bar, 12).map((x) => [x.load, x.reps])).toEqual([[50, 8], [80, 5]]);
-    expect(warmUpRamp(kg(40), bar).map((x) => x.load)).toEqual([20, 22.5, 30]);
+    // (Ben, 1 Nov) Simple warm-up weights: 20 kg steps for 100 kg (was 75 × 2, 87.5 × 1 at the top).
+    expect(warmUpRamp(kg(100), bar, 3).map((x) => [x.load, x.reps])).toEqual([[20, 5], [40, 5], [60, 3], [80, 2]]);
+    // 12 reps: WU5's two steps on the 20 kg ladder (was 50 × 8).
+    expect(warmUpRamp(kg(100), bar, 12).map((x) => [x.load, x.reps])).toEqual([[40, 8], [80, 5]]);
+    // 40 kg: the bar, then 30 (simple loads; was 20, 22.5, 30).
+    expect(warmUpRamp(kg(40), bar).map((x) => x.load)).toEqual([20, 30]);
     expect(warmUpRamp(kg(20), bar)).toEqual([]);
     expect(warmUpRamp(kg(30, 'per_hand'), dumbbells())).toEqual([]);
   });

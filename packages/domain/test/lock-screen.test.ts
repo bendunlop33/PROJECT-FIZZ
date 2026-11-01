@@ -25,33 +25,35 @@ describe('buildLockScreenContent', () => {
   it('a fresh workout is Ready with the first set and its target', () => {
     const { state } = startFixture();
     const c = buildLockScreenContent(state, ms(1), TZ);
-    expect(c).toMatchObject({ state: 'ready', title: 'Ready · Push A', countdown: null, staleAtMs: null, side: 'Set 1' });
-    expect(plain(c?.line1 ?? '')).toBe('Bench press · Set 1 of 3');
-    expect(plain(c?.line2 ?? '')).toBe('Target 60 kg × 10');
+    // (Ben, 1 Nov) `Ready · <exercise>`, `Next  …` (a warm-up says so), the set on the right.
+    expect(c).toMatchObject({ state: 'ready', title: 'Ready · Bench press', countdown: null, staleAtMs: null, side: 'Set 1' });
+    expect(plain(c?.line1 ?? '')).toBe('Next  warm-up 60 kg × 10');
+    expect(c?.line2).toBe('');
   });
 
-  it('logging a set starts Resting: countdown to the deadline, Until hh:mm, the next set and its target', () => {
+  it('logging a set starts Resting: countdown to the deadline, `Rest · <exercise>`, the next set’s target (Ben, 1 Nov: no Until line)', () => {
     const s = afterWarmup();
     const deadline = toMs(s.restTimer?.deadlineUtc ?? '');
     const c = buildLockScreenContent(s, ms(31), TZ);
     expect(c?.state).toBe('resting');
-    expect(c?.title).toBe('Rest');
+    expect(c?.title).toBe('Rest · Bench press');
     expect(c?.countdown).toEqual({ startMs: toMs(s.restTimer?.startedAtUtc ?? ''), endMs: deadline });
     expect(c?.staleAtMs).toBe(deadline);
-    expect(plain(c?.line1 ?? '')).toBe(`Until ${clockText(deadline, TZ)} · Bench press · Set 2 of 3 next`);
-    expect(plain(c?.line2 ?? '')).toBe('Target 100 kg × 6–8');
+    expect(plain(c?.line1 ?? '')).toBe('Next  100 kg × 6–8');
+    expect(c?.line2).toBe('');
+    expect(c?.line1.includes('Until')).toBe(false);
     expect(c?.a11y).toBe(`Rest, until ${clockText(deadline, TZ)}. Next: Bench press, set 2 of 3, target 100 kilograms, 6 to 8 reps.`);
   });
 
-  it('the Until time is the owner’s local clock time (another zone, another hour)', () => {
+  it('the spoken Until time is the owner’s local clock time (another zone, another hour)', () => {
     const s = afterWarmup();
     const deadline = toMs(s.restTimer?.deadlineUtc ?? '');
     const london = buildLockScreenContent(s, ms(31), 'Europe/London');
-    expect(london?.line1.startsWith(`Until ${clockText(deadline, 'Europe/London')}`)).toBe(true);
+    expect(london?.a11y.startsWith(`Rest, until ${clockText(deadline, 'Europe/London')}`)).toBe(true);
     expect(clockText(deadline, 'Europe/London')).not.toBe(clockText(deadline, TZ));
   });
 
-  it('rest before a different exercise names it: `Until hh:mm · Next: Seated row`', () => {
+  it('rest before a different exercise names it in the title: `Rest · Cable row`', () => {
     let s = afterWarmup();
     const [, w1, w2] = setsFor(s, BENCH);
     if (!w1 || !w2) throw new Error('no sets');
@@ -61,8 +63,8 @@ describe('buildLockScreenContent', () => {
     expect(c?.state).toBe('resting');
     const row = setsFor(s, ROW)[0];
     expect(s.session.activeSetId).toBe(row?.id);
-    expect(plain(c?.line1 ?? '')).toMatch(/^Until \d\d:\d\d · Next: /);
-    expect(plain(c?.line2 ?? '')).toBe('Target 50 kg stack × 10–12');
+    expect(c?.title).toBe('Rest · Cable row');
+    expect(plain(c?.line1 ?? '')).toBe('Next  50 kg stack × 10–12');
   });
 
   it('after a gym switch, the next part of the same exercise keeps its set numbers (review ben-bugs N4)', () => {
@@ -75,17 +77,18 @@ describe('buildLockScreenContent', () => {
     expect(active?.sessionExerciseId).not.toBe(bench[1]?.sessionExerciseId); // the continuation row
     const c = buildLockScreenContent(switched, ms(330), TZ);
     expect(c?.state).toBe('resting');
-    expect(plain(c?.line1 ?? '')).toMatch(/· Bench press · Set 3 of 4 next$/);
+    expect(c?.title).toBe('Rest · Bench press');
+    expect(c?.a11y).toContain('Next: Bench press, set 3 of 4');
   });
 
-  it('an adjusted rest moves the countdown and the Until time', () => {
+  it('an adjusted rest moves the countdown and the spoken Until time', () => {
     const s = afterWarmup();
     const timerId = s.restTimer?.id ?? '';
     const before = buildLockScreenContent(s, ms(31), TZ);
     const longer = apply(s, { type: 'adjust_rest', at: at(35), opId: 'plus30', timerId, deltaS: 30 });
     const after = buildLockScreenContent(longer, ms(36), TZ);
     expect((after?.countdown?.endMs ?? 0) - (before?.countdown?.endMs ?? 0)).toBe(30_000);
-    expect(after?.line1.startsWith(`Until ${clockText(after.countdown?.endMs ?? 0, TZ)}`)).toBe(true);
+    expect(after?.a11y.startsWith(`Rest, until ${clockText(after.countdown?.endMs ?? 0, TZ)}`)).toBe(true);
   });
 
   it('skip rest and an expired rest are Ready again (no countdown left on the Lock Screen)', () => {

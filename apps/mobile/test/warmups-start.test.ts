@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
-import { slotsOf } from '@fizz/domain';
+import { fitWarmupCount, getAchievableLoads, planWarmups, slotsOf } from '@fizz/domain';
 import type { SessionAggregate, WorkoutSet } from '@fizz/schemas';
 
 import type { BuilderSnapshot } from '../src/builder/builder-service';
@@ -261,5 +261,41 @@ describe('a coach-built workout → Start: the planner fills its warm-ups (the t
     expect(rows.map(([, r]) => r)).toEqual([8, 5]);
     climbs(a, 'Barbell row');
     expect(rows[0]?.[0]).not.toBe(20);
+  });
+});
+
+describe('Start follows `Simple warm-up weights` (Ben, 1 Nov)', () => {
+  it('on (default): the planner’s warm-ups at Start are the bar + 10 kg steps; off: the 22 Oct steps, as the planner gives them without simple loads', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    // 92.5 kg: the 22 Oct snapping gives fiddly steps (37.5, 55, 72.5 …); simple loads give 40, 60, 70/80.
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 92.5, reps: 5, rpe: 8 }, { load: 92.5, reps: 5, rpe: 8 }] }]);
+    h.clockMs += DAY;
+    const list: [string, Record<string, unknown>][] = [['Bench press', { workingSets: 3, reps: { min: 5, max: 5 } }]];
+
+    const on = await coachStart(s, gymId, list, 'start-simple-on');
+    const W = firstWork(on, 'Bench press')?.planned.load?.value ?? 0;
+    const simple = stepsOf(on, 'Bench press');
+    expect(simple.length).toBeGreaterThan(1);
+    for (const [l] of simple) expect(((l ?? 0) - 20) % 10).toBe(0);
+    climbs(on, 'Bench press');
+    const d = await s.workout.dispatch(on.session.id, { type: 'discard', at: h.now(), opId: 'discard-on', expectedVersion: on.session.version, confirmedLoggedSets: 0 });
+    expect(d.ok).toBe(true);
+
+    const view = await s.warmupPrefs.view();
+    const off = await s.warmupPrefs.setSimpleLoads(false, view?.version ?? 1, h.ids());
+    expect(off.ok).toBe(true);
+    h.clockMs += 60_000;
+    const plain = await coachStart(s, gymId, list, 'start-simple-off');
+    expect(firstWork(plain, 'Bench press')?.planned.load?.value).toBe(W);
+    const steps = stepsOf(plain, 'Bench press');
+    climbs(plain, 'Bench press');
+    // The 22 Oct planner on the same bar and working load (the main lift, first, not warmed), at the same count.
+    const ex = plain.exercises.find((e) => e.exerciseName === 'Bench press');
+    const eq = plain.session.equipmentSnapshot.find((e) => e.id === ex?.equipmentId);
+    if (eq === undefined || eq.kind !== 'barbell') throw new Error('no bar');
+    const expected = fitWarmupCount(planWarmups({ cls: 'heavy', reps: 5, load: W, warmed: false, firstOfSession: true, floorStart: false, barMass: eq.barMass, loads: getAchievableLoads(eq).loads }), steps.length, W, getAchievableLoads(eq).loads);
+    expect(steps.map(([l]) => l)).toEqual(expected.map((x) => x.load));
+    expect(steps.map(([l]) => l)).not.toEqual(simple.map(([l]) => l));
   });
 });

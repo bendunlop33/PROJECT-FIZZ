@@ -30,9 +30,10 @@ describe('LockScreenContent.afterRest', () => {
     expect(c?.staleAtMs).toBe(deadline);
     const after = c?.afterRest;
     expect(after).not.toBeNull();
-    expect(after?.title).toBe('Ready · Push A');
-    expect(plain(after?.line1 ?? '')).toBe('Bench press · Set 2 of 3');
-    expect(plain(after?.line2 ?? '')).toBe('Target 100 kg × 6–8');
+    // (Ben, 1 Nov) `Ready · <exercise>`, `Next  …`; the set on the right.
+    expect(after?.title).toBe('Ready · Bench press');
+    expect(plain(after?.line1 ?? '')).toBe('Next  100 kg × 6–8');
+    expect(after?.line2).toBe('');
     expect(after?.side).toBe('Set 2');
     expect(after?.a11y).toBe('Ready, Push A. Bench press · Set 2 of 3. Target 100 kilograms, 6 to 8 reps.');
   });
@@ -54,11 +55,11 @@ describe('LockScreenContent.afterRest', () => {
     const s = afterWarmup();
     const history: ComparableSet[] = [{ index: 0, values: values(kg(100), 7) }];
     const c = buildLockScreenContent(s, ms(31), TZ, { lastComparable: () => history });
-    expect(plain(c?.afterRest?.line3 ?? '')).toBe('Last 100 kg × 7');
+    expect(plain(c?.afterRest?.line2 ?? '')).toBe('Last  100 kg × 7');
     expect(c?.afterRest?.a11y).toMatch(/Last time 100 kilograms, 7 reps\.$/);
   });
 
-  it('per-hand dumbbells say `each`', () => {
+  it('per-hand dumbbells say `ea` (Ben, 1 Nov: as the rest of the app)', () => {
     const { state } = startFixture();
     const db: SessionAggregate = {
       ...state,
@@ -66,7 +67,7 @@ describe('LockScreenContent.afterRest', () => {
       sets: state.sets.map((x) => (setsFor(state, BENCH).some((b) => b.id === x.id) && x.planned.load !== null ? { ...x, planned: { ...x.planned, load: kg(22.5, 'per_hand') } } : x)),
     };
     const s = afterWarmup(db, kg(10, 'per_hand'));
-    expect(plain(buildLockScreenContent(s, ms(31), TZ)?.afterRest?.line2 ?? '')).toBe('Target 22.5 kg each × 6–8');
+    expect(plain(buildLockScreenContent(s, ms(31), TZ)?.afterRest?.line1 ?? '')).toBe('Next  22.5 kg ea × 6–8');
 
   });
 
@@ -77,8 +78,8 @@ describe('LockScreenContent.afterRest', () => {
     const c = buildLockScreenContent(longer, ms(41), TZ);
     expect(c?.staleAtMs).toBe(toMs(longer.restTimer?.deadlineUtc ?? ''));
     expect(c?.staleAtMs).toBe(toMs(s.restTimer?.deadlineUtc ?? '') + 15_000);
-    expect(plain(c?.afterRest?.line1 ?? '')).toBe('Bench press · Set 2 of 3');
-    expect(plain(c?.line1 ?? '')).toBe(`Until ${clockText(c?.staleAtMs ?? 0, TZ)} · Bench press · Set 2 of 3 next`);
+    expect(c?.afterRest?.side).toBe('Set 2');
+    expect(c?.a11y.startsWith(`Rest, until ${clockText(c.staleAtMs ?? 0, TZ)}`)).toBe(true);
   });
 
   it('only a running rest has it: Ready, Paused and a timed set have none', () => {

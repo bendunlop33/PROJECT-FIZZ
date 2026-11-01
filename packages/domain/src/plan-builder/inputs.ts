@@ -6,6 +6,7 @@ import { skipDeload, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { PB_STALE_DAYS, type PbHistory } from './lifts';
 import type { PlanKit } from './loads';
+import { simpleWarmupLoads } from '../warmup/simple';
 
 /**
  * Ben's records as the engine reads them. Pure: the app reads the gym's items and his history, these shape them.
@@ -16,7 +17,8 @@ export function pbKitOfEquipment(eq: EquipmentInstance): PlanKit | null {
   if (isPresenceOnly(eq)) return null;
   const a = getAchievableLoads(eq);
   if (a.loads.length === 0) return null;
-  return { equipmentId: eq.id, kind: eq.kind, unit: a.unit, convention: a.convention, loads: [...a.loads].sort((x, y) => x - y), barMass: isBarLoaded(eq) ? eq.barMass : null };
+  const simple = simpleWarmupLoads(eq);
+  return { equipmentId: eq.id, kind: eq.kind, unit: a.unit, convention: a.convention, loads: [...a.loads].sort((x, y) => x - y), barMass: isBarLoaded(eq) ? eq.barMass : null, ...(simple === null ? {} : { simple }) };
 }
 
 const DAY_MS = 86_400_000;

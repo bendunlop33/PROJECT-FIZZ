@@ -1,6 +1,7 @@
 import type { GymEquipmentKind, LoadConvention, PlanFocus, WeightUnit } from '@fizz/schemas';
 import { convertMass } from '../units';
 import { planWarmups, warmupProfileOf, type WarmupExerciseFacts } from '../warmup/plan';
+import type { SimpleWarmupLoads } from '../warmup/simple';
 import { PB_BACKOFF_BAND } from './tables';
 
 /**
@@ -19,6 +20,8 @@ export interface PlanKit {
   loads: readonly number[];
   /** A bar's own mass (the empty-bar warm-up), else null. */
   barMass: number | null;
+  /** (Ben, 1 Nov) The item's simple warm-up loads (`simpleWarmupLoads`); absent = none (the 22 Oct snapping). */
+  simple?: SimpleWarmupLoads;
 }
 
 const EPS = 1e-9;
@@ -134,12 +137,12 @@ export interface PbWarmupSet {
  * agree. `facts`: the catalogue entry; null = only the key is known (a deadlift key reads as a floor lift). Never
  * counted as sets.
  */
-export function pbWarmUp(kit: PlanKit, key: string, W: number, R: number, facts: WarmupExerciseFacts | null = null): PbWarmupSet[] {
+export function pbWarmUp(kit: PlanKit, key: string, W: number, R: number, facts: WarmupExerciseFacts | null = null, simpleLoads = true): PbWarmupSet[] {
   if (!kitHasFormula(kit)) return [];
   const known: WarmupExerciseFacts = facts ?? { catalogueKey: key, family: /(^|-)deadlift$/.test(key) && !key.includes('romanian') ? 'deadlift' : null, mechanic: 'compound', measurement: 'reps' };
   const profile = warmupProfileOf(known, { main: true, itemKind: kit.kind, convention: kit.convention, fallback: { compound: true, barbell: kit.barMass !== null } });
   const barMass = kit.kind === 'barbell' ? kit.barMass : null;
-  const steps = planWarmups({ cls: profile.cls, reps: R, load: W, warmed: false, firstOfSession: true, floorStart: profile.floorStart, barMass, loads: kit.loads });
+  const steps = planWarmups({ cls: profile.cls, reps: R, load: W, warmed: false, firstOfSession: true, floorStart: profile.floorStart, barMass, loads: kit.loads, simple: simpleLoads ? (kit.simple ?? null) : null });
   return steps.map((st, k) => ({ bar: k === 0 && barMass !== null && Math.abs(st.load - barMass) < EPS, load: st.load, reps: st.reps }));
 }
 

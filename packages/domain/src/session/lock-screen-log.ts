@@ -13,6 +13,7 @@ import { latestCommittedSetId } from './reducer';
 import { STALE_SESSION_MS } from './recovery';
 import { isPastLog } from './time-shift';
 import { prefillDraft } from './view';
+import { compactEachText } from '../today-v2/workout-list';
 
 /**
  * `Log` on the Lock Screen Live Activity (Ben, 27 Oct 2026, like Hevy;
@@ -34,9 +35,15 @@ import { prefillDraft } from './view';
  * next set starts (deadline, notification, Live Activity) as it would in the app.
  *
  * No `Log` where the values need Ben's input or can't be known here: timed,
- * distance and cardio sets; a missing value; a warm-up with no saved draft
- * (its load comes from the warm-up planner's catalogue facts); a set whose
- * values would come from history not read yet.
+ * distance and cardio sets; a missing value; a set whose values would come
+ * from history not read yet.
+ *
+ * Warm-ups (Ben, 1 Nov: "I can't log warm up sets in lock screen"): a warm-up
+ * with a load of its own (what Start or the builder stored) logs it; one whose
+ * load the planner derives at display needs the app's warm-up lookup
+ * (`opts.warmup`: catalogue facts, main lifts, his warm-up settings), which the
+ * app resolves and passes in, so the button shows exactly the planner's step
+ * the workout shows: `Log warm-up 40 kg × 8`. Without it there is no Log.
  */
 
 /** First field of every Lock Screen Log target. */
@@ -89,6 +96,7 @@ const SIDES: readonly SetSide[] = ['both', 'left', 'right'];
 
 function words(label: string): string {
   return label
+    .replace(/\bea\b/g, 'each')
     .replaceAll(' ', ' ')
     .replace(/\s*×\s*(\d+)/g, ', $1 reps')
     .replace(/\bkg\b/g, 'kilograms')
@@ -107,14 +115,16 @@ export function lockScreenLogOf(state: SessionAggregate, setId: string | null, o
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
   // Timed, distance and cardio sets need Ben's input (a time, a distance): open the app.
   if (ex?.measurement !== 'reps') return null;
-  // A warm-up's load without a saved draft comes from the warm-up planner (catalogue facts not here).
-  if (set.setType === 'warmup' && set.draft === null) return null;
+  // A warm-up with no load of its own takes the planner's step: only with the app's lookup (the same step the workout shows).
+  const warmup = set.setType === 'warmup';
+  if (warmup && set.draft === null && set.planned.load === null && opts.warmup === undefined) return null;
   const wi = state.workInterval;
   if (wi !== null && wi.setId === set.id && (wi.status === 'running' || wi.status === 'paused')) return null;
   const history = opts.lastComparable?.(ex.id);
   // Values that could come from last time wait until it is read (the text is redrawn when it arrives).
   const p = set.planned;
-  if (history === undefined && set.draft === null && (p.reps === null || (p.load === null && ex.loadConvention !== 'bodyweight'))) return null;
+  const plannerStep = warmup && p.load === null && opts.warmup !== undefined;
+  if (!plannerStep && history === undefined && set.draft === null && (p.reps === null || (p.load === null && ex.loadConvention !== 'bodyweight'))) return null;
   const pre = prefillDraft(state, set.id, history ?? [], { painFlagged: opts.painFlagged, warmup: opts.warmup });
   const values = shownSetValues(ex, pre.values, set.setType === 'warmup' ? null : set.draft);
   if (missingLogValue(values, ex) !== null) return null;
@@ -125,7 +135,8 @@ export function lockScreenLogOf(state: SessionAggregate, setId: string | null, o
   const fixedSide = set.pairedWithSetId !== null && (set.side === 'left' || set.side === 'right') ? set.side : null;
   const chosenSide: SetSide | null = unilateral ? (fixedSide ?? set.side ?? 'both') : null;
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
-  const label = `Log ${valuesText(logValues, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, side: chosenSide })}`;
+  // (Ben, 1 Nov) `ea` as the rest of the app; VoiceOver still says `each`.
+  const label = `Log ${warmup ? 'warm-up ' : ''}${compactEachText(valuesText(logValues, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, side: chosenSide }))}`;
   return {
     sessionId: state.session.id,
     setId: set.id,

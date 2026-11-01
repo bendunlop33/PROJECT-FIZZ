@@ -25,6 +25,7 @@ import { resolveRestPreset } from '../rest';
 import { planTargetProvenance } from '../target-provenance';
 import { buildExecutionOrder } from './order';
 import { planStartWarmups } from '../warmup/session';
+import type { ResolvedWarmupPrefs } from '../training-profile';
 import { plannedSnapOf, snapPlanToGym, type SnapResult, type SnapSlotInput, type SnapSource } from './snap';
 import { stationWords, type GymStation } from '../stations';
 
@@ -202,6 +203,8 @@ export interface StartWorkoutInput {
   gymName?: string;
   /** GS3 step 2: the item an exercise last used at this gym. */
   lastUsedHere?: (exerciseId: string) => string | null;
+  /** (Ben, 1 Nov) His warm-up preferences for the warm-ups Start plans; absent = simple loads on. */
+  warmupPrefs?: ResolvedWarmupPrefs;
 }
 
 export interface StartWorkoutOutput {
@@ -403,7 +406,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
   const mainRows = new Set(planned.flatMap(({ rex }, position) => (rex.main === true ? [exercises[position]?.id ?? ''] : [])));
   const warmed = planStartWarmups(
     { exercises, sets, session: { equipmentSnapshot: input.gymEquipment } },
-    { facts: (id) => input.exercises.get(id) ?? null, main: (id) => mainRows.has(id) },
+    { facts: (id) => input.exercises.get(id) ?? null, main: (id) => mainRows.has(id), ...(input.warmupPrefs === undefined ? {} : { prefs: input.warmupPrefs }) },
   );
   sets.splice(0, sets.length, ...warmed);
   const order = buildExecutionOrder(exercises, sets);

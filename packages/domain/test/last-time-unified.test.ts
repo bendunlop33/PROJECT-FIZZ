@@ -26,7 +26,7 @@ function surfaces(state: SessionAggregate, setId: string, sets: ComparableSet[])
   return {
     tableRow: plain(rows.find((r) => r.setId === setId)?.last?.text ?? null),
     focus: focus?.setId === setId ? plain(focus.previous?.text ?? null) : 'not focused',
-    lockLine: plain(lock?.line3 ?? ''),
+    lockLine: plain(lock?.line2 ?? ''),
     rule: plain(lastTimeOfSet(state, setId, sets)?.text ?? null),
   };
 }
@@ -39,7 +39,7 @@ describe('one last-time rule across surfaces', () => {
 
   it('the first working set (after a warm-up) reads last time’s first working set everywhere', () => {
     const s = surfaces(resting, w1.id, hist([100, 8], [100, 7]));
-    expect(s).toEqual({ tableRow: '100 × 8', focus: '100 kg × 8', lockLine: 'Last 100 kg × 8', rule: '100 kg × 8' });
+    expect(s).toEqual({ tableRow: '100 × 8', focus: '100 kg × 8', lockLine: 'Last  100 kg × 8', rule: '100 kg × 8' });
   });
 
   it('the second working set with only one last time: nothing anywhere (the open row no longer falls back to the last set)', () => {

@@ -1134,3 +1134,18 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Coach:** a plan proposal's gaps are a check line on the card and in the coach's guard notes; YOUR DATA gets the plan's muscle lines; after Apply or in the weekly review the coach offers `Biceps only 0 sets a week · Rebalance?` once per plan state (Skip holds until the plan changes). New optional `trainingProfile.muscleOffer`; plan check kind `muscle_gap`. No migration.
 - **Ben to decide:** the ≥ 2×/week frequency rule isn't a numbered approved rule (not enforced); an upper bound for non-priority groups (flagged only above 20 for now); whether filling a gap to the range's lower edge may exceed V5's +2.
 - **Open:** not run on Ben's iPhone.
+## 2026-11-01: Simple warm-up weights, no prehab warm-ups, and the coach can change warm-ups (Ben, 1 Nov)
+
+- **Ben's words (live-workout coach chat):** warm-ups should use simple, easy-to-load weights, not fiddly calculated jumps; cuff rotations should stay easy. The coach had said it couldn't apply a plan-wide warm-up rule.
+- **Playbook amendment (WU8, WU7; `docs/training-guides/warm-up.md`):** warm-up steps round to simple loads (bar, then 10 kg steps, 20 kg steps from a 100 kg working weight when the gaps allow, ≤ 2 plate sizes a side; dumbbells in 5s; machines in 10s or the stack's step), achievable and below the working weight; WU4's gap rule kept. Rotator cuff and prehab work (face pulls included) gets no warm-up sets, and the coach's increases on it go one dumbbell step at a time.
+- **Setting:** Profile › Training › `Simple warm-up weights` (default on), plus per-exercise warm-ups (`off` / `normal`) on the training profile (an optional JSON field: no profile migration).
+- **Coach:** `update_warmup_prefs` in every chat (ADR 0039): applied at once with Undo when Ben asks, never otherwise; today's not-yet-done warm-ups are planned again in the same write; logged sets never change. Migration 41 adds the record kind to `coach_actions`.
+- **Today:** a change re-plans only warm-ups not yet done, in the open workout (one Undo) and Today's draft (planned again when it's next built).
+- **Open:** not run on Ben's iPhone. The lb bar ladder reads "45 then multiples of 20 lb" as bar + 20 lb steps (65, 85, 105…), the easy-to-load reading; Ben to confirm.
+
+## 2026-11-01: Lock Screen: warm-ups can be logged, and the Live Activity no longer cuts text off (Ben, 1 Nov, build 500)
+
+- **Ben's words:** "I can't log warm up sets in lock screen"; his screenshot showed `Until 19:53 · Dumbb…` and `Target 32 kg eac…` cut off.
+- **Warm-up Log:** a warm-up with a load of its own logs it (`Log warm-up 40 kg × 8`); one whose load the planner derives gets the app's warm-up lookup (catalogue facts, main lifts, warm-up settings) with the workout, so the Lock Screen shows and logs exactly the step the workout shows. Same set-version check as working sets (stale taps ignored). With no rest between warm-ups the Ready card with Log shows straight after the previous log; with a short rest the Ready drawn for the rest's end has it.
+- **Layout:** line 1 `⏱ Rest · DB shoulder press` full width with a smaller timer top right; `Next  32 kg ea × 6–8` (`Next  warm-up 40 kg × 8`; Ben's draft keeps `your edit`, the coach's `coach target`); `Last  35 kg ea × 7`; −15 s / +15 s / Skip or Log. `Until 19:53` dropped (still read by VoiceOver). `ea`, not `each` (VoiceOver says `each`). Every line one line, shrinking to fit. Ready uses the same lines (`Ready · DB shoulder press`, set number top right); the Dynamic Island's expanded view follows.
+- **Open:** the widget layout isn't render-tested here; needs a check on Ben's iPhone.

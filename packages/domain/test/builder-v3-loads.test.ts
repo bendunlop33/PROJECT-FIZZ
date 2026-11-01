@@ -120,7 +120,8 @@ describe('setRowsFor: accessories, per-hand, lb, assisted', () => {
   it('compound accessory (dumbbells: a secondary compound, WU6): R 8 → one warm-up at 80 % × 4, working sets at the bottom of the range, last @ RPE 9', () => {
     const r = setRowsFor({ main: false, role: 'compound', barbell: false, workingSets: 3, repRange: { min: 8, max: 12 }, load: loadInput({ equipment: rack, convention: 'per_hand', ruleTarget: { value: 30, reps: 8, rpe: 8 } }) });
     expect(r.rows).toEqual([
-      { type: 'warmup', reps: 4, load: 22.5, rpe: null },
+      // (Ben, 1 Nov) Simple warm-up weights: 80 % of 30 = 24 → 25 (was 22.5).
+      { type: 'warmup', reps: 4, load: 25, rpe: null },
       { type: 'working', reps: 8, load: 30, rpe: 8 },
       { type: 'working', reps: 8, load: 30, rpe: 8 },
       { type: 'working', reps: 8, load: 30, rpe: 9 },
@@ -225,8 +226,8 @@ describe('set edits (§2.4)', () => {
 
   it('bar warm-up only on a bar-loaded item', () => {
     const r = setRowsFor(benchIn({ equipment: rack, convention: 'per_hand', ruleTarget: { value: 30, reps: 6, rpe: 8 } }));
-    // A dumbbell main lift: WU4 without the bar, 40 / 60 / 80 % of 30 → 10, 17.5, 22.5 each.
-    expect(r.rows.filter((x) => x.type === 'warmup').map((x) => x.load)).toEqual([10, 17.5, 22.5]);
+    // A dumbbell main lift: WU4 without the bar, 40 / 60 / 80 % of 30 on simple loads (Ben, 1 Nov: multiples of 5) → 15, 20, 25 each (was 10, 17.5, 22.5).
+    expect(r.rows.filter((x) => x.type === 'warmup').map((x) => x.load)).toEqual([15, 20, 25]);
     expect(bar.kind).toBe('barbell');
   });
 });

@@ -117,7 +117,8 @@ describe('Your workout: a typed kg is kept and the gym learns it', () => {
     // 101.25 kg: no plate pair makes it here; kept exactly as typed (nothing to learn on plates).
     const r1 = await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: slot.key, index: ti, patch: { kind: 'load', value: 101.25 } }, { opId: 'typed-row-1', basis: { version: snap.version } });
     if (r1.status !== 'written') throw new Error(r1.status);
-    expect(r1.snapshot.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === slot.key)?.rows[ti]?.load).toBe(101.25);
+    // The edited row by type: the warm-ups above it are planned again for the new top (their count may change; Ben, 1 Nov).
+    expect(r1.snapshot.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === slot.key)?.rows.find((r) => r.type === 'top' || r.type === 'working')?.load).toBe(101.25);
     expect(r1.toast?.learn).toBeUndefined();
     expect(r1.toast?.text ?? '').not.toMatch(/Rounded|Not at this gym|Lighter/);
     // A per-hand dumbbell slot (Pull's accessories) typed past the rack: kept, and the toast carries the rack's learn.
