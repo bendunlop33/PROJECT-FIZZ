@@ -6,7 +6,7 @@ import { warmupGap } from '../builder/edit';
 import type { BuilderInfoLookup, BuilderSetRow } from '../builder/types';
 import { isLoadAchievable, isPresenceOnly, loadDirection, roundToAvailableLoad } from '../equipment';
 import { equipmentOfRow } from './equipment-snapshot';
-import { supersetLinkSides } from './order';
+import { buildExecutionOrder, supersetLinkSides } from './order';
 
 /**
  * Same editing as the builder, mid-workout (workout-table-v3 §7; Ben, 20
@@ -140,32 +140,76 @@ export function currentRoundIndex(state: Pick<SessionAggregate, 'session' | 'exe
   return rounds.findIndex((r) => state.sets.some((s) => s.status === 'pending' && r.members.some((m) => m.id === s.sessionExerciseId)));
 }
 
-/** (Ben, 31 Oct) `Do next`: straight after the current round. `Move to end`: last. */
-export type RoundJump = 'do_next' | 'to_end';
+/**
+ * (Ben, 31 Oct; 1 Nov) `Do next`: straight after the current round. `Do first`: the first place it can go
+ * (above every round not started, never above one with a set logged). `Move to end`: last.
+ */
+export type RoundJump = 'do_next' | 'do_first' | 'to_end';
 
 /**
- * `Do next` / `Move to end` on an exercise's `⋯` (Ben, 31 Oct): its round (a superset moves as one) goes
- * straight after the current round, or to the end, as `move_exercise` (versioned, one opId, Undo).
- * Today's remaining rounds only: the current round, a started or done round, and a move past a started
- * round are refused by the same rule as Move up / Move down and the drag (§7), so no done set moves
- * (rule 2). Already there: `nowhere`.
+ * `Do next` / `Do first` / `Move to end` on an exercise's `⋯` (Ben, 31 Oct; 1 Nov): its round (a superset
+ * moves as one) goes straight after the current round, to the first place it can go, or to the end, as
+ * `move_exercise` (versioned, one opId, Undo). Today's remaining rounds only: a started or done round,
+ * and a move past a started round, are refused by the same rule as Move up / Move down and the drag (§7),
+ * so no done set moves (rule 2). The current round itself can't go after itself (`Do next`), but it can
+ * go first or to the end while nothing on it is logged (Ben, 1 Nov). Already there: `nowhere`.
  */
 export function jumpRoundCommand(state: SessionAggregate, sessionExerciseId: string, jump: RoundJump, op: Op): { ok: true; command: CommandOf<'move_exercise'> } | { ok: false; reason: RoundMoveRefusal | 'current' } {
   const rounds = sessionRounds(state);
   const from = roundIndexOf(rounds, sessionExerciseId);
   if (from < 0) return { ok: false, reason: 'not_found' };
+  if (jump === 'do_first') return moveRoundCommand(state, sessionExerciseId, Math.min(from, ...roundMoveTargets(rounds, from)), op);
+  if (jump === 'to_end') return moveRoundCommand(state, sessionExerciseId, rounds.length - 1, op);
   const current = currentRoundIndex(state);
   if (from === current) return { ok: false, reason: 'current' };
-  if (jump === 'do_next' && current < 0) return { ok: false, reason: 'nowhere' };
+  if (current < 0) return { ok: false, reason: 'nowhere' };
   // `to` counts after the round is taken out of its place: ahead of the current one it lands at current + 1, behind it at current.
-  const to = jump === 'to_end' ? rounds.length - 1 : from > current ? current + 1 : current;
-  return moveRoundCommand(state, sessionExerciseId, to, op);
+  return moveRoundCommand(state, sessionExerciseId, from > current ? current + 1 : current, op);
 }
 
-/** Whether `Do next` / `Move to end` would move this exercise's round (the `⋯` offers only these). */
-export function roundJumps(state: SessionAggregate, sessionExerciseId: string): { doNext: boolean; toEnd: boolean } {
+/** The moves an exercise's `⋯` offers (Ben, 1 Nov): only those that would change the order. */
+export interface RoundMoves {
+  up: boolean;
+  down: boolean;
+  /**
+   * `Do next`, or `Do first` when the round is the current one or already next (Ben, 1 Nov: "Why can't I
+   * move this up or down or to the start?"); null when neither moves it.
+   */
+  lead: 'do_next' | 'do_first' | null;
+  toEnd: boolean;
+}
+
+/** Which of Move up / Move down / Do next or Do first / Move to end would move this exercise's round. */
+export function roundMoves(state: SessionAggregate, sessionExerciseId: string): RoundMoves {
   const probe = { opId: 'probe', at: state.session.startedAt };
-  return { doNext: jumpRoundCommand(state, sessionExerciseId, 'do_next', probe).ok, toEnd: jumpRoundCommand(state, sessionExerciseId, 'to_end', probe).ok };
+  const ok = (j: RoundJump): boolean => jumpRoundCommand(state, sessionExerciseId, j, probe).ok;
+  const steps = roundSteps(state, sessionExerciseId);
+  return { up: steps.up, down: steps.down, lead: ok('do_next') ? 'do_next' : ok('do_first') ? 'do_first' : null, toEnd: ok('to_end') };
+}
+
+/**
+ * Where the current set goes after a reorder (Ben, 1 Nov): while the round Ben is on has nothing logged
+ * and no work timer running, the round now at its place (the earlier of where it was and where it is)
+ * becomes current, at its first set to do. So moving the current exercise away hands over to the round
+ * that took its place, a round put above it takes over, and an Undo hands back. A started round, or a
+ * move that leaves the slot alone, keeps the current set. Done sets and the rest timer are untouched.
+ */
+export function activeSetAfterReorder(before: Pick<SessionAggregate, 'session' | 'exercises' | 'sets' | 'workInterval'>, exercises: readonly SessionExercise[]): string | null {
+  const active = before.session.activeSetId;
+  const set = active === null ? undefined : before.sets.find((s) => s.id === active && s.status === 'pending');
+  if (set === undefined) return active;
+  const wi = before.workInterval;
+  if (wi !== null && wi.setId === set.id && (wi.status === 'running' || wi.status === 'paused')) return active;
+  const was = sessionRounds(before);
+  const now = sessionRounds({ exercises: [...exercises], sets: before.sets });
+  const i = roundIndexOf(was, set.sessionExerciseId);
+  const j = roundIndexOf(now, set.sessionExerciseId);
+  if (i < 0 || j < 0 || was[i]?.started === true) return active;
+  const slot = now[Math.min(i, j)];
+  if (slot === undefined || slot.started || slot.members.some((m) => m.id === set.sessionExerciseId)) return active;
+  const ids = new Set(slot.members.map((m) => m.id));
+  const first = buildExecutionOrder(exercises, before.sets).find((id) => before.sets.some((s) => s.id === id && s.status === 'pending' && ids.has(s.sessionExerciseId)));
+  return first ?? active;
 }
 
 /**
