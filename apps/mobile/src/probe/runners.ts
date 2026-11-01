@@ -379,7 +379,7 @@ export async function runLockedCueProbe(recentEvents: (sinceMs: number) => strin
     }
     // Both cues' moments plus their speaking time.
     await sleep(second - nowMs() + 10_000);
-    const log = coach.scheduledCueLog().map(parseCueLogEntry);
+    const log = (await withTimeout(coach.scheduledCueLog(), NATIVE_CALL_TIMEOUT_MS, 'scheduledCueLog')).map(parseCueLogEntry);
     const fires = ids.map((id) => log.find((e) => e !== null && e.id === id) ?? null);
     return judgeLockedCue({ scheduled: true, reason: null, holdError: result.holdError ?? null, fires, events: recentEvents(startedAt) });
   } catch (e) {

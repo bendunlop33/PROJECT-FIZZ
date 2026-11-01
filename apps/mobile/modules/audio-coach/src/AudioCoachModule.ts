@@ -30,7 +30,7 @@ declare class AudioCoachNativeModule extends NativeModule<AudioCoachEvents> {
   /** Drops every scheduled cue and releases the session once nothing is speaking. Absent in older builds. */
   cancelRestCues?(): Promise<CancelCuesResult>;
   /** The last 20 scheduled cues' outcomes. Absent in older builds. */
-  scheduledCueLog?(): ScheduledCueLogEntry[];
+  scheduledCueLog?(): Promise<ScheduledCueLogEntry[]>;
   getSessionState(): AudioSessionState;
   /** Absent in builds made before it existed: check before calling. */
   getVoices?(): NativeVoice[];

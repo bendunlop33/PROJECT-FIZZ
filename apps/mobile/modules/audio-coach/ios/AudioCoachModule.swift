@@ -246,9 +246,10 @@ public final class AudioCoachModule: Module {
       return ["cancelled": count, "holdRunning": self.hold != nil]
     }.runOnQueue(.main)
 
-    Function("scheduledCueLog") { () -> [[String: Any]] in
+    // On main: the log is written there.
+    AsyncFunction("scheduledCueLog") { () -> [[String: Any]] in
       return self.cueLog
-    }
+    }.runOnQueue(.main)
 
     Function("getSessionState") { () -> [String: Any] in
       return self.sessionState()
