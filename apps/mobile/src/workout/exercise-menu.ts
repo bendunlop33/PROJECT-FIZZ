@@ -7,6 +7,8 @@
 import { formatNumber, rirOfRpe, TARGET_RPE_CHOICES, type TargetRpe } from '@fizz/domain';
 import type { TargetRpeScope } from '@fizz/schemas';
 
+import type { SymbolName } from '../ui/Icon';
+
 export type ExerciseMenuAction =
   | 'adjust'
   | 'how_to'
@@ -18,8 +20,10 @@ export type ExerciseMenuAction =
   | 'target_rpe'
   | 'add_set'
   | 'swap'
+  | 'move_up'
+  | 'move_down'
+  | 'do_first'
   | 'make_main'
-  | 'do_next'
   | 'move_to_end'
   | 'not_at_gym'
   | 'superset_with'
@@ -37,8 +41,6 @@ interface MenuItem {
 }
 
 const HOW_TO: MenuItem = { action: 'how_to', label: 'How to', destructive: false };
-/** (Ben, 26 Oct) The coach's `Adjust` chips for the current exercise, moved off the header into the round page's `⋯`. */
-const ADJUST: MenuItem = { action: 'adjust', label: 'Adjust', destructive: false };
 /** While the focused set carries a coach change still pending (coach-adjustments §2.7). */
 const UNDO_COACH: MenuItem = { action: 'undo_coach', label: 'Undo coach change', destructive: false };
 /** The same for the built-in rule's change (CA6 revised): never called the coach's. */
@@ -52,21 +54,12 @@ const TARGET_RPE: MenuItem = { action: 'target_rpe', label: 'Target RIR', destru
 const ADD_SET: MenuItem = { action: 'add_set', label: 'Add set', destructive: false };
 /** Only while the exercise has a pending set (B3: applies at once with Undo). */
 const SWAP: MenuItem = { action: 'swap', label: 'Swap exercise', destructive: false };
-/** (Ben, 1 Nov) Today's main lift is this one (one per day), then `Every week?`. After Swap. */
-const MAKE_MAIN: MenuItem = { action: 'make_main', label: 'Make main lift', destructive: false };
 /** (Ben, 20 Oct; ADR 0029) The gym doesn't have it: marked on the gym, then the swap sheet. */
 const NOT_AT_GYM: MenuItem = { action: 'not_at_gym', label: 'Not at this gym', destructive: false };
 /** (Ben, 19 Oct) Pair it with another exercise, or a second copy of itself; its sets alternate. */
 const SUPERSET_WITH: MenuItem = { action: 'superset_with', label: 'Superset with…', destructive: false };
 /** (Ben, 19 Oct) Each member back to its own sets. */
 const REMOVE_SUPERSET: MenuItem = { action: 'remove_superset', label: 'Remove superset', destructive: false };
-/** (Ben, 31 Oct) Today's order from the `⋯`: straight after the current exercise, or last. */
-const DO_NEXT: MenuItem = { action: 'do_next', label: 'Do next', destructive: false };
-const MOVE_TO_END: MenuItem = { action: 'move_to_end', label: 'Move to end', destructive: false };
-/** The exercise's history (it was on the name's sheet before the name opened the pop-up, v3 §7). */
-const HISTORY: MenuItem = { action: 'history', label: 'History', destructive: false };
-/** Plates for every load in today's targets (also from the name's sheet before v3 §7). */
-const PLATES: MenuItem = { action: 'plates', label: 'Plates', destructive: false };
 const NOTES: MenuItem = { action: 'notes', label: 'Notes', destructive: false };
 const SKIP: MenuItem = { action: 'skip_exercise', label: 'Skip exercise', destructive: true };
 const ITEMS: readonly MenuItem[] = [
@@ -109,8 +102,8 @@ export interface ExerciseMenuOptions {
 }
 
 /**
- * Focus view's `⋯` (active-workout.md §4.4). The round page (Table, the default) has its own, shorter
- * one: `roundExerciseMenu`.
+ * Focus view's `⋯` (active-workout.md §4.4). The round page (Table, the default) has its own context
+ * menu: `roundContextMenu`.
  */
 export function exerciseMenu(hasHowTo: boolean, hasCoachChange: boolean | 'rule' = false, o: ExerciseMenuOptions = {}): ExerciseMenu {
   const undo = hasCoachChange === 'rule' ? [UNDO_RULE] : hasCoachChange ? [UNDO_COACH] : [];
@@ -130,48 +123,119 @@ export function exerciseMenu(hasHowTo: boolean, hasCoachChange: boolean | 'rule'
   ]);
 }
 
-export interface RoundExerciseMenuOptions {
+/** One row (or icon button) of the round page's context menu. */
+export interface ContextMenuItem {
+  action: ExerciseMenuAction;
+  /** What the row shows (`Later` on an icon button). */
+  label: string;
+  /** VoiceOver's name for it (`Move to end` for `Later`); the label when absent. */
+  accessibilityLabel?: string;
+  /** Shown after the label in secondary ink: what an Undo undoes (`Rotation ← Face pull`). */
+  detail?: string;
+  icon: SymbolName;
+  destructive?: boolean;
+}
+
+/**
+ * The round page's context menu (Ben, 1 Nov, A): Undo rows first (only while something can be undone), a row of
+ * icon buttons for the moves that would change the order, the actions, then Skip on its own after a separator.
+ * No Cancel: a tap outside dismisses it.
+ */
+export interface ContextMenuModel {
+  undo: ContextMenuItem[];
+  moves: ContextMenuItem[];
+  rows: ContextMenuItem[];
+  danger: ContextMenuItem[];
+}
+
+export interface RoundContextMenuOptions {
   /** The exercise has sets to swap (`midSwapSlot`: with sets done, the rest are swapped). */
   canSwap: boolean;
-  /** `roundJumps`: not the current round, not started, not past a started one, not already there. */
-  doNext: boolean;
-  moveToEnd: boolean;
+  /** `roundMoves` (Ben, 1 Nov): only moves that change the order; never on a started exercise, never above one. */
+  moves: { up: boolean; down: boolean; first: boolean; toEnd: boolean };
   /** Plates: the exercise's targets have a breakdown (a bar or a plate-loaded machine; never dumbbells or a stack). */
   plates: boolean;
   /** A coach (true) or built-in rule ('rule') change on the next set can still be undone. */
   coachChange?: boolean | 'rule';
-  /** Today's swap can still be undone. */
-  canUndoSwap?: boolean;
+  /** Today's swap, while it can still be undone: what it swapped (`to ← from`). */
+  swapped?: { from: string; to: string } | null;
   /** The current exercise: the coach's `Adjust` chips (the only way to them on the round page). */
   adjust?: boolean;
+  /** Skip: the exercise has a set not done yet. */
+  canSkip?: boolean;
   /** (Ben, 1 Nov) `Make main lift` (`mainLiftOffer`): a plan workout's compound that isn't today's main lift. */
   makeMain?: boolean;
 }
 
 /**
- * The round page's `⋯` (Ben, 31 Oct: "do we need all this when in workout mode?"): Swap, Do next, Move
- * to end, Add set, History, Plates, Notes, Skip. Elsewhere now: Edit set, Target RIR and Delete on the
- * set's own hold menu and swipe; Add exercise at the end of the list; Not at this gym in the Swap sheet;
- * How to, Move up / down, Superset and Remove in the name's pop-up; pairing by dragging onto an exercise
- * in Workout. While a change can be undone its Undo shows, and `Adjust` stays on the current exercise
- * (nowhere else on the round page), last before Skip.
+ * (Ben, 1 Nov, approved A) Undo… · Later / Now / Up / Down · Swap exercise · Make main lift (1 Nov) · Add set · History · Notes · Plates
+ * (bar or plate-loaded only) · Adjust (current only) · Skip exercise. Elsewhere: Edit set, Target RIR and Delete on
+ * the set's own hold menu and swipe; Add exercise at the end of the list; Not at this gym in the Swap sheet; How
+ * to, Superset, Unlink and Remove in the name's pop-up.
  */
-export function roundExerciseMenu(o: RoundExerciseMenuOptions): ExerciseMenu {
+export function roundContextMenu(o: RoundContextMenuOptions): ContextMenuModel {
   const c = o.coachChange ?? false;
-  return menuOf([
-    ...(o.canSwap ? [SWAP] : []),
-    ...(o.makeMain === true ? [MAKE_MAIN] : []),
-    ...(o.doNext ? [DO_NEXT] : []),
-    ...(o.moveToEnd ? [MOVE_TO_END] : []),
-    ADD_SET,
-    HISTORY,
-    ...(o.plates ? [PLATES] : []),
-    NOTES,
-    ...(c === 'rule' ? [UNDO_RULE] : c ? [UNDO_COACH] : []),
-    ...(o.canUndoSwap === true ? [UNDO_SWAP] : []),
-    ...(o.adjust === true ? [ADJUST] : []),
-    SKIP,
-  ]);
+  const undo: ContextMenuItem[] = [];
+  if (o.swapped != null) undo.push({ action: 'undo_swap', label: 'Undo swap', detail: `${o.swapped.to} ← ${o.swapped.from}`, accessibilityLabel: `Undo swap, ${o.swapped.to} back to ${o.swapped.from}`, icon: 'arrow.uturn.backward' });
+  if (c !== false) undo.push({ action: 'undo_coach', label: c === 'rule' ? 'Undo change' : 'Undo coach change', icon: 'arrow.uturn.backward' });
+  const moves: ContextMenuItem[] = [
+    ...(o.moves.toEnd ? [{ action: 'move_to_end' as const, label: 'Later', accessibilityLabel: 'Move to end', icon: 'arrow.down.to.line' as const }] : []),
+    ...(o.moves.first ? [{ action: 'do_first' as const, label: 'Now', accessibilityLabel: 'Do first', icon: 'arrow.up.to.line' as const }] : []),
+    ...(o.moves.up ? [{ action: 'move_up' as const, label: 'Up', accessibilityLabel: 'Move up', icon: 'arrow.up' as const }] : []),
+    ...(o.moves.down ? [{ action: 'move_down' as const, label: 'Down', accessibilityLabel: 'Move down', icon: 'arrow.down' as const }] : []),
+  ];
+  const rows: ContextMenuItem[] = [
+    ...(o.canSwap ? [{ action: 'swap' as const, label: 'Swap exercise', icon: 'arrow.left.arrow.right' as const }] : []),
+    // (Ben, 1 Nov) Right after Swap.
+    ...(o.makeMain === true ? [{ action: 'make_main' as const, label: 'Make main lift', icon: 'star' as const }] : []),
+    { action: 'add_set', label: 'Add set', icon: 'plus' },
+    { action: 'history', label: 'History', icon: 'clock.arrow.circlepath' },
+    { action: 'notes', label: 'Notes', icon: 'note.text' },
+    ...(o.plates ? [{ action: 'plates' as const, label: 'Plates', icon: 'circle.circle' as const }] : []),
+    ...(o.adjust === true ? [{ action: 'adjust' as const, label: 'Adjust', icon: 'slider.horizontal.3' as const }] : []),
+  ];
+  const danger: ContextMenuItem[] = o.canSkip === false ? [] : [{ action: 'skip_exercise', label: 'Skip exercise', icon: 'forward.end', destructive: true }];
+  return { undo, moves, rows, danger };
+}
+
+/** Every item in menu order (VoiceOver's actions, tests). */
+export function contextMenuItems(m: ContextMenuModel): ContextMenuItem[] {
+  return [...m.undo, ...m.moves, ...m.rows, ...m.danger];
+}
+
+/** A rectangle in window points (`measureInWindow`). */
+export interface MenuAnchor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export const CONTEXT_MENU = { width: 250, rowH: 44, movesH: 58, sepH: 6, gap: 8, margin: 12 } as const;
+
+/** The menu's height: rows of 44 pt, the icon row, and a 6 pt separator before each later section. */
+export function contextMenuHeight(m: ContextMenuModel): number {
+  const sections = [m.undo.length > 0, m.moves.length > 0, m.rows.length > 0, m.danger.length > 0].filter(Boolean).length;
+  return (m.undo.length + m.rows.length + m.danger.length) * CONTEXT_MENU.rowH + (m.moves.length > 0 ? CONTEXT_MENU.movesH : 0) + Math.max(0, sections - 1) * CONTEXT_MENU.sepH;
+}
+
+/**
+ * Where the lifted card and the menu sit (A: "next to the card"): under the card, right-aligned with it; above it
+ * when there's no room below; and when neither fits, the card is shown higher so the menu fits under it. With no
+ * card on screen (opened from the Workout sheet) the card sits near the top. Pure; tested.
+ */
+export function contextMenuPlacement(anchor: MenuAnchor | null, menuH: number, win: { width: number; height: number }, insets: { top: number; bottom: number }): { card: MenuAnchor; menu: { top: number; left: number; width: number } } {
+  const { width: W, gap, margin } = CONTEXT_MENU;
+  const top = insets.top + margin;
+  const bottom = win.height - insets.bottom - margin;
+  const width = Math.min(W, win.width - 2 * margin);
+  const card0: MenuAnchor = anchor ?? { x: margin, y: top + 40, width: win.width - 2 * margin, height: 56 };
+  const left = Math.max(margin, Math.min(card0.x + card0.width - width, win.width - margin - width));
+  if (card0.y + card0.height + gap + menuH <= bottom) return { card: card0, menu: { top: card0.y + card0.height + gap, left, width } };
+  if (card0.y - gap - menuH >= top) return { card: card0, menu: { top: card0.y - gap - menuH, left, width } };
+  // Neither fits as it is: the card moves up (to the top at most) so the menu fits under it (still too tall: it scrolls).
+  const cardY = Math.max(top, bottom - menuH - gap - card0.height);
+  return { card: { ...card0, y: cardY }, menu: { top: cardY + card0.height + gap, left, width } };
 }
 
 function menuOf(rows: readonly MenuItem[]): ExerciseMenu {

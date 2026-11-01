@@ -391,6 +391,9 @@ export function painBodyPart(text: string): string | null {
   return null;
 }
 
+/** (Ben, 1 Nov) The muscle a lift trained: "just trained", "pre-fatigued", "shoulder-led", "already worked". */
+const TRAINED_MUSCLE = /\b(?:(?:just|already|i) (?:trained|worked|hit|did)|trained (?:first|earlier|already|today)|pre[- ]?fatigued?|pre[- ]?exhaust(?:ed)?|(?:shoulder|chest|leg|quad|glute|back|arm|tricep|bicep)s?[- ]led|led by)\b/;
+
 /**
  * `bareBodyPart: false` (Today's bar, where "legs, 45 min" names a session): a body part with
  * nothing else said is not a question. Any symptom, vague or effort word next to it still counts.
@@ -467,6 +470,10 @@ export function classifyPainMention(text: string, opts: { bareBodyPart?: boolean
         unclear = true;
       }
     }
+    // (Ben, 1 Nov, build 500: "the shoulders I just trained", "shoulders are pre-fatigued", "Push B is shoulder-led") A
+    // body part named as the muscle a lift trained is training talk, not a question about his body. Any pain, vague,
+    // effort or symptom word in the clause still counts as above.
+    if (!clauseSignal && bodyPartMentioned(ws) && TRAINED_MUSCLE.test(joined)) clauseSignal = true;
     // Review r2 B3, r3 B2: a body part with nothing else said is a question, never `none`.
     if (bare && !clauseSignal && bodyPartMentioned(ws)) unclear = true;
     if (pastClause && pain && !painNow) {

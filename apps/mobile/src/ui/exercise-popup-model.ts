@@ -1,5 +1,25 @@
 import type { LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
 
+import { textEms, widestText } from '../workout/set-columns';
+
+/** One width for the Reps and RIR headers and their cells, so they stay lined up at any text size (N2). */
+export const POPUP_VALUE_COL_W = 56;
+/** A value field's padding each side (the default field's 16 pt left `100` room for `10`; Ben, 1 Nov). */
+export const POPUP_CELL_PAD = 6;
+/** The fields' text grows with Dynamic Type up to this (the columns widen with it). */
+export const POPUP_CELL_MAX_SCALE = 1.6;
+const POPUP_CELL_FONT = 17;
+
+/**
+ * (Ben, 1 Nov: Bench `100` showed as `10`) The Kg column's width: every load in the sheet, and never less than
+ * `102.5` and `1,000` (lb), fit at the field's size and text scale, with its padding and border. Pure; tested.
+ */
+export function popupKgColumnWidth(loads: readonly string[], fontScale: number): number {
+  const scale = Math.min(Math.max(fontScale, 1), POPUP_CELL_MAX_SCALE);
+  const text = textEms(widestText([...loads, '102.5', '1,000'])) * POPUP_CELL_FONT * scale;
+  return Math.max(POPUP_VALUE_COL_W, Math.ceil(text + 2 * POPUP_CELL_PAD + 2));
+}
+
 /**
  * The exercise pop-up's model (workout-builder-v3 §2.4; workout-table-v3
  * §7: "same functionality as when building them"). One shape for both

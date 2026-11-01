@@ -218,7 +218,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: "Change today's workout (exercises, sets and targets), with Undo",
     capabilitySection: 'when_you_ask',
     description:
-      "Change today's live workout in one call, any mix of ops: `sets` lays out an exercise's remaining working sets in order, each with its target (load, reps, target RPE): use it to fill in sets and weights (\"build up to 95 kg as the last set\": ramp sets, then his weight last); `set` one pending set's target (null keeps a value); `set_count` an exercise's working sets today (done ones included); `swap` an exercise's remaining sets to another exercise; `add` an exercise (exerciseId from YOUR DATA addable or find_exercises; sets, reps or workSeconds, targetRpe, optional position or superset partner; `load` in his unit when Ben gave a weight, 0 = no weight, else null and the app plans it; a cardio exercise takes workSeconds and, if Ben gave one, distanceMetres; an exercise already in today's workout is added as a second copy, while more sets of the same one is set_count); `remove` an exercise's remaining sets; `move` an exercise (with its superset) after another or first (null); `superset` two exercises already in today's workout; `split_superset` an exercise's superset. Loads are in the exercise's unit and convention (dumbbells per hand). Weights, reps and sets Ben names are used exactly; the app fits your own loads to his equipment. Done sets never change. An op that can't be done is left out and named in the result; the rest applies. baseVersion: the workout's version; after a change, use the sessionVersion it returns; when stale, call once more with the baseVersion it returns. Today only: never for next time, his routine or template. benAsked: true when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words; false when it is your own idea, which he sees as an offer he can accept.",
+      "Change today's live workout in one call, any mix of ops: `sets` lays out an exercise's remaining working sets in order, each with its target (load, reps, target RPE): use it to fill in sets and weights (\"build up to 95 kg as the last set\": ramp sets, then his weight last); `set` one pending set's target (null keeps a value); `set_count` an exercise's working sets today (done ones included); `swap` an exercise's remaining sets to another exercise; `add` an exercise (exerciseId from YOUR DATA addable or find_exercises; sets, reps or workSeconds, targetRpe, optional position or superset partner; `load` in his unit when Ben gave a weight, 0 = no weight, else null and the app plans it; a cardio exercise takes workSeconds and, if Ben gave one, distanceMetres; an exercise already in today's workout is added as a second copy, while more sets of the same one is set_count); `remove` an exercise's remaining sets; `move` an exercise (with its superset) after another or first (null); `superset` two exercises already in today's workout; `split_superset` an exercise's superset; `main` (set_main_lift) makes an exercise today's main lift on a plan workout (one per day, no set changes; for every week use propose_plan_day_edit with main true). Loads are in the exercise's unit and convention (dumbbells per hand). Weights, reps and sets Ben names are used exactly; the app fits your own loads to his equipment. Done sets never change. An op that can't be done is left out and named in the result; the rest applies. baseVersion: the workout's version; after a change, use the sessionVersion it returns; when stale, call once more with the baseVersion it returns. Today only: never for next time, his routine or template. benAsked: true when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words; false when it is your own idea, which he sees as an offer he can accept.",
   },
   {
     // (14 Oct, PM decision pending Ben) Offered on every live-workout turn; applies at once with Undo only when
@@ -443,6 +443,21 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Add one exercise to chosen days of the plan in use, every week from now on ("add curls to my pull days", "fix the plan too" after a gap you found). add: its catalogueId (YOUR DATA plan.inUse.days, build.usable, addable or find_exercises). days: the plan day names from plan.inUse.days it goes into. after: the catalogueId it goes straight after in each day that has it (null: at the end). workingSets and reps: yours. load: only a weight Ben named this turn, in his words; else null (the app plans it from his history). Never an exercise in YOUR DATA notPreferred. Ben sees each day before and after and taps Apply; never say it changed. reason: one short line.',
   },
   {
+    // (Ben, 1 Nov, build 500: "Push B should be slightly different" after the shoulder press tired the bench) One plan
+    // day's order and its exercises' sets, reps, target RPE and main mark, every week. Offered whenever a plan is in use,
+    // in every chat (ADR 0039). Always a proposal with the day's before/after, Apply and Undo (rule 3); versioned (rule 5).
+    name: 'propose_plan_day_edit',
+    effect: 'propose',
+    writes: ['proposal'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Change the order or sets of one day of your plan, as a proposal you apply or undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Change one day of the plan in use every week from now on ("Push B should be different, my shoulders are pre-fatigued for bench", "put bench first on Push B", "fewer sets of bench on Push B"). day: the plan day name from YOUR DATA plan.inUse.days. order: every exercise of that day once (catalogueIds), in the new order; null to keep it. changes: per exercise (catalogueId in that day) its workingSets, reps, targetRpe and main (false: a secondary lift after a pre-fatiguing one); null keeps that part. load: only a weight Ben named this turn, else null (the app plans loads from his history). Ben sees the day before and after and taps Apply; never say it changed. reason: one short line.',
+  },
+  {
     // (Ben, 20 Oct) Offered only while Lift targets is on (the app wires the executor then). Applies with Undo
     // only when Ben asked; code decides from his words (`liftTargetAsked` in the turn), else nothing is saved.
     name: 'set_lift_target',
@@ -626,6 +641,7 @@ export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   pause_plan: 'planInUse',
   propose_plan_swap: 'planInUse',
   propose_plan_add: 'planInUse',
+  propose_plan_day_edit: 'planInUse',
   think_harder: 'lightTurn',
   set_lift_target: 'liftTargetsOn',
   propose_workout_edit: 'builderDraft',
@@ -648,7 +664,7 @@ export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['
 export interface WithheldTool {
   name: CoachToolName;
   /** For `Why?` → `Not used`. */
-  reason: 'turn_kind' | 'no_target' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off';
+  reason: 'turn_kind' | 'no_target' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off' | 'plan_work';
 }
 
 export interface TurnRegistry {

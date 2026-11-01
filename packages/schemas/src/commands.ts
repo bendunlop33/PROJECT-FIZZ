@@ -838,6 +838,7 @@ export const CoachEditStepSchema = z.discriminatedUnion('type', [
   MoveExerciseCommandSchema,
   LinkSupersetCommandSchema,
   SplitSupersetCommandSchema,
+  SetMainLiftCommandSchema,
 ]);
 export type CoachEditStep = z.infer<typeof CoachEditStepSchema>;
 

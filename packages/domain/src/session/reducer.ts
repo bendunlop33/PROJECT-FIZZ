@@ -28,6 +28,7 @@ import { isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '.
 import { normaliseExclusions } from '../exclusions';
 import { currentGymEquipment, equipmentOfRow, rowIsAtCurrentGym } from './equipment-snapshot';
 import { applyChangeGym, applyUndoChangeGym, partRootOf } from './gym-switch';
+import { activeSetAfterReorder } from './workout-edits';
 import {
   adjustRestTimer,
   createRestTimer,
@@ -2666,7 +2667,8 @@ function handleMoveExercise(state: SessionAggregate, cmd: CommandOf<'move_exerci
   if (next.every((e, i) => e.id === sorted[i]?.id)) return { ok: true, state, events: [] };
   const pos = new Map(next.map((e, i) => [e.id, i]));
   const exercises = state.exercises.map((e) => (e.order === pos.get(e.id) ? e : { ...e, order: pos.get(e.id) ?? e.order }));
-  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...blockIds], undo: false }] };
+  const events: SessionEvent[] = [{ type: 'ExercisesMoved', sessionExerciseIds: [...blockIds], undo: false }];
+  return { ok: true, state: bumpVersion({ ...state, exercises }, refocus(state, exercises, events)), events };
 }
 
 /** Undo of a move: the old order back, only while the rows are still in the order the move left. */
@@ -2679,7 +2681,18 @@ function undoMove(state: SessionAggregate, prior: ProcessedOperation): Handled {
   const pos = new Map(before.map((id, i) => [id, i]));
   const moved = state.exercises.filter((e) => pos.get(e.id) !== after.indexOf(e.id)).map((e) => e.id);
   const exercises = state.exercises.map((e) => ({ ...e, order: pos.get(e.id) ?? e.order }));
-  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: moved, undo: true }] };
+  const events: SessionEvent[] = [{ type: 'ExercisesMoved', sessionExerciseIds: moved, undo: true }];
+  return { ok: true, state: bumpVersion({ ...state, exercises }, refocus(state, exercises, events)), events };
+}
+
+/**
+ * (Ben, 1 Nov) After a move or its Undo: while the current round has nothing logged, the current set
+ * follows the order (`activeSetAfterReorder`), so moving the current exercise hands over and Undo hands back.
+ */
+function refocus(state: SessionAggregate, exercises: readonly SessionExercise[], events: SessionEvent[]): string | null {
+  const next = activeSetAfterReorder(state, exercises);
+  if (next !== state.session.activeSetId) events.push({ type: 'ActiveSetChanged', setId: next });
+  return next;
 }
 
 /** A row split across gyms (a continuation, or one with a continuation): its order follows its parts. */
@@ -2872,6 +2885,7 @@ function atVersion(step: CommandOf<'coach_edit_today'>['steps'][number], version
     case 'move_exercise':
     case 'link_superset':
     case 'split_superset':
+    case 'set_main_lift':
       return { ...step, at, expectedVersion: version };
     case 'add_exercise':
     case 'skip_exercise':

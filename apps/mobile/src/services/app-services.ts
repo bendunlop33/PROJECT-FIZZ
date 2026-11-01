@@ -142,7 +142,7 @@ export interface AppServicesDeps {
    * (ADR 0035) Apple Health: the HealthKit bridge and whether the build has the entitlement. Absent (tests, Expo
    * Go): Apple Health reads `Not available on this install`; nothing else changes.
    */
-  health?: { port: HealthPort | null; buildIncludesHealth: boolean; /** (Ben, 28 Oct) Off this run by the launch guard: `Paused`. */ paused?: () => NativePause | null };
+  health?: { port: HealthPort | null; buildIncludesHealth: boolean; /** (Ben, 28 Oct) Off this run by the launch guard: `Paused`. */ paused?: () => NativePause | null; /** (Ben, 1 Nov) A skipped optional step of a read (Last error). */ logError?: (error: unknown, where: string) => void };
   /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
   idle?: () => Promise<void>;
 }
@@ -615,6 +615,7 @@ export function createAppServices(deps: AppServicesDeps) {
     port: deps.health?.port ?? null,
     buildIncludesHealth: deps.health?.buildIncludesHealth ?? false,
     ...(deps.health?.paused === undefined ? {} : { paused: deps.health.paused }),
+    ...(deps.health?.logError === undefined ? {} : { logError: deps.health.logError }),
     workoutOpen: async () => (await sessions.active()) !== null,
     dispatch: (sessionId, command) => loop.workout.dispatch(sessionId, command),
   });
@@ -670,7 +671,7 @@ export function createAppServices(deps: AppServicesDeps) {
     // `builder` is made below and only called after startup.
     nextWorkout: { revert: (applyActionId, check) => builder.revertCoachLanding(applyActionId, check) },
     // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat. `planSwap` is made below.
-    planSwap: { context: () => planSwap.context(), prepare: (r) => planSwap.prepare(r), prepareAdd: (r) => planSwap.prepareAdd(r) },
+    planSwap: { context: () => planSwap.context(), prepare: (r) => planSwap.prepare(r), prepareAdd: (r) => planSwap.prepareAdd(r), prepareDayEdit: (r) => planSwap.prepareDayEdit(r) },
     // ADR 0039 (Ben, 29 Oct): the builder's powers in every chat. `builder`, `builderCoach` and `builderPorts` are made
     // below; these run only on a coach turn or a card tap (after startup).
     builder: {
@@ -1074,6 +1075,7 @@ export function createAppServices(deps: AppServicesDeps) {
       return doableHere(exercise, { id: gym.id, name: gym.name, equipment });
     },
     editDayEveryWeek: (req) => plans.editDayEveryWeek({ ...req, edit: { ...req.edit, afterRowId: req.edit.afterRowId ?? null } }),
+    editDayRowsEveryWeek: (req) => plans.editDayRowsEveryWeek(req),
     revertRoutine: async (req) => ({ ok: (await loop.routines.revert(req)).ok }),
     swapToday: async (req) => ({ ok: (await loop.workout.swapExercise(req)).ok }),
     undoToday: async (req) => ({ ok: (await loop.workout.undoOp(req)).ok }),

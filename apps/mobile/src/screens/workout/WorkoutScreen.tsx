@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundJumps, setMoveSteps, discardCommand, gymLearnDoneText, gymLearnKey, gymLearnToast, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
+import { canDropRound, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundMoves, midSwapSlot, setMoveSteps, discardCommand, gymLearnDoneText, gymLearnKey, gymLearnToast, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -62,7 +62,9 @@ import { noteWrites } from '../../workout/notes';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
-import { exerciseMenu, rirMenu, roundExerciseMenu, targetRpeMenu, targetRpeScopeMenu, type ExerciseMenu, type ExerciseMenuAction } from '../../workout/exercise-menu';
+import { exerciseMenu, rirMenu, roundContextMenu, targetRpeMenu, targetRpeScopeMenu, type ContextMenuModel, type ExerciseMenuAction, type MenuAnchor } from '../../workout/exercise-menu';
+import { ExerciseContextMenu } from '../../ui/context-menu';
+import { exerciseSwipeActions, type ExerciseSwipeAction, type ExerciseSwipeActions } from '../../workout/exercise-swipe';
 import { canMakeMain, makeMainLiftNow, type MainLiftActionPorts } from '../../workout/main-lift-action';
 import { exerciseActions } from '../../workout/exercise-popup';
 import { cuesWorkEnd, shouldCueRestEnd, workTimerText } from '../../workout/cues';
@@ -174,6 +176,8 @@ export function WorkoutScreen() {
   const ax = fontScale >= AX_FONT_SCALE;
   // v3 (workout-table-v3 §1, §3): the round on screen. Null follows the open row (auto-advance); a key is one Ben picked.
   const [pickedRound, setPickedRound] = useState<string | null>(null);
+  /** (Ben, 1 Nov, A) The round page's exercise menu while open: next to its header, a pick runs once it has closed. */
+  const [contextMenu, setContextMenu] = useState<{ open: boolean; title: string; subtitle: string | null; anchor: MenuAnchor | null; model: ContextMenuModel; pick: (action: ExerciseMenuAction) => void } | null>(null);
   /** A select sent by a round change is in flight: Log waits for it (it logs the shown round's set). */
   const [selecting, setSelecting] = useState(false);
   /** Round-change selects go one at a time; the latest pick waits (reviews spec S2, logic S1). */
@@ -1186,20 +1190,21 @@ export function WorkoutScreen() {
   }
 
   /**
-   * (Ben, 31 Oct) The round page's `⋯`: Swap, Do next, Move to end, Add set, History, Plates (bar or
-   * plate-loaded only), Notes, Skip (`roundExerciseMenu`). Null off the round page: Focus view keeps its own.
+   * (Ben, 1 Nov, A) The round page's menu: Undo…, Later / Now / Up / Down (only those that move it), Swap, Add set,
+   * History, Notes, Plates (bar or plate-loaded only), Adjust (current only), Skip (`roundContextMenu`). Null off
+   * the round page: Focus view keeps its action sheet.
    */
-  function roundMenu(sessionExerciseId: string, facts: { swappable: boolean; plates: readonly string[]; coachActionId: string | null; adjustedBy: 'rule' | 'coach' | null; swappedFrom: { opId: string } | null }, current: boolean): ExerciseMenu | null {
+  function roundMenu(sessionExerciseId: string, facts: { exerciseName: string; swappable: boolean; plates: readonly string[]; coachActionId: string | null; adjustedBy: 'rule' | 'coach' | null; swappedFrom: { name: string; opId: string } | null }, current: boolean): ContextMenuModel | null {
     if (!tableModeNow()) return null;
-    const jumps = roundJumps(loaded.aggregate, sessionExerciseId);
-    return roundExerciseMenu({
+    const a = loaded.aggregate;
+    return roundContextMenu({
       canSwap: facts.swappable,
-      doNext: jumps.doNext,
-      moveToEnd: jumps.toEnd,
+      moves: roundMoves(a, sessionExerciseId),
       plates: facts.plates.length > 0,
       coachChange: facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true,
-      canUndoSwap: facts.swappedFrom !== null,
+      swapped: facts.swappedFrom === null ? null : { from: facts.swappedFrom.name, to: facts.exerciseName },
       adjust: current,
+      canSkip: a.sets.some((x) => x.sessionExerciseId === sessionExerciseId && x.status === 'pending'),
       makeMain: canMakeMain(loaded, sessionExerciseId),
     });
   }
@@ -1218,6 +1223,12 @@ export function WorkoutScreen() {
     };
   }
 
+  /** The round page's menu next to the exercise's header (A); its pick runs as the action sheet's did. */
+  function showContextMenu(title: string, sessionExerciseId: string, model: ContextMenuModel, anchor: MenuAnchor | undefined, pick: (action: ExerciseMenuAction) => void) {
+    const subtitle = rounds.flatMap((r) => r.exercises).find((e) => e.sessionExerciseId === sessionExerciseId)?.subline ?? null;
+    setContextMenu({ open: true, title, subtitle, anchor: anchor ?? null, model, pick });
+  }
+
   function tableModeNow(): boolean {
     return mode === 'table' && view !== null && view.phase !== 'empty';
   }
@@ -1234,9 +1245,14 @@ export function WorkoutScreen() {
       case 'plates':
         Alert.alert('Plates', plates.map((x) => x.replaceAll('\u00a0', ' ')).join('\n'));
         return true;
-      case 'do_next':
+      case 'move_up':
+      case 'move_down':
+        // The same move as the name pop-up's (Ben, 1 Nov).
+        workoutEdits.moveRound(ex.sessionExerciseId, action === 'move_up' ? 'up' : 'down');
+        return true;
+      case 'do_first':
       case 'move_to_end':
-        workoutEdits.jumpRound(ex.sessionExerciseId, action === 'do_next' ? 'do_next' : 'to_end');
+        workoutEdits.jumpRound(ex.sessionExerciseId, action === 'move_to_end' ? 'to_end' : 'do_first');
         return true;
       case 'swap':
         workoutEdits.openSwap(ex.sessionExerciseId);
@@ -1290,6 +1306,10 @@ export function WorkoutScreen() {
       case 'move_down':
         workoutEdits.moveRound(sessionExerciseId, name === 'move_up' ? 'up' : 'down');
         break;
+      case 'do_first':
+      case 'move_to_end':
+        workoutEdits.jumpRound(sessionExerciseId, name === 'do_first' ? 'do_first' : 'to_end');
+        break;
       case 'superset_next':
         workoutEdits.supersetNext(sessionExerciseId);
         break;
@@ -1304,14 +1324,10 @@ export function WorkoutScreen() {
     }
   }
 
-  function openExerciseMenu(f: FocusView) {
+  function openExerciseMenu(f: FocusView, anchor?: MenuAnchor) {
     const howTo = howToRouteFor(f, bundledHowToSources());
     const plates = services.workout.cardFacts(loaded, f.sessionExerciseId)?.plates ?? [];
-    const menu =
-      roundMenu(f.sessionExerciseId, { ...f, plates }, true) ??
-      exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId) });
-    ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
-      const action = menu.actionAt(picked);
+    const pick = (action: ExerciseMenuAction | null) => {
       if (runMenuAction(action, f, plates)) return;
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
       if (action === 'undo_coach' && f.coachActionId !== null) coach.undo(f.coachActionId);
@@ -1329,13 +1345,16 @@ export function WorkoutScreen() {
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
-      if (action === 'skip_exercise') {
-        const opId = newUuid();
-        void run({ type: 'skip_exercise', at: services.now(), opId, sessionExerciseId: f.sessionExerciseId }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.skipped(f.exerciseName), opId, session.id);
-          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
-        });
-      }
+      if (action === 'skip_exercise') skipExercise(f.sessionExerciseId, f.exerciseName);
+    };
+    const model = roundMenu(f.sessionExerciseId, { ...f, plates }, true);
+    if (model !== null) {
+      showContextMenu(f.exerciseName, f.sessionExerciseId, model, anchor, pick);
+      return;
+    }
+    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId) });
+    ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
+      pick(menu.actionAt(picked));
     });
   }
 
@@ -1363,9 +1382,9 @@ export function WorkoutScreen() {
    * this set` act on its next pending set (review S4). The current card
    * uses `openExerciseMenu` (its open row's set).
    */
-  function openCardMenu(sessionExerciseId: string) {
+  function openCardMenu(sessionExerciseId: string, anchor?: MenuAnchor) {
     if (focus !== null && sessionExerciseId === focus.sessionExerciseId) {
-      openExerciseMenu(focus);
+      openExerciseMenu(focus, anchor);
       return;
     }
     const facts = services.workout.cardFacts(loaded, sessionExerciseId);
@@ -1373,11 +1392,7 @@ export function WorkoutScreen() {
     const ex = { sessionExerciseId, exerciseId: facts.exerciseId, exerciseName: facts.exerciseName };
     const next = facts.nextSet;
     const howTo = howToRouteFor(ex, bundledHowToSources());
-    const menu =
-      roundMenu(sessionExerciseId, facts, false) ??
-      exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId) });
-    ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
-      const action = menu.actionAt(picked);
+    const pick = (action: ExerciseMenuAction | null) => {
       if (runMenuAction(action, ex, facts.plates)) return;
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
       if (action === 'undo_coach' && facts.coachActionId !== null) coach.undo(facts.coachActionId);
@@ -1398,13 +1413,16 @@ export function WorkoutScreen() {
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
-      if (action === 'skip_exercise') {
-        const opId = newUuid();
-        void run({ type: 'skip_exercise', at: services.now(), opId, sessionExerciseId }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.skipped(facts.exerciseName), opId, session.id);
-          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
-        });
-      }
+      if (action === 'skip_exercise') skipExercise(sessionExerciseId, facts.exerciseName);
+    };
+    const model = roundMenu(sessionExerciseId, facts, false);
+    if (model !== null) {
+      showContextMenu(facts.exerciseName, sessionExerciseId, model, anchor, pick);
+      return;
+    }
+    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId) });
+    ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
+      pick(menu.actionAt(picked));
     });
   }
 
@@ -1851,7 +1869,8 @@ export function WorkoutScreen() {
 
   async function addSet(sessionExerciseId: string) {
     // Through the service: after a gym switch the set goes on the current gym's equipment, fitted (gym-switch §4.3).
-    const r = await services.workout.addSet({ sessionId: session.id, sessionExerciseId, opId: newUuid(), newSetId: newUuid() });
+    const opId = newUuid();
+    const r = await services.workout.addSet({ sessionId: session.id, sessionExerciseId, opId, newSetId: newUuid() });
     if (!r.ok) {
       showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : `Set wasn’t added: ${r.error.message}` });
       void reload();
@@ -1863,7 +1882,46 @@ export function WorkoutScreen() {
     // v3 §2: its box scrolls to the new row and it flashes once.
     if (added) setAddedSetId(added.id);
     // The same name the new row shows (wo-v3 reviews B1).
-    showToast({ text: UNDO_TOAST.addedNamed((added && setStepName(r.aggregate, added.id)) ?? 'Set') });
+    // (Ben, 1 Nov) With Undo, as every other edit (the set goes again while it's still not done).
+    toastUndoOp(UNDO_TOAST.addedNamed((added && setStepName(r.aggregate, added.id)) ?? 'Set'), opId, session.id);
+  }
+
+  /** `Skip exercise` (menu, full swipe, VoiceOver): its sets not done yet are skipped, with Undo; done sets stay. */
+  function skipExercise(sessionExerciseId: string, exerciseName: string) {
+    const opId = newUuid();
+    void run({ type: 'skip_exercise', at: services.now(), opId, sessionExerciseId }).then((r) => {
+      if (r.ok) toastUndoOp(UNDO_TOAST.skipped(exerciseName), opId, session.id);
+      else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+    });
+  }
+
+  /** (Ben, 1 Nov, C) What a row in the Workout list swipes to: none to the left once the exercise is done. */
+  function swipeActionsOf(sessionExerciseId: string): ExerciseSwipeActions {
+    const a = loaded.aggregate;
+    const pending = a.sets.some((x) => x.sessionExerciseId === sessionExerciseId && x.status === 'pending');
+    return exerciseSwipeActions({ done: !pending, toEnd: roundMoves(a, sessionExerciseId).toEnd, canSwap: midSwapSlot(a, sessionExerciseId) !== null, canSkip: pending });
+  }
+
+  function runSwipeAction(sessionExerciseId: string, action: ExerciseSwipeAction) {
+    const name = loaded.aggregate.exercises.find((e) => e.id === sessionExerciseId)?.exerciseName ?? 'Exercise';
+    switch (action) {
+      case 'move_to_end':
+        workoutEdits.jumpRound(sessionExerciseId, 'to_end');
+        break;
+      case 'add_set':
+        void addSet(sessionExerciseId);
+        break;
+      case 'skip_exercise':
+        skipExercise(sessionExerciseId, name);
+        break;
+      case 'swap':
+        // The Swap sheet once the Workout sheet has gone (one sheet at a time).
+        sheetDismiss.arm(() => {
+          workoutEdits.openSwap(sessionExerciseId);
+        });
+        setOverviewOpen(false);
+        break;
+    }
   }
 
   // ---- Gym switch (gym-switch.md §4) ----
@@ -3568,6 +3626,26 @@ export function WorkoutScreen() {
           whyEvent({ kind: 'close' });
         }}
       />
+      {contextMenu !== null ? (
+        <ExerciseContextMenu
+          visible={contextMenu.open}
+          anchor={contextMenu.anchor}
+          title={contextMenu.title}
+          subtitle={contextMenu.subtitle}
+          model={contextMenu.model}
+          onPick={(action) => {
+            // A sheet the pick opens (Swap, Notes) waits until the menu has gone.
+            sheetDismiss.arm(() => {
+              contextMenu.pick(action);
+            });
+            setContextMenu({ ...contextMenu, open: false });
+          }}
+          onDismiss={() => {
+            setContextMenu({ ...contextMenu, open: false });
+          }}
+          onDismissed={sheetDismiss.dismissed}
+        />
+      ) : null}
       <WorkoutRoundsSheet
         visible={overviewOpen && tableMode}
         title={overviewTitle(view.title, view.elapsedMs, timeLeft?.view.estimate.minutes ?? null)}
@@ -3584,6 +3662,7 @@ export function WorkoutScreen() {
           setOverviewOpen(false);
         }}
         onDismissed={sheetDismiss.dismissed}
+        swipe={{ actions: swipeActionsOf, onAction: runSwipeAction }}
         onAddExercise={() => {
           // v3 §7: the builder's add flow (group dropdown), once the sheet is gone.
           sheetDismiss.arm(() => {

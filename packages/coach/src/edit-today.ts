@@ -146,6 +146,11 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
       kitOptional: true,
     });
     if (plan.status === 'stale') return withAlso(await staleNow(plan.guardNotes));
+    if (plan.status === 'rejected' && plan.already === true) {
+      // (Ben, 1 Nov, build 500) A no-op: nothing written, and not a failure. The card says `Already 100 kg`.
+      const r = await recordOnly(deps.store, ctx.ownerId, newActionRecord(ctx, editDetail(sessionId, args.baseVersion, { noop: true }), { status: 'rejected', failure: plan.failure, guardNotes: plan.guardNotes, reason: a.reason }), 'no-op edit');
+      return withAlso(r.kind === 'action' ? { ...r, line: `${plan.failure}: nothing to change. Say so in a few words; never that it failed.` } : r);
+    }
     if (plan.status === 'rejected') return withAlso(await refuse('rejected', plan.failure, plan.guardNotes));
     const base = editDetail(sessionId, args.baseVersion, { lines: plan.lines, exercises: plan.exercises, ...(plan.added.length > 0 ? { added: plan.added } : {}), names: plan.names, command: plan.command });
     // Rule 3: an offer saves exactly what would apply, and nothing else.

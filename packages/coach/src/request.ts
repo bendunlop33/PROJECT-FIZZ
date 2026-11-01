@@ -1253,6 +1253,8 @@ export function mentionsTodaysSets(text: string): boolean {
 const LOAD_COMPLAINT = /\b(?:(?:way|far|much|bit|a bit|a little|slightly|too) )?(?:too (?:light|heavy|easy|hard|much|little)|not (?:heavy|hard|challenging) enough|(?:light|heavy|easy|hard)er than (?:it should|they should|i (?:want|wanted|need|expected)))\b/;
 const FIX_ASK = /\b(?:fix|sort|redo|update|adjust|change|correct|bump|raise|lower) (?:it|them|that|those|these|this|all|the (?:sets?|weights?|loads?|targets?|numbers?|rest)|(?:it|them|that) up)\b|\b(?:sort (?:it|them) out|do (?:it|that) (?:then|now)|just do it)\b/;
 const WARMUP_CHANGE = /\bwarm-?\s?ups?\b[^.?!]{0,40}\b(?:heavier|lighter|harder|easier|up|down|more|less|working)\b|\b(?:make|turn|change|swap|switch)\b[^.?!]{0,40}\bwarm-?\s?ups?\b/;
+/** (Ben, 1 Nov, build 500) "Let's stick to 100", "stay at 22.5", "keep it at 100 kg": today's sets at that weight. */
+const STICK_AT = /\b(?:stick|stay|go|keep (?:it|them|the (?:weights?|loads?|sets?)))(?: \w+)? (?:to|at|with|on) \d+(?:[.,]\d+)?\b/;
 const OPINION_ONLY_ASK = /\b(?:what do you think|do you think|should i|would it be|is it (?:ok|okay|fine|worth)|thoughts|any (?:ideas|advice|tips)|what would you)\b/;
 const OUTRIGHT_ASK = /\b(?:can you|could you|would you|will you|please)\b/;
 
@@ -1267,7 +1269,7 @@ export function asksLiveChange(text: string): boolean {
     // "Is it too heavy?" asks for an opinion; "Can you fix them?" asks outright.
     if (/\?\s*$/.test(s) && !OUTRIGHT_ASK.test(s)) return false;
     if (INFO_QUESTION.test(s) && !OUTRIGHT_ASK.test(s)) return false;
-    return LOAD_COMPLAINT.test(s) || FIX_ASK.test(s) || WARMUP_CHANGE.test(s) || (ADD_HERE_ASK.test(s) && !PLAN_NOUN_HERE.test(s));
+    return LOAD_COMPLAINT.test(s) || FIX_ASK.test(s) || WARMUP_CHANGE.test(s) || STICK_AT.test(s) || (ADD_HERE_ASK.test(s) && !PLAN_NOUN_HERE.test(s));
   });
 }
 
@@ -1292,7 +1294,29 @@ const PLAN_FIX = new RegExp(
 export function asksPlanFix(text: string): boolean {
   const t = lower(text).replace(/[‘’]/g, "'");
   if (declinesChange(t) || multiWeekBlock(t)) return false;
-  return PLAN_FIX.test(t) || changesPlanInUse(text);
+  return PLAN_FIX.test(t) || changesPlanInUse(text) || asksPlanDayChange(text);
+}
+
+/**
+ * (Ben, 1 Nov, build 500: "Going forwards plan B should be slightly different?", "Push B should be different since
+ * shoulders are pre-fatigued", "should the plan change, since Push B is shoulder-led and bench comes after") Ben asks for
+ * a plan day to change from now on, or says its order tires a later lift: said as a statement or a question. Counts as
+ * asked for a plan proposal (a card he applies, rule 3). Code, never the model's reading.
+ */
+const PLAN_DAY_NOUN = String.raw`(?:(?:push|pull|legs?|upper|lower|full[ -]body|plan|day) ?[a-d1-7]\b|(?:push|pull|leg|upper|lower|arm|chest|back|shoulder) day\b|(?:my|the|this|our) (?:training |workout |gym )?(?:plan|programme|program)\b)`;
+const DAY_SHOULD_CHANGE = new RegExp(
+  String.raw`\b${PLAN_DAY_NOUN}[^.?!]{0,30}?\b(?:should|could|needs? to|ought to|has to|must)(?: \w+)? (?:be (?:\w+ )?different|change|look different|be changed|be reordered|be rearranged|be adjusted|be tweaked)\b|\b(?:should|could|do we|shall we)(?: we)? (?:change|adjust|tweak|reorder|rearrange) ${PLAN_DAY_NOUN}|\bshould ${PLAN_DAY_NOUN} (?:change|be (?:\w+ )?different)\b|\b(?:reorder|rearrange|re-order|swap the order of) ${PLAN_DAY_NOUN}`,
+);
+/** The day's order tires a later lift: "pre-fatigued", "bench comes after", "after the shoulders I just trained". */
+const ORDER_FATIGUE = /\b(?:pre-?fatigued?|pre-?exhaust(?:ed)?|already (?:tired|fatigued|cooked|smoked|fried)|(?:just|already) trained|comes? (?:after|second|later)|goes? (?:after|second)|(?:is|are) (?:\w+-)?led\b|order of (?:the )?(?:day|exercises|lifts))/;
+
+export function asksPlanDayChange(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'");
+  if (declinesChange(t) || multiWeekBlock(t)) return false;
+  if (DAY_SHOULD_CHANGE.test(t)) return true;
+  // "going forwards …" with a plan or a plan day, or the order tiring a lift with a plan or a plan day.
+  const dayHere = new RegExp(String.raw`\b${PLAN_DAY_NOUN}`).test(t);
+  return dayHere && (ORDER_FATIGUE.test(t) || /\bgoing forwards?\b|\bfrom now on\b|\bin future\b|\bnext time\b/.test(t)) && /\b(?:different|change|changed|adjust|adjusted|reorder|rearrange|swap|move|first|before|after|plan)\b/.test(t);
 }
 
 /**
@@ -1314,7 +1338,20 @@ const PLAN_QUESTION = /\b(?:my|the|this|our) (?:training |workout |gym )?(?:plan
 
 export function planLevelAsk(text: string): boolean {
   const t = lower(text).replace(/[‘’]/g, "'");
-  return asksForPlan(text) || revisesPlan(text) || asksPlanFix(text) || PLAN_QUESTION.test(t);
+  return asksForPlan(text) || revisesPlan(text) || asksPlanFix(text) || PLAN_QUESTION.test(t) || PLAN_SHOULD.test(t);
+}
+
+/** (Ben, 1 Nov) "Should the plan change?", "should we change my plan": a question about changing the plan is plan work. */
+const PLAN_SHOULD = /\b(?:should|could|do|shall|would)(?: we| i| you)? (?:the|my|this|our) (?:training |workout |gym )?(?:plan|programme|program|split) (?:change|be (?:\w+ )?different|be changed)\b|\b(?:should|do|shall) (?:we|i|you) (?:change|adjust|tweak|rework) (?:the|my|this|our) (?:training |workout |gym )?(?:plan|programme|program|split)\b/;
+
+/**
+ * (Ben, 1 Nov, build 500) Ben asks for the deep version: the only plan work sent at high effort (a plan proposal is
+ * medium otherwise, so it comes back sooner).
+ */
+const DEEP_ANALYSIS = /\b(?:think (?:hard|harder|carefully|it through|this through)|deep(?:er)? (?:dive|analysis|look|review)|in[- ]depth|in (?:full )?detail|thorough(?:ly)?|detailed (?:analysis|review|look|breakdown)|full (?:analysis|review|breakdown)|analy[sz]e (?:it |this |that |my plan |the plan )?(?:properly|fully|carefully))\b/;
+
+export function asksDeepAnalysis(text: string): boolean {
+  return DEEP_ANALYSIS.test(lower(text).replace(/[‘’]/g, "'"));
 }
 
 /** A short follow-up that repeats an open request ("Try again", "Go on then", "Yes do it"), read only after one. */

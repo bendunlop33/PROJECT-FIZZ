@@ -333,7 +333,9 @@ describe('Your plan › Ask coach to change (review planview-19oct B1)', () => {
       },
       () => replyWith('Swapped it.'),
     ]);
-    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Change my plan: swap squats for leg press', spoken: false }, turnId: h.ids() });
+    // (Ben, 1 Nov) A targeted change ("swap squats for leg press") is the plan swap's now, with no whole-plan tool in the
+    // turn; a rework of the plan is still the whole-plan proposal.
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Change my plan: rework it with leg press instead of squats', spoken: false }, turnId: h.ids() });
     expect(seen[0]?.current).toMatchObject({ name: '4-day plan', inUse: true });
     expect(seen[0]?.current?.days.map((d) => d.name)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
     expect(seen[0]?.current?.days[2]?.exercises.map((e) => e.name)).toEqual(['Back squat']);

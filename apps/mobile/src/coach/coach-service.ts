@@ -52,8 +52,11 @@ import {
   isStructuralRequest,
   createPausePlanExecutor,
   createPlanAddExecutor,
+  createPlanDayEditExecutor,
   createPlanSwapExecutor,
   type PlanAddRequest,
+  type PlanDayEditRequest,
+  type PlanDayExerciseView,
   type PlanSwapPrepared,
   createActivityExecutor,
   renderActionResult,
@@ -510,10 +513,12 @@ export interface CoachServiceDeps {
    * not-preferred ones) and `propose_plan_swap`'s checks. Absent: the tool isn't wired.
    */
   planSwap?: {
-    context(): Promise<{ days: { name: string; exercises: { catalogueId: string; name: string }[] }[]; notPreferred: { catalogueId: string; name: string }[] } | null>;
+    context(): Promise<{ days: { name: string; exercises: PlanDayExerciseView[] }[]; notPreferred: { catalogueId: string; name: string }[] } | null>;
     prepare(req: { remove: string; add: string }): Promise<PlanSwapPrepared>;
     /** (Ben, 31 Oct) `propose_plan_add`'s checks. Absent: that tool isn't wired. */
     prepareAdd?(req: PlanAddRequest): Promise<PlanSwapPrepared>;
+    /** (Ben, 1 Nov) `propose_plan_day_edit`'s checks. Absent: that tool isn't wired. */
+    prepareDayEdit?(req: PlanDayEditRequest): Promise<PlanSwapPrepared>;
   };
   /**
    * (Ben, 28 Oct) The app's foreground state (`AppState`): time in the background doesn't count towards a turn's
@@ -1864,6 +1869,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (swap !== undefined) Object.assign(executors, createPlanSwapExecutor({ store: coachStore(), prepare: (r) => swap.prepare(r) }));
       // (Ben, 31 Oct, build 493) One exercise added to chosen plan days at a chosen place, from every chat while a plan is in use.
       if (swap?.prepareAdd !== undefined) Object.assign(executors, createPlanAddExecutor({ store: coachStore(), prepare: (r) => swap.prepareAdd?.(r) ?? Promise.resolve({ kind: 'refused', line: 'No plan in use' }) }));
+      // (Ben, 1 Nov, build 500) One plan day's order and sets every week (shoulders before bench in Push B), from every chat.
+      if (swap?.prepareDayEdit !== undefined) Object.assign(executors, createPlanDayEditExecutor({ store: coachStore(), prepare: (r) => swap.prepareDayEdit?.(r) ?? Promise.resolve({ kind: 'refused', line: 'No plan in use' }) }));
     }
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first. Review exlist
@@ -1950,8 +1957,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           now: deps.now,
           newId: deps.newId,
           ...(deps.lifecycle === undefined ? {} : { lifecycle: deps.lifecycle }),
-          // (Ben, 31 Oct, build 493) Limits that fit the work: 30 s for a simple live edit, 90 s live about the plan or two
-          // things at once, 120 s for a plan analysis elsewhere, 60 s for a build; 60 s to the first event at high effort.
+          // Limits that fit the work: 30 s for a simple live edit, 60 s for a build; (Ben, 1 Nov, build 500) plan work (live
+          // or not, or two things at once) has no visible limit: a 5 min safety cap, 3 min windows, no short answer.
           timing: coachTurnTiming({ liveWorkout: kind === 'workout', words: req.input.kind === 'words' ? said : null, buildInPlay: build?.inPlay === true, planBuild: planWanted }),
           // Coach v3: Adjust on an offered edit applies exactly that offer (no model call); stale when the workout moved on.
           ...(liveNow ? { acceptOffer: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptEditOffer(editDepsFor(p, session, ctx.gymName, ctx.checkIn), proposal, c) } : {}),

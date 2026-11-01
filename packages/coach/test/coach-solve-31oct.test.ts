@@ -7,8 +7,8 @@ import { createPlanAddExecutor, isFixOffer, namedLoadIn, type PlanAddRequest, ty
 import { asksLiveChange, asksPlanFix, asksPlanRebuild, planLevelAsk } from '../src/request';
 import {
   COACH_HIGH_EFFORT_EVENT_MS,
-  COACH_PLAN_TIMEOUT_MS,
-  COACH_WORKOUT_PLAN_TIMEOUT_MS,
+  COACH_PLAN_EVENT_MS,
+  COACH_PLAN_WORK_CAP_MS,
   COACH_WORKOUT_TIMEOUT_MS,
   LIGHT_RETRY_LINE,
   PLAN_PART_NUDGE_LINE,
@@ -94,6 +94,7 @@ const CURL = 'dumbbell-curl';
 const HLR = 'bodyweight-hanging-leg-raise';
 const ASK_1 = 'Change my plan: does the plan train enough biceps throughout?';
 const ASK_2 = 'Can we just add them in after the raises. Can u fix the plan too?';
+const QUICK = 'how many curls a week is good?';
 
 const planView = {
   today: '2026-10-31',
@@ -144,13 +145,14 @@ const addCall = (over: Partial<Record<string, unknown>> = {}): ModelEvent => cal
 const GAP_REPLY = 'Biceps only get indirect work from pull-ups and rows. Curls on both pull days give them direct work.';
 
 describe('timeouts that fit the work (ADR 0039 amendment, 31 Oct)', () => {
-  it('the limits: 30 s live, 90 s live about the plan or two things, 120 s for a plan analysis elsewhere; 60 s per event at high effort', () => {
+  it('the limits: 30 s live; plan work (live or not, two things at once) has the 5 min safety cap and long windows (1 Nov); 60 s per event at high effort', () => {
     expect(coachTurnTiming({ liveWorkout: true, words: 'make the rows heavier', buildInPlay: false })).toMatchObject({ totalMs: COACH_WORKOUT_TIMEOUT_MS, firstEventMs: 20_000, stallMs: 20_000, highEffortMs: COACH_HIGH_EFFORT_EVENT_MS });
-    expect(coachTurnTiming({ liveWorkout: true, words: ASK_2, buildInPlay: false }).totalMs).toBe(COACH_WORKOUT_PLAN_TIMEOUT_MS);
-    expect(coachTurnTiming({ liveWorkout: false, words: ASK_1, buildInPlay: false }).totalMs).toBe(COACH_PLAN_TIMEOUT_MS);
-    expect(coachTurnTiming({ liveWorkout: false, words: 'Does my plan hit rear delts enough?', buildInPlay: false }).totalMs).toBe(COACH_PLAN_TIMEOUT_MS);
+    const plan = { totalMs: COACH_PLAN_WORK_CAP_MS, planEventMs: COACH_PLAN_EVENT_MS, lightRetryMs: 0 };
+    expect(coachTurnTiming({ liveWorkout: true, words: ASK_2, buildInPlay: false })).toMatchObject(plan);
+    expect(coachTurnTiming({ liveWorkout: false, words: ASK_1, buildInPlay: false })).toMatchObject(plan);
+    expect(coachTurnTiming({ liveWorkout: false, words: 'Does my plan hit rear delts enough?', buildInPlay: false })).toMatchObject(plan);
     expect(coachTurnTiming({ liveWorkout: false, words: 'hi', buildInPlay: false }).totalMs).toBeUndefined();
-    expect([COACH_WORKOUT_TIMEOUT_MS, COACH_WORKOUT_PLAN_TIMEOUT_MS, COACH_PLAN_TIMEOUT_MS, COACH_HIGH_EFFORT_EVENT_MS]).toEqual([30_000, 90_000, 120_000, 60_000]);
+    expect([COACH_WORKOUT_TIMEOUT_MS, COACH_PLAN_WORK_CAP_MS, COACH_PLAN_EVENT_MS, COACH_HIGH_EFFORT_EVENT_MS]).toEqual([30_000, 300_000, 180_000, 60_000]);
   });
 
   it('root cause, case 1: with the old 20 s window a high-effort plan step that thinks for 40 s is cut off at the first event', async () => {
@@ -175,14 +177,15 @@ describe('timeouts that fit the work (ADR 0039 amendment, 31 Oct)', () => {
     const timing = coachTurnTiming({ liveWorkout: false, words: ASK_1, buildInPlay: false });
     const r = await settle(runCoachTurn(request({ input: words(ASK_1), planInUse: true, context: ctx, onProgress: (p) => progress.push(p) }), { ...ports(s, model, planExecutors(s, seen)), timing }));
     expect(r.status).toBe('completed');
-    expect(model.efforts()).toEqual(['high', 'high']);
+    // (Ben, 1 Nov) Plan work is medium effort unless he asks for the deep version.
+    expect(model.efforts()).toEqual(['medium', 'medium']);
     // Not forced into a whole-plan rebuild: the targeted tool, a proposal (rule 3).
     expect(model.requests[0]?.toolChoice).toBe('required');
     expect(r.cards.map((c) => [c.record.detail.kind, c.record.status])).toEqual([['propose_plan_swap', 'proposed']]);
     expect(seen).toEqual([{ add: CURL, days: ['Pull A', 'Pull B'], after: HLR, sets: 3, reps: { min: 10, max: 12 }, load: null }]);
     expect(r.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []))).toEqual(['Biceps only get indirect work from pull-ups and rows.', 'Curls on both pull days give them direct work.']);
     expect(r.note).toBeNull();
-    // The sheet shows `Thinking…` for the high-effort step.
+    // The sheet shows `Thinking…` for the plan step.
     expect(progress).toContainEqual({ kind: 'thinking', mode: 'hard' });
   });
 });
@@ -191,15 +194,15 @@ describe('one timeout gets one lighter retry; never silent failures in a row', (
   it('a timeout leads to an automatic lighter retry (low effort, answer now) that says it is the short answer', async () => {
     const s = await store();
     const model = new DelayedModel([
-      // Thinks past even the high-effort window.
-      { delayMs: 70_000, events: [addCall(), { type: 'completed' }] },
-      { delayMs: 2_000, events: reply('Short version: no direct biceps work. Add curls to both pull days.') },
+      // (Ben, 1 Nov) Not plan work: a quick question past its 20 s window to the first event.
+      { delayMs: 25_000, events: reply('late') },
+      { delayMs: 2_000, events: reply('Short version: curls twice a week.') },
     ]);
-    const timing = coachTurnTiming({ liveWorkout: false, words: ASK_1, buildInPlay: false });
+    const timing = coachTurnTiming({ liveWorkout: true, words: QUICK, buildInPlay: false });
     const progress: CoachTurnProgress[] = [];
-    const r = await settle(runCoachTurn(request({ input: words(ASK_1), planInUse: true, context: ctx, onProgress: (p) => progress.push(p) }), { ...ports(s, model, planExecutors(s)), timing }));
+    const r = await settle(runCoachTurn(request({ input: words(QUICK), planInUse: true, context: ctx, onProgress: (p) => progress.push(p) }), { ...ports(s, model, planExecutors(s)), timing }));
     expect(r.status).toBe('completed');
-    expect(model.efforts()).toEqual(['high', 'low']);
+    expect(model.efforts()).toEqual(['medium', 'low']);
     const retryInput = model.requests[1]?.input ?? [];
     expect(retryInput.some((i) => i.type === 'message' && i.content === LIGHT_RETRY_LINE)).toBe(true);
     // No forcing on the retry, and its answer is labelled (rule 1).
@@ -213,12 +216,12 @@ describe('one timeout gets one lighter retry; never silent failures in a row', (
   it('when the retry times out too the turn fails once, honestly: two requests, never a third', async () => {
     const s = await store();
     const model = new DelayedModel([
-      { delayMs: 70_000, events: reply('late') },
-      { delayMs: 70_000, events: reply('late again') },
+      { delayMs: 25_000, events: reply('late') },
+      { delayMs: 25_000, events: reply('late again') },
       { delayMs: 0, events: reply('never asked') },
     ]);
-    const timing = coachTurnTiming({ liveWorkout: false, words: ASK_1, buildInPlay: false });
-    const r = await settle(runCoachTurn(request({ input: words(ASK_1), planInUse: true, context: ctx }), { ...ports(s, model, planExecutors(s)), timing }));
+    const timing = coachTurnTiming({ liveWorkout: true, words: QUICK, buildInPlay: false });
+    const r = await settle(runCoachTurn(request({ input: words(QUICK), planInUse: true, context: ctx }), { ...ports(s, model, planExecutors(s)), timing }));
     expect(r).toMatchObject({ status: 'failed', error: 'timeout', items: [] });
     expect(model.requests).toHaveLength(2);
     expect(r.failure?.kind).toBe('timeout');

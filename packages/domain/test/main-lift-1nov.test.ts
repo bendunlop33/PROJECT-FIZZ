@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type Routine, type SessionAggregate } from '@fizz/schemas';
 
-import { mainLiftDayName, mainLiftOffer, mainLiftTemplateClash, reduceSession, templateWithMainLift, timeFitOffer, withOneMainLift, workoutMainLifts, type BuilderExerciseInfo } from '../src/index';
+import { applyPlanDayEdit, mainLiftDayName, mainLiftOffer, mainLiftTemplateClash, planCoachEdit, reduceSession, templateWithMainLift, timeFitOffer, withOneMainLift, workoutMainLifts, type BuilderExerciseInfo } from '../src/index';
 import { at, id, kg, routineExercise, template, values } from './fixtures';
 import { BENCH, ROW, apply, expectError, expectOk, logCmd, setsFor, startFixture } from './session-fixture';
 
@@ -145,5 +145,40 @@ describe('set_main_lift on the live workout', () => {
     const a = expectOk(setMain(planWorkout(), ROW)).state;
     const o = timeFitOffer({ aggregate: a, overByMinutes: 30, info, mainExerciseIds: new Set([BENCH]) });
     expect(o.lines.some((l) => l.sessionExerciseId === rowOf(a, ROW))).toBe(false);
+  });
+});
+
+describe('the coach: set_main_lift (edit_today `main`) and propose_plan_day_edit’s main mark', () => {
+  const edit = (a: SessionAggregate, sessionExerciseId: string) =>
+    planCoachEdit({ aggregate: a, args: { baseVersion: a.session.version, ops: [{ op: 'main', sessionExerciseId }], reason: 'Ben asked', benAsked: true, benQuote: 'make the row my main lift today' }, intent: 'general', opId: 'turn-1:edit_today:m', actionId: id(9_100), at: at(500), painFlags: [], sessionPainUnspecified: false, gymName: 'Main gym', messagePain: null, exercises: new Map() });
+
+  it('today: one set_main_lift step, applied and undone through the workout’s own commands; no set changes', () => {
+    const a = planWorkout();
+    const p = edit(a, rowOf(a, ROW));
+    if (p.status !== 'ok') throw new Error(p.status);
+    expect(p.command.steps.map((x) => x.type)).toEqual(['set_main_lift']);
+    expect(p.lines.map((l) => l.text)).toEqual(['Cable row · main lift']);
+    const after = expectOk(reduceSession(a, p.command)).state;
+    expect(after.session.planDay?.mainLiftExerciseId).toBe(ROW);
+    expect(after.sets).toEqual(a.sets);
+    const back = expectOk(reduceSession(after, { type: 'revert_coach_edit', at: at(600), opId: 'undo-m', targetOpId: p.command.opId, actionId: id(9_100) })).state;
+    expect(back.session.planDay?.mainLiftExerciseId).toBe(BENCH);
+    expect(back.session.routineName).toBe(a.session.routineName);
+  });
+
+  it('refused: already the main lift, or not a plan workout', () => {
+    const a = planWorkout();
+    expect(edit(a, rowOf(a, BENCH)).status).toBe('rejected');
+    const { state } = startFixture();
+    expect(edit(state, rowOf(state, ROW)).status).toBe('rejected');
+  });
+
+  it('every week: a main mark in a plan-day edit is the one main lift (the same rule as Make main lift)', () => {
+    const r = pushB();
+    const out = applyPlanDayEdit(r.exercises, { order: null, rows: [{ rowId: id(601), main: true }] }, (rowId, n) => `${rowId}:${String(n)}`);
+    expect(out.map((e) => e.main)).toEqual([false, true, false]);
+    expect(out.map((e) => e.setTemplates)).toEqual(r.exercises.map((e) => e.setTemplates));
+    const t = templateWithMainLift(r, { rowId: id(601), liftName: 'x' });
+    expect(out.map((e) => e.main)).toEqual(t?.exercises.map((e) => e.main));
   });
 });

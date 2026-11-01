@@ -2,7 +2,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { TodayScreen } from '../../src/screens/TodayScreen';
-import { roundExerciseMenu } from '../../src/workout/exercise-menu';
+import { contextMenuItems, roundContextMenu } from '../../src/workout/exercise-menu';
 import type { Harness } from '../harness';
 import { expectHealthy, renderScreen, type Rendered } from './render-screen';
 import { benWithHistory, harness, todayData, withPlan } from './seed';
@@ -59,11 +59,11 @@ describe('the day sheet’s Edit: Make main lift', () => {
 });
 
 describe('the in-workout menu', () => {
-  it('Make main lift right after Swap, only when offered', () => {
-    const base = { canSwap: true, doNext: false, moveToEnd: false, plates: false };
-    const m = roundExerciseMenu({ ...base, makeMain: true });
-    expect(m.options.slice(0, 2)).toEqual(['Swap exercise', 'Make main lift']);
-    expect(m.actionAt(1)).toBe('make_main');
-    expect(roundExerciseMenu(base).options).not.toContain('Make main lift');
+  it('Make main lift right after Swap (movecur’s order: Undo… · moves · Swap · Make main lift · Add set …), only when offered', () => {
+    const base = { canSwap: true, moves: { up: true, down: false, first: false, toEnd: true }, plates: false, swapped: { from: 'Bench press', to: 'Incline press' } };
+    const m = roundContextMenu({ ...base, makeMain: true });
+    expect(m.rows.map((x) => x.label).slice(0, 3)).toEqual(['Swap exercise', 'Make main lift', 'Add set']);
+    expect(contextMenuItems(m).map((x) => x.action)).toEqual(['undo_swap', 'move_to_end', 'move_up', 'swap', 'make_main', 'add_set', 'history', 'notes', 'skip_exercise']);
+    expect(contextMenuItems(roundContextMenu(base)).some((x) => x.action === 'make_main')).toBe(false);
   });
 });

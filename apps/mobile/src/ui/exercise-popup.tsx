@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TextInput } from 'react-native';
-import { ActionSheetIOS, InputAccessoryView, Pressable, View, type AccessibilityActionEvent } from 'react-native';
+import { ActionSheetIOS, InputAccessoryView, Pressable, useWindowDimensions, View, type AccessibilityActionEvent } from 'react-native';
 
 import type { SetType } from '@fizz/schemas';
 
@@ -10,7 +10,7 @@ import { Eyebrow, StatusLine, TextField } from './layout';
 import { BottomCard } from './sheet';
 import { AppText } from './Text';
 import { Divider, Stepper, SwipeRow, Table } from './table-parts';
-import { EFFORT_HEADER, effortCellText, holdMenu, KEY_STEPS, shownRir, stepRir, storedEffort, nextFieldByKey, popupRowActions, popupRowByKey, POPUP_COPY, typeMenu, type PopupField, type PopupRestRow, type PopupSetRow, type PopupView } from './exercise-popup-model';
+import { POPUP_CELL_MAX_SCALE, POPUP_CELL_PAD, POPUP_VALUE_COL_W, popupKgColumnWidth, EFFORT_HEADER, effortCellText, holdMenu, KEY_STEPS, shownRir, stepRir, storedEffort, nextFieldByKey, popupRowActions, popupRowByKey, POPUP_COPY, typeMenu, type PopupField, type PopupRestRow, type PopupSetRow, type PopupView } from './exercise-popup-model';
 
 /**
  * The exercise pop-up (workout-builder-v3 §2.4), one component for the
@@ -30,8 +30,7 @@ import { EFFORT_HEADER, effortCellText, holdMenu, KEY_STEPS, shownRir, stepRir, 
 
 export const POPUP_SET_BAR_ID = 'exercise-popup-set-bar';
 
-/** One width for the Reps, Kg and RPE headers and their cells, so they stay lined up at any text size (N2). */
-const VALUE_COL_W = 56;
+const VALUE_COL_W = POPUP_VALUE_COL_W;
 
 export interface ExercisePopupProps {
   view: PopupView | null;
@@ -89,6 +88,9 @@ export function ExercisePopup(p: ExercisePopupProps) {
   // (Redesign D6) The inline card's ⋯: rests by type, options, move, links, Delete.
   const [more, setMore] = useState(false);
   const refs = useRef(new Map<string, TextInput | null>());
+  const { fontScale } = useWindowDimensions();
+  // The Kg column fits every load (and anything Ben types), never less than `102.5` / `1,000` (Ben, 1 Nov).
+  const kgColW = popupKgColumnWidth([...(view?.rows ?? []).map((r) => (r.load === null ? '' : String(r.load))), ...Object.values(drafts)], fontScale);
   useEffect(() => {
     setWhyLines(null);
     setDrafts({});
@@ -155,7 +157,8 @@ export function ExercisePopup(p: ExercisePopupProps) {
           setDrafts((d) => ({ ...d, [k]: t }));
         }}
         onEndEditing={(e) => void commit(r.key, field, e.nativeEvent.text)}
-        style={{ minHeight: 44, width: VALUE_COL_W, textAlign: 'right', fontVariant: ['tabular-nums'], ...(r.done ? { color: theme.colors['status.done'] } : {}) }}
+        maxFontSizeMultiplier={POPUP_CELL_MAX_SCALE}
+        style={{ minHeight: 44, width: field === 'kg' ? kgColW : VALUE_COL_W, paddingHorizontal: POPUP_CELL_PAD, textAlign: 'right', fontVariant: ['tabular-nums'], ...(r.done ? { color: theme.colors['status.done'] } : {}) }}
       />
     );
   };
@@ -290,7 +293,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
       {(inline ? ['SET', view.kgHeader.toUpperCase(), 'REPS', EFFORT_HEADER.toUpperCase()] : ['#', 'Type', 'Reps', view.kgHeader, EFFORT_HEADER]).map((h, i) => {
         const lead = inline ? i === 0 : i <= 1;
         return (
-          <AppText key={h} variant="label" color="text.secondary" style={{ width: lead ? (i === 0 && !inline ? 24 : undefined) : VALUE_COL_W, flex: lead && (inline || i === 1) ? 1 : undefined, textAlign: lead ? 'left' : 'right' }}>
+          <AppText key={h} variant="label" color="text.secondary" style={{ width: lead ? (i === 0 && !inline ? 24 : undefined) : h === view.kgHeader || h === view.kgHeader.toUpperCase() ? kgColW : VALUE_COL_W, flex: lead && (inline || i === 1) ? 1 : undefined, textAlign: lead ? 'left' : 'right' }}>
             {h}
           </AppText>
         );

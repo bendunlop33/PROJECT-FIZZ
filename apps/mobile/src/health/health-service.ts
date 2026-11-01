@@ -96,6 +96,8 @@ export interface HealthServiceDeps {
   workoutOpen: () => Promise<boolean>;
   /** The workout's versioned commands (`Use watch times` goes through the existing time-shift path). */
   dispatch?: (sessionId: string, command: SessionCommand) => Promise<CommandOutcome>;
+  /** (Ben, 1 Nov) An optional step of a read that failed and was skipped (Last error in App status). Absent: none. */
+  logError?: (error: unknown, where: string) => void;
 }
 
 /** Start or end this far from the watch's: `Use watch times` is offered. */
@@ -126,6 +128,17 @@ export function createHealthService(deps: HealthServiceDeps) {
   let notSaved = 0;
   let syncing: Promise<void> | null = null;
   let lastReadStartMs = 0;
+  /** The capability as last answered: only `available` is kept; anything else is asked again (Ben, 1 Nov). */
+  let capabilityKnown: HealthCapability | null = null;
+  /** (Ben, 1 Nov) Told when a read has stored what it read, so the screens reload (HealthHost: `changed`). */
+  const readListeners = new Set<() => void>();
+  const logError = (error: unknown, where: string): void => {
+    try {
+      deps.logError?.(error, where);
+    } catch {
+      // Best effort.
+    }
+  };
 
   const paused = (): NativePause | null => deps.paused?.() ?? null;
   /** What a refused Health action says: paused this run, else not on this install. */
@@ -134,8 +147,24 @@ export function createHealthService(deps: HealthServiceDeps) {
     return p === null ? HEALTH_COPY.notAvailable : NATIVE_PAUSED_COPY[p].line;
   };
 
+  /**
+   * Whether HealthKit works on this install. (Ben, 1 Nov: Health workouts were missing on build 500 until a switch was
+   * turned off and on.) Only `available` is remembered for the run: any other answer (HealthKit not ready yet on the
+   * first launch after an update, a check that failed) is asked again on the next launch or foreground, never kept
+   * until a switch's own refresh.
+   */
   function cap(refresh = false): Promise<HealthCapability> {
-    if (capability === null || refresh) capability = healthCapability(deps.port, deps.buildIncludesHealth);
+    if (capability === null || refresh || (capabilityKnown !== null && capabilityKnown !== 'available')) {
+      const asked = healthCapability(deps.port, deps.buildIncludesHealth);
+      capability = asked;
+      capabilityKnown = null;
+      void asked.then(
+        (c) => {
+          if (capability === asked) capabilityKnown = c;
+        },
+        () => undefined,
+      );
+    }
     return capability;
   }
 
@@ -278,7 +307,10 @@ export function createHealthService(deps: HealthServiceDeps) {
         const samples = workoutSamplesFrom(rows, port.bundleId, tz);
         await repo().replaceSamples(p.id, 'workout', toIso(sinceMs), samples);
         fresh += samples.filter((x) => !before.has(x.uuid)).length;
-        await autoLink(p, samples, toIso(sinceMs));
+        // (Ben, 1 Nov) Pairing is optional: the samples are stored above and show whatever it does.
+        await autoLink(p, samples, toIso(sinceMs)).catch((e: unknown) => {
+          logError(e, 'health-autolink');
+        });
       }
       if (s.readRestingHeartRate) {
         const sinceMs = readSinceMs(s.readWindow, nowMs);
@@ -305,6 +337,15 @@ export function createHealthService(deps: HealthServiceDeps) {
     const at = deps.now().utc;
     const cur = await settings(p.id);
     if (cur !== null) await repo().updateSettings(p.id, cur.version, (x) => (ok ? { ...x, lastReadUtc: at, lastReadFailedUtc: null } : { ...x, lastReadFailedUtc: at })).catch(() => null);
+    // (Ben, 1 Nov) A failed read is tried again on the next foreground, not 15 minutes later.
+    if (!ok) lastReadStartMs = 0;
+    for (const l of [...readListeners]) {
+      try {
+        l();
+      } catch (e) {
+        logError(e, 'health-read-listener');
+      }
+    }
   }
 
   async function autoLink(p: UserProfile, samples: Parameters<typeof autoLinkPairs>[0]['samples'], readFromUtc: string): Promise<void> {
@@ -317,26 +358,38 @@ export function createHealthService(deps: HealthServiceDeps) {
     // (Ben, 31 Oct) An automatic link to the app's own copy (any install), or to a workout no longer in Health, holds
     // the workout while a real one overlaps it: release it first, so the real one links below.
     const ownUuids = new Set([...own.written, ...samples.filter((x) => isOwnCopy(x, own.written, own.sessions)).map((x) => x.uuid)]);
-    const before = await repo().links(p.id);
-    const release = new Map([...ownCopyLinks(before, ownUuids), ...linksToRelink({ links: before, samples, workouts, ownUuids, readFromUtc })].map((l) => [l.healthUuid, l] as const));
-    for (const l of release.values()) {
-      await repo()
-        .changeLink(p.id, l.healthUuid, (cur) => (cur === null ? { kind: 'stale', current: null } : releaseOwnCopyLink(cur, { opId: `health-own-release:${l.healthUuid}:${String(l.version)}`, atUtc: deps.now().utc, expectedVersion: l.version })))
-        .catch(() => null);
-    }
-    const links = await repo().links(p.id);
+    // (Ben, 1 Nov) Each step is optional and on its own: one failing is noted and the next still runs.
+    const step = async (where: string, fn: () => Promise<void>): Promise<void> => {
+      await fn().catch((e: unknown) => {
+        logError(e, where);
+      });
+    };
+    await step('health-release', async () => {
+      const before = await repo().links(p.id);
+      const release = new Map([...ownCopyLinks(before, ownUuids), ...linksToRelink({ links: before, samples, workouts, ownUuids, readFromUtc })].map((l) => [l.healthUuid, l] as const));
+      for (const l of release.values()) {
+        await repo()
+          .changeLink(p.id, l.healthUuid, (cur) => (cur === null ? { kind: 'stale', current: null } : releaseOwnCopyLink(cur, { opId: `health-own-release:${l.healthUuid}:${String(l.version)}`, atUtc: deps.now().utc, expectedVersion: l.version })))
+          .catch(() => null);
+      }
+    });
     const linkable = linkableSamples(samples, own.written, own.sessions);
-    // Every Health workout in the read window, so past days pair too (a back-fill; Ben, 31 Oct).
-    for (const pair of autoLinkPairs({ samples: linkable, workouts, links })) {
-      const r = await repo()
-        .changeLink(p.id, pair.healthUuid, async (cur, elsewhere) =>
-          linkHealthActivity(cur, { ownerId: p.id, healthUuid: pair.healthUuid, sessionId: pair.sessionId, by: 'auto', opId: `health-autolink:${pair.healthUuid}`, atUtc: deps.now().utc, expectedVersion: null, sessionLinkedElsewhere: await elsewhere(pair.sessionId) }),
-        )
-        .catch(() => null);
-      if (r?.status === 'written' && pair.also !== undefined) await recordTwins(p.id, r.link.healthUuid, pair.also);
-    }
+    await step('health-autolink', async () => {
+      const links = await repo().links(p.id);
+      // Every Health workout in the read window, so past days pair too (a back-fill; Ben, 31 Oct).
+      for (const pair of autoLinkPairs({ samples: linkable, workouts, links })) {
+        const r = await repo()
+          .changeLink(p.id, pair.healthUuid, async (cur, elsewhere) =>
+            linkHealthActivity(cur, { ownerId: p.id, healthUuid: pair.healthUuid, sessionId: pair.sessionId, by: 'auto', opId: `health-autolink:${pair.healthUuid}`, atUtc: deps.now().utc, expectedVersion: null, sessionLinkedElsewhere: await elsewhere(pair.sessionId) }),
+          )
+          .catch(() => null);
+        if (r?.status === 'written' && pair.also !== undefined) await recordTwins(p.id, r.link.healthUuid, pair.also);
+      }
+    });
     // (Ben, 31 Oct) A linked workout recorded again (Garmin writing it twice, a watch's twin) is part of that link.
-    for (const t of twinsToRecord(linkable, await repo().links(p.id))) await recordTwins(p.id, t.healthUuid, t.add);
+    await step('health-twins', async () => {
+      for (const t of twinsToRecord(linkable, await repo().links(p.id))) await recordTwins(p.id, t.healthUuid, t.add);
+    });
   }
 
   /** Record `add` in a link's `also` (deterministic op ID per recording, so a re-read changes nothing). */
@@ -547,10 +600,23 @@ export function createHealthService(deps: HealthServiceDeps) {
     readNow: () => readNow(true),
     syncWrites,
 
-    /** App open and return to the foreground: a read when due, and any writes left over (a failed or killed one). */
+    /**
+     * App open and return to the foreground: a read when due, and any writes left over (a failed or killed one).
+     * (Ben, 1 Nov) The read never waits for the writes: a HealthKit save that takes its time (or never answers) held
+     * every launch and foreground read behind it, so only a switch's own read brought Health workouts in. Resolves when
+     * the read is done; the writes carry on.
+     */
     async onAppActive(): Promise<void> {
-      await syncWrites();
+      void syncWrites();
       await readNow(false);
+    },
+
+    /** (Ben, 1 Nov) Calls `fn` after each read has stored what it read (HealthHost reloads the screens). */
+    onDataRead(fn: () => void): () => void {
+      readListeners.add(fn);
+      return () => {
+        readListeners.delete(fn);
+      };
     },
 
     /** `Remove GymSmarter workouts from Health`: only this app's samples; each record becomes `removed` (never written again). */

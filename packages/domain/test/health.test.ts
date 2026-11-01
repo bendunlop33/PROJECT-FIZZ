@@ -310,6 +310,34 @@ describe('Health workouts as activities', () => {
 
   const base = { ownerId: OWNER, links: [] as HealthLink[], own: [] as Activity[], ownBundleId: BUNDLE, writtenUuids: new Set<string>(), appSessionIds: new Set<string>([S1]) };
 
+  it('(Ben, 1 Nov) a run with no workout that day is always shown, whatever links, duplicates and own copies the week has', () => {
+    const u = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    const strength = (n: number, d: number, extra: Partial<HealthWorkoutSample> = {}) =>
+      sample({ uuid: u(n), activityType: 50, startUtc: `2026-10-${String(d)}T16:57:00.000Z`, endUtc: `2026-10-${String(d)}T17:50:00.000Z`, durationS: 3180, distanceM: null, ...extra });
+    const samples = [
+      strength(1, 26),
+      strength(2, 26, { startUtc: '2026-10-26T16:58:00.000Z' }),
+      strength(3, 27),
+      strength(4, 27, { startUtc: '2026-10-27T16:59:00.000Z' }),
+      strength(5, 28),
+      strength(6, 28, { sourceBundleId: 'com.projectfizz.fizz.ABCDE12345', sourceName: 'GymSmarter' }),
+      // Thu: the run, at the same clock time as the strength workouts on the other days.
+      sample({ uuid: u(9), activityType: 37, startUtc: '2026-10-29T16:57:00.000Z', endUtc: '2026-10-29T17:32:00.000Z', durationS: 2100, distanceM: 6000 }),
+    ];
+    const links = [
+      link({ id: healthLinkId(u(1)), healthUuid: u(1), sessionId: u(101), also: [u(2)] }),
+      link({ id: healthLinkId(u(3)), healthUuid: u(3), sessionId: u(102) }),
+      link({ id: healthLinkId(u(5)), healthUuid: u(5), sessionId: u(103) }),
+      // An older build's link to Wed's own copy, and Ben's Not it on Tue's duplicate.
+      link({ id: healthLinkId(u(6)), healthUuid: u(6), sessionId: u(104) }),
+      link({ id: healthLinkId(u(4)), healthUuid: u(4), sessionId: u(102), status: 'unlinked', by: 'ben' }),
+    ];
+    const shown = activitiesWithHealth({ ...base, samples, links, writtenUuids: new Set([u(6)]) });
+    expect(shown.map((a) => [a.id, a.fields.kind, a.fields.date])).toEqual([[u(4), 'other', '2026-10-27'], [u(9), 'run', '2026-10-29']]);
+    // Also with every strength sample a twin of a linked one, and in any order.
+    expect(activitiesWithHealth({ ...base, samples: [...samples].reverse(), links: links.slice(0, 3), writtenUuids: new Set([u(6)]) }).map((a) => a.id)).toEqual([u(9)]);
+  });
+
   it('never lists the app’s own writes (by source, by written UUID, or by external ID)', () => {
     expect(activitiesWithHealth({ ...base, samples: [sample({ activityType: 50, sourceBundleId: BUNDLE })] })).toEqual([]);
     expect(activitiesWithHealth({ ...base, samples: [sample({ activityType: 50, sourceBundleId: 'com.other' })], writtenUuids: new Set([U1]) })).toEqual([]);
