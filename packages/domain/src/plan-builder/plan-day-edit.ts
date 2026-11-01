@@ -1,5 +1,7 @@
 import type { Load, RepRange, RoutineExercise, SetTemplate } from '@fizz/schemas';
 
+import { withOneMainLift } from '../session/main-lift';
+
 /**
  * (Ben, 1 Nov, build 500: "I think we didn't adjust the plan considering the shoulders I just trained? Going forwards
  * plan B should be slightly different?") One plan day changed every week from now on: its order, and each named
@@ -102,7 +104,7 @@ export function applyPlanDayEdit<R extends Row>(rows: readonly R[], edit: PlanDa
   const ordered = edit.order === null ? sorted : edit.order.map((id) => sorted.find((r) => r.id === id)).filter((r): r is R => r !== undefined);
   // An order that no longer names every row (the day changed since) leaves the order as it was; the caller checks versions first.
   const base = ordered.length === sorted.length ? ordered : sorted;
-  return base.map((r, i) => {
+  const out = base.map((r, i) => {
     const c = edit.rows.find((x) => x.rowId === r.id);
     if (c === undefined) return { ...r, order: i };
     let templates = [...r.setTemplates];
@@ -128,4 +130,8 @@ export function applyPlanDayEdit<R extends Row>(rows: readonly R[], edit: PlanDa
     );
     return { ...r, order: i, setTemplates: templates, ...(c.main !== undefined ? { main: c.main } : {}) };
   });
+  // (Ben, 1 Nov) One main lift per day, as `Make main lift`: a row made main is the only one (`withOneMainLift`).
+  const made = edit.rows.find((x) => x.main === true);
+  const one = made === undefined ? out : withOneMainLift(out, made.rowId);
+  return one === null || one === 'same' ? out : one;
 }

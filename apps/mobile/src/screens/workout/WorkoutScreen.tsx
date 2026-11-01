@@ -65,6 +65,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu, rirMenu, roundContextMenu, targetRpeMenu, targetRpeScopeMenu, type ContextMenuModel, type ExerciseMenuAction, type MenuAnchor } from '../../workout/exercise-menu';
 import { ExerciseContextMenu } from '../../ui/context-menu';
 import { exerciseSwipeActions, type ExerciseSwipeAction, type ExerciseSwipeActions } from '../../workout/exercise-swipe';
+import { canMakeMain, makeMainLiftNow, type MainLiftActionPorts } from '../../workout/main-lift-action';
 import { exerciseActions } from '../../workout/exercise-popup';
 import { cuesWorkEnd, shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
@@ -1204,7 +1205,22 @@ export function WorkoutScreen() {
       swapped: facts.swappedFrom === null ? null : { from: facts.swappedFrom.name, to: facts.exerciseName },
       adjust: current,
       canSkip: a.sets.some((x) => x.sessionExerciseId === sessionExerciseId && x.status === 'pending'),
+      makeMain: canMakeMain(loaded, sessionExerciseId),
     });
+  }
+
+  /** (Ben, 1 Nov) `Make main lift` (workout/main-lift-action.ts): a plan workout's compound that isn't today's main lift. */
+  function mainLiftPorts(): MainLiftActionPorts {
+    return {
+      now: services.now,
+      newId: newUuid,
+      dispatch: run,
+      undoOp: (req) => services.workout.undoOp(req),
+      everyWeek: (req) => services.plans.mainLiftEveryWeek(req),
+      revert: (req) => services.routines.revert(req),
+      toast: (t) => { if (t === null) setToast(null); else showToast(t); },
+      changed: () => { changed(); void reload(); },
+    };
   }
 
   /** The round page's menu next to the exercise's header (A); its pick runs as the action sheet's did. */
@@ -1240,6 +1256,9 @@ export function WorkoutScreen() {
         return true;
       case 'swap':
         workoutEdits.openSwap(ex.sessionExerciseId);
+        return true;
+      case 'make_main':
+        void makeMainLiftNow(mainLiftPorts(), loaded.aggregate, ex);
         return true;
       case 'remove_superset':
         if (v3) workoutEdits.unlink(ex.sessionExerciseId);

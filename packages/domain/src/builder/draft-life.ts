@@ -200,6 +200,26 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
   return { kind: 'write', next, expectedVersion: current.version };
 }
 
+/**
+ * (Ben, 1 Nov) `Make main lift` › `Every week?` on Your workout wrote the plan day's template (`routineId`) at
+ * `templateVersion`: the draft notes it (its Set up and the pending Undo's snapshot, so neither reads the template as
+ * changed elsewhere), and the pending Undo stays available (its version moves with this note). Nothing else changes.
+ * A repeated op ID is `duplicate`; a draft opened on another template is `invalid`.
+ */
+export function noteTemplateVersion(current: WorkoutDraft, n: { opId: string; at: ZonedTimestamp; routineId: string; templateVersion: number }): DraftLifeChange {
+  if (current.opIds.includes(n.opId)) return { kind: 'duplicate', current };
+  if (current.builderKey === undefined) return { kind: 'invalid', reason: 'not a builder draft' };
+  if (closedOrDue(current, n.at.utc)) return { kind: 'closed', current };
+  const setupOf = (s: BuilderSetup | null | undefined): BuilderSetup | null | undefined => (s == null || s.templateRoutineId !== n.routineId ? s : { ...s, templateVersion: n.templateVersion });
+  const cur = currentDraftVersion(current);
+  if (cur.request.setup?.templateRoutineId !== n.routineId) return { kind: 'invalid', reason: 'another template' };
+  const versions = current.versions.map((v): WorkoutDraftVersion => (v.n === current.currentVersion && v.request.setup != null ? { ...v, request: { ...v.request, setup: setupOf(v.request.setup) ?? v.request.setup } } : v));
+  const nextVersion = current.version + 1;
+  const undo = current.undo == null ? current.undo : current.undo.atVersion !== current.version ? current.undo : { ...current.undo, atVersion: nextVersion, snapshot: { ...current.undo.snapshot, setup: setupOf(current.undo.snapshot.setup) ?? null } };
+  const next: WorkoutDraft = { ...current, versions, opIds: [...current.opIds, n.opId].slice(-MAX_WORKOUT_DRAFT_OPS), version: nextVersion, updatedAtUtc: n.at.utc, ...(undo === undefined ? {} : { undo }) };
+  return { kind: 'write', next, expectedVersion: current.version };
+}
+
 /** Why Undo can't run: nothing to undo, or something changed since that edit (rule 5). */
 export type BuilderUndoRefusal = 'nothing' | 'changed_since';
 

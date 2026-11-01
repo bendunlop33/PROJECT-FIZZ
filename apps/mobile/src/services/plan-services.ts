@@ -90,6 +90,10 @@ import {
   finishedGymWorkoutOn,
   setDaysWeekSlots,
   upNextPlanningWeekday,
+  MAIN_LIFT_COPY,
+  followMainLift,
+  mainLiftTemplateClash,
+  templateWithMainLift,
 } from '@fizz/domain';
 import type { PlanSplitView } from '@fizz/coach';
 import type { PlanWrite, Store } from '@fizz/persistence';
@@ -530,7 +534,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     return new Map(days.map((r) => [r.id, planDayBodyParts(r, of, split)]));
   }
 
-  return {
+  const service = {
     get,
     active,
 
@@ -1159,7 +1163,11 @@ export function createPlanServices(deps: PlanServicesDeps) {
         const touched = new Set(edit.rows.map((r) => r.rowId));
         const exercises = applyPlanDayEdit(current.exercises, edit, (rowId, n) => deriveId(`plan-day-edit-set:${req.opId}:${rowId}:${String(n)}`)).map((x) => (touched.has(x.id) ? { ...x, structureChangedAtUtc: at.utc } : x));
         if (JSON.stringify(exercises) === JSON.stringify([...current.exercises].sort((a, b) => a.order - b.order))) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
-        const next: Routine = { ...current, exercises, version: current.version + 1, updatedAtUtc: at.utc, lastOpId: req.opId };
+        // (Ben, 1 Nov) A main mark is `Make main lift`'s write: one main lift, the plan day's key and name following
+        // (`followMainLift`, as the editor's Save and `mainLiftEveryWeek`), refused on another template's lift.
+        const made: Routine = followMainLift({ ...current, exercises, version: current.version + 1, updatedAtUtc: at.utc, lastOpId: req.opId }, (id) => of(id)?.name ?? 'Exercise');
+        if (made.planDay?.mainLiftExerciseId !== current.planDay?.mainLiftExerciseId && mainLiftTemplateClash(made, await repos.routines.listByOwner(p.id).catch(() => [] as Routine[]), made.planDay?.mainLiftExerciseId ?? '')) return { ok: false, reason: 'stale', message: MAIN_LIFT_COPY.clash };
+        const next = made;
         const action: ActionRecord = {
           actionId,
           turnId: null,
@@ -1179,6 +1187,41 @@ export function createPlanServices(deps: PlanServicesDeps) {
         if (r.status === 'missing') return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
         if (r.status === 'stale') return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
         return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed' };
+      } catch {
+        return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      }
+    },
+
+    /**
+     * (Ben, 1 Nov) `Make main lift` for every week: the plan day's template (or a saved workout) gets `exerciseId` as
+     * its one main lift (`templateWithMainLift`: the one before a normal compound with its sets, the key and name
+     * following), so Today's `Main lift` row, the next workout's top set and back-offs, its rest, Next time and block
+     * progress read it from then on. Done workouts never change (rule 2). One versioned write with Ben's
+     * `update_routine` record (op ID; a stale version is refused: rule 5); Undo is `routines.revert(actionId)`.
+     * `expectedVersion` absent: the version read now (a tap from a live workout or Your workout, which hold no
+     * template version of their own). Refused when the exercise isn't in it, or another template of that plan day
+     * already has that main lift.
+     */
+    async mainLiftEveryWeek(req: { routineId: string; exerciseId: string; opId: string; expectedVersion?: number }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: 'stale' | 'missing' | 'failed' | 'clash' | 'not_in_plan'; message: string }> {
+      try {
+        const p = await owner();
+        if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        const repos = deps.store().repos;
+        const current = await repos.routines.get(req.routineId).catch(() => null);
+        if (current === null || current.ownerId !== p.id || isDeleted(current)) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        // A repeat of this op replays (the write's action ID is the plan-day edit's, from the op ID).
+        if ((await repos.coach.getAction(deriveId(`plan-day-every-week:${req.opId}`)).catch(() => null)) !== null) return { ok: true, actionId: deriveId(`plan-day-every-week:${req.opId}`), routine: current, duplicate: true };
+        if (req.expectedVersion !== undefined && current.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const row = [...current.exercises].sort((a, b) => a.order - b.order).find((e) => e.exerciseId === req.exerciseId);
+        if (row === undefined) return { ok: false, reason: 'not_in_plan', message: MAIN_LIFT_COPY.notInPlan };
+        const others = await repos.routines.listByOwner(p.id).catch(() => [] as Routine[]);
+        if (current.planDay !== undefined && mainLiftTemplateClash(current, others, req.exerciseId)) return { ok: false, reason: 'clash', message: MAIN_LIFT_COPY.clash };
+        const liftName = (await exerciseOf())(req.exerciseId)?.name ?? 'Exercise';
+        // Already the day's one main lift: nothing to write.
+        if (templateWithMainLift(current, { rowId: row.id, liftName }) === null) return { ok: true, actionId: deriveId(`plan-day-every-week:${req.opId}`), routine: current, duplicate: true };
+        // One path (coordinator, 1 Nov): the same write as `propose_plan_day_edit`'s Apply, a main mark on that row.
+        const r = await service.editDayRowsEveryWeek({ routineId: current.id, expectedVersion: current.version, opId: req.opId, edit: { order: null, rows: [{ rowId: row.id, main: true }] }, lines: [MAIN_LIFT_COPY.made(liftName)] });
+        return r.ok ? r : { ok: false, reason: r.reason, message: r.message };
       } catch {
         return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
       }
@@ -1210,6 +1253,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       return consistencyMemo.get(deps.store(), `${p.id}|${p.timezone}|${localDateOf(toMs(deps.now().utc), p.timezone)}`, () => readConsistency(p));
     },
   };
+  return service;
 
   async function readConsistency(p: UserProfile): Promise<ConsistencyView | null> {
       const now = deps.now();

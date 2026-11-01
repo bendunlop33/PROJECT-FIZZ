@@ -23,6 +23,7 @@ export type ExerciseMenuAction =
   | 'move_up'
   | 'move_down'
   | 'do_first'
+  | 'make_main'
   | 'move_to_end'
   | 'not_at_gym'
   | 'superset_with'
@@ -162,10 +163,12 @@ export interface RoundContextMenuOptions {
   adjust?: boolean;
   /** Skip: the exercise has a set not done yet. */
   canSkip?: boolean;
+  /** (Ben, 1 Nov) `Make main lift` (`mainLiftOffer`): a plan workout's compound that isn't today's main lift. */
+  makeMain?: boolean;
 }
 
 /**
- * (Ben, 1 Nov, approved A) Undo… · Later / Now / Up / Down · Swap exercise · Add set · History · Notes · Plates
+ * (Ben, 1 Nov, approved A) Undo… · Later / Now / Up / Down · Swap exercise · Make main lift (1 Nov) · Add set · History · Notes · Plates
  * (bar or plate-loaded only) · Adjust (current only) · Skip exercise. Elsewhere: Edit set, Target RIR and Delete on
  * the set's own hold menu and swipe; Add exercise at the end of the list; Not at this gym in the Swap sheet; How
  * to, Superset, Unlink and Remove in the name's pop-up.
@@ -183,6 +186,8 @@ export function roundContextMenu(o: RoundContextMenuOptions): ContextMenuModel {
   ];
   const rows: ContextMenuItem[] = [
     ...(o.canSwap ? [{ action: 'swap' as const, label: 'Swap exercise', icon: 'arrow.left.arrow.right' as const }] : []),
+    // (Ben, 1 Nov) Right after Swap.
+    ...(o.makeMain === true ? [{ action: 'make_main' as const, label: 'Make main lift', icon: 'star' as const }] : []),
     { action: 'add_set', label: 'Add set', icon: 'plus' },
     { action: 'history', label: 'History', icon: 'clock.arrow.circlepath' },
     { action: 'notes', label: 'Notes', icon: 'note.text' },

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { DAY_SHEET_COPY, TODAY_V2_COPY, type WorkoutListRow } from '@fizz/domain';
+import { DAY_SHEET_COPY, MAIN_LIFT_COPY, TODAY_V2_COPY, type WorkoutListRow } from '@fizz/domain';
 import type { PlanWeekExerciseEdit } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -195,6 +195,34 @@ export function DaySheetFlow({
           onToast(null);
           void services.routines.revert({ actionId, opId: newUuid() }).then(async (u) => {
             if (u.ok && learned !== null) await services.gyms.undoEdit(learned).catch(() => null);
+            reread();
+            if (!u.ok) onToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
+
+  /** (Ben, 1 Nov) `Make main lift`, every week: one versioned write on the day's template, its toast with Undo. */
+  async function makeMain(exerciseId: string, name: string) {
+    if (busy.current || rows === null) return;
+    busy.current = true;
+    try {
+      const r = await services.plans.mainLiftEveryWeek({ routineId: rows.routineId, exerciseId, expectedVersion: rows.version, opId: newUuid() });
+      reread();
+      if (!r.ok) {
+        onToast({ text: r.reason === 'stale' ? DAY_SHEET_COPY.stale : r.message });
+        return;
+      }
+      const actionId = r.actionId;
+      onToast({
+        text: MAIN_LIFT_COPY.madeEveryWeek(name),
+        action: DAY_SHEET_COPY.undo,
+        onAction: () => {
+          onToast(null);
+          void services.routines.revert({ actionId, opId: newUuid() }).then((u) => {
             reread();
             if (!u.ok) onToast({ text: u.message });
           });
@@ -434,6 +462,16 @@ export function DaySheetFlow({
           <View style={{ gap: theme.space['2'] }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
               <TextButton label={DAY_SHEET_COPY.swap} onPress={() => void openSwap(rowIdOf(selected.exerciseId), selected.exerciseId)} />
+              {/* (Ben, 1 Nov) Every week only: the plan day's template takes it as its main lift. */}
+              {scope === 'every' && !selected.main ? (
+                <TextButton
+                  label={MAIN_LIFT_COPY.make}
+                  onPress={() => {
+                    setRow(null);
+                    void makeMain(selected.exerciseId, selected.fullName);
+                  }}
+                />
+              ) : null}
               <TextButton
                 label={DAY_SHEET_COPY.remove}
                 tone="secondary"

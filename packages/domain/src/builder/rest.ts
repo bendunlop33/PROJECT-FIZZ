@@ -37,7 +37,13 @@ export const BUILDER_REST_LIMITS = {
  * used exactly as he set it, and (Ben, 28 Oct) so is a standard one: defaults no longer snap to his rest presets. A
  * rest of his own on a slot still wins, and stored workouts, an open workout and done sets keep theirs.
  */
-export type RestDefaults = Readonly<Partial<Record<RestDefaultKey, number>>>;
+export type RestDefaults = Readonly<Partial<Record<RestDefaultKey, number>>> & {
+  /**
+   * (Ben, 1 Nov) `Rest when short on time` › `Shorten main lift too`: the shorter levels also shorten the main lift's
+   * working, top-set and back-off rests (`MAIN_REST_FLOOR_S`). Absent: they never change for time (27 Oct rule).
+   */
+  readonly shortenMain?: true;
+};
 
 /** The standard defaults (what `Reset to defaults` goes back to). */
 export const STANDARD_REST_DEFAULTS: Readonly<Record<RestDefaultKey, number>> = {
@@ -63,15 +69,21 @@ export const REST_DEFAULT_ROWS: readonly { key: RestDefaultKey; label: string }[
 export const REST_TIMES_COPY = { title: 'Rest times', reset: 'Reset to defaults', standard: 'Default', own: 'Custom' } as const;
 
 /** Ben's own defaults from his training profile (only those he set), clamped to the limits and onto 15 s. */
-export function restDefaultsOf(profile: { restDefaultsS?: Partial<Record<RestDefaultKey, number>> | undefined } | null): RestDefaults {
+export function restDefaultsOf(profile: { restDefaultsS?: Partial<Record<RestDefaultKey, number>> | undefined; fitShortenMain?: boolean | undefined } | null): RestDefaults {
   const own = profile?.restDefaultsS;
   const out: Partial<Record<RestDefaultKey, number>> = {};
-  if (own === undefined) return out;
+  const main = profile?.fitShortenMain === true ? { shortenMain: true as const } : {};
+  if (own === undefined) return { ...out, ...main };
   for (const key of REST_DEFAULT_KEYS) {
     const v = own[key];
     if (v !== undefined) out[key] = clampBuilderRest('working', v);
   }
-  return out;
+  return { ...out, ...main };
+}
+
+/** (Ben, 1 Nov) Whether the profile carries anything a rest reader needs (`restDefaultsOf` is worth passing on). */
+export function hasRestSettings(profile: { restDefaultsS?: unknown; fitShortenMain?: boolean | undefined } | null | undefined): boolean {
+  return profile?.restDefaultsS !== undefined || profile?.fitShortenMain === true;
 }
 
 /** Whether Ben set any default (`Reset to defaults` has something to do). */
@@ -99,6 +111,8 @@ type RestTable = Record<'top' | 'backoff' | 'workingMain' | 'workingCompound' | 
 const LEVEL_SCALE: Readonly<Record<Exclude<RestLevel, 'normal'>, number>> = { shorter: 0.8, shortest: 2 / 3 };
 /** A compound accessory's rest is never shortened below this (Ben, 27 Oct). */
 export const COMPOUND_REST_FLOOR_S = 90;
+/** (Ben, 1 Nov) With `Shorten main lift too` on, a main-lift set's rest is never shortened below this. */
+export const MAIN_REST_FLOOR_S = 120;
 
 function shortened(standard: number, scale: number, floor: number): number {
   const step = BUILDER_REST_LIMITS.stepS;
@@ -115,8 +129,10 @@ export function restTableOf(level: RestLevel, defaults: RestDefaults = {}): Rest
   const main = { top: at('top'), backoff: at('backoff'), workingMain: at('workingMain') };
   if (level === 'normal') return { ...main, workingCompound: at('workingCompound'), workingIsolation: at('workingIsolation'), round: at('round') };
   const k = LEVEL_SCALE[level];
+  // (Ben, 1 Nov) `Shorten main lift too`: the main lift's rests scale too, never below 2:00.
+  const mainAt = defaults.shortenMain === true ? { top: at('top', (s) => shortened(s, k, MAIN_REST_FLOOR_S)), backoff: at('backoff', (s) => shortened(s, k, MAIN_REST_FLOOR_S)), workingMain: at('workingMain', (s) => shortened(s, k, MAIN_REST_FLOOR_S)) } : main;
   return {
-    ...main,
+    ...mainAt,
     workingCompound: at('workingCompound', (s) => shortened(s, k, COMPOUND_REST_FLOOR_S)),
     workingIsolation: at('workingIsolation', (s) => shortened(s, k, 0)),
     round: at('round', (s) => shortened(s, k, 0)),
@@ -165,10 +181,17 @@ export function restLevelTimesLine(level: RestLevel, defaults: RestDefaults = {}
   return `Compound ${restClockText(t.workingCompound)} · Isolation ${restClockText(t.workingIsolation)}`;
 }
 
-/** The main lift's rest, shown once on that screen (it never shortens): `Main lift 3:00`. */
+/**
+ * The main lift's rest, shown once on that screen: `Main lift 3:00` (it never shortens), or (Ben, 1 Nov) with
+ * `Shorten main lift too` on, each level's: `Main lift 3:00 · 2:30 · 2:00`.
+ */
 export function mainLiftRestLine(defaults: RestDefaults = {}): string {
-  return `Main lift ${restClockText(restTableOf('normal', defaults).workingMain)}`;
+  if (defaults.shortenMain !== true) return `Main lift ${restClockText(restTableOf('normal', defaults).workingMain)}`;
+  return `Main lift ${FIT_REST_LEVEL_OPTIONS.map((l) => restClockText(restTableOf(l, defaults).workingMain)).join(' · ')}`;
 }
+
+/** (Ben, 1 Nov) The switch under the levels on `Rest when short on time`. */
+export const SHORTEN_MAIN_COPY = { label: 'Shorten main lift too' } as const;
 
 /** (Ben, 27 Oct) What Ben reads for each rest level (Profile › Training › `Rest when short on time`, the fit's note). */
 export const REST_LEVEL_NAMES: Readonly<Record<RestLevel, string>> = {
@@ -237,7 +260,9 @@ export function restAfterRows(slot: BuilderSlot, info: BuilderInfoLookup, level:
     if (own !== undefined) return own;
     // (Ben, 27 Oct) The plan day's stored rest: as stored at normal length; a shorter level may shorten an accessory's.
     const plan = slot.planRestS?.[kind];
-    if (plan !== undefined) return level === 'normal' || role === 'main' || kind === 'top' || kind === 'backoff' ? plan : Math.min(plan, defaultRestS(kind, role, level, defaults));
+    // (Ben, 1 Nov) With `Shorten main lift too` the main lift's stored rests shorten like an accessory's.
+    const fixed = defaults?.shortenMain === true ? false : role === 'main' || kind === 'top' || kind === 'backoff';
+    if (plan !== undefined) return level === 'normal' || fixed ? plan : Math.min(plan, defaultRestS(kind, role, level, defaults));
     // (WU11) The last warm-up rests 2 min before a rep-band first working set, 3 min before a heavy-band one.
     if (row.type === 'warmup' && next !== undefined && next.type !== 'warmup' && firstWork !== undefined && firstWork.durationS === undefined && firstWork.distanceM === undefined) return warmupRestS(firstWork.reps, true);
     return defaultRestS(kind, role, level, defaults);

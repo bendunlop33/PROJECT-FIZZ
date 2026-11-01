@@ -483,6 +483,11 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('superset'), sessionExerciseId: IdSchema, withSessionExerciseId: IdSchema }),
   /** (19 Oct) The exercise's superset is taken apart (each member back to its own sets). */
   z.strictObject({ op: z.literal('split_superset'), sessionExerciseId: IdSchema }),
+  /**
+   * (Ben, 1 Nov) `set_main_lift`: today's main lift is this exercise (one per day; the one before a normal compound).
+   * No set changes. The workout's own `set_main_lift` step; every week is `propose_plan_day_edit` with `main: true`.
+   */
+  z.strictObject({ op: z.literal('main'), sessionExerciseId: IdSchema }),
 ]);
 export type EditTodayOp = z.infer<typeof EditTodayOpSchema>;
 

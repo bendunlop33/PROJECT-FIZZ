@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { builderApplyOpId, type BuilderCoachReach, type BuilderProposal } from '@fizz/coach';
-import { dropBuilderSlot, gymLearnToast, sessionCheckInForSkip, slotsOf, type BuilderEditOp, type GymLearn } from '@fizz/domain';
+import { dropBuilderSlot, gymLearnToast, MAIN_LIFT_COPY, sessionCheckInForSkip, slotsOf, type BuilderEditOp, type GymLearn } from '@fizz/domain';
 import type { BuilderGroup, CheckInScore, Routine, SessionCheckIn } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, TodayOptionChange, TodayOptions } from '../../builder/builder-service';
@@ -79,7 +79,7 @@ export function BuilderWorkoutScreen() {
   const [proposal, setProposal] = useState<{ proposal: BuilderProposal; state: ProposalState } | null>(null);
   const [applying, setApplying] = useState(false);
   // `onUndo`: an Undo that isn't the draft's own (a variation saved from `⋯`).
-  const [toast, setToast] = useState<(BuilderToast & { whyOpen: boolean; onUndo?: () => void }) | null>(null);
+  const [toast, setToast] = useState<(BuilderToast & { whyOpen: boolean; onUndo?: () => void; /** (Ben, 1 Nov) `Every week?` after `Make main lift`. */ everyWeek?: () => void }) | null>(null);
   // (Ben, 23 Oct) `⋯ Save as a variation`: the name sheet (its prefill), one op ID per opening.
   const [variationName, setVariationName] = useState<string | null>(null);
   const variationOp = useRef(newUuid());
@@ -195,7 +195,7 @@ export function BuilderWorkoutScreen() {
   }, []);
 
   const showToast = useCallback(
-    (t: (BuilderToast & { onUndo?: () => void }) | null) => {
+    (t: (BuilderToast & { onUndo?: () => void; everyWeek?: () => void }) | null) => {
       if (toastTimer.current !== null) clearTimeout(toastTimer.current);
       setToast(t === null ? null : { ...t, whyOpen: false });
       // With VoiceOver on, an Undo toast stays until dismissed (close button).
@@ -226,18 +226,53 @@ export function BuilderWorkoutScreen() {
       if (op === null) return null;
       const slots = 'slotKey' in op ? [op.slotKey] : [];
       // Edits on one exercise name only that slot (rule 5: refused only if it moved); the rest name the version.
-      const basis = slots.length === 1 && op.kind !== 'move' && op.kind !== 'superset_next' && op.kind !== 'unlink' && op.kind !== 'delete_exercise' ? { slots: slots.map((k) => ({ slotKey: k, rev: cur.revs[k] ?? 1 })) } : { version: cur.version };
+      const basis = slots.length === 1 && op.kind !== 'move' && op.kind !== 'superset_next' && op.kind !== 'unlink' && op.kind !== 'delete_exercise' && op.kind !== 'make_main' ? { slots: slots.map((k) => ({ slotKey: k, rev: cur.revs[k] ?? 1 })) } : { version: cur.version };
       const r = await services.builder.edit(cur.draftId, op, { opId: newUuid(), basis });
       if (r.snapshot !== null) setSnap(r.snapshot);
       if (r.status === 'written') {
         changed();
         const learn = r.toast?.learn;
+        const made = op.kind === 'make_main' ? slotsOf(r.snapshot.workout.blocks).find((x) => x.key === op.slotKey)?.exerciseId : undefined;
         if (learn !== undefined && r.toast !== null) void learnTyped(learn, r.toast.undoOpId);
-        else if (r.toast !== null) showToast(r.toast);
+        else if (r.toast !== null && made !== undefined && r.snapshot.planDay?.templateRoutineId != null) {
+          // (Ben, 1 Nov) Today first; then `Every week?` puts it on the plan day's template.
+          const draftId = r.snapshot.draftId;
+          const toastText = r.toast.text;
+          showToast({ ...r.toast, everyWeek: () => void mainLiftEveryWeek(draftId, made, toastText) });
+        } else if (r.toast !== null) showToast(r.toast);
       } else if (r.status !== 'replayed') {
         showToast({ text: r.message, undoOpId: null, why: null });
       }
       return r;
+    });
+  }
+
+  /** (Ben, 1 Nov) `Every week?` after `Make main lift`: the plan day's template too; its toast's Undo takes that back. */
+  function mainLiftEveryWeek(draftId: string, exerciseId: string, liftText: string): Promise<void> {
+    return inTurn(async () => {
+      const r = await services.builder.mainLiftEveryWeek(draftId, { exerciseId, opId: newUuid() });
+      if (!r.ok) {
+        showToast({ text: r.message, undoOpId: null, why: null });
+        return;
+      }
+      if (r.snapshot !== null) setSnap(r.snapshot);
+      changed();
+      const actionId = r.actionId;
+      const name = liftText.replace(/ · main lift$/, '');
+      showToast({
+        text: MAIN_LIFT_COPY.madeEveryWeek(name),
+        undoOpId: null,
+        why: null,
+        onUndo: () => {
+          showToast(null);
+          void inTurn(async () => {
+            const u = await services.builder.mainLiftEveryWeek(draftId, { undo: actionId, opId: newUuid() });
+            if (u.ok && u.snapshot !== null) setSnap(u.snapshot);
+            if (!u.ok) showToast({ text: u.message, undoOpId: null, why: null });
+            changed();
+          });
+        },
+      });
     });
   }
 
@@ -626,7 +661,7 @@ export function BuilderWorkoutScreen() {
         icon="info.circle"
         text={toast.whyOpen && toast.why !== null ? toast.why : toast.text}
         {...(toast.onUndo !== undefined ? { action: WORKOUT_COPY.undo, onAction: toast.onUndo } : toast.undoOpId !== null ? { action: WORKOUT_COPY.undo, onAction: () => void undo(toast.undoOpId ?? '') } : {})}
-        {...(toast.why !== null && !toast.whyOpen ? { secondary: WORKOUT_COPY.why, onSecondary: () => { setToast({ ...toast, whyOpen: true }); } } : {})}
+        {...(toast.everyWeek !== undefined ? { secondary: MAIN_LIFT_COPY.everyWeek, onSecondary: () => { const go = toast.everyWeek; showToast(null); go?.(); } } : toast.why !== null && !toast.whyOpen ? { secondary: WORKOUT_COPY.why, onSecondary: () => { setToast({ ...toast, whyOpen: true }); } } : {})}
         onDismiss={() => { showToast(null); }}
         showClose={screenReader}
       />

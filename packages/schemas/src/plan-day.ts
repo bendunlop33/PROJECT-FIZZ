@@ -108,6 +108,12 @@ export const SessionPlanDaySchema = z
     notEdited: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 2).optional(),
     blockId: z.string().min(1).max(64).optional(),
     weekN: z.int().min(1).max(52).optional(),
+    /**
+     * (Ben, 1 Nov) Ben's `Make main lift` mid-workout (`set_main_lift`): `mainLiftExerciseId` is then his pick for
+     * today, and wins over the draft's main slots. `from` / `fromName`: the main lift and workout name before, for
+     * Undo (the last change only). Absent: the main lift is as the workout started.
+     */
+    mainLiftChange: z.object({ opId: OperationIdSchema, from: MainLiftIdSchema.nullable(), fromName: z.string().max(120).nullable() }).optional(),
   })
   .refine((p) => (p.templateRoutineId === null) === (p.templateVersion === null), { message: 'A template is named with its version', path: ['templateVersion'] });
 export type SessionPlanDay = z.infer<typeof SessionPlanDaySchema>;

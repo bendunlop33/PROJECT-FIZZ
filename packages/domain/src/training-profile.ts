@@ -212,6 +212,13 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     }
     case 'fit_rest_level':
       return FitRestLevelSchema.safeParse(c.level).success ? { ...p, fitRestLevel: c.level } : null;
+    case 'fit_shorten_main': {
+      // (Ben, 1 Nov) Off is the default, so off is stored as absent.
+      const next = { ...p };
+      if (c.on) next.fitShortenMain = true;
+      else delete next.fitShortenMain;
+      return next;
+    }
     case 'rest_default': {
       // (Ben, 28 Oct) Profile › Rest times: 0:30–6:00 in 15 s steps, kept as he set it (used exactly; `Reset to
       // defaults` clears them all).

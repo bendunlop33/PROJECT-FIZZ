@@ -1171,6 +1171,12 @@ export function createAppServices(deps: AppServicesDeps) {
       const made = await setup.useTypicalGym();
       return made.ok && made.gymId !== undefined ? made.gymId : null;
     },
+    // (Ben, 1 Nov) `Make main lift` › `Every week?` on Your workout: the plan day's template, and its Undo.
+    mainLiftEveryWeek: (req) => plans.mainLiftEveryWeek(req),
+    revertRoutine: async (req) => {
+      const r = await loop.routines.revert(req);
+      return r.ok ? { ok: true, routine: r.routine } : { ok: false, message: r.message };
+    },
     // (Ben, 23 Oct, D8) The coach's next-workout changes Ben applied in chat land here, with Undo.
     coachApplies: (basis) => coach.appliedStructural(basis),
     coachRefused: (checked, refused) => {
