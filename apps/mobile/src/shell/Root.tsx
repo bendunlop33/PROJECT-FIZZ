@@ -20,7 +20,7 @@ import { activePainFlagged } from '../workout/pain-flagged';
 import { activeWarmupLookup } from '../workout/warmup-lookup';
 import { lazyLiveActivityPort } from '../live-activity/lazy-port';
 import type { LiveActivityPort } from '../live-activity/controller';
-import { guardNativeCall, guardNativeCallAsync, launchSafeMode, nativeFeatureOn, nativeFeaturePause, setLaunchGuardBackground } from '../diagnostics/crash-capture';
+import { guardNativeCall, guardNativeCallAsync, launchSafeMode, nativeFeatureOn, nativeFeaturePause, recordContainedError, setLaunchGuardBackground } from '../diagnostics/crash-capture';
 import type { HealthPort } from '@fizz/providers';
 import { launchSettler } from '../diagnostics/launch-settle';
 import { AppBoundary, AppErrorScreen, SafeStartScreen } from './SafeStart';
@@ -41,7 +41,7 @@ import { createAppForeground, HOST_CLOCK } from '../coach/turn-lifecycle';
 import { ThemeProvider, TIMING, useTheme, type AvailableDirectionId } from '../theme';
 import { MessageScreen, PrimaryButton, SecondaryButton } from '../ui';
 import { createSpokenCueController } from '../voice/cue-controller';
-import { appleSpeaker, setVoicePrefs, voicePrefs } from '../voice/speaker';
+import { appleSpeaker, nativeRestCueScheduler, setVoicePrefs, voicePrefs } from '../voice/speaker';
 import { AppProvider, useDataChanged } from './context';
 
 const BACKUP_MANIFEST = 'backup-state.json';
@@ -108,9 +108,10 @@ const liveActivity = createLiveActivityController(guardedLiveActivityPort, {
 });
 
 /**
- * Spoken cues while the app is open (Ben, 19 Oct 2026): driven by the same
- * committed states as the rest alert; in the background the notification
- * stays the alert.
+ * Spoken cues (Ben, 19 Oct 2026): driven by the same committed states as the
+ * rest alert. JS speaks them on screen; the rest's cues are also scheduled
+ * natively so they speak in the background (Ben, 1 Nov; ADR 0040). The
+ * notification stays scheduled either way.
  */
 const spokenCues = createSpokenCueController({
   speaker: appleSpeaker,
@@ -118,6 +119,7 @@ const spokenCues = createSpokenCueController({
   appActive: () => AppState.currentState === 'active',
   settings: () => voicePrefs(),
   painFlagged: activePainFlagged,
+  native: nativeRestCueScheduler,
 });
 
 /**
@@ -267,7 +269,7 @@ function Launch() {
       // (ADR 0035) Apple Health: the HealthKit module if this build has it; usable only if the install's signing kept the entitlement.
       // A safe start (or a crash in HealthKit on this build) leaves Health off for the run: `Paused for this launch` /
       // `Paused on this build` (Ben, 28 Oct), never `Not available on this install` (that is a build without Health).
-      health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild(), paused: () => (healthInBuild() ? nativeFeaturePause('health') : null) },
+      health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild(), paused: () => (healthInBuild() ? nativeFeaturePause('health') : null), logError: recordContainedError },
       dataLedger: containerTextFile(DATA_LEDGER),
       credentials: deviceCredentials(),
       interruptedDelete: attempt.interruptedDelete,
@@ -426,6 +428,7 @@ export function Root() {
       createPrefsHolder(containerTextFile(DEVICE_PREFS_FILE), (p) => {
         // The cue controller and speaker read Settings › Voice outside React.
         setVoicePrefs(p.voice);
+        spokenCues.settingsChanged();
         setPrefs(p);
       }),
     [],

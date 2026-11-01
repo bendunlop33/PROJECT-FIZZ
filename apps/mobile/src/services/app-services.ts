@@ -34,6 +34,11 @@ import {
   currentDraftVersion,
   type BuilderEditOp,
   warmupPrefsOf,
+  pbAppliedBuilder,
+  priorityGroupsOf,
+  volumeGoalOfFocus,
+  planMuscleGapLines,
+  type VolumeGoal,
 } from '@fizz/domain';
 import { bundledCatalogue, toExerciseRow, type CatalogueEntry } from '@fizz/catalogue';
 import {
@@ -49,7 +54,7 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { CheckInSettings, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, PlanWeekExerciseEdit, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { CheckInSettings, EquipmentInstance, Exercise, Gym, MuscleGroup, GymSetup, ImplementCount, PlanWeekExerciseEdit, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import { builderApplyOpId, nextTargetTapOpId, type CoachModelPort, type TurnLifecycle } from '@fizz/coach';
 import type { HealthPort, TextCoachState } from '@fizz/providers';
@@ -71,6 +76,7 @@ import { createLiftTargetService } from './lift-target-service';
 import { createWarmupPrefsService } from './warmup-prefs-service';
 import { createPlanServices } from './plan-services';
 import { createPlanSwapService } from './plan-swap-service';
+import { createPlanMusclesService } from './plan-muscles-service';
 import { createPlanBuilderService } from './plan-builder-service';
 import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
@@ -144,7 +150,7 @@ export interface AppServicesDeps {
    * (ADR 0035) Apple Health: the HealthKit bridge and whether the build has the entitlement. Absent (tests, Expo
    * Go): Apple Health reads `Not available on this install`; nothing else changes.
    */
-  health?: { port: HealthPort | null; buildIncludesHealth: boolean; /** (Ben, 28 Oct) Off this run by the launch guard: `Paused`. */ paused?: () => NativePause | null };
+  health?: { port: HealthPort | null; buildIncludesHealth: boolean; /** (Ben, 28 Oct) Off this run by the launch guard: `Paused`. */ paused?: () => NativePause | null; /** (Ben, 1 Nov) A skipped optional step of a read (Last error). */ logError?: (error: unknown, where: string) => void };
   /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
   idle?: () => Promise<void>;
 }
@@ -631,11 +637,23 @@ export function createAppServices(deps: AppServicesDeps) {
     port: deps.health?.port ?? null,
     buildIncludesHealth: deps.health?.buildIncludesHealth ?? false,
     ...(deps.health?.paused === undefined ? {} : { paused: deps.health.paused }),
+    ...(deps.health?.logError === undefined ? {} : { logError: deps.health.logError }),
     workoutOpen: async () => (await sessions.active()) !== null,
     dispatch: (sessionId, command) => loop.workout.dispatch(sessionId, command),
   });
 
+  /** (Ben, 1 Nov) The goal weekly muscle ranges are read for: the training goal, else the plan's focus; its priorities. */
+  async function muscleGoalNow(): Promise<{ goal: VolumeGoal | null; priorities: ReadonlySet<MuscleGroup> } | null> {
+    const p = await getProfile();
+    if (p === null) return null;
+    const [t, plan] = await Promise.all([repos().trainingProfiles.get(p.id).catch(() => null), repos().planDrafts.applied(p.id).catch(() => null)]);
+    const answers = pbAppliedBuilder(plan)?.builder.answers ?? null;
+    return { goal: t?.goal ?? (answers === null ? null : volumeGoalOfFocus(answers.focus)), priorities: priorityGroupsOf(answers?.priorities ?? []) };
+  }
+
   const coach = createCoachService({
+    muscleGoal: muscleGoalNow,
+    planMuscleLines: () => planMuscles.coachLines(),
     // (Ben, 27 Oct, Q4) The watch workout linked to the workout in context.
     healthLinked: (sessionId) => health.coachLinked(sessionId),
     ...(deps.checkInSettings === undefined ? {} : { checkInSettings: deps.checkInSettings }),
@@ -688,7 +706,7 @@ export function createAppServices(deps: AppServicesDeps) {
     // `builder` is made below and only called after startup.
     nextWorkout: { revert: (applyActionId, check) => builder.revertCoachLanding(applyActionId, check) },
     // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat. `planSwap` is made below.
-    planSwap: { context: () => planSwap.context(), prepare: (r) => planSwap.prepare(r), prepareAdd: (r) => planSwap.prepareAdd(r) },
+    planSwap: { context: () => planSwap.context(), prepare: (r) => planSwap.prepare(r), prepareAdd: (r) => planSwap.prepareAdd(r), prepareDayEdit: (r) => planSwap.prepareDayEdit(r) },
     // ADR 0039 (Ben, 29 Oct): the builder's powers in every chat. `builder`, `builderCoach` and `builderPorts` are made
     // below; these run only on a coach turn or a card tap (after startup).
     builder: {
@@ -973,6 +991,8 @@ export function createAppServices(deps: AppServicesDeps) {
   /** Progress (progress.md slice A): windows, sessions, time, muscles, records, calendar, `Count it`. Local only. */
   const progress = createProgressService({
     store: () => deps.manager.store,
+    // (Ben, 1 Nov) Progress's muscle bars shade the same range as Plan › Muscles: the goal, else the plan's focus.
+    volumeGoal: muscleGoalNow,
     now: deps.now,
     profile: getProfile,
     saveSettings: (merge) =>
@@ -1035,6 +1055,13 @@ export function createAppServices(deps: AppServicesDeps) {
 
   /** Coach-built plans (19 Oct): the card, Apply and Undo, the consistency card. Local only. */
   const plans = createPlanServices({
+    muscleGapsOf: async (days) => {
+      const g = await muscleGoalNow();
+      if (g === null) return [];
+      const byId = new Map<string, Exercise>(catalogueExercises().map((e) => [e.id, e]));
+      for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) byId.set(e.id, e);
+      return planMuscleGapLines(days, g, (id) => byId.get(id) ?? null);
+    },
     weekInfo: async () => {
       const items = await weekly.activities.weekItems();
       return { lines: items.map((x) => x.line), ids: items.map((x) => x.activityId), change: await weekly.week.change() };
@@ -1092,6 +1119,7 @@ export function createAppServices(deps: AppServicesDeps) {
       return doableHere(exercise, { id: gym.id, name: gym.name, equipment });
     },
     editDayEveryWeek: (req) => plans.editDayEveryWeek({ ...req, edit: { ...req.edit, afterRowId: req.edit.afterRowId ?? null } }),
+    editDayRowsEveryWeek: (req) => plans.editDayRowsEveryWeek(req),
     revertRoutine: async (req) => ({ ok: (await loop.routines.revert(req)).ok }),
     swapToday: async (req) => ({ ok: (await loop.workout.swapExercise(req)).ok }),
     undoToday: async (req) => ({ ok: (await loop.workout.undoOp(req)).ok }),
@@ -1186,6 +1214,12 @@ export function createAppServices(deps: AppServicesDeps) {
     ensureGym: async () => {
       const made = await setup.useTypicalGym();
       return made.ok && made.gymId !== undefined ? made.gymId : null;
+    },
+    // (Ben, 1 Nov) `Make main lift` › `Every week?` on Your workout: the plan day's template, and its Undo.
+    mainLiftEveryWeek: (req) => plans.mainLiftEveryWeek(req),
+    revertRoutine: async (req) => {
+      const r = await loop.routines.revert(req);
+      return r.ok ? { ok: true, routine: r.routine } : { ok: false, message: r.message };
     },
     // (Ben, 23 Oct, D8) The coach's next-workout changes Ben applied in chat land here, with Undo.
     coachApplies: (basis) => coach.appliedStructural(basis),
@@ -1374,8 +1408,25 @@ export function createAppServices(deps: AppServicesDeps) {
   const workoutEdit = createWorkoutEditService({ store: () => deps.manager.store, profile: getProfile, env: builderEnv, workout: loop.workout });
 
 
+  /** (Ben, 1 Nov) Library › Plan › Muscles and its Rebalance: the plan's weekly sets per muscle, Apply / Undo. */
+  const planMuscles = createPlanMusclesService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    catalogueExercises,
+    catalogueSubstitutions,
+    usableHere: async (exercise) => {
+      const gym = await yourData.currentGym().catch(() => null);
+      if (gym === null) return true;
+      const equipment = await repos().equipment.listByGym(gym.id).catch(() => [] as EquipmentInstance[]);
+      return doableHere(exercise, { id: gym.id, name: gym.name, equipment });
+    },
+    doneBetween: (from, to) => progress.muscleSetsBetween(from, to),
+  });
+
   return {
     ...loop,
+    planMuscles,
     builder,
     builderCoach,
     reviews,

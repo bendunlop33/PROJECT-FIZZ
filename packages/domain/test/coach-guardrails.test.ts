@@ -495,12 +495,13 @@ describe('validateTodayAdjustment: no-ops and bad input', () => {
         }),
       ]),
     );
-    expect(r).toEqual({ status: 'unchanged', outcome: 'Coach kept sets 3–4 as planned.', guardNotes: [] });
+    // (Ben, 1 Nov, build 500) The sets already are 100 kg: said as that, never as a failure.
+    expect(r).toEqual({ status: 'unchanged', outcome: 'Already 100\u00a0kg', guardNotes: [], already: true });
   });
 
   it('a snap that lands back on the current target adds no note', () => {
     const r = validateTodayAdjustment(input([adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(101), reps: null } }] })], { intent: 'too_hard' }));
-    expect(r).toEqual({ status: 'unchanged', outcome: 'Coach kept set 3 as planned.', guardNotes: [] });
+    expect(r).toEqual({ status: 'unchanged', outcome: 'Already 100\u00a0kg', guardNotes: [], already: true });
   });
 
   it('unknown exercises and sets are ignored and noted', () => {

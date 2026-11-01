@@ -1,0 +1,137 @@
+<title>Exercise Menu Redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{
+  color-scheme: dark;
+  --page:#050505; --canvas:#0D0C0B; --surface:#181615; --raised:#23201E; --divider:#302C29; --control:#75706A;
+  --t1:#F3EEE8; --t2:#B5ADA5; --t3:#948C84; --accent:#EDE5DA; --on-accent:#0D0C0B; --danger:#FF7B72; --done:#5CC98A;
+  --glass:rgba(44,40,37,.82);
+  --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter, Roboto, system-ui, sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--t1);font-family:var(--font);padding-block:20px 40px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));overflow-x:hidden}
+.intro{max-width:1300px;margin:0 auto 20px;display:flex;flex-direction:column;gap:6px}
+.intro h1{font-size:22px;line-height:28px;margin:0;font-weight:600}
+.intro p{margin:0;color:var(--t2);font-size:15px;line-height:21px;max-width:70ch}
+.frames{max-width:1300px;margin:0 auto;display:flex;flex-wrap:wrap;gap:28px;justify-content:center}
+.frame{display:flex;flex-direction:column;gap:10px;width:100%;max-width:390px;min-width:0}
+.cap{font-size:13px;letter-spacing:1.2px;text-transform:uppercase;color:var(--t3);font-weight:600}
+.cap b{display:block;color:var(--t1);letter-spacing:0;text-transform:none;font-size:15px;margin-top:2px}
+.cap i{display:block;font-style:normal;color:var(--t2);letter-spacing:0;text-transform:none;font-weight:400;font-size:14px;line-height:19px;margin-top:4px}
+.phone{position:relative;width:100%;height:760px;background:var(--canvas);border-radius:44px;border:10px solid #1d1d1f;box-shadow:0 0 0 1px #333;overflow:hidden;padding:56px 16px 16px;display:flex;flex-direction:column;gap:12px}
+.top{display:flex;justify-content:space-between;font-size:13px;letter-spacing:1.2px;color:var(--t3);text-transform:uppercase;font-weight:600}
+.ex{background:var(--surface);border-radius:20px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;position:relative}
+.ex.dim{opacity:.35}
+.exh{display:flex;align-items:center;gap:10px}
+.exh .n{font-size:17px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.exh .dots{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:18px}
+.exh .dots.on{background:var(--raised);color:var(--t1)}
+.sets{font-size:14px;color:var(--t2);font-variant-numeric:tabular-nums}
+.ic{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+/* A: popover menu */
+.blur{position:absolute;inset:0;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);background:rgba(0,0,0,.35)}
+.pop{position:absolute;right:20px;width:250px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:14px;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.06)}
+.pop .row4{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:6px solid rgba(0,0,0,.35)}
+.pop .row4 div{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;font-size:11px;color:var(--t1)}
+.pop .row4 div+div{border-left:1px solid rgba(255,255,255,.08)}
+.pop .mi{display:flex;align-items:center;justify-content:space-between;padding:0 14px;min-height:44px;font-size:16px;border-top:1px solid rgba(255,255,255,.08)}
+.pop .mi:first-of-type{border-top:0}
+.pop .sep{height:6px;background:rgba(0,0,0,.35)}
+.pop .mi.r{color:var(--danger)}
+.lift{position:relative;z-index:2;box-shadow:0 10px 30px rgba(0,0,0,.5);transform:scale(1.02)}
+/* B: inline toolbar */
+.tool{display:flex;gap:6px;border-top:1px solid var(--divider);padding-top:10px;overflow-x:auto}
+.tool div{flex:1;min-width:58px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:var(--t2);padding:6px 0;border-radius:12px}
+.tool div .ic{color:var(--t1)}
+.tool div.r .ic,.tool div.r{color:var(--danger)}
+/* C: swipe */
+.swipe{position:relative;border-radius:20px;overflow:hidden;display:flex}
+.swipe .acts{display:flex}
+.swipe .acts div{width:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:12px;font-weight:600}
+.swipe .acts .sw{background:#3A5A7A}.swipe .acts .mv{background:#4A4440}.swipe .acts .sk{background:#7A2E2A}
+.swipe .ex{border-radius:0 20px 20px 0;flex:1;min-width:0;transform:none}
+.hint{font-size:13px;color:var(--t3);text-align:center}
+.note{max-width:1300px;margin:24px auto 0;color:var(--t2);font-size:14px;line-height:20px;max-width:90ch}
+.note b{color:var(--t1)}
+</style>
+
+<div class="intro">
+  <h1>Exercise menu: three genuinely different options</h1>
+  <p>All three drop the full-screen stack of pills. Pick one, or mix them: B and C go well together.</p>
+</div>
+
+<div class="frames">
+
+  <!-- A -->
+  <div class="frame">
+    <div class="cap">A · iOS context menu<b>Hold the exercise (or tap ⋯)</b><i>The card lifts, the rest blurs, and a compact native menu appears next to it, like holding a message in iMessage. Small, fast, feels like the system.</i></div>
+    <div class="phone">
+      <div class="top"><span>Push B · DB shoulder…</span><span>1:54</span></div>
+      <div class="ex dim"><div class="exh"><span class="n">DB shoulder press</span><span class="dots">⋯</span></div><span class="sets">3 of 3 done</span></div>
+      <div class="blur"></div>
+      <div class="ex lift"><div class="exh"><span class="n">Side-lying DB external rotation</span><span class="dots on">⋯</span></div><span class="sets">2 × 12–15 · 5 kg ea · not started</span></div>
+      <div class="pop" style="top:200px">
+        <div class="mi">Undo swap<span style="color:var(--t3);font-size:13px">Rotation ← Face pull</span></div>
+        <div class="sep"></div>
+        <div class="row4">
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M5 20h14M12 4v12M6 10l6 6 6-6"/></svg>Later</div>
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M5 4h14M12 20V8M6 14l6-6 6 6"/></svg>Now</div>
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Up</div>
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>Down</div>
+        </div>
+        <div class="mi">Swap exercise<svg class="ic" viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg></div>
+        <div class="mi">Add set<svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div>
+        <div class="mi">History<svg class="ic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v4l3 2"/></svg></div>
+        <div class="mi">Notes<svg class="ic" viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5zM9 12h6M9 16h4"/></svg></div>
+        <div class="mi">Adjust<svg class="ic" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8M14 4v6M8 14v6"/></svg></div>
+        <div class="sep"></div>
+        <div class="mi r">Skip exercise<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="frame">
+    <div class="cap">B · Toolbar inside the card<b>Tap ⋯: the card opens a strip of icons</b><i>No overlay at all. The actions appear in the exercise's own card, so you never lose your place. One tap each.</i></div>
+    <div class="phone">
+      <div class="top"><span>Push B · DB shoulder…</span><span>1:54</span></div>
+      <div class="ex"><div class="exh"><span class="n">DB shoulder press</span><span class="dots">⋯</span></div><span class="sets">3 of 3 done</span></div>
+      <div class="ex"><div class="exh"><span class="n">Cable lateral raise</span><span class="dots">⋯</span></div><span class="sets">3 of 3 done</span></div>
+      <div class="ex">
+        <div class="exh"><span class="n">Side-lying DB external rotation</span><span class="dots on">✕</span></div>
+        <span class="sets">2 × 12–15 · 5 kg ea · not started</span>
+        <div class="tool">
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M5 4h14M12 20V8M6 14l6-6 6 6"/></svg>First</div>
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M5 20h14M12 4v12M6 10l6 6 6-6"/></svg>Last</div>
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg>Swap</div>
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Set</div>
+          <div><svg class="ic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v4l3 2"/></svg>History</div>
+          <div class="r"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>Skip</div>
+        </div>
+      </div>
+      <div class="hint">Up / Down: hold and drag the card</div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="frame">
+    <div class="cap">C · Swipe the exercise<b>Swipe left on any exercise</b><i>Like Mail. The three things you do most sit under your thumb; full swipe skips. ⋯ still opens A or B for the rest.</i></div>
+    <div class="phone">
+      <div class="top"><span>Push B · DB shoulder…</span><span>1:54</span></div>
+      <div class="ex"><div class="exh"><span class="n">DB shoulder press</span><span class="dots">⋯</span></div><span class="sets">3 of 3 done</span></div>
+      <div class="swipe">
+        <div class="ex" style="border-radius:20px 0 0 20px"><div class="exh"><span class="n">Side-lying DB external…</span></div><span class="sets">2 × 12–15 · 5 kg ea</span></div>
+        <div class="acts">
+          <div class="mv"><svg class="ic" viewBox="0 0 24 24"><path d="M5 20h14M12 4v12M6 10l6 6 6-6"/></svg>Later</div>
+          <div class="sw"><svg class="ic" viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg>Swap</div>
+          <div class="sk"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>Skip</div>
+        </div>
+      </div>
+      <div class="ex dim"><div class="exh"><span class="n">Face pull</span><span class="dots">⋯</span></div><span class="sets">2 × 15 · 20 kg</span></div>
+      <div class="hint">Swipe right: Add set</div>
+    </div>
+  </div>
+
+</div>
+
+<p class="note"><b>My recommendation: A, with C as a shortcut.</b> A is the native iOS menu, so it looks premium for free and everyone already knows how it behaves, and it's the least work to keep looking good. C makes the three most common actions one swipe. B is neat, but it takes space on a screen you use between sets. Notes, Plates and Adjust stay in the menu when they apply; Undo appears at the top of the menu when there's something to undo.</p>

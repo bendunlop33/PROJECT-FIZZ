@@ -18,7 +18,7 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import type { LedgerEntry, TurnLedger } from './claims';
-import { buildCoachContext, contextInputItems, type CoachContextInput } from './context';
+import { buildCoachContext, contextInputItems, planWorkContext, type CoachContextInput } from './context';
 import type { CoachExecutors, ToolCallContext, ToolResult } from './executors';
 import { functionToolDefinitions } from './function-tools';
 import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelFailureDetail, ModelInputItem, ModelRequest } from './model-port';
@@ -28,7 +28,7 @@ import { createReplyFilter, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem 
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { asksForPlan, asksLiveChange, asksPlanFix, asksPlanRebuild, planLevelAsk, asksToPausePlan, asksToPlanWeek, declinesChange, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
+import { asksDeepAnalysis, asksForPlan, asksLiveChange, asksPlanFix, asksPlanRebuild, planLevelAsk, asksToPausePlan, asksToPlanWeek, declinesChange, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
 import { LIVE_TARGET_CORRECTION_LINES } from './corrections';
 import { parseToolCall } from './tool-call';
@@ -40,7 +40,7 @@ import { mentionsGymSetup } from './gym-update';
 import { editOfferIn } from './edit-today';
 import { addedContinuationOf } from './find-exercises';
 import { collectFacts, type FactText, type NumberFacts, EFFORT_WORDS_LINE } from './numbers';
-import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PLAN_ADD_LINE, PLAN_SWAP_LINE, threadPlanScope } from './plan-swap';
+import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PLAN_ADD_LINE, PLAN_DAY_EDIT_LINE, PLAN_SWAP_LINE, threadPlanScope } from './plan-swap';
 import { splitSentences } from './sentences';
 import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
 import { asksForWarmupChange, WARMUP_PREFS_NOT_ASKED_LINE, WARMUP_PREFS_TOOL_LINE } from './warmup-prefs';
@@ -81,12 +81,17 @@ export const THINK_AGAIN_LINE = 'Already thinking harder this turn. Continue.';
 /** (Coach v3) A live-workout turn's whole-turn cap: Ben is between sets. A simple edit or question. */
 export const COACH_WORKOUT_TIMEOUT_MS = 30_000;
 /**
- * (Ben, 31 Oct, build 493: "No answer in time. Nothing changed." three times) A live-workout turn about his plan, or one
- * asking for today's change and a plan change together: the plan's context and several steps. ADR 0039 amendment 31 Oct.
+ * (Ben, 1 Nov, build 500: "Still running out of time which I don't want for changing plans") Plan work (a question about
+ * or change to his plan, or today's change and a plan change together, live or not): no visible time limit. It runs as
+ * background work he can leave (the running-turn store re-attaches the sheet), with this safety cap only. Was 90 s live
+ * and 120 s elsewhere (31 Oct). ADR 0039 amendment 1 Nov.
  */
-export const COACH_WORKOUT_PLAN_TIMEOUT_MS = 90_000;
-/** (Ben, 31 Oct) A chat turn (Today, Plan, Progress) about the plan: an analysis, a plan change or a plan build. */
-export const COACH_PLAN_TIMEOUT_MS = 120_000;
+export const COACH_PLAN_WORK_CAP_MS = 300_000;
+/**
+ * (Ben, 1 Nov) A plan step's window to its first event and between events: a reasoning model sends nothing while it
+ * thinks, so a slow start is never cut off. Today's part of a two-part ask keeps the quick windows.
+ */
+export const COACH_PLAN_EVENT_MS = 180_000;
 /**
  * (Ben, 31 Oct) First event and stall at high effort. A reasoning model sends nothing while it thinks: 20 s cut such
  * steps off. Used for any step sent at high effort (a build, a plan, `think_harder`).
@@ -112,6 +117,11 @@ export interface CoachTiming {
   highEffortMs?: number;
   /** (Ben, 31 Oct) The lighter retry's whole budget after a timeout; absent: `COACH_LIGHT_RETRY_MS`. 0: no retry. */
   lightRetryMs?: number;
+  /**
+   * (Ben, 1 Nov) Plan work: the first-event and stall window of every step but today's part of a two-part ask. Absent:
+   * not plan work.
+   */
+  planEventMs?: number;
 }
 
 /** `timing.coachBuildTimeout` (workout-builder BD13): a whole workout is a bigger answer than a reply. */
@@ -120,15 +130,17 @@ export const COACH_BUILD_TIMEOUT_MS = 60_000;
 export const DEFAULT_COACH_TIMING: CoachTiming = { firstEventMs: 20_000, stallMs: 20_000, highEffortMs: COACH_HIGH_EFFORT_EVENT_MS };
 
 /**
- * (Ben, 31 Oct, build 493) The time limits that fit the work (ADR 0039 amendment, 31 Oct). Pure.
- * - A live workout: 30 s for a simple edit or question; 90 s when his words are about the plan or ask two things
- *   (today and the plan); 60 s for a build.
- * - Any other chat: 120 s about the plan (analysis, change, build); 60 s for a workout build; else no whole-turn cap.
- * - Every step: 20 s to the first event and between events, 60 s at high effort.
+ * The time limits that fit the work (ADR 0039 amendments, 31 Oct and 1 Nov). Pure.
+ * - Plan work (his words are about the plan, or ask for today's change and a plan change): no visible limit, a 5 min
+ *   safety cap, 3 min windows to the first event and between events, and no short-answer retry (Ben, 1 Nov).
+ * - A live workout otherwise: 30 s for a simple edit or question; 60 s for a build.
+ * - Any other chat: 60 s for a workout build; else no whole-turn cap.
+ * - Every other step: 20 s to the first event and between events, 60 s at high effort.
  */
 export function coachTurnTiming(input: { liveWorkout: boolean; words: string | null; buildInPlay: boolean; planBuild?: boolean }): CoachTiming {
   const planLevel = input.planBuild === true || (input.words !== null && planLevelAsk(input.words));
-  const totalMs = input.liveWorkout ? (planLevel ? COACH_WORKOUT_PLAN_TIMEOUT_MS : input.buildInPlay ? COACH_BUILD_TIMEOUT_MS : COACH_WORKOUT_TIMEOUT_MS) : planLevel ? COACH_PLAN_TIMEOUT_MS : input.buildInPlay ? COACH_BUILD_TIMEOUT_MS : undefined;
+  if (planLevel) return { ...DEFAULT_COACH_TIMING, totalMs: COACH_PLAN_WORK_CAP_MS, planEventMs: COACH_PLAN_EVENT_MS, lightRetryMs: 0 };
+  const totalMs = input.liveWorkout ? (input.buildInPlay ? COACH_BUILD_TIMEOUT_MS : COACH_WORKOUT_TIMEOUT_MS) : input.buildInPlay ? COACH_BUILD_TIMEOUT_MS : undefined;
   return { ...DEFAULT_COACH_TIMING, ...(totalMs === undefined ? {} : { totalMs }) };
 }
 
@@ -503,6 +515,11 @@ function weekOrPauseAsked(tool: 'propose_week' | 'pause_plan', words: string): b
 export const OFFER_INSTEAD_LINE = 'Not applied: Ben did not ask for this. He now sees an offer to adjust; in reply, say briefly what you would change and why. It applies only if he accepts.';
 
 /** Tools the app can actually run in this build; others are withheld, never offered. */
+/** (Ben, 1 Nov) The plan-in-use tools that make a targeted plan change. */
+export const PLAN_EDIT_TOOLS: ReadonlySet<string> = new Set(['propose_plan_swap', 'propose_plan_add', 'propose_plan_day_edit']);
+/** (Ben, 1 Nov) Left out of a targeted plan turn: building a whole workout or plan, and tools no plan change uses. */
+export const PLAN_WORK_LEAVES_OUT: ReadonlySet<string> = new Set(['propose_workout', 'propose_plan', 'ask_build_question', 'propose_exercise', 'propose_workout_edit', 'fill_setup', 'rename_workout', 'log_activity']);
+
 function runnable(registry: TurnRegistry, executors: CoachExecutors): TurnRegistry {
   // `think_harder` is run by the turn itself (it changes the next step's effort and model), never by an executor.
   const runs = (name: string): boolean => name === 'think_harder' || executors[name as keyof CoachExecutors] !== undefined;
@@ -521,19 +538,19 @@ export const LAST_DAYS_COACH_LINE =
  * for is an offer or a proposal (the card's Apply / Skip is the offer).
  */
 export const SOLUTION_FIRST_LINE =
-  'Be solution-first. When you find a gap or a problem (a muscle with no direct work, too much or too little volume), make the concrete fix as a card in this same turn instead of asking: edit_today for today (when Ben did not ask, the app saves it as an offer he applies), propose_plan_add or propose_plan_swap for his plan (always a proposal he applies). Then say in one or two lines what the fix is and why. When Ben states the fix ("add them after the raises", "fix the plan too"), do exactly that, in that place. Never end with "Want me to …?" about a fix: the card is the offer.';
+  'Be solution-first. When you find a gap or a problem (a muscle with no direct work, too much or too little volume), make the concrete fix as a card in this same turn instead of asking: edit_today for today (when Ben did not ask, the app saves it as an offer he applies), propose_plan_add, propose_plan_swap or propose_plan_day_edit for his plan (always a proposal he applies). Then say in one or two lines what the fix is and why. When Ben states the fix ("add them after the raises", "fix the plan too"), do exactly that, in that place. Never end with "Want me to …?" about a fix: the card is the offer.';
 
 /** (Ben, 31 Oct) Sent when Ben asks for today's change and a plan change in one message: the quick part first. */
 export const TWO_PART_LINE =
-  'Ben asked for two things: today’s change and a change to his plan. First call edit_today with today’s change exactly as he said it (an add goes straight after the exercise he named: afterSessionExerciseId). Then make the plan change as a proposal (propose_plan_add or propose_plan_swap). Then reply.';
+  'Ben asked for two things: today’s change and a change to his plan. First call edit_today with today’s change exactly as he said it (an add goes straight after the exercise he named: afterSessionExerciseId). Then make the plan change as a proposal (propose_plan_add, propose_plan_swap or propose_plan_day_edit). Then reply.';
 
 /** (Ben, 31 Oct) Fed back when a plan ask's answer came without a plan card. Never shown to Ben. */
 export const PLAN_PART_NUDGE_LINE =
-  'Not shown yet. Ben asked about or for a change to his plan. If your answer found something to change, call propose_plan_add or propose_plan_swap now with that fix (a proposal he applies), then reply. If nothing needs changing, call reply again with the same message.';
+  'Not shown yet. Ben asked about or for a change to his plan. If your answer found something to change, call propose_plan_add, propose_plan_swap or propose_plan_day_edit now with that fix (a proposal he applies), then reply. If nothing needs changing, call reply again with the same message.';
 
 /** (Ben, 31 Oct) Fed back when a reply ended by asking whether to make a fix, with no card. Never shown to Ben. */
 export const SOLUTION_NUDGE_LINE =
-  'Not shown yet. Do not ask Ben whether to make a fix: make the fix you offered as a card now (edit_today for today, saved as an offer he applies; propose_plan_add or propose_plan_swap for his plan, a proposal). Then call reply with an empty message: your earlier message is shown without the question.';
+  'Not shown yet. Do not ask Ben whether to make a fix: make the fix you offered as a card now (edit_today for today, saved as an offer he applies; propose_plan_add, propose_plan_swap or propose_plan_day_edit for his plan, a proposal). Then call reply with an empty message: your earlier message is shown without the question.';
 
 /** (Ben, 31 Oct) Sent with the one lighter retry after a timeout. Never shown to Ben. */
 export const LIGHT_RETRY_LINE =
@@ -687,7 +704,8 @@ export async function runModelStep(
       let timer: unknown;
       // (Ben, 31 Oct) A high-effort step thinks in silence: the longer window for its first event and its stalls.
       const high = request.effort === 'high' && timing.highEffortMs !== undefined;
-      const limit = Math.max(first ? timing.firstEventMs : timing.stallMs, high ? (timing.highEffortMs ?? 0) : 0);
+      // (Ben, 1 Nov) A plan step: its own long window (the turn leaves it out for today's quick part).
+      const limit = Math.max(first ? timing.firstEventMs : timing.stallMs, high ? (timing.highEffortMs ?? 0) : 0, timing.planEventMs ?? 0);
       const timeout = new Promise<'timeout'>((resolve) => {
         timer = timers.set(() => {
           resolve('timeout');
@@ -921,7 +939,18 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(liveWorkout ? { lightTurn: true } : {}),
   });
   const gate = { ...gated, ...(req.liftTargetsOn === true ? { liftTargetsOn: true } : {}), ...(req.trainingProfile === true ? { trainingProfile: true } : {}) };
-  const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
+  // (Ben, 1 Nov, build 500) A targeted change to or question about the plan in use (not a rebuild, not a workout build):
+  // what it needs and no more. The build tools and their view (a third of the request) are left out; it comes back sooner.
+  const fullRegistry = runnable(buildTurnRegistry(gate), ports.executors);
+  const sayWords = req.input.kind === 'words' ? (saidWords ?? req.input.text) : null;
+  const planToolsAll = fullRegistry.tools.some((t) => PLAN_EDIT_TOOLS.has(t.name));
+  const targetedPlanWork =
+    chatTurn && req.planInUse === true && planToolsAll && sayWords !== null && req.draftInContext !== true && followUp === null && !asksPlanRebuild(sayWords) && !requestHas(classifyBenRequest(sayWords, 'general'), 'build') && (asksPlanFix(sayWords) || planLevelAsk(sayWords));
+  const registry: TurnRegistry = targetedPlanWork
+    ? { tools: fullRegistry.tools.filter((t) => !PLAN_WORK_LEAVES_OUT.has(t.name)), withheld: [...fullRegistry.withheld, ...fullRegistry.tools.filter((t) => PLAN_WORK_LEAVES_OUT.has(t.name)).map((t) => ({ name: t.name, reason: 'plan_work' as const }))] }
+    : fullRegistry;
+  const contextInput = { ...req.context, turnKind: req.kind, thread: history };
+  const context = buildCoachContext(targetedPlanWork ? planWorkContext(contextInput, { keepAddable: requestHas(gate.benRequest, 'add') }) : contextInput);
 
   const turn: CoachTurn = {
     id: req.turnId,
@@ -976,7 +1005,6 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const mention = words !== null && rawMention === 'unclear' && requestHas(classifyBenRequest(words, 'general'), 'build') && buildPainMention(words) === 'none' ? 'none' : rawMention;
   const messagePain: MessagePain | null = words === null ? null : { mention, exerciseIds: req.namedExerciseIds ?? [], bodyPart: painBodyPart(words) };
 
-  const registry = runnable(buildTurnRegistry(gate), ports.executors);
   const tools = [...functionToolDefinitions(registry.tools), replyToolDefinition()];
   const buildOffered = registry.tools.some((t) => t.name === 'propose_workout');
   // (19 Oct) A plan request (or a change to the plan in context) offers `propose_plan`, forced like a build.
@@ -991,7 +1019,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // (Ben, 31 Oct, build 493) With a plan in use and its targeted tools here, a question about it or a targeted change
   // ("does the plan train enough biceps?", "add curls, fix the plan too") is answered with a targeted proposal: only a
   // rebuild (days, split, a new plan) forces the whole-plan proposal, which is the slow answer that timed out.
-  const planToolsHere = registry.tools.some((t) => t.name === 'propose_plan_add' || t.name === 'propose_plan_swap');
+  const planToolsHere = registry.tools.some((t) => PLAN_EDIT_TOOLS.has(t.name));
   const targetedPlan = req.planInUse === true && planToolsHere && words !== null && !asksPlanRebuild(words);
   const forcedPlan = planOffered && words !== null && askedPlan && !targetedPlan && buildPainMention(words) === 'none' && !multiWeekBlock(words);
   const forced = forcedPlan || (buildOffered && words !== null && forcesBuild(words, { draftInContext: req.draftInContext === true }));
@@ -1038,7 +1066,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
   const findLine = (registry.tools.some((t) => t.name === 'update_warmup_prefs') ? `\n${WARMUP_PREFS_TOOL_LINE}` : '') + (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
-  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
+  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_day_edit') ? `\n${PLAN_DAY_EDIT_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine + weekLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
@@ -1163,9 +1191,20 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // Two-part ask: today's change goes first, light, so a slow plan part never holds it up.
   const todayFirst = (): boolean => twoPart && !buildTried;
   const stepModel = (): string => ((liveWorkout && !thinking) || lightRetry) && req.workoutModel !== undefined ? req.workoutModel : req.model;
-  // (Ben, 31 Oct) A question about or change to the whole plan needs the thinking a build gets.
+  // (Ben, 31 Oct) A question about or change to the plan in use.
   const planLevel = chatTurn && words !== null && req.input.kind === 'words' && (planAsked || (req.planInUse === true && planLevelAsk(words)));
-  const stepEffort = (): NonNullable<ModelRequest['effort']> => (lightRetry ? 'low' : todayFirst() ? (liveWorkout ? 'low' : 'medium') : buildInPlay || forced || planLevel ? 'high' : liveWorkout ? (thinking ? 'high' : 'low') : 'medium');
+  // (Ben, 1 Nov, build 500) Plan work (a targeted plan change or question, or the whole-plan proposal) is medium effort,
+  // so it comes back sooner; high only when Ben asks for the deep version or the coach asks to think harder. A workout
+  // build still thinks hard.
+  const planWork = planLevel || forcedPlan;
+  const deepAsked = words !== null && asksDeepAnalysis(words);
+  const stepEffort = (): NonNullable<ModelRequest['effort']> =>
+    lightRetry ? 'low' : todayFirst() ? (liveWorkout ? 'low' : 'medium') : thinking || (planWork && deepAsked) ? 'high' : planWork ? 'medium' : buildInPlay || forced ? 'high' : liveWorkout ? 'low' : 'medium';
+  // (Ben, 1 Nov) Today's quick part of a two-part ask (and the lighter retry) keeps the quick windows; plan steps get theirs.
+  const quickTiming: CoachTiming = { ...timing };
+  delete quickTiming.planEventMs;
+  const stepTiming = (): CoachTiming => (todayFirst() || lightRetry ? quickTiming : timing);
+  const planStep = (): boolean => timing.planEventMs !== undefined && !todayFirst() && !lightRetry;
   let thinkingShown = false;
   // (Ben, 31 Oct) A plan ask's held answer while its plan proposal is asked for; a fix-offer's held answer while its card is made.
   let planNudged = false;
@@ -1173,7 +1212,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let solutionHeld: { message: string; streamed: string } | null = null;
   const planCardMade = (): boolean => entries.some((e) => e.origin === 'this_turn' && (e.record.detail.kind === 'propose_plan_swap' || e.record.detail.kind === 'build_plan'));
   const anyCard = (): boolean => entries.some((e) => e.origin === 'this_turn');
-  const fixToolHere = registry.tools.some((t) => t.name === 'edit_today' || t.name === 'propose_plan_add' || t.name === 'propose_plan_swap');
+  const fixToolHere = registry.tools.some((t) => t.name === 'edit_today' || PLAN_EDIT_TOOLS.has(t.name));
   // Coach v3: reads per turn, and identical reads answered from this turn's cache (keyed by the opId).
   let readCalls = 0;
   const readCache = new Map<string, string>();
@@ -1221,11 +1260,11 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       replyStream = new ReplyMessageStream();
       const stream = replyStream;
       // (Ben, 31 Oct) The sheet shows `Thinking…` while a high-effort step works in silence.
-      if (stepEffort() === 'high' && !thinkingShown) {
+      if ((stepEffort() === 'high' || planStep()) && !thinkingShown) {
         thinkingShown = true;
         req.onProgress?.({ kind: 'thinking', mode: 'hard' });
       }
-      return runModelStep(ports.model, { model: stepModel(), instructions, input, tools, toolChoice, parallelToolCalls: false, effort: stepEffort() }, timing, cap.signal, {
+      return runModelStep(ports.model, { model: stepModel(), instructions, input, tools, toolChoice, parallelToolCalls: false, effort: stepEffort() }, stepTiming(), cap.signal, {
         timers,
         onFirstEvent,
         onReplyDelta: (delta) => {
@@ -1277,8 +1316,9 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       // (Ben, 31 Oct, build 493: three "No answer in time" in a row) One timeout gets one lighter retry: low effort, no
       // forcing, a fresh short budget, and the answer says it is the short one. Not when Ben pressed Stop, not after any
       // of a reply was shown, and only once.
-      // A workout build keeps its own cap (BD13): a short text answer is no workout.
-      const retryMs = forced && !forcedPlan ? 0 : (timing.lightRetryMs ?? COACH_LIGHT_RETRY_MS);
+      // A workout build keeps its own cap (BD13): a short text answer is no workout. (Ben, 1 Nov) Plan work never gets a
+      // short answer: it has its long windows, and if it truly fails it says so once, with Try again.
+      const retryMs = (forced && !forcedPlan) || planWork ? 0 : (timing.lightRetryMs ?? COACH_LIGHT_RETRY_MS);
       if (why === 'timeout' && !lightRetry && retryMs > 0 && !stoppedByBen && replyStream.streamed === '' && !lostInBackground) {
         lightRetry = true;
         stepLimit = step + 3;

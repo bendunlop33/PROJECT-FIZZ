@@ -36,7 +36,12 @@ export type BuilderEditOp =
    * Press-and-hold drag (§2.3, §9 Q18; workout-table-v3 §7): dropped on the top or bottom edge
    * of another row = move there (as its own round); on its middle = superset with that row's round.
    */
-  | { kind: 'drop'; slotKey: string; targetKey: string; edge: 'before' | 'after' | 'onto' };
+  | { kind: 'drop'; slotKey: string; targetKey: string; edge: 'before' | 'after' | 'onto' }
+  /**
+   * (Ben, 1 Nov) `Make main lift`: this exercise is today's main lift, the one before a normal compound. One main lift
+   * per day; every row keeps its planned values (sets, loads, reps).
+   */
+  | { kind: 'make_main'; slotKey: string };
 
 export type BuilderEditRefusal =
   | SetRowEditRefusal
@@ -49,7 +54,8 @@ export type BuilderEditRefusal =
   | 'not_in_superset'
   | 'max_warmups'
   | 'no_load'
-  | 'no_gap';
+  | 'no_gap'
+  | 'already_main';
 
 export type BuilderEditResult =
   | {
@@ -109,6 +115,12 @@ function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): Builde
   switch (op.kind) {
     case 'delete_exercise':
       return done(removeSlot(w, slot.key), [slot.key]);
+    case 'make_main': {
+      const all = slotsOf(w.blocks);
+      if (slot.main && all.every((s) => s.key === slot.key || !s.main)) return { ok: false, reason: 'already_main' };
+      const changed = all.filter((s) => s.key === slot.key || s.main).map((s) => s.key);
+      return done({ ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === slot.key ? { ...s, main: true } : s.main ? { ...s, main: false } : s)) })) }, changed);
+    }
     case 'swap': {
       if (ctx.info(op.exerciseId) === null) return { ok: false, reason: 'unknown_exercise' };
       if (op.exerciseId !== slot.exerciseId && slotsOf(w.blocks).some((s) => s.exerciseId === op.exerciseId)) return { ok: false, reason: 'already_in_workout' };

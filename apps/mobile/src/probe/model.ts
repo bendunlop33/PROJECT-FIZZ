@@ -10,7 +10,7 @@
  */
 
 import { bundleIdSuffix } from './app-group';
-import { LOCKED_CUE_DELAY_S } from './locked-cue';
+import { LOCKED_CUE_DELAY_S, LOCKED_CUE_GAP_S } from './locked-cue';
 
 export type ProbeId =
   | 'sqlite'
@@ -116,9 +116,9 @@ export const PROBES: readonly ProbeDefinition[] = [
   {
     id: 'locked_cue',
     ref: 'S7',
-    title: 'Spoken cue while locked (opt-in background-audio experiment)',
-    howTo: `Only in builds made with the background-audio experiment. Start music if you like, tap Run and lock the phone within 10 s. The cue plays ${LOCKED_CUE_DELAY_S} s after Run.`,
-    confirmQuestion: 'Did you hear the cue with the phone locked?',
+    title: 'Spoken cues in the background',
+    howTo: `Start music (e.g. Spotify), tap Run, then switch to the music app or lock the phone within 20 s. "15 seconds…" plays ${String(LOCKED_CUE_DELAY_S)} s after Run and "Rest over" ${String(LOCKED_CUE_GAP_S)} s later. Come back after both for the result.`,
+    confirmQuestion: 'Did you hear both cues, with the music lowered only while each spoke?',
   },
   {
     id: 'speech_recognition',

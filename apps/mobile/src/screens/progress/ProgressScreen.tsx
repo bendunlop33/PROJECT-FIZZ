@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
-import { ACTIVITY_COPY, offsetHolding, toMs, type ActivityView, type PeriodSpan } from '@fizz/domain';
+import { ACTIVITY_COPY, localDateOf, offsetHolding, toMs, type ActivityView, type PeriodSpan } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
 import { activitySavedToast } from '../../activity/activity-toast';
@@ -68,6 +68,16 @@ export function ProgressScreen() {
   const scroll = useRef<ScrollView>(null);
   // Today's old `Reviews ›` link still lands here, at the top (reviews moved to Library, redesign v3 C5).
   const focusN = route.params?.focus === 'reviews' ? (route.params.n ?? 0) : null;
+  // (Ben, 1 Nov) Plan › Muscles' `Done by week ›`: Training, that week (Progress looks back; one done view).
+  const weekOf = route.params?.weekOf ?? null;
+  useEffect(() => {
+    if (weekOf === null) return;
+    const now = services.now();
+    setSeen((s) => (s.has('training') ? s : new Set([...s, 'training'])));
+    setTab('training');
+    setChoice({ span: 'week', offset: offsetHolding(localDateOf(toMs(now.utc), now.tz), 'week', weekOf) });
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [weekOf, services]);
   useEffect(() => {
     if (focusN === null) return;
     scroll.current?.scrollTo({ y: 0, animated: false });

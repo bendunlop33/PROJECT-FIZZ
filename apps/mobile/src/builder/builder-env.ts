@@ -40,6 +40,7 @@ import {
   type SubstituteContext,
   restDefaultsOf,
   warmupPrefsOf,
+  hasRestSettings,
 } from '@fizz/domain';
 import { builderFocusOf, isBrowseOnlyFocus, isBuilderStrength, type BuilderFocus, type BuilderGroup, type CheckedOnRecord, type EquipmentInstance, type Exercise, type PainFlag, type PlanDraft, type Routine, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
@@ -158,7 +159,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     // (Ben, 1 Nov) Warm-up settings: Your workout plans its warm-ups with them, as Today and Start do.
     const warmupPrefsOpt = trainingProfile?.warmups === undefined ? {} : { warmupPrefs: warmupPrefsOf(trainingProfile) };
     // (Ben, 28 Oct) Profile › Rest times: every default rest here (rests, Time, the drafts saved) is Ben's.
-    const restDefaultsOpt = trainingProfile?.restDefaultsS === undefined ? {} : { restDefaultsS: restDefaultsOf(trainingProfile) };
+    const restDefaultsOpt = !hasRestSettings(trainingProfile) ? {} : { restDefaultsS: restDefaultsOf(trainingProfile ?? null) };
     // (Ben, 23 Oct: plan length = block 1) The applied plan's deload week (derived from its Apply, pauses and his plan
     // workouts): every load worked out here is ~10 % lighter and each slot a set fewer, as on Today's card and at Start.
     // (Ben, 28 Oct) Imported and past-logged workouts that count as plan days count here too.

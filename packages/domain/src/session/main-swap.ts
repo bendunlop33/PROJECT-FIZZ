@@ -1,5 +1,6 @@
 import type { Routine, SessionAggregate } from '@fizz/schemas';
 import { planDayKeyOf, samePlanDay, type PlanDayKeySplit, type PlanDayRef } from './coach-plan';
+import { pickedMainLift } from './main-lift';
 
 /**
  * (Ben, 27 Oct; redesign-27oct.md §E3) The mid-workout Swap sheet on the main lift lists the plan's main-lift
@@ -39,8 +40,13 @@ export function isMainLiftRow(a: Pick<SessionAggregate, 'exercises'>, sessionExe
   return false;
 }
 
-/** The main lifts a workout was started with: the draft's main slots, else the plan day's main lift. */
+/**
+ * The workout's main lifts: (Ben, 1 Nov) the one Ben made the main lift today (`Make main lift`), else the draft's main
+ * slots it started with, else the plan day's main lift.
+ */
 export function workoutMainLifts(a: Pick<SessionAggregate, 'session'>, draftMains: ReadonlySet<string>): Set<string> {
+  const picked = pickedMainLift(a.session);
+  if (picked !== null) return new Set([picked]);
   if (draftMains.size > 0) return new Set(draftMains);
   const m = a.session.planDay?.mainLiftExerciseId ?? null;
   return new Set(m === null ? [] : [m]);

@@ -54,8 +54,11 @@ import {
   isStructuralRequest,
   createPausePlanExecutor,
   createPlanAddExecutor,
+  createPlanDayEditExecutor,
   createPlanSwapExecutor,
   type PlanAddRequest,
+  type PlanDayEditRequest,
+  type PlanDayExerciseView,
   type PlanSwapPrepared,
   createActivityExecutor,
   renderActionResult,
@@ -229,6 +232,8 @@ import {
   type HistoryLike,
   type HistoryWorkout,
   missingEquipmentNoun,
+  planMuscleGapLines,
+  type MuscleGoalInput,
 } from '@fizz/domain';
 import { TurnAlreadyRunningError, type CandidateWrite, type MemoryWrite, type SqliteRepositories, type Store } from '@fizz/persistence';
 import { createRunningTurns, type TurnScope } from './running-turns';
@@ -269,6 +274,7 @@ import type {
   ProgressPeriodKey,
   SessionAggregate,
   SetType,
+  PlanDayDraft,
   UserProfile,
   ZonedTimestamp,
 } from '@fizz/schemas';
@@ -447,6 +453,13 @@ export interface BuildChips {
 const WEEK_OFFER_LOOKBACK = 200;
 
 export interface CoachServiceDeps {
+  /**
+   * (Ben, 1 Nov) The goal and priority groups weekly muscle ranges are read for (Plan › Muscles'), for the plan
+   * proposal's muscle check; absent or null: not checked.
+   */
+  muscleGoal?: () => Promise<MuscleGoalInput | null>;
+  /** (Ben, 1 Nov) The plan in use's typical week, direct (assisted) sets per group vs range: YOUR DATA plan.inUse.muscles. */
+  planMuscleLines?: () => Promise<string[] | null>;
   /** (Ben, 27 Oct, Q4; ADR 0035) The watch workout linked to a workout, as the coach sees it; absent or null: none. */
   healthLinked?: (sessionId: string) => Promise<LinkedActivityContext | null>;
   /** Check-in settings (check-in.md §2.8); absent, the defaults. */
@@ -514,10 +527,12 @@ export interface CoachServiceDeps {
    * not-preferred ones) and `propose_plan_swap`'s checks. Absent: the tool isn't wired.
    */
   planSwap?: {
-    context(): Promise<{ days: { name: string; exercises: { catalogueId: string; name: string }[] }[]; notPreferred: { catalogueId: string; name: string }[] } | null>;
+    context(): Promise<{ days: { name: string; exercises: PlanDayExerciseView[] }[]; notPreferred: { catalogueId: string; name: string }[] } | null>;
     prepare(req: { remove: string; add: string }): Promise<PlanSwapPrepared>;
     /** (Ben, 31 Oct) `propose_plan_add`'s checks. Absent: that tool isn't wired. */
     prepareAdd?(req: PlanAddRequest): Promise<PlanSwapPrepared>;
+    /** (Ben, 1 Nov) `propose_plan_day_edit`'s checks. Absent: that tool isn't wired. */
+    prepareDayEdit?(req: PlanDayEditRequest): Promise<PlanSwapPrepared>;
   };
   /**
    * (Ben, 28 Oct) The app's foreground state (`AppState`): time in the background doesn't count towards a turn's
@@ -1673,6 +1688,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const g: SnapGym = other.id === gym.id ? gym : { id: other.id, name: other.name, equipment: await repos().equipment.listByGym(other.id).catch(() => []) };
       return { gymId: g.id, gymName: g.name, checkContext: checkContextAt(g), equipmentVersion: equipmentVersionOf(g) };
     };
+    const muscleGoal = planRequest === null ? null : ((await deps.muscleGoal?.().catch(() => null)) ?? null);
     const planExecutors =
       planRequest === null
         ? {}
@@ -1689,6 +1705,8 @@ export function createCoachService(deps: CoachServiceDeps) {
             },
             exerciseOf: (id) => byId.get(id) ?? null,
             groupOf: muscleGroupOf,
+            // (Ben, 1 Nov) The proposal's weekly muscle check: one line per group out of range, on the card and to the coach.
+            ...(muscleGoal === null ? {} : { muscleGaps: (days: readonly PlanDayDraft[]) => planMuscleGapLines(days, muscleGoal, (id) => byId.get(id) ?? null) }),
             contextHash: deriveId(stableStringify(view)),
             equipmentVersion: equipmentVersionOf(gym),
             gyms: savedGyms.map((x) => x.name),
@@ -1861,13 +1879,16 @@ export function createCoachService(deps: CoachServiceDeps) {
       const nowMs = toMs(deps.now().utc);
       const running = activePause(inUse, nowMs, p.timezone);
       swapView = deps.planSwap === undefined ? null : await deps.planSwap.context().catch(() => null);
-      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate }, ...(swapView === null ? {} : { days: swapView.days }) } };
+      const muscles = (await deps.planMuscleLines?.().catch(() => null)) ?? null;
+      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate }, ...(swapView === null ? {} : { days: swapView.days }), ...(muscles === null ? {} : { muscles }) } };
       Object.assign(executors, createPausePlanExecutor({ store: coachStore(), loadPlan: () => repos().planDrafts.applied(p.id), tz: p.timezone }));
       // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat while a plan is in use.
       const swap = deps.planSwap;
       if (swap !== undefined) Object.assign(executors, createPlanSwapExecutor({ store: coachStore(), prepare: (r) => swap.prepare(r) }));
       // (Ben, 31 Oct, build 493) One exercise added to chosen plan days at a chosen place, from every chat while a plan is in use.
       if (swap?.prepareAdd !== undefined) Object.assign(executors, createPlanAddExecutor({ store: coachStore(), prepare: (r) => swap.prepareAdd?.(r) ?? Promise.resolve({ kind: 'refused', line: 'No plan in use' }) }));
+      // (Ben, 1 Nov, build 500) One plan day's order and sets every week (shoulders before bench in Push B), from every chat.
+      if (swap?.prepareDayEdit !== undefined) Object.assign(executors, createPlanDayEditExecutor({ store: coachStore(), prepare: (r) => swap.prepareDayEdit?.(r) ?? Promise.resolve({ kind: 'refused', line: 'No plan in use' }) }));
     }
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first. Review exlist
@@ -1958,8 +1979,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           now: deps.now,
           newId: deps.newId,
           ...(deps.lifecycle === undefined ? {} : { lifecycle: deps.lifecycle }),
-          // (Ben, 31 Oct, build 493) Limits that fit the work: 30 s for a simple live edit, 90 s live about the plan or two
-          // things at once, 120 s for a plan analysis elsewhere, 60 s for a build; 60 s to the first event at high effort.
+          // Limits that fit the work: 30 s for a simple live edit, 60 s for a build; (Ben, 1 Nov, build 500) plan work (live
+          // or not, or two things at once) has no visible limit: a 5 min safety cap, 3 min windows, no short answer.
           timing: coachTurnTiming({ liveWorkout: kind === 'workout', words: req.input.kind === 'words' ? said : null, buildInPlay: build?.inPlay === true, planBuild: planWanted }),
           // Coach v3: Adjust on an offered edit applies exactly that offer (no model call); stale when the workout moved on.
           ...(liveNow ? { acceptOffer: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptEditOffer(editDepsFor(p, session, ctx.gymName, ctx.checkIn), proposal, c) } : {}),

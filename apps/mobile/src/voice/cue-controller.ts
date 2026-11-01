@@ -1,7 +1,9 @@
 import { cueText, spokenSetOf, toMs, type ComparableSet, type CueDetail, type CueEvent } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
+import type { ScheduledCue } from '../../modules/audio-coach';
 import { TIMING } from '../theme/tokens';
+import type { NativeCuePort } from './native-cues';
 
 /**
  * Spoken workout cues while GymSmarter is open (Ben, 19 Oct 2026; rest cues
@@ -13,8 +15,10 @@ import { TIMING } from '../theme/tokens';
  * reschedules or drops the cues. Each cue speaks at most once, only at its
  * moment (never more than `timing.lateCueDrop` late, so nothing is spoken
  * for a deadline that passed while the app was closed), only while the app is
- * active, and only with cues on. In the background the notification is the
- * alert, as before. Pure: ports for the speaker, clock and app state.
+ * active, and only with cues on. The rest's cues are also handed to the native
+ * scheduler (Ben, 1 Nov; ADR 0040), which speaks them when the app is in the
+ * background or locked; without it the notification is the background alert,
+ * as before. Pure: ports for the speaker, clock, app state and native scheduler.
  */
 
 /** The rest's pre-end cue, with the next set (Ben, 27 Oct). */
@@ -96,6 +100,31 @@ export function cueDue(cue: PlannedCue, nowMs: number, played: ReadonlySet<strin
   return late >= -50 && late <= lateLimitMs(cue.kind);
 }
 
+/**
+ * The rest's cues for the native scheduler, words as of now (Ben, 1 Nov):
+ * rest cues only (a timed set is done with the app open), only with cues on,
+ * and none already too late. The native side never speaks an id twice, so
+ * cues JS has played are still listed.
+ */
+export function nativeRestCues(
+  planned: readonly PlannedCue[],
+  state: SessionAggregate | null,
+  settings: CueSettings,
+  nowMs: number,
+  lastComparable: readonly ComparableSet[] = [],
+  painFlagged?: ReadonlySet<string>,
+): ScheduledCue[] {
+  if (!settings.cuesOn || state === null) return [];
+  return planned
+    .filter((c) => (c.kind === 'rest_warning' || c.kind === 'rest_end') && nowMs <= c.fireAtMs + lateLimitMs(c.kind))
+    .map((c) => ({
+      id: c.key,
+      text: cueWords(c.kind, state, settings.cueDetail, lastComparable, painFlagged),
+      fireAtMs: c.fireAtMs,
+      dropAfterMs: c.fireAtMs + lateLimitMs(c.kind),
+    }));
+}
+
 export interface CueSettings {
   cuesOn: boolean;
   cueDetail: CueDetail;
@@ -123,6 +152,8 @@ export interface CuePorts {
   history?: (state: SessionAggregate, sessionExerciseId: string) => Promise<readonly ComparableSet[]>;
   /** Movements with an active pain flag (no heavier load carried from the last set is said). */
   painFlagged?: () => ReadonlySet<string> | undefined;
+  /** Speaks the rest's cues while the app is in the background (absent or unavailable: notification only). */
+  native?: NativeCuePort;
 }
 
 export function createSpokenCueController(ports: CuePorts) {
@@ -147,8 +178,33 @@ export function createSpokenCueController(ports: CuePorts) {
     void historyPort(state, exId)
       .then((sets) => {
         history.set(k, sets);
+        // The 15 s cue's words may now include the card's history: hand them over again.
+        syncNative();
       })
       .catch(() => undefined);
+  }
+
+  function pastFor(state: SessionAggregate | null): readonly ComparableSet[] {
+    const exId = activeRow(state);
+    return state !== null && exId !== null ? (history.get(historyKey(state, exId)) ?? []) : [];
+  }
+
+  /** What the native scheduler holds; null = unknown (a fresh run), so the first sync always speaks to it. */
+  let sentNative: string | null = null;
+  function syncNative(): void {
+    const port = ports.native;
+    if (port === undefined || !port.available()) return;
+    let cues: ScheduledCue[];
+    try {
+      cues = nativeRestCues(planCues(latest), latest, ports.settings(), ports.clock.now(), pastFor(latest), ports.painFlagged?.());
+    } catch {
+      cues = [];
+    }
+    const sig = JSON.stringify(cues.map((c) => [c.id, c.text, c.fireAtMs]));
+    if (sig === sentNative) return;
+    sentNative = sig;
+    // Never throws into the workout (rule 1); the notification is scheduled regardless.
+    void (cues.length === 0 ? port.cancel() : port.schedule(cues)).catch(() => undefined);
   }
 
   function fire(cue: PlannedCue): void {
@@ -161,9 +217,7 @@ export function createSpokenCueController(ports: CuePorts) {
     if (!s.cuesOn) return;
     spoken += 1;
     // A failing speaker never throws into the workout (rule 1).
-    const exId = activeRow(latest);
-    const past = latest !== null && exId !== null ? (history.get(historyKey(latest, exId)) ?? []) : [];
-    void ports.speaker.speak(cueWords(cue.kind, latest, s.cueDetail, past, ports.painFlagged?.()), 'cue').catch(() => undefined);
+    void ports.speaker.speak(cueWords(cue.kind, latest, s.cueDetail, pastFor(latest), ports.painFlagged?.()), 'cue').catch(() => undefined);
   }
 
   return {
@@ -194,6 +248,14 @@ export function createSpokenCueController(ports: CuePorts) {
         }, Math.max(0, cue.fireAtMs - nowMs));
         timers.set(cue.key, { cue, handle });
       }
+      // Start, Skip, ±30 s, Undo, Pause, Finish, Discard: the native schedule follows.
+      syncNative();
+    },
+    /** Settings › Voice changed (cues off, detail, voice, speed): the native schedule follows. */
+    settingsChanged(): void {
+      // The voice and speed travel with the schedule, not in its words: always send again.
+      sentNative = null;
+      syncNative();
     },
     /** The history read for the spoken set detail (Root sets it once services are open). */
     setHistoryReader(port: CuePorts['history'] | null): void {

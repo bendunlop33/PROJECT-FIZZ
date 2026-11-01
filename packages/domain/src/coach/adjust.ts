@@ -6,6 +6,7 @@ import type {
   GuardNote,
   GuardNoteKind,
   Load,
+  LoadConvention,
   PainArea,
   PainFlag,
   RepRange,
@@ -130,8 +131,11 @@ export type TodayAdjustmentResult =
       /** ADR 0038: set IDs (changed or added) whose load is a weight Ben named, kept as typed (`loadAsTyped`). */
       asTypedSetIds?: string[];
     }
-  /** Nothing to apply; `outcome` is the app's line for the coach slot (no Undo). */
-  | { status: 'unchanged'; outcome: string; guardNotes: GuardNote[] }
+  /**
+   * Nothing to apply; `outcome` is the app's line for the coach slot (no Undo). `already` (Ben, 1 Nov, build 500: "stick
+   * to 100" when the sets are 100 kg): every set asked for already has that target, so nothing failed: `Already 100 kg`.
+   */
+  | { status: 'unchanged'; outcome: string; guardNotes: GuardNote[]; already?: true }
   | { status: 'stale'; outcome: string; guardNotes: GuardNote[] };
 
 const STALE_OUTCOME = 'Your workout moved on before the coach answered. Nothing changed.';
@@ -355,6 +359,8 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
   const requestedNumbers: number[] = [];
   const seenExercises = new Set<string>();
   const asTyped: string[] = [];
+  // (Ben, 1 Nov) What each requested set already had, when the ask restated it (`Already 100 kg`).
+  const already: { asked: CoachTarget; convention: LoadConvention }[] = [];
 
   for (const req of args.exercises) {
     const ex = state.exercises.find((e) => e.id === req.sessionExerciseId);
@@ -491,6 +497,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       if (set.id === removeId) continue;
       const before = targetOf(set);
       const after = resolve(before, change.target, [set.id], set);
+      if (after !== null && sameTarget(before, after)) already.push({ asked: { load: change.target.load === null ? null : after.load, reps: change.target.reps === null ? null : after.reps }, convention: ex.loadConvention });
       if (after === null || sameTarget(before, after)) continue;
       if (typed.last && after.load !== null) asTyped.push(set.id);
       changes.push({ setId: set.id, setNumber: n, before, after });
@@ -580,6 +587,23 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
   if (firstBlocked !== undefined) return { status: 'unchanged', outcome: firstBlocked, guardNotes };
   const firstNote = guardNotes[0];
   if (firstNote !== undefined) return { status: 'unchanged', outcome: `${firstNote.text} Nothing changed.`, guardNotes };
+  if (anyRequested && already.length > 0 && already.length === requestedNumbers.length) return { status: 'unchanged', outcome: alreadyLine(already), guardNotes, already: true };
   if (!anyRequested || requestedNumbers.length === 0) return { status: 'unchanged', outcome: 'Coach kept your sets as planned.', guardNotes };
   return { status: 'unchanged', outcome: `Coach kept ${setNumbersText(requestedNumbers)} as planned.`, guardNotes };
+}
+
+/**
+ * (Ben, 1 Nov, build 500) The line for an ask that restates what the sets already are: `Already 100 kg`, `Already 100 kg
+ * × 5`, `Already 8–10 reps`; one value when every set had the same, else `Already as asked`. Pure.
+ */
+export function alreadyLine(sets: readonly { asked: CoachTarget; convention: LoadConvention }[]): string {
+  const first = sets[0];
+  if (first === undefined) return 'Already as asked';
+  const loads = new Set(sets.map((x) => (x.asked.load === null ? '' : loadText(x.asked.load, x.convention))));
+  const reps = new Set(sets.map((x) => (x.asked.reps === null ? '' : x.asked.reps.min === x.asked.reps.max ? String(x.asked.reps.min) : `${String(x.asked.reps.min)}–${String(x.asked.reps.max)}`)));
+  if (loads.size > 1 || reps.size > 1) return 'Already as asked';
+  const load = [...loads][0] ?? '';
+  const rep = [...reps][0] ?? '';
+  if (load !== '' && load !== '—') return `Already ${load}${rep === '' ? '' : ` × ${rep}`}`;
+  return rep === '' ? 'Already as asked' : `Already ${rep} reps`;
 }

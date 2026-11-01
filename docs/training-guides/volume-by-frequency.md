@@ -24,6 +24,16 @@ All of these are candidates; nothing is in the playbook until Ben approves it. T
 | V7 | **Lasting changes.** Run the plan as a rotation (A, B, C … in order), so a missed day shifts the next session instead of dropping it. If logged days differ from Ben's stated days by ≥ 1 a week for 3+ weeks, or he states a new usual frequency, ask once, following GA16: one question per signal, and if he says no, don't ask again for ≥ 4 weeks unless a new signal appears. Then propose a plan rebuilt with V3, with before/after, Apply and Undo (GA17). Never change his stated frequency, session length or goal silently. | Ongoing | Practice + guardrail | Brief `saveConfirmedMemory` ("don't silently infer lasting goals"), CLAUDE.md rules 2 and 10, GA16–GA17, [GZCLP rotation](https://thefitness.wiki/routines/gzclp/) |
 | V8 | **Named event.** Use [goal-adaptive.md](goal-adaptive.md) GA8/GA19 and its event table, so there is one source of truth for phases and tapers. In short: endurance-type events taper by cutting volume ~40–60% over ~2 weeks with intensity and frequency kept; strength-type events cut ~30–50% over 1–2 weeks with loads kept. Applying an endurance taper's numbers to *lifting* volume is inference. | Ben names an event and a date | Moderate (endurance taper meta-analyses) / Weak–inference (lifting volume before an endurance event) | [Bosquet 2007](https://doi.org/10.1249/mss.0b013e31806010e0), goal-adaptive.md (Wang 2023, Travis 2020) |
 
+> **V1 / V4 amendment (Ben, 1 Nov 2026; approved).** Option C: every muscle number comes from one count with two
+> parts. **Direct** sets count in full for each exercise's lead group (the curl and extension exercises for arms);
+> **assisted** sets are the rest of V1's credit (½ for a secondary muscle, 1 for another primary group). **Bars and
+> flags use direct sets only**; assisted is shown alongside ("the 6–10 range is judged against direct sets only,
+> meaning the curl and extension exercises"). **The direct range drops when assisted volume is substantial:** with
+> ≥ 6 assisted sets a week, a group's direct range is **4–8**, otherwise **6–10**; priority groups keep 10–20 (Ben:
+> "if they're trained a bit with other muscles then clearly we could have fewer sets eg 4"). Strength's other groups
+> and General fitness stay 4–10. Arms are not a priority (Ben, 1 Nov). Code: `packages/domain/src/progress/muscle-sets.ts`;
+> design: `docs/design/plan-muscles.md`.
+
 > **"Performance holds"** (for V5 and V6). Across the group's last 2 sessions, its main exercise is at the same load with reps no more than 1 lower at the same or lower RPE, or the load went up. There is no stall (shortlist rule 8), no repeated unplanned RPE ≥ 9.5 (rule 5), and Ben hasn't reported soreness lasting into the next session for that group. The ± 1 rep and ± 0.5 RPE tolerance reflects rating noise (E5). Estimated 1RM may be used but must be labelled as an estimate.
 
 ### Proposed replacement for shortlist rule 1

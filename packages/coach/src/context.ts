@@ -246,6 +246,16 @@ export interface BuilderDraftView {
   started: false;
 }
 
+/** (Ben, 1 Nov) A plan day's exercise: its working sets, reps, target RPE and main mark when read (`propose_plan_day_edit`). */
+export interface PlanDayExerciseView {
+  catalogueId: string;
+  name: string;
+  sets?: number;
+  reps?: string;
+  targetRpe?: number;
+  main?: boolean;
+}
+
 /** The plan in use as `pause_plan` reads it (Your data). `inUse: null`: no plan is in use. */
 export interface PlanPauseView {
   today: string;
@@ -253,7 +263,16 @@ export interface PlanPauseView {
    * (Ben, 30 Oct) `days`: each plan day's exercises as its template has them now (catalogueIds), what
    * `propose_plan_swap` swaps in every day. Absent on views made without it.
    */
-  inUse: { name: string; paused: { until: string | null } | null; days?: { name: string; exercises: { catalogueId: string; name: string }[] }[] } | null;
+  inUse: {
+    name: string;
+    paused: { until: string | null } | null;
+    days?: { name: string; exercises: PlanDayExerciseView[] }[];
+    /**
+     * (Ben, 1 Nov) The plan's typical week, per muscle group: direct working sets (+ assisted) against the weekly range
+     * that applies, from code (`Biceps 0 direct (+6½ assisted) · range 4–8 · below`). Answer volume questions from it.
+     */
+    muscles?: string[];
+  } | null;
 }
 
 export interface TrainingInput {
@@ -636,7 +655,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
     ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),
-    ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until }, ...(input.plan.inUse.days === undefined ? {} : { days: input.plan.inUse.days.map((d) => ({ name: d.name, exercises: d.exercises.map((e) => ({ ...e })) })) }) } } }),
+    ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until }, ...(input.plan.inUse.days === undefined ? {} : { days: input.plan.inUse.days.map((d) => ({ name: d.name, exercises: d.exercises.map((e) => ({ ...e })) })) }), ...(input.plan.inUse.muscles === undefined ? {} : { muscles: [...input.plan.inUse.muscles] }) } } }),
     ...(input.notPreferred === undefined || input.notPreferred.length === 0 ? {} : { notPreferred: input.notPreferred.map((e) => ({ catalogueId: e.catalogueId, name: e.name, use: 'never put this in his plan or a workout' as const })) }),
   };
 }
@@ -719,6 +738,25 @@ function messageText(m: CoachMessage): string | null {
 export const UNANSWERED_TURN_NOTE = '[No answer: this turn ended before you replied (a connection or service error, or Ben stopped it), so no change was made. Ben’s message above is still open: if he follows it up, act on it now.]';
 /** (21 Oct) In the history, for a turn cut off after a change was saved (shown to Ben as a card). App text. */
 export const CUT_OFF_TURN_NOTE = '[Cut off before you replied, after a change was saved and shown to Ben as a card. Read get_active_session for today’s workout as it is now.]';
+
+/**
+ * (Ben, 1 Nov, build 500: "Still running out of time … for changing plans") What a targeted plan change needs: the plan
+ * days, this week, the last 7 days, the recent sessions of the lifts in play, his training details, preferences, pain
+ * flags, memories and the live workout. Left out: the build view (the gym's usable exercises, the plan builder's
+ * answers: a whole-plan rebuild's), the addable list unless he asks to add, and exercise cues. Pure.
+ */
+export function planWorkContext(input: CoachContextInput, opts: { keepAddable: boolean }): CoachContextInput {
+  const rest: CoachContextInput = { ...input, catalogue: [] };
+  delete rest.build;
+  delete rest.builtInNext;
+  if (!opts.keepAddable) delete rest.addable;
+  return rest;
+}
+
+/** (Ben, 1 Nov) The size of what a turn sends the model, in characters (the token proxy: about 4 characters a token). */
+export function requestChars(req: { instructions: string; input: readonly ModelInputItem[]; tools: readonly unknown[] }): number {
+  return req.instructions.length + JSON.stringify(req.tools).length + req.input.reduce((n, i) => n + (i.type === 'message' ? i.content.length : JSON.stringify(i).length), 0);
+}
 
 export function buildCoachContext(input: CoachContextInput): CoachContext {
   const yourData = buildYourData(input);

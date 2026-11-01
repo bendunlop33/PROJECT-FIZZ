@@ -1,4 +1,6 @@
 import {
+  applyPlanDayEdit,
+  type PlanDayEdit,
   localDateOf,
   activePause,
   activePin,
@@ -88,6 +90,10 @@ import {
   finishedGymWorkoutOn,
   setDaysWeekSlots,
   upNextPlanningWeekday,
+  MAIN_LIFT_COPY,
+  followMainLift,
+  mainLiftTemplateClash,
+  templateWithMainLift,
 } from '@fizz/domain';
 import type { PlanSplitView } from '@fizz/coach';
 import type { PlanWrite, Store } from '@fizz/persistence';
@@ -95,7 +101,7 @@ import { createVersionMemo } from './version-memo';
 import { readPlanLinks } from './plan-day-links';
 import { planWeekDayOf, planWeekWorkoutOf, planWeekdaysNow } from './plan-week';
 import { editBlockOf, readPlanBlock, slotKits, weekViews, type WeekViewsInput } from './plan-edit-read';
-import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, PlanDraft, PlanWeekExerciseEdit, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, PlanDayDraft, PlanDraft, PlanWeekExerciseEdit, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
@@ -107,6 +113,8 @@ import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, P
 
 export interface PlanServicesDeps {
   store: () => Store;
+  /** (Ben, 1 Nov) The weekly muscle check on a version's days (`planMuscleGapLines`); absent: not shown. */
+  muscleGapsOf?: (days: readonly PlanDayDraft[]) => Promise<string[]>;
   profile: () => Promise<UserProfile | null>;
   now: () => ZonedTimestamp;
   catalogueExercises?: () => readonly Exercise[];
@@ -194,6 +202,8 @@ export interface PlanCardData {
   state: PlanCardState;
   /** Workouts in the rotation now that `Replace my workouts` would take out (kept in Workouts). */
   replaces: string[];
+  /** (Ben, 1 Nov) The weekly muscle check: one line per group out of range (`Biceps 2/wk · below 4–8`). Absent: none. */
+  muscles?: string[];
 }
 
 export interface PlanDayData {
@@ -528,7 +538,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     return new Map(days.map((r) => [r.id, planDayBodyParts(r, of, split)]));
   }
 
-  return {
+  const service = {
     get,
     active,
 
@@ -602,6 +612,8 @@ export function createPlanServices(deps: PlanServicesDeps) {
         gymName: gym?.name ?? null,
         state: stateOf(plan, req.versionN, deps.now().utc, plan.status === 'ended' && (await repo().applied(p.id).catch(() => null)) !== null),
         replaces: rotationRoutines(routines).filter((r) => !madeIds.has(r.id)).map((r) => r.name),
+        // The coach's own check as stored with the version; a builder version (no such line stored) is checked now.
+        muscles: v.checks.some((c) => c.kind === 'muscle_gap') ? v.checks.filter((c) => c.kind === 'muscle_gap').map((c) => c.text) : ((await deps.muscleGapsOf?.(v.days).catch(() => [])) ?? []),
       };
     },
 
@@ -1131,6 +1143,96 @@ export function createPlanServices(deps: PlanServicesDeps) {
       }
     },
 
+    /**
+     * (Ben, 1 Nov, build 500) `Every week` for a whole plan-day change (`propose_plan_day_edit`'s Apply): its order and
+     * each named row's working sets, reps, target RPE, main mark and a load Ben named (`applyPlanDayEdit`). The same
+     * versioned write and `update_routine` record as `editDayEveryWeek` (its action ID from the op ID, rule 5); Undo is
+     * the routine's revert. Done workouts never change (rule 2).
+     */
+    async editDayRowsEveryWeek(req: { routineId: string; expectedVersion: number; opId: string; edit: PlanDayEdit; lines: readonly string[] }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: 'stale' | 'missing' | 'failed'; message: string }> {
+      try {
+        const p = await owner();
+        if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        const repos = deps.store().repos;
+        const actionId = deriveId(`plan-day-every-week:${req.opId}`);
+        const prior = await repos.coach.getAction(actionId).catch(() => null);
+        const current = await repos.routines.get(req.routineId).catch(() => null);
+        if (current === null || current.ownerId !== p.id || isDeleted(current)) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        if (prior !== null) return { ok: true, actionId, routine: current, duplicate: true };
+        if (current.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const rowIds = new Set(current.exercises.map((x) => x.id));
+        if ((req.edit.order !== null && (req.edit.order.length !== rowIds.size || req.edit.order.some((id) => !rowIds.has(id)))) || req.edit.rows.some((r) => !rowIds.has(r.rowId))) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        // A typed weight is in the exercise's own load convention (per dumbbell, plates, stack…).
+        const of = await exerciseOf();
+        const edit: PlanDayEdit = { ...req.edit, rows: req.edit.rows.map((r) => (r.load === undefined ? r : { ...r, load: { ...r.load, convention: of(current.exercises.find((x) => x.id === r.rowId)?.exerciseId ?? '')?.defaultLoadConvention ?? r.load.convention } })) };
+        const at = deps.now();
+        const touched = new Set(edit.rows.map((r) => r.rowId));
+        const exercises = applyPlanDayEdit(current.exercises, edit, (rowId, n) => deriveId(`plan-day-edit-set:${req.opId}:${rowId}:${String(n)}`)).map((x) => (touched.has(x.id) ? { ...x, structureChangedAtUtc: at.utc } : x));
+        if (JSON.stringify(exercises) === JSON.stringify([...current.exercises].sort((a, b) => a.order - b.order))) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        // (Ben, 1 Nov) A main mark is `Make main lift`'s write: one main lift, the plan day's key and name following
+        // (`followMainLift`, as the editor's Save and `mainLiftEveryWeek`), refused on another template's lift.
+        const made: Routine = followMainLift({ ...current, exercises, version: current.version + 1, updatedAtUtc: at.utc, lastOpId: req.opId }, (id) => of(id)?.name ?? 'Exercise');
+        if (made.planDay?.mainLiftExerciseId !== current.planDay?.mainLiftExerciseId && mainLiftTemplateClash(made, await repos.routines.listByOwner(p.id).catch(() => [] as Routine[]), made.planDay?.mainLiftExerciseId ?? '')) return { ok: false, reason: 'stale', message: MAIN_LIFT_COPY.clash };
+        const next = made;
+        const action: ActionRecord = {
+          actionId,
+          turnId: null,
+          opId: req.opId,
+          status: 'committed',
+          author: 'ben',
+          detail: { kind: 'update_routine', routineId: current.id, routineName: current.name, changes: (req.lines.length === 0 ? ['Day changed'] : req.lines).slice(0, 20).map((text) => ({ change: 'edit', text: text.slice(0, 200) })), before: current, versionBefore: current.version, versionAfter: next.version, draft: null },
+          failure: null,
+          reason: null,
+          evidenceRefs: [],
+          guardNotes: [],
+          entityVersions: [{ entity: 'routine', id: current.id, before: current.version, after: next.version }],
+          undoneBy: null,
+          createdAt: at,
+        };
+        const r = await repos.drafts.applyRoutineChange({ ownerId: p.id, routine: next, expectedRoutineVersion: current.version, action, at });
+        if (r.status === 'missing') return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        if (r.status === 'stale') return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed' };
+      } catch {
+        return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      }
+    },
+
+    /**
+     * (Ben, 1 Nov) `Make main lift` for every week: the plan day's template (or a saved workout) gets `exerciseId` as
+     * its one main lift (`templateWithMainLift`: the one before a normal compound with its sets, the key and name
+     * following), so Today's `Main lift` row, the next workout's top set and back-offs, its rest, Next time and block
+     * progress read it from then on. Done workouts never change (rule 2). One versioned write with Ben's
+     * `update_routine` record (op ID; a stale version is refused: rule 5); Undo is `routines.revert(actionId)`.
+     * `expectedVersion` absent: the version read now (a tap from a live workout or Your workout, which hold no
+     * template version of their own). Refused when the exercise isn't in it, or another template of that plan day
+     * already has that main lift.
+     */
+    async mainLiftEveryWeek(req: { routineId: string; exerciseId: string; opId: string; expectedVersion?: number }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: 'stale' | 'missing' | 'failed' | 'clash' | 'not_in_plan'; message: string }> {
+      try {
+        const p = await owner();
+        if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        const repos = deps.store().repos;
+        const current = await repos.routines.get(req.routineId).catch(() => null);
+        if (current === null || current.ownerId !== p.id || isDeleted(current)) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        // A repeat of this op replays (the write's action ID is the plan-day edit's, from the op ID).
+        if ((await repos.coach.getAction(deriveId(`plan-day-every-week:${req.opId}`)).catch(() => null)) !== null) return { ok: true, actionId: deriveId(`plan-day-every-week:${req.opId}`), routine: current, duplicate: true };
+        if (req.expectedVersion !== undefined && current.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const row = [...current.exercises].sort((a, b) => a.order - b.order).find((e) => e.exerciseId === req.exerciseId);
+        if (row === undefined) return { ok: false, reason: 'not_in_plan', message: MAIN_LIFT_COPY.notInPlan };
+        const others = await repos.routines.listByOwner(p.id).catch(() => [] as Routine[]);
+        if (current.planDay !== undefined && mainLiftTemplateClash(current, others, req.exerciseId)) return { ok: false, reason: 'clash', message: MAIN_LIFT_COPY.clash };
+        const liftName = (await exerciseOf())(req.exerciseId)?.name ?? 'Exercise';
+        // Already the day's one main lift: nothing to write.
+        if (templateWithMainLift(current, { rowId: row.id, liftName }) === null) return { ok: true, actionId: deriveId(`plan-day-every-week:${req.opId}`), routine: current, duplicate: true };
+        // One path (coordinator, 1 Nov): the same write as `propose_plan_day_edit`'s Apply, a main mark on that row.
+        const r = await service.editDayRowsEveryWeek({ routineId: current.id, expectedVersion: current.version, opId: req.opId, edit: { order: null, rows: [{ rowId: row.id, main: true }] }, lines: [MAIN_LIFT_COPY.made(liftName)] });
+        return r.ok ? r : { ok: false, reason: r.reason, message: r.message };
+      } catch {
+        return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      }
+    },
+
     async undoMove(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
       const p = await owner();
       if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
@@ -1157,6 +1259,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       return consistencyMemo.get(deps.store(), `${p.id}|${p.timezone}|${localDateOf(toMs(deps.now().utc), p.timezone)}`, () => readConsistency(p));
     },
   };
+  return service;
 
   async function readConsistency(p: UserProfile): Promise<ConsistencyView | null> {
       const now = deps.now();

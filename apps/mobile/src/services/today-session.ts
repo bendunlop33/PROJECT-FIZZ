@@ -138,6 +138,7 @@ import {
   type HistoryWorkout,
   restDefaultsOf,
   warmupPrefsOf,
+  hasRestSettings,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import { learnedPace, paceOpt } from './pace';
@@ -1014,7 +1015,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       // (Ben, 27 Oct) `Rest when short on time`, as Your workout's Time.
       ...(training?.fitRestLevel === undefined ? {} : { fitRestLevel: training.fitRestLevel }),
       // (Ben, 28 Oct) Profile › Rest times, as Your workout's: today's drafts, their ~N min and Time use Ben's defaults.
-      ...(training?.restDefaultsS === undefined ? {} : { restDefaultsS: restDefaultsOf(training) }),
+      ...(!hasRestSettings(training) ? {} : { restDefaultsS: restDefaultsOf(training ?? null) }),
       // (Ben, 28 Oct) Ben's own pace, as Your workout and the plan time it.
       ...paceOpt(await learnedPace(deps.store(), p.id, nowMs)),
     };

@@ -20,7 +20,7 @@ import { probeActivityLedger } from '../live-activity/probe-ledger';
 import { restCountdownActivity } from '../live-activity/RestCountdownActivity';
 import { judgeAlarmKitStatus } from './alarmkit';
 import { analyseAppGroup, parseNativeAppGroupInfo } from './app-group';
-import { LOCKED_CUE_DELAY_S, judgeLockedCue } from './locked-cue';
+import { LOCKED_CUE_DELAY_S, LOCKED_CUE_GAP_S, LOCKED_CUE_MAX_LATENESS_MS, judgeLockedCue, parseCueLogEntry } from './locked-cue';
 import { PROBE_DB_NAME, type ResultUpdate } from './model';
 import { PROBE_CONTEXTUAL_STRINGS, chooseRecognitionLocale, describeTranscript, type LocaleChoice } from './speech-probe';
 
@@ -330,73 +330,63 @@ export async function runAudioCoachProbe(): Promise<ResultUpdate> {
   }
 }
 
-// ---------- Locked cue (opt-in background-audio experiment) ----------
+// ---------- Spoken cues in the background (Ben, 1 Nov; ADR 0040) ----------
 
 export function backgroundAudioInBuild(): boolean {
   const extra: unknown = Constants.expoConfig?.extra;
-  return (
-    typeof extra === 'object' && extra !== null && (extra as { backgroundAudioExperiment?: unknown }).backgroundAudioExperiment === true
-  );
+  return typeof extra === 'object' && extra !== null && (extra as { backgroundAudio?: unknown }).backgroundAudio === true;
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** `recentEvents` returns audio events seen since a given time (from the screen's subscription). */
+/**
+ * The product path: two cues handed to the native scheduler, as a rest does.
+ * The JS wait may itself be suspended; the verdict comes from the native log,
+ * read once Ben is back. `recentEvents` returns audio events seen since a given time.
+ */
 export async function runLockedCueProbe(recentEvents: (sinceMs: number) => string[]): Promise<ResultUpdate> {
   if (!backgroundAudioInBuild()) {
     return {
       status: 'unavailable',
-      summary: 'This build was made without the background-audio experiment (FIZZ_BACKGROUND_AUDIO=1)',
-      details: ['Default off by design; see ADR 0007'],
+      summary: 'This build was made without background audio (FIZZ_BACKGROUND_AUDIO=0)',
+      details: ['The rest-done notification is the background alert'],
     };
   }
-  if (AudioCoach === null) {
-    return { status: 'unavailable', summary: 'audio-coach native module is not in this build', details: [] };
-  }
   const coach = AudioCoach;
+  if (coach === null || typeof coach.scheduleRestCues !== 'function' || typeof coach.cancelRestCues !== 'function' || typeof coach.scheduledCueLog !== 'function') {
+    return { status: 'unavailable', summary: 'This build has no native cue scheduling (audio-coach too old or missing)', details: [] };
+  }
   const startedAt = nowMs();
+  const first = startedAt + LOCKED_CUE_DELAY_S * 1000;
+  const second = first + LOCKED_CUE_GAP_S * 1000;
+  const ids = [`probe:${String(startedAt)}:warn`, `probe:${String(startedAt)}:end`];
   try {
-    // duckOthers off: the keep-alive holds the session for the whole wait, and
-    // audio-coach doesn't change the category while it runs, so the cue itself
-    // isn't ducked either (review F4; a later version could duck around the cue).
-    await withTimeout(
-      coach.configureSession({ category: 'playback', duckOthers: false, interruptSpokenAudioAndMixWithOthers: true }),
+    const result = await withTimeout(
+      coach.scheduleRestCues(
+        [
+          { id: ids[0] ?? '', text: '15 seconds. Next: bench press, set 2, 100 kilos for 8.', fireAtMs: first, dropAfterMs: first + LOCKED_CUE_MAX_LATENESS_MS },
+          { id: ids[1] ?? '', text: 'Rest over.', fireAtMs: second, dropAfterMs: second + LOCKED_CUE_MAX_LATENESS_MS },
+        ],
+        { language: 'en-GB', deactivateAfter: true },
+      ),
       NATIVE_CALL_TIMEOUT_MS,
-      'configureSession',
+      'scheduleRestCues',
     );
-    const keepAlive = await withTimeout(coach.startKeepAlive(), NATIVE_CALL_TIMEOUT_MS, 'startKeepAlive');
-    if (!keepAlive.started) {
-      return { status: 'fail', summary: `Keep-alive did not start: ${keepAlive.reason ?? 'unknown'}`, details: [] };
+    if (!result.scheduled) {
+      return judgeLockedCue({ scheduled: false, reason: result.reason ?? null, holdError: result.holdError ?? null, fires: [], events: [] });
     }
-    try {
-      const dueAt = startedAt + LOCKED_CUE_DELAY_S * 1000;
-      await sleep(LOCKED_CUE_DELAY_S * 1000);
-      const firedAt = nowMs();
-      const appStateAtCue = AppState.currentState;
-      const result = await withTimeout(
-        coach.speak('Rest over. Next set, bench press, one hundred kilos for eight.', { language: 'en-US', deactivateAfter: false }),
-        NATIVE_CALL_TIMEOUT_MS,
-        'speak',
-      );
-      return judgeLockedCue({
-        appStateAtCue,
-        latenessMs: Math.max(0, firedAt - dueAt),
-        outcome: result.outcome,
-        otherAudioWasPlaying: result.otherAudioWasPlaying,
-        keepAliveCategory: keepAlive.category ?? null,
-        events: recentEvents(startedAt),
-      });
-    } finally {
-      await coach.stopKeepAlive().catch(() => undefined);
-    }
+    // Both cues' moments plus their speaking time.
+    await sleep(second - nowMs() + 10_000);
+    const log = (await withTimeout(coach.scheduledCueLog(), NATIVE_CALL_TIMEOUT_MS, 'scheduledCueLog')).map(parseCueLogEntry);
+    const fires = ids.map((id) => log.find((e) => e !== null && e.id === id) ?? null);
+    return judgeLockedCue({ scheduled: true, reason: null, holdError: result.holdError ?? null, fires, events: recentEvents(startedAt) });
   } catch (e) {
-    // e.g. startKeepAlive hit the JS timeout but then succeeded natively: never
-    // leave the silent loop running (it keeps the app awake and podcasts paused).
-    // Native calls run in order on the main queue, so this runs after the start.
-    await coach.stopKeepAlive().catch(() => undefined);
-    return { status: 'fail', summary: `Locked-cue experiment error: ${errorText(e)}`, details: recentEvents(startedAt) };
+    return { status: 'fail', summary: `Background cue error: ${errorText(e)}`, details: recentEvents(startedAt) };
+  } finally {
+    // Never leave the silent hold running (battery, Ben's session). A real rest is rescheduled on its next change.
+    await coach.cancelRestCues().catch(() => undefined);
   }
 }
 

@@ -61,6 +61,11 @@ import {
   type PeriodSpan,
   type TrainingPeriodView,
   type TrainingPlanDays,
+  daysBetween,
+  muscleFrequency,
+  type MuscleSetTotals,
+  type ProgressWindow,
+  type VolumeGoal,
 } from '@fizz/domain';
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
 
@@ -81,6 +86,11 @@ import type { Exercise, ImplementCount, ProgressGrouping, ProgressPeriodKey, Ses
 
 export interface ProgressServiceDeps {
   store: () => Store;
+  /**
+   * (Ben, 1 Nov) The goal and priority groups the muscle bars' shaded range is read for (Plan › Muscles' own):
+   * absent or null: no range shown.
+   */
+  volumeGoal?: () => Promise<{ goal: VolumeGoal | null; priorities: ReadonlySet<MuscleGroup> } | null>;
   now: () => ZonedTimestamp;
   profile: () => Promise<UserProfile | null>;
   /**
@@ -267,6 +277,11 @@ function infoOf(row: Exercise, bundled: Exercise | undefined): MuscleInfo {
 
 export function createProgressService(deps: ProgressServiceDeps) {
   const repos = () => deps.store().repos;
+  /** (Ben, 1 Nov) The muscle bars' range inputs; nothing when not known (no range is shown, never a guess). */
+  async function volumeOf(): Promise<{ volumeGoal?: VolumeGoal | null; priorities?: ReadonlySet<MuscleGroup> }> {
+    const v = (await deps.volumeGoal?.().catch(() => null)) ?? null;
+    return v === null ? {} : { volumeGoal: v.goal, priorities: v.priorities };
+  }
   let cache = new Map<string, Cached>();
   let cacheKey: { store: Store; ownerId: string; tz: string } | null = null;
   /**
@@ -471,7 +486,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
       let earliest = today;
       for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
       const home: ProgressHome = {
-        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range, bests }),
+        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range, bests, ...(await volumeOf()) }),
         period,
         range,
         today,
@@ -634,7 +649,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
         let earliest = today;
         for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
         const bar = periodBar({ today, span: choice.span, offset: choice.offset, earliest });
-        const view = buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period: bar.preset, grouping, bests, bar: { window: bar.window, title: bar.title, phrase: bar.phrase } });
+        const view = buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period: bar.preset, grouping, bests, ...(await volumeOf()), bar: { window: bar.window, title: bar.title, phrase: bar.phrase } });
         const tiled = choice.span === 'week' || choice.span === 'month';
         const acts = tiled
           ? await repos()
@@ -775,6 +790,18 @@ export function createProgressService(deps: ProgressServiceDeps) {
      * (Ben, 31 Oct: block progress) Every finished workout as Progress projects it (the same cache) with each exercise's
      * name as Ben knows it now. Null with no profile.
      */
+    /**
+     * (Ben, 1 Nov) Direct and assisted sets per muscle group done between two local dates (inclusive): Progress's own
+     * count (`muscleFrequency`), so Plan › Muscles' done marker and Progress › Training never disagree. Null: no profile.
+     */
+    async muscleSetsBetween(from: string, to: string): Promise<MuscleSetTotals | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const ctx = await context(profile);
+      const f = muscleFrequency(ctx.sessions, ctx.exercises, { from, to, days: daysBetween(from, to) + 1 } as ProgressWindow, 'body_part');
+      return new Map(f.rows.map((r) => [r.key as MuscleGroup, { direct: r.direct, assisted: r.assisted }]));
+    },
+
     async projected(): Promise<{ sessions: readonly ProgressSession[]; nameOf: (exerciseId: string) => string | null } | null> {
       const profile = await deps.profile();
       if (!profile) return null;

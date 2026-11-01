@@ -15,6 +15,7 @@ import { claimsDrag, swipeIntent } from '../../workout/set-pager';
 import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { ROUND_TABLE_KEYBOARD } from '../../workout/keyboard';
+import type { MenuAnchor } from '../../workout/exercise-menu';
 import { GymPartDivider, SnapNote } from './GymSwitch';
 import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
 import { dropIndex } from '../../ui/drag-logic';
@@ -81,7 +82,11 @@ export interface RoundPageProps {
   onTapElsewhere: () => void;
   onAddSet: (sessionExerciseId: string) => void;
   onWhy: (exerciseIndex: number) => void;
-  onMenu: (sessionExerciseId: string) => void;
+  /**
+   * (Ben, 1 Nov, A) The exercise's menu: `⋯`, or a long press on its header. `anchor`: the header in window
+   * points, so the menu opens next to it (the header lifts).
+   */
+  onMenu: (sessionExerciseId: string, anchor?: MenuAnchor) => void;
   onName: (card: { sessionExerciseId: string; exerciseId: string; name: string; isCurrent: boolean }) => void;
   /** `pinnedOpen`: the pinned line was tapped (the sheet opens on the pin; Ben, 26 Oct). */
   onNote: (sessionExerciseId: string, name: string, note: string | null, pinnedOpen?: boolean) => void;
@@ -590,9 +595,22 @@ const SetRowShell = memo(function SetRowShell(s: ShellProps) {
  */
 function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset: boolean; page: RoundPageProps }) {
   const theme = useTheme();
+  const headerRow = useRef<View | null>(null);
+  // (Ben, 1 Nov, A) `⋯` or a long press on the header: the menu opens next to it. Only the header holds for the
+  // menu; a set row's hold stays its own (drag, or its set menu).
+  const openMenu = () => {
+    const v = headerRow.current;
+    if (v === null) {
+      p.onMenu(ex.sessionExerciseId);
+      return;
+    }
+    v.measureInWindow((x, y, width, height) => {
+      p.onMenu(ex.sessionExerciseId, Number.isFinite(y) && width > 0 ? { x, y, width, height } : undefined);
+    });
+  };
   return (
     <View>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'], minHeight: theme.target.min.height }}>
+      <View ref={headerRow} collapsable={false} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'], minHeight: theme.target.min.height }}>
         <Pressable
           accessibilityRole="header"
           accessibilityLabel={`${ex.label}, ${ex.name}${ex.subline !== null ? `, ${ex.subline}` : ''}, ${String(ex.progress.done)} of ${String(ex.progress.total)} sets done${ex.painBadge ? ', pain flag' : ''}`}
@@ -601,15 +619,21 @@ function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset
             ...(p.canNext ? [{ name: 'next', label: 'Next exercise' }] : []),
             ...(p.canPrev ? [{ name: 'previous', label: 'Previous exercise' }] : []),
             ...(p.exerciseActions?.(ex.sessionExerciseId) ?? []),
+            { name: 'menu', label: 'Exercise options' },
           ]}
           onAccessibilityAction={(e) => {
             const name = e.nativeEvent.actionName;
             if (name === 'next') p.onRound('next');
             else if (name === 'previous') p.onRound('prev');
+            else if (name === 'menu') openMenu();
             else p.onExerciseAction?.(ex.sessionExerciseId, name);
           }}
           onPress={() => {
             p.onName({ sessionExerciseId: ex.sessionExerciseId, exerciseId: ex.exerciseId, name: ex.name, isCurrent: ex.isCurrent });
+          }}
+          onLongPress={() => {
+            haptic('step');
+            openMenu();
           }}
           style={({ pressed }) => ({ flex: 1, flexDirection: 'row', gap: theme.space['2'], paddingTop: theme.space['1'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
@@ -637,12 +661,7 @@ function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset
         <AppText variant="callout" color="text.secondary" numeric style={{ paddingTop: theme.space['1'] + 2 }} importantForAccessibility="no" accessibilityElementsHidden>
           {ex.progressText}
         </AppText>
-        <MenuButton
-          label={`${superset ? `${ex.label} ` : ''}${ex.name} menu`}
-          onPress={() => {
-            p.onMenu(ex.sessionExerciseId);
-          }}
-        />
+        <MenuButton label={`${superset ? `${ex.label} ` : ''}${ex.name} menu`} onPress={openMenu} />
       </View>
       {ex.pinned !== null ? (
         // (Ben, 26 Oct) A pinned note: every time this exercise is in a workout; his words as typed (rule 8).

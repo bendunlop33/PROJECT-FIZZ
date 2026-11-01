@@ -42,6 +42,8 @@ export interface RecapMuscleRow {
   label: string;
   value: string;
   previous: string;
+  /** (Ben, 1 Nov) `+3 assisted` this month; null with none. */
+  assisted?: string | null;
   words: string;
 }
 
@@ -166,12 +168,20 @@ export function buildMonthlyRecap(input: MonthlyRecapInput): MonthlyRecapView | 
   // Working sets per body part (the Training tab's count), this month and the one before.
   const now = muscleFrequency(input.sessions, input.exercises, w, 'body_part');
   const before = muscleFrequency(input.sessions, input.exercises, { ...w, from: w.previous.from, to: w.previous.to, days: Number(w.previous.to.slice(8, 10)) }, 'body_part');
-  const prevOf = new Map(before.rows.map((r) => [r.key, r.sets]));
+  // (Ben, 1 Nov: option C) Direct sets first, as the Training tab shows them; a group trained only as a helper stays listed.
+  const prevOf = new Map(before.rows.map((r) => [r.key, r]));
   const muscles: RecapMuscleRow[] = now.rows
-    .map((r) => ({ r, prev: prevOf.get(r.key) ?? 0 }))
-    .filter(({ r, prev }) => r.sets > 0 || prev > 0)
-    .sort((a, b) => b.r.sets - a.r.sets || b.prev - a.prev)
-    .map(({ r, prev }) => ({ key: r.key, label: r.label, value: setsText(r.sets), previous: setsText(prev), words: `${r.label}: ${setsText(r.sets)} sets; ${previousTitle} ${setsText(prev)}.` }));
+    .map((r) => ({ r, prev: prevOf.get(r.key)?.direct ?? 0, prevAll: prevOf.get(r.key)?.sets ?? 0 }))
+    .filter(({ r, prevAll }) => r.sets > 0 || prevAll > 0)
+    .sort((a, b) => b.r.direct - a.r.direct || b.prev - a.prev || b.r.sets - a.r.sets)
+    .map(({ r, prev }) => ({
+      key: r.key,
+      label: r.label,
+      value: setsText(r.direct),
+      previous: setsText(prev),
+      assisted: r.assisted > 0 ? `+${setsText(r.assisted)} assisted` : null,
+      words: `${r.label}: ${setsText(r.direct)} sets${r.assisted > 0 ? `, plus ${setsText(r.assisted)} assisted` : ''}; ${previousTitle} ${setsText(prev)}.`,
+    }));
 
   // Records set that month (Ben, 26 Oct): the tracked lifts' `New best`s, the same ones the Summary and PB ring show.
   const rec = input.bests == null ? { items: [] } : recordsInWindow(input.sessions, w, { limit: Number.POSITIVE_INFINITY, bests: input.bests });

@@ -298,7 +298,9 @@ describe('muscles (checks 9–15, PG26, PG27)', () => {
     if (home.dataState !== 'normal') throw new Error('expected normal');
     const chest = home.muscles.rows.find((r) => r.key === 'Chest');
     expect(chest?.contributors.map((c) => c.text)).toEqual(['Bench press  4 sets × 1 = 4', 'Incline press  2 sets × 1 = 2']);
-    expect(home.muscles.rows.find((r) => r.key === 'Triceps')?.words).toBe('Triceps, 1 session, 2 sets.');
+    // (Ben, 1 Nov: option C) Direct sets first; bench's ½ triceps credit is assisted (V1's 2 sets kept as `sets`).
+    expect(home.muscles.rows.find((r) => r.key === 'Triceps')?.words).toBe('Triceps, 1 session, 0 sets, plus 2 sets assisted.');
+    expect(home.muscles.rows.find((r) => r.key === 'Triceps')).toMatchObject({ sets: 2, direct: 0, setsText: '0', assistedText: '+2 assisted' });
     expect(chest?.perWeek).toBe('1.4');
     expect(setsWords(8.5)).toBe('8 and a half sets');
   });

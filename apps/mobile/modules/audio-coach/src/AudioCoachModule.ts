@@ -5,10 +5,12 @@ import type {
   AppGroupInfo,
   AudioCoachEvents,
   AudioSessionState,
-  KeepAliveStartResult,
-  KeepAliveStopResult,
+  CancelCuesResult,
   LiveActivityTapEntry,
   NativeVoice,
+  ScheduleCuesResult,
+  ScheduledCue,
+  ScheduledCueLogEntry,
   SessionOptions,
   SpeakOptions,
   SpeakResult,
@@ -19,9 +21,16 @@ declare class AudioCoachNativeModule extends NativeModule<AudioCoachEvents> {
   speak(text: string, options: SpeakOptions): Promise<SpeakResult>;
   /** Stops speech; every pending speak() resolves with outcome "cancelled". */
   stop(): Promise<void>;
-  /** Opt-in locked-cue experiment; refuses without the audio background mode. */
-  startKeepAlive(): Promise<KeepAliveStartResult>;
-  stopKeepAlive(): Promise<KeepAliveStopResult>;
+  /**
+   * Replaces the rest's natively scheduled cues (ADR 0040): each speaks at its
+   * moment only while the app isn't active; a silent mixable player keeps the
+   * app running in the background meanwhile. Absent in builds made before it existed.
+   */
+  scheduleRestCues?(cues: ScheduledCue[], options: SpeakOptions): Promise<ScheduleCuesResult>;
+  /** Drops every scheduled cue and releases the session once nothing is speaking. Absent in older builds. */
+  cancelRestCues?(): Promise<CancelCuesResult>;
+  /** The last 20 scheduled cues' outcomes. Absent in older builds. */
+  scheduledCueLog?(): Promise<ScheduledCueLogEntry[]>;
   getSessionState(): AudioSessionState;
   /** Absent in builds made before it existed: check before calling. */
   getVoices?(): NativeVoice[];

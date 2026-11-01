@@ -11,7 +11,8 @@ import { toMs } from '../time';
 import { convertMass } from '../units';
 import { isPlatesAddedKind } from '../plates-added';
 import { liftUnitText, REVIEW_COPY, verdictOf, weekRangeText } from './views';
-import { leadMuscleGroup, reviewSessionOf, reviewWeekCount, type ReviewActivity, type ReviewSession, type WeeklyReviewInput } from './weekly';
+import { reviewSessionOf, reviewWeekCount, type ReviewActivity, type ReviewSession, type WeeklyReviewInput } from './weekly';
+import { leadMuscleGroup } from '../progress/muscle-sets';
 import { HISTORY_STATUS } from '../session/deletion';
 
 /**
