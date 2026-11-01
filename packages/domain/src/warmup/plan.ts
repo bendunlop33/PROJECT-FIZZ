@@ -257,7 +257,9 @@ export function planWarmups(i: WarmupPlanInput): WarmupStep[] {
   const big = planOnGrid(i, { step: coarse.step, loads: coarse.loads });
   const heavyLadder = i.cls === 'heavy' && heavyBand(Math.max(1, Math.round(i.reps)));
   const gapsOk = !heavyLadder || maxGap(big, W) <= 0.25 * W + EPS;
-  return big.length > 0 && big.length <= fine.length && gapsOk ? big : fine;
+  // Every step on the 20 kg ladder (the bar included), else the 10 kg one, which needs no off-ladder step.
+  const onLadder = big.every((s) => coarse.loads.some((l) => Math.abs(l - s.load) < EPS) || (i.barMass !== null && Math.abs(s.load - i.barMass) < EPS));
+  return big.length > 0 && big.length <= fine.length && gapsOk && onLadder ? big : fine;
 }
 
 function maxGap(steps: readonly WarmupStep[], W: number): number {
@@ -360,6 +362,13 @@ function planOn(i: WarmupPlanInput, grid: Grid | null, rounding: Rounding = 'nea
     if (b === null) steps.pop();
     else top.load = b;
   }
+  // (Ben, 1 Nov) Rounding to simple loads can lift an earlier step past the cap too (two steps on one load above it):
+  // those go to the same load down, and (b) merges them.
+  if (grid !== null && steps.some((x) => x.load > cap + EPS)) {
+    const b = belowSimple(cap);
+    steps = b === null ? steps.filter((x) => x.load <= cap + EPS) : steps.map((x) => (x.load > cap + EPS ? { ...x, load: b } : x));
+    steps.sort((x, y) => x.load - y.load);
+  }
   // (d) WU4/WU5: a last step below 70 % of W goes to the next load up, if that stays within (c) and below W.
   const t2 = lastOf();
   if (ladderClass && t2 !== undefined && t2.load < 0.7 * W - EPS) {
@@ -390,7 +399,8 @@ function planOn(i: WarmupPlanInput, grid: Grid | null, rounding: Rounding = 'nea
       const a = points[at - 1] ?? 0;
       const b = points[at] ?? 0;
       // (Ben, 1 Nov) A simple load strictly inside the gap, nearest its middle (ties lighter), else the 22 Oct snap.
-      const inside = simpleLoads.filter((l) => l > a + EPS && l < b - EPS);
+      // Within (c)'s cap: a midpoint step never lands above the top step's limit.
+      const inside = simpleLoads.filter((l) => l > a + EPS && l < b - EPS && l <= cap + EPS);
       const m = (a + b) / 2;
       const mid = inside.length > 0 ? inside.reduce((x, y) => (Math.abs(y - m) < Math.abs(x - m) - EPS ? y : x)) : down(m);
       if (steps.some((s) => Math.abs(s.load - mid) < EPS) || mid >= W - EPS) break;

@@ -175,7 +175,7 @@ describe('nextTargetFitsSource (a rename doesn’t make the coach’s targets st
 });
 
 describe('prehab stays easy (Ben, 1 Nov): the coach’s increase is one dumbbell step at a time', () => {
-  const ER = { ...CURL, exerciseId: catalogueExerciseId('dumbbell-side-lying-external-rotation'), exerciseName: 'Side-lying dumbbell external rotation' } as SessionExercise;
+  const ER = { ...CURL, exerciseId: catalogueExerciseId('dumbbell-side-lying-external-rotation'), exerciseName: 'Side-lying dumbbell external rotation' };
   const rack = dumbbells({ loads: [2, 3, 4, 5, 6, 8, 10] });
   const erBases: NextSessionBasis[] = [{ exercise: ER, equipment: rack, last: t(4, 12, 15, 'per_hand'), lastSets: 2, builtIn: null }];
   it('4 → 8 kg each is kept to 5 kg each (one step) with a capped note; one step and decreases pass as asked', () => {

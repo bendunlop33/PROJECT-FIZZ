@@ -101,7 +101,8 @@ describe('simple loads on a barbell (lb)', () => {
     const steps = planWarmups(input(LB_BAR, { load: 225, reps: 5, barMass: 45 }));
     expect(steps[0]?.load).toBe(45);
     for (const s of steps) expect((s.load - 45) % 20).toBe(0);
-    expect(fmt(steps)).toBe('45×5 85×5 125×3 165×2 205×2');
+    expect(fmt(steps)).toBe('45×5 85×5 125×3 145×3 185×2');
+    for (const s of steps) expect(s.load).toBeLessThanOrEqual(0.9 * 225);
   });
 });
 
@@ -179,5 +180,17 @@ describe('the preference on the training profile', () => {
     const back = step(per, { kind: 'warmup_prefs', simpleLoads: true, perExercise: { ex1: null } }, 'c');
     expect(back.warmups).toBeUndefined();
     expect(applyTrainingChange(back, { kind: 'warmup_prefs', simpleLoads: false }, w('d', 1)).ok).toBe(false);
+  });
+});
+
+describe('(c) still caps every step (review of the 20 kg ladder)', () => {
+  it('no warm-up above 90 % of W in the heavy band or 85 % in the rep band, for any W', () => {
+    const plates = barbell({ plates: [{ mass: 25, count: 4 }, { mass: 20, count: 4 }, { mass: 15, count: 2 }, { mass: 10, count: 2 }, { mass: 5, count: 2 }, { mass: 2.5, count: 2 }, { mass: 1.25, count: 2 }] });
+    for (let W = 40; W <= 220; W += 2.5) {
+      for (const reps of [3, 5, 8, 12]) {
+        const cap = (reps <= 6 ? 0.9 : 0.85) * W;
+        for (const s of planWarmups(input(plates, { load: W, reps }))) expect(s.load).toBeLessThanOrEqual(cap + 1e-9);
+      }
+    }
   });
 });

@@ -79,7 +79,7 @@ describe('LockScreenContent.afterRest', () => {
     expect(c?.staleAtMs).toBe(toMs(longer.restTimer?.deadlineUtc ?? ''));
     expect(c?.staleAtMs).toBe(toMs(s.restTimer?.deadlineUtc ?? '') + 15_000);
     expect(c?.afterRest?.side).toBe('Set 2');
-    expect(c?.a11y.startsWith(`Rest, until ${clockText(c?.staleAtMs ?? 0, TZ)}`)).toBe(true);
+    expect(c?.a11y.startsWith(`Rest, until ${clockText(c.staleAtMs ?? 0, TZ)}`)).toBe(true);
   });
 
   it('only a running rest has it: Ready, Paused and a timed set have none', () => {
