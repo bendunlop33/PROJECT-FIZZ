@@ -171,7 +171,7 @@ export type PlanBuildOutcome = { ok: true; planId: string; version: number; vers
 
 type EditWrite = Awaited<ReturnType<Store['repos']['planDrafts']['edit']>>;
 
-function editOutcome(r: EditWrite | null): PlanEditOutcome {
+export function editOutcome(r: EditWrite | null): PlanEditOutcome {
   if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
   switch (r.status) {
     case 'written':

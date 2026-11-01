@@ -33,6 +33,9 @@ import {
   todayDraftState,
   currentDraftVersion,
   type BuilderEditOp,
+  pbAppliedBuilder,
+  priorityGroupsOf,
+  volumeGoalOfFocus,
 } from '@fizz/domain';
 import { bundledCatalogue, toExerciseRow, type CatalogueEntry } from '@fizz/catalogue';
 import {
@@ -69,6 +72,7 @@ import { createTrainingService } from './training-service';
 import { createLiftTargetService } from './lift-target-service';
 import { createPlanServices } from './plan-services';
 import { createPlanSwapService } from './plan-swap-service';
+import { createPlanMusclesService } from './plan-muscles-service';
 import { createPlanBuilderService } from './plan-builder-service';
 import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
@@ -955,6 +959,14 @@ export function createAppServices(deps: AppServicesDeps) {
   /** Progress (progress.md slice A): windows, sessions, time, muscles, records, calendar, `Count it`. Local only. */
   const progress = createProgressService({
     store: () => deps.manager.store,
+    // (Ben, 1 Nov) Progress's muscle bars shade the same range as Plan › Muscles: the goal, else the plan's focus.
+    volumeGoal: async () => {
+      const p = await getProfile();
+      if (p === null) return null;
+      const [t, plan] = await Promise.all([repos().trainingProfiles.get(p.id).catch(() => null), repos().planDrafts.applied(p.id).catch(() => null)]);
+      const answers = pbAppliedBuilder(plan)?.builder.answers ?? null;
+      return { goal: t?.goal ?? (answers === null ? null : volumeGoalOfFocus(answers.focus)), priorities: priorityGroupsOf(answers?.priorities ?? []) };
+    },
     now: deps.now,
     profile: getProfile,
     saveSettings: (merge) =>
@@ -1356,8 +1368,25 @@ export function createAppServices(deps: AppServicesDeps) {
   const workoutEdit = createWorkoutEditService({ store: () => deps.manager.store, profile: getProfile, env: builderEnv, workout: loop.workout });
 
 
+  /** (Ben, 1 Nov) Library › Plan › Muscles and its Rebalance: the plan's weekly sets per muscle, Apply / Undo. */
+  const planMuscles = createPlanMusclesService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    catalogueExercises,
+    catalogueSubstitutions,
+    usableHere: async (exercise) => {
+      const gym = await yourData.currentGym().catch(() => null);
+      if (gym === null) return true;
+      const equipment = await repos().equipment.listByGym(gym.id).catch(() => [] as EquipmentInstance[]);
+      return doableHere(exercise, { id: gym.id, name: gym.name, equipment });
+    },
+    doneBetween: (from, to) => progress.muscleSetsBetween(from, to),
+  });
+
   return {
     ...loop,
+    planMuscles,
     builder,
     builderCoach,
     reviews,

@@ -34,6 +34,8 @@ export interface PlanMuscleDay {
   rows: readonly PlanMuscleRow[];
   /** Skipped this week (`Skip this week`): counts nothing. */
   skipped?: boolean;
+  /** Exercises Ben took out of this day himself: Rebalance never puts them back. */
+  avoid?: readonly string[];
 }
 
 export interface PlanMuscleWeek {

@@ -1,4 +1,8 @@
-import type { MuscleGroup } from '@fizz/schemas';
+import type { DraftSetTemplate, DraftSlot, MuscleGroup, PlanDayDraft, PlanDraft } from '@fizz/schemas';
+
+import { deriveId } from '../stable';
+import { PRESET_SPLITS } from '../training-profile';
+import { pbResizeSlot, pbWeekDaysOf, type PbEditBlock } from './edit';
 
 import { directMuscleGroup, muscleSetCredits, muscleStatus, PLAN_MUSCLE_GROUPS, type MuscleSetTotals } from '../progress/muscle-sets';
 import { muscleFlags, plannedMuscleSets, rangesOf, type InfoOf, type MuscleFlag, type MuscleGoalInput, type PlanMuscleDay, type PlanMuscleRow } from '../progress/plan-muscles';
@@ -20,7 +24,8 @@ import { muscleFlags, plannedMuscleSets, rangesOf, type InfoOf, type MuscleFlag,
  *    after the day's last main lift), which costs less time than straight sets.
  * 4. **Add sets** as straight sets, only as a last resort.
  *
- * A low group's sets go to the days that already train it (direct or assisted), at most two days (Ben's own example:
+ * A low group's sets go to the days of its own split day (Biceps with Back on the pull days, `PRESET_SPLITS`), else
+ * the days that already train it (direct or assisted), at most two days (Ben's own example:
  * "Add curls to Pull A and Pull B"), split as evenly as possible, at the end of the day (after every main lift: no
  * arm isolation before a main lift, rule G order). Sized to reach the **lower edge** of its range, never more.
  *
@@ -169,7 +174,7 @@ export function rebalancePlan(input: RebalanceInput): RebalanceResult {
         for (const r of [...d.rows].sort((a, b) => a.order - b.order)) {
           if (r.main || ops.some((o) => o.dayIndex === d.dayIndex && o.key === r.key)) continue;
           for (const to of ports.alternativesOf(r.exerciseId)) {
-            if (to === r.exerciseId || d.rows.some((x) => x.exerciseId === to)) continue;
+            if (to === r.exerciseId || d.rows.some((x) => x.exerciseId === to) || (d.avoid ?? []).includes(to)) continue;
             const trial = replaceDay(days, { ...d, rows: d.rows.map((x) => (x.key === r.key ? { ...x, exerciseId: to } : x)) });
             const after = totals(trial);
             const g2 = gapOf(after, input, f.group);
@@ -188,16 +193,29 @@ export function rebalancePlan(input: RebalanceInput): RebalanceResult {
     const range = rangesOf(now, input).get(f.group) ?? null;
     const need = range === null ? 0 : Math.ceil(range.min - (now.get(f.group)?.direct ?? 0) - 1e-9);
     if (need <= 0) continue;
+    // The days that train it (direct or assisted), then the days of its own preset split day (Back and Biceps are Pull,
+    // PRESET_SPLITS): biceps work goes to the pull days.
+    const kin = PRESET_SPLITS.ppl.find((x) => (x.bodyParts as readonly string[]).includes(f.group))?.bodyParts ?? [];
     const trains = days
       .filter((d) => d.skipped !== true)
-      .map((d) => ({ d, credit: d.rows.reduce((s, r) => s + ((muscleSetCredits(ports.infoOf(r.exerciseId)).get(f.group)?.assisted ?? 0) + (muscleSetCredits(ports.infoOf(r.exerciseId)).get(f.group)?.direct ?? 0)) * r.sets, 0) }))
-      .filter((x) => x.credit > 0)
-      .sort((a, b) => b.credit - a.credit || a.d.dayIndex - b.d.dayIndex)
+      .map((d) => {
+        let credit = 0;
+        let near = 0;
+        for (const r of d.rows) {
+          const c = muscleSetCredits(ports.infoOf(r.exerciseId));
+          credit += ((c.get(f.group)?.assisted ?? 0) + (c.get(f.group)?.direct ?? 0)) * r.sets;
+          const lead = directMuscleGroup(ports.infoOf(r.exerciseId));
+          if (lead !== null && lead !== f.group && (kin as readonly string[]).includes(lead)) near += r.sets;
+        }
+        return { d, credit, near };
+      })
+      .filter((x) => x.credit > 0 || x.near > 0)
+      .sort((a, b) => b.near - a.near || b.credit - a.credit || a.d.dayIndex - b.d.dayIndex)
       .slice(0, REBALANCE_TIME.maxDays)
       .map((x) => x.d)
       .sort((a, b) => a.dayIndex - b.dayIndex);
     const targets = trains.length > 0 ? trains : days.filter((d) => d.skipped !== true).sort((a, b) => rebalanceDayMinutes(a) - rebalanceDayMinutes(b) || a.dayIndex - b.dayIndex).slice(0, 1);
-    const pick = ports.isolationsFor(f.group).find((id) => directMuscleGroup(ports.infoOf(id)) === f.group && targets.every((d) => !d.rows.some((r) => r.exerciseId === id)));
+    const pick = ports.isolationsFor(f.group).find((id) => directMuscleGroup(ports.infoOf(id)) === f.group && targets.every((d) => !d.rows.some((r) => r.exerciseId === id) && !(d.avoid ?? []).includes(id)));
     if (pick === undefined) continue;
     const n = Math.min(targets.length, need);
     const shares = Array.from({ length: n }, (_, i) => Math.floor(need / n) + (i < need % n ? 1 : 0));
@@ -243,4 +261,110 @@ export function rebalancePlan(input: RebalanceInput): RebalanceResult {
     minutesBefore: new Map(original.map((d) => [d.dayIndex, rebalanceDayMinutes(d)])),
     minutesAfter: new Map(days.map((d) => [d.dayIndex, rebalanceDayMinutes(d)])),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Applying it: the plan's own weeks (the Changes review's Apply / Undo, `applyPlanEdit`)
+
+/** What a new isolation's slot looks like (the caller's: its catalogue key and reps). */
+export interface RebalanceNewSlot {
+  catalogueId: string;
+  /** The builder's accessory band (8–12, `pbAtWeek`) unless the caller knows better. */
+  reps: { min: number; max: number };
+}
+
+/** Plain working sets for a new slot: no load (the workout plans it from Ben's history on the day's kit, rule 4). */
+function newSlotTemplates(sets: number, reps: { min: number; max: number }): DraftSetTemplate[] {
+  return Array.from({ length: Math.max(1, Math.min(10, sets)) }, () => ({ setType: 'working' as const, reps: { ...reps }, durationS: null, targetRpe: null, restS: null }));
+}
+
+/**
+ * One week's days with the accepted ops: a trim resizes (or drops) the exercise's slot, a swap puts the alternative
+ * in the slot (its sets, reps, rest and place kept; its old load dropped so the workout plans the new one), an add puts
+ * a new slot at the end of the day, paired with its superset mate when it has one. An op that no longer fits the day
+ * (the exercise isn't there, or already is) changes nothing. Pure.
+ */
+export function pbRebalanceDays(days: readonly PlanDayDraft[], ops: readonly RebalanceOp[], ctx: { planId: string; slotOf: (exerciseId: string) => RebalanceNewSlot | null; mateOf: (op: Extract<RebalanceOp, { kind: 'add' }>) => string | null }): PlanDayDraft[] {
+  return days.map((d) => {
+    const mine = ops.filter((o) => o.dayIndex === d.index);
+    if (mine.length === 0) return d;
+    let slots: DraftSlot[] = [...d.plan.slots].sort((a, b) => a.order - b.order);
+    for (const o of mine) {
+      if (o.kind === 'trim') {
+        slots = o.to === 0 ? slots.filter((s) => s.exerciseId !== o.exerciseId || s.main) : slots.map((s) => (s.exerciseId === o.exerciseId && !s.main ? { ...s, setTemplates: pbResizeSlot(s.setTemplates, o.to) } : s));
+      } else if (o.kind === 'swap') {
+        const to = ctx.slotOf(o.toExerciseId);
+        if (to === null || slots.some((s) => s.exerciseId === o.toExerciseId)) continue;
+        slots = slots.map((s) => {
+          if (s.exerciseId !== o.fromExerciseId || s.main) return s;
+          const { builder: _b, checkedHistoryVersion: _h, ...rest } = s;
+          return { ...rest, exerciseId: o.toExerciseId, catalogueId: to.catalogueId, checkedOn: null, setTemplates: s.setTemplates.map(({ load: _l, ...t }) => t) };
+        });
+      } else {
+        const add = ctx.slotOf(o.exerciseId);
+        if (add === null || slots.some((s) => s.exerciseId === o.exerciseId)) continue;
+        const mate = ctx.mateOf(o);
+        const mateSlot = mate === null ? undefined : slots.find((s) => s.exerciseId === mate && s.supersetGroup === null && !s.main);
+        const used = new Set(slots.map((s) => s.supersetGroup).filter((x): x is string => x !== null));
+        const label = mateSlot === undefined ? null : (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].find((l) => !used.has(l)) ?? null);
+        const slot: DraftSlot = { slotKey: deriveId(`rebalance-slot:${ctx.planId}:${String(d.index)}:${o.exerciseId}`), exerciseId: o.exerciseId, catalogueId: add.catalogueId, order: slots.length, main: false, supersetGroup: label, setTemplates: newSlotTemplates(o.sets, add.reps), checkedOn: null };
+        if (label !== null && mateSlot !== undefined) {
+          // The pair sits together: the new slot straight after its mate.
+          const at = slots.indexOf(mateSlot);
+          slots = [...slots.slice(0, at), { ...mateSlot, supersetGroup: label }, slot, ...slots.slice(at + 1)];
+        } else slots = [...slots, slot];
+      }
+    }
+    slots = slots.map((s, i) => ({ ...s, order: i }));
+    return slots.length === 0 ? d : { ...d, plan: { ...d.plan, slots } };
+  });
+}
+
+/**
+ * Every block week's days for `applyPlanEdit`: done weeks as they are, this week's days already done as they are (rule 2),
+ * and the rest with the accepted ops, from this week to the end of the block.
+ */
+export function pbRebalanceWeekDays(
+  plan: Pick<PlanDraft, 'weekVersions' | 'applied' | 'currentVersion' | 'versions'>,
+  weeks: number,
+  block: PbEditBlock,
+  ops: readonly RebalanceOp[],
+  ctx: Parameters<typeof pbRebalanceDays>[2] & {
+    /** A week's day as its workout runs it now (`pbDayAsWorkout`: Ben's own template edits kept); absent: as stored. */
+    asWorkout?: (w: number, day: PlanDayDraft) => PlanDayDraft;
+  },
+): PlanDayDraft[][] {
+  const done = new Set(block.doneThisWeek);
+  return Array.from({ length: weeks }, (_, i) => {
+    const w = i + 1;
+    const days = pbWeekDaysOf(plan, w);
+    if (w < block.week) return days;
+    const mine = w === block.week ? ops.filter((o) => !done.has(o.dayIndex)) : ops;
+    const live = ctx.asWorkout === undefined ? days : days.map((d) => (mine.some((o) => o.dayIndex === d.index) ? (ctx.asWorkout?.(w, d) ?? d) : d));
+    return pbRebalanceDays(live, mine, ctx);
+  });
+}
+
+/** One op as a Changes line: `Pull A: + Dumbbell curl 2 (superset with Cable crunch)`, `Pull B: Lat pulldown 4 → 3`. */
+export function rebalanceOpText(o: RebalanceOp, dayName: string, nameOf: (id: string) => string, mateName: string | null): string {
+  if (o.kind === 'trim') return o.to === 0 ? `${dayName}: − ${nameOf(o.exerciseId)}` : `${dayName}: ${nameOf(o.exerciseId)} ${String(o.from)} → ${String(o.to)}`;
+  if (o.kind === 'swap') return `${dayName}: ${nameOf(o.fromExerciseId)} → ${nameOf(o.toExerciseId)}`;
+  return `${dayName}: + ${nameOf(o.exerciseId)} ${String(o.sets)}${mateName === null ? '' : ` (superset with ${mateName})`}`;
+}
+
+/** The typical days with only these ops (Ben skipped some lines): what the card's totals and day lengths read then. */
+export function rebalanceDaysWith(days: readonly PlanMuscleDay[], ops: readonly RebalanceOp[]): PlanMuscleDay[] {
+  return days.map((d) => {
+    let rows = d.rows.map((r) => ({ ...r }));
+    for (const o of ops.filter((x) => x.dayIndex === d.dayIndex)) {
+      if (o.kind === 'trim') rows = o.to === 0 ? rows.filter((r) => r.key !== o.key) : rows.map((r) => (r.key === o.key ? { ...r, sets: o.to } : r));
+      else if (o.kind === 'swap') rows = rows.map((r) => (r.key === o.key ? { ...r, exerciseId: o.toExerciseId } : r));
+      else {
+        const label = o.supersetWith === null ? null : (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].find((l) => !rows.some((r) => r.superset === l)) ?? null);
+        if (label !== null) rows = rows.map((r) => (r.key === o.supersetWith ? { ...r, superset: label } : r));
+        rows.push({ key: o.key, exerciseId: o.exerciseId, sets: o.sets, main: false, order: Math.max(-1, ...rows.map((r) => r.order)) + 1, superset: label });
+      }
+    }
+    return { ...d, rows };
+  });
 }
