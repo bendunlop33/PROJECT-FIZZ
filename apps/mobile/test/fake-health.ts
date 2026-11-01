@@ -15,9 +15,18 @@ export class FakeHealth implements HealthPort {
   asked: { share: string[]; read: string[] }[] = [];
   saves = 0;
   failSaves = false;
+  /** The next N capability checks answer `unknown` (HealthKit not ready yet, e.g. the first launch after an update). */
+  capabilityUnknown = 0;
+  /** Saves wait for this before answering (a HealthKit save that takes its time, or never answers). */
+  saveGate: Promise<void> | null = null;
+  reads = 0;
   private n = 1;
 
   capability() {
+    if (this.capabilityUnknown > 0) {
+      this.capabilityUnknown -= 1;
+      return Promise.resolve({ status: 'unknown' as const, message: 'Health isn’t ready' });
+    }
     return Promise.resolve({ status: this.status, message: this.status === 'missing_entitlement' ? 'Missing com.apple.developer.healthkit entitlement.' : '' });
   }
   requestAuthorization(share: string[], read: string[]) {
@@ -29,6 +38,10 @@ export class FakeHealth implements HealthPort {
   }
   saveWorkout(input: HealthSaveRequest) {
     if (this.failSaves) return Promise.reject(new Error('Health is busy'));
+    if (this.saveGate !== null) return this.saveGate.then(() => this.save(input));
+    return this.save(input);
+  }
+  private save(input: HealthSaveRequest) {
     const existing = [...this.workouts.values()].find((w) => w.syncIdentifier === input.syncIdentifier && w.sourceBundleId === OWN);
     if (existing !== undefined && (existing.syncVersion ?? 0) >= input.syncVersion) return Promise.resolve({ uuid: existing.uuid, adopted: true });
     // Health replaces an older version with the same sync identifier.
@@ -68,6 +81,7 @@ export class FakeHealth implements HealthPort {
     return Promise.resolve(n);
   }
   readWorkouts(since: number, until: number, heartRate: boolean) {
+    this.reads += 1;
     return Promise.resolve([...this.workouts.values()].filter((w) => w.startMs >= since && w.startMs <= until).map((w) => ({ ...w, ...(heartRate ? {} : { avgHeartRate: null, maxHeartRate: null }) })));
   }
   readBodyMass(since: number) {

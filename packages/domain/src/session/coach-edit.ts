@@ -84,7 +84,8 @@ export type CoachEditPlan =
       used: Exercise[];
     }
   | { status: 'stale'; guardNotes: GuardNote[] }
-  | { status: 'rejected'; failure: string; guardNotes: GuardNote[] };
+  /** `already` (Ben, 1 Nov): nothing to do, not a failure: every set asked for already is that (`Already 100 kg`). */
+  | { status: 'rejected'; failure: string; guardNotes: GuardNote[]; already?: true };
 
 const working = (s: WorkoutSet): boolean => s.setType !== 'warmup';
 const liveRow = (state: SessionAggregate, id: string): SessionExercise | undefined => state.exercises.find((e) => e.id === id && e.removed === undefined);
@@ -101,6 +102,7 @@ function rowOf(state: SessionAggregate, op: EditTodayOp): string | null {
     case 'move':
     case 'superset':
     case 'split_superset':
+    case 'main':
       return op.sessionExerciseId;
     case 'add':
       return null;
@@ -311,6 +313,8 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       steps.push({ type: 'adjust_pending_targets', at: input.at, opId: nextOpId(), expectedVersion: input.args.baseVersion, actionId: input.actionId, reason: input.args.reason, changes, removeSetIds, addSets });
       lines.push(...countLines);
     } else if (ops.every((op) => op.op === 'set' || op.op === 'set_count' || op.op === 'sets')) {
+      // (Ben, 1 Nov, build 500) "Stick to 100" when they are 100 kg: a no-op, said as one, never a failure.
+      if (v?.status === 'unchanged' && v.already === true && skipped.length === 0) return { status: 'rejected', failure: v.outcome, guardNotes: notes, already: true };
       // Nothing structural, and no target changed: the checks' own line.
       return reject(skipped[0] ?? (v?.status === 'unchanged' ? v.outcome.replace(/\s*(?:Sets unchanged|Nothing changed)\.?$/i, '') : 'no change'));
     }
@@ -529,6 +533,21 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     names.add(row.exerciseName).add(other.exerciseName);
   }
 
+  // 7. (Ben, 1 Nov) `set_main_lift`: today's main lift, at most once per edit; no set changes (the workout's own step).
+  const mainOp = ops.find((op): op is Extract<EditTodayOp, { op: 'main' }> => op.op === 'main');
+  if (mainOp !== undefined) {
+    const row = liveRow(s, mainOp.sessionExerciseId);
+    if (row === undefined) skip('the coach named an exercise that isn’t in this workout');
+    else if (s.session.planDay === undefined) skip('only a plan workout has a main lift to change');
+    else if (row.measurement !== 'reps') skip(`${row.exerciseName} isn’t a lift`);
+    else if (s.session.planDay.mainLiftExerciseId === row.exerciseId) skip(`${row.exerciseName} is already the main lift`);
+    else {
+      steps.push({ type: 'set_main_lift', at: input.at, opId: nextOpId(), sessionExerciseId: row.id, expectedVersion: input.args.baseVersion });
+      lines.push({ change: 'edit', text: `${row.exerciseName} · main lift`.slice(0, 200) });
+      names.add(row.exerciseName);
+    }
+  }
+
   if (steps.length === 0) return reject(skipped[0] ?? 'no change');
   return {
     status: 'ok',
@@ -605,6 +624,7 @@ export function coachEditPainHold(input: { aggregate: SessionAggregate; command:
       case 'move_exercise':
       case 'link_superset':
       case 'split_superset':
+      case 'set_main_lift':
         break;
     }
   }

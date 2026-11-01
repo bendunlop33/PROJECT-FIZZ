@@ -35,6 +35,7 @@ import {
   typedFixedLoad,
   ungroup,
   updateSet,
+  withOneMainLift,
   type LiveTime,
   type RoutineEdit,
   type SlotShapeInput,
@@ -362,6 +363,8 @@ export type TemplateEditOp =
   | { kind: 'add_exercise'; exercise: ExerciseRef; shape?: SlotShapeInput }
   | { kind: 'drop'; slotId: string; targetId: string; edge: 'before' | 'after' | 'onto' }
   | { kind: 'main'; slotId: string; on: boolean }
+  /** (Ben, 1 Nov) `Make main lift`: one main lift per day; the one before a normal compound (sets as they are). */
+  | { kind: 'make_main'; slotId: string }
   | { kind: 'added_weight'; slotId: string; on: boolean }
   | { kind: 'slot_reps'; slotId: string; value: Parameters<typeof setSlotReps>[2] }
   | { kind: 'slot_effort'; slotId: string; value: number | null };
@@ -445,6 +448,10 @@ export function applyTemplateEdit(list: readonly RoutineExercise[], op: Template
       return ok(dropRoutineSlot(list, op.slotId, op.targetId, op.edge) ?? [...list]);
     case 'main':
       return ok(setMain(list, op.slotId, op.on));
+    case 'make_main': {
+      const made = withOneMainLift(list, op.slotId);
+      return made === null || made === 'same' ? same : ok(made);
+    }
     case 'added_weight':
       return ok(setAddedWeight(list, op.slotId, op.on));
     case 'slot_reps':

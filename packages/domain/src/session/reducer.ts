@@ -21,12 +21,14 @@ import type {
   DraftValues,
   TargetProvenance,
   WorkoutSet,
+  WorkoutSession,
 } from '@fizz/schemas';
 import { isLoadAchievable } from '../equipment';
 import { isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
 import { normaliseExclusions } from '../exclusions';
 import { currentGymEquipment, equipmentOfRow, rowIsAtCurrentGym } from './equipment-snapshot';
 import { applyChangeGym, applyUndoChangeGym, partRootOf } from './gym-switch';
+import { activeSetAfterReorder } from './workout-edits';
 import {
   adjustRestTimer,
   createRestTimer,
@@ -50,6 +52,7 @@ import { pendingSetsOf } from './mid-swap';
 import { buildExecutionOrder, effectiveOffset, firstPendingRound, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
 import { draftWithNewTarget, type TargetValueField } from './pending-values';
 import { benSetLoad, carriedLoad, hasOwnValuesAnyFlags } from './carry';
+import { mainLiftDayName } from './main-lift';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -137,6 +140,7 @@ export type SessionEvent =
   /** A gym switch (or `[Use changes today]`) or its Undo. `changedSetIds`: targets that changed. */
   | { type: 'GymChanged'; actionId: string; fromGymId: string | null; toGymId: string; changedSetIds: string[]; undo: boolean }
   | { type: 'SessionRenamed'; name: string | null }
+  | { type: 'MainLiftSet'; exerciseId: string | null; undo: boolean }
   /** `Count it` (or its Undo) on Progress's Time sheet (progress.md PG25a). */
   | { type: 'SessionDurationConfirmed'; confirmed: boolean }
   | { type: 'SessionFeelSet'; feel: 'easy' | 'good' | 'hard' | null }
@@ -1678,6 +1682,30 @@ function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_af
 }
 
 /**
+ * (Ben, 1 Nov) `set_main_lift`: `Make main lift` on a row of today's plan workout. The plan day's main lift for today
+ * is that row's exercise (one per day: the one before is a normal compound again); the workout's name follows
+ * (`Push B · <lift>`). No set changes at all: every set keeps its planned values and a done set is never touched
+ * (rule 2). The main lift and name before are kept for Undo (`undo_op`).
+ */
+function handleSetMainLift(state: SessionAggregate, cmd: CommandOf<'set_main_lift'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
+  const planDay = state.session.planDay;
+  if (planDay === undefined) return fail('exercise_not_found', 'Only a plan workout has a main lift to change.');
+  const row = state.exercises.find((e) => e.id === cmd.sessionExerciseId);
+  if (row === undefined || row.removed !== undefined || row.measurement !== 'reps') return fail('exercise_not_found', 'Exercise not found.');
+  const from = planDay.mainLiftExerciseId ?? null;
+  if (from === row.exerciseId) return { ok: true, state, events: [] };
+  const name = state.session.routineName === null ? null : mainLiftDayName(state.session.routineName, row.exerciseName);
+  const session: WorkoutSession = {
+    ...state.session,
+    routineName: name,
+    planDay: { ...planDay, mainLiftExerciseId: row.exerciseId, mainLiftChange: { opId: cmd.opId, from, fromName: state.session.routineName } },
+    version: state.session.version + 1,
+  };
+  return { ok: true, state: { ...state, session }, events: [{ type: 'MainLiftSet', exerciseId: row.exerciseId, undo: false }] };
+}
+
+/**
  * `rename_session` (premium-feel §2.6): the workout's own name. The routine
  * it came from keeps its name. An open-ended workout in progress can't be
  * named yet: a name is what marks a planned workout, so naming it would
@@ -2472,6 +2500,16 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs:
       const activeSetId = repointActive(state, sets, events);
       return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
     }
+    case 'set_main_lift': {
+      // Only the last change, and only while nothing changed the main lift since (rule 5).
+      const p = state.session.planDay;
+      const c = p?.mainLiftChange;
+      if (p === undefined || c === undefined || c.opId !== cmd.targetOpId) return fail('stale_version', STALE_UNDO);
+      const planDay = { ...p, mainLiftExerciseId: c.from };
+      delete planDay.mainLiftChange;
+      const session: WorkoutSession = { ...state.session, routineName: c.fromName, planDay, version: state.session.version + 1 };
+      return { ok: true, state: { ...state, session }, events: [{ type: 'MainLiftSet', exerciseId: c.from, undo: true }] };
+    }
     default:
       return fail('operation_not_undoable', 'That can’t be undone here.');
   }
@@ -2629,7 +2667,8 @@ function handleMoveExercise(state: SessionAggregate, cmd: CommandOf<'move_exerci
   if (next.every((e, i) => e.id === sorted[i]?.id)) return { ok: true, state, events: [] };
   const pos = new Map(next.map((e, i) => [e.id, i]));
   const exercises = state.exercises.map((e) => (e.order === pos.get(e.id) ? e : { ...e, order: pos.get(e.id) ?? e.order }));
-  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...blockIds], undo: false }] };
+  const events: SessionEvent[] = [{ type: 'ExercisesMoved', sessionExerciseIds: [...blockIds], undo: false }];
+  return { ok: true, state: bumpVersion({ ...state, exercises }, refocus(state, exercises, events)), events };
 }
 
 /** Undo of a move: the old order back, only while the rows are still in the order the move left. */
@@ -2642,7 +2681,18 @@ function undoMove(state: SessionAggregate, prior: ProcessedOperation): Handled {
   const pos = new Map(before.map((id, i) => [id, i]));
   const moved = state.exercises.filter((e) => pos.get(e.id) !== after.indexOf(e.id)).map((e) => e.id);
   const exercises = state.exercises.map((e) => ({ ...e, order: pos.get(e.id) ?? e.order }));
-  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: moved, undo: true }] };
+  const events: SessionEvent[] = [{ type: 'ExercisesMoved', sessionExerciseIds: moved, undo: true }];
+  return { ok: true, state: bumpVersion({ ...state, exercises }, refocus(state, exercises, events)), events };
+}
+
+/**
+ * (Ben, 1 Nov) After a move or its Undo: while the current round has nothing logged, the current set
+ * follows the order (`activeSetAfterReorder`), so moving the current exercise hands over and Undo hands back.
+ */
+function refocus(state: SessionAggregate, exercises: readonly SessionExercise[], events: SessionEvent[]): string | null {
+  const next = activeSetAfterReorder(state, exercises);
+  if (next !== state.session.activeSetId) events.push({ type: 'ActiveSetChanged', setId: next });
+  return next;
 }
 
 /** A row split across gyms (a continuation, or one with a continuation): its order follows its parts. */
@@ -2835,6 +2885,7 @@ function atVersion(step: CommandOf<'coach_edit_today'>['steps'][number], version
     case 'move_exercise':
     case 'link_superset':
     case 'split_superset':
+    case 'set_main_lift':
       return { ...step, at, expectedVersion: version };
     case 'add_exercise':
     case 'skip_exercise':
@@ -3096,6 +3147,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleAddWarmup(state, command);
     case 'tick_all_planned':
       return handleTickAllPlanned(state, command, nowMs);
+    case 'set_main_lift':
+      return handleSetMainLift(state, command);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -3242,6 +3295,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'set_rest_after':
     case 'tick':
       return false;
+    case 'set_main_lift':
+      // Undone, or another main lift picked since.
+      return state.session.planDay?.mainLiftChange?.opId !== command.opId;
     case 'confirm_session_duration':
       // A later Count it or Undo replaced this one.
       return (state.session.durationConfirmedAt !== undefined) !== command.confirmed;

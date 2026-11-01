@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
-import type { BuilderEditOp, RestKind } from '@fizz/domain';
+import { MAIN_LIFT_COPY, type BuilderEditOp, type RestKind } from '@fizz/domain';
 
 import type { BuilderSnapshot, BuilderWriteResult } from '../../builder/builder-service';
 import { popupView, REST_STEP_S, WORKOUT_COPY } from '../../builder/builder-view';
@@ -58,6 +58,9 @@ export function ExerciseSheet({
   inline?: boolean;
   recap?: ReactNode;
 }) {
+  // (Ben, 1 Nov) `Make main lift` on any exercise but today's main lift (one per day; its sets stay as they are).
+  const slot = slotKey === null ? undefined : snap.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === slotKey);
+  const makeMain = slot === undefined || slot.main || snap.facts[slot.exerciseId]?.compound !== true ? null : <TextButton label={MAIN_LIFT_COPY.make} onPress={() => { void onEdit({ kind: 'make_main', slotKey: slot.key }); }} />;
   const view = slotKey === null ? null : popupView(snap, slotKey, (k) => snap.rests[slotKey]?.[k] ?? 0);
   const refusal = (r: BuilderWriteResult | null): string | null => (r?.status === 'refused' ? r.message : null);
   const send = async (op: BuilderEditOp | ((now: BuilderSnapshot) => BuilderEditOp | null)): Promise<string | null> => refusal(await onEdit(op));
@@ -104,6 +107,7 @@ export function ExerciseSheet({
       toast={toast}
       inline={inline === true}
       recap={recap}
+      options={makeMain}
     />
   );
 }

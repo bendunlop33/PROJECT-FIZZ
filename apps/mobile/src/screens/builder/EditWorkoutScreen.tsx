@@ -26,6 +26,7 @@ import {
   type RoutineConflict,
   type RoutineEdit,
   type RoutineOptionsState,
+  MAIN_LIFT_COPY,
 } from '@fizz/domain';
 import type { BuilderGroup, Routine, RoutineExercise, SetType } from '@fizz/schemas';
 
@@ -710,6 +711,9 @@ export function EditWorkoutScreen() {
               onMain={(on) => {
                 apply({ kind: 'main', slotId: popup, on });
               }}
+              onMakeMain={() => {
+                apply({ kind: 'make_main', slotId: popup });
+              }}
               onAddedWeight={(on) => {
                 apply({ kind: 'added_weight', slotId: popup, on });
               }}
@@ -976,9 +980,10 @@ function OptionsCard({ state, open, onToggle, onChange }: { state: RoutineOption
  * The pop-up's options on a saved workout (the old editor's card, moved here; Ben, 23 Oct): `Main`, `Add weight` on a
  * bodyweight exercise, the exercise's `Reps` (a range for every working set) and `Target RPE`.
  */
-function TemplateOptions({ options, onMain, onAddedWeight, onReps, onEffort }: { options: TemplateOptionsView; onMain: (on: boolean) => void; onAddedWeight: (on: boolean) => void; onReps: () => void; onEffort: () => void }) {
+function TemplateOptions({ options, onMain, onMakeMain, onAddedWeight, onReps, onEffort }: { options: TemplateOptionsView; onMain: (on: boolean) => void; onMakeMain: () => void; onAddedWeight: (on: boolean) => void; onReps: () => void; onEffort: () => void }) {
   const rows: ReactNode[] = [
-    <SwitchRow key="main" label={TEMPLATE_COPY.main} value={options.main} onChange={() => { onMain(!options.main); }} />,
+    // (Ben, 1 Nov) One main lift per day: on another exercise, `Make main lift` (the one before becomes a normal compound).
+    options.main ? <SwitchRow key="main" label={TEMPLATE_COPY.main} value={options.main} onChange={() => { onMain(!options.main); }} /> : <ActionRow key="main" label={MAIN_LIFT_COPY.make} onPress={onMakeMain} />,
     ...(options.addedWeight === null ? [] : [<SwitchRow key="added" label={TEMPLATE_COPY.addWeight} value={options.addedWeight} onChange={() => { onAddedWeight(options.addedWeight !== true); }} />]),
     <ValueRow key="reps" label={options.reps.label} value={options.reps.text} onPress={onReps} />,
     ...(options.effort === null ? [] : [<ValueRow key="effort" label={options.effort.label} value={options.effort.text} onPress={onEffort} />]),
@@ -992,6 +997,23 @@ function TemplateOptions({ options, onMain, onAddedWeight, onReps, onEffort }: {
         </View>
       ))}
     </Table>
+  );
+}
+
+/** (Ben, 1 Nov) A 54 pt row that is one button (`Make main lift`). */
+function ActionRow({ label, onPress }: { label: string; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => ({ minHeight: 54, flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['4'], opacity: pressed ? 0.7 : 1 })}
+    >
+      <AppText variant="body" color="accent">
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 

@@ -20,8 +20,9 @@ export const UNDO_TOAST = {
   /** (19 Oct) `Superset with…`: `Superset · Seated calf raise + Seated calf raise`. */
   supersetted: (a: string, b: string): string => `Superset · ${a} + ${b}`,
   supersetRemoved: 'Superset removed',
-  /** (Ben, 31 Oct) `Do next` / `Move to end` on the round page's `⋯`. */
+  /** (Ben, 31 Oct; 1 Nov) `Do next` / `Do first` / `Move to end` on the round page's `⋯`. */
   doNext: (exerciseName: string): string => `${exerciseName} next`,
+  doFirst: (exerciseName: string): string => `${exerciseName} first`,
   movedToEnd: (exerciseName: string): string => `${exerciseName} moved to end`,
   undone: 'Undone',
 } as const;

@@ -1,6 +1,7 @@
 import ActivityKit
 import AVFoundation
 import ExpoModulesCore
+import UIKit
 #if canImport(AlarmKit)
 import AlarmKit
 #endif
@@ -10,18 +11,30 @@ import AlarmKit
 // (notifyOthersOnDeactivation so music returns to full volume), interruption and
 // route-change events, AlarmKit authorization (read, and request only when Ben taps
 // "Request permission"), App Group evidence for the app and the Live Activity
-// extension, and an opt-in silent keep-alive for the locked-cue experiment.
+// extension, and natively scheduled rest cues (ADR 0040).
+//
+// Rest cues in the background (Ben, 1 Nov): JS hands over the rest's cues (text +
+// wall-clock fire time) whenever the committed rest changes. Each is scheduled
+// here on a wall-clock timer, so it fires even when JS is suspended. A cue is
+// spoken here only when the app isn't active (on screen, JS speaks it, with the
+// newest words). While cues are scheduled AND the app is in the background, a
+// silent, mixable player ("hold") keeps the app running; it never ducks. For the
+// cue itself the hold stops and the session is re-activated with ducking, then
+// deactivated with notifyOthersOnDeactivation, so music comes back up. After the
+// last cue, or on cancel, the hold stops and the session is released. Needs
+// UIBackgroundModes "audio" (an Info.plist mode, not an entitlement).
 //
 // Overlapping cues: AVSpeechSynthesizer queues utterances, and so do we. The
 // session is deactivated only after the LAST pending cue, and never while the
-// keep-alive runs. Every speak() promise settles: on finish, on cancel, or on a
+// hold runs. Every speak() promise settles: on finish, on cancel, or on a
 // timeout (max(10 s, 0.15 s per character), divided by the rate when it is
 // slower than default, counted from when the cue reaches the front of the queue,
 // estimated cumulatively).
 //
 // Written without a Mac. Build 7 compiled and ran it on iOS 26.6.1; later additions
-// (extension App Group evidence, AlarmKit request, keep-alive/timeout fixes) are
-// first compiled by the next macOS CI run. AlarmKit API names follow Apple's docs.
+// (extension App Group evidence, AlarmKit request, timeout fixes, scheduled rest
+// cues and the hold) are first compiled by the next macOS CI run. AlarmKit API
+// names follow Apple's docs.
 
 struct SessionOptions: Record {
   /// "playback" (cues play with the silent switch on) or "playAndRecord" (needed while listening).
@@ -51,6 +64,32 @@ struct SpeakOptions: Record {
   /// Deactivate the session after the cue so ducked music comes back up.
   @Field
   var deactivateAfter: Bool = true
+}
+
+/// One rest cue to speak natively at its moment (Unix ms, wall clock).
+struct ScheduledCue: Record {
+  /// `rest:<timerId>:<deadline>:warn|end`; an id that has fired never fires again.
+  @Field
+  var id: String = ""
+  @Field
+  var text: String = ""
+  @Field
+  var fireAtMs: Double = 0
+  /// Later than this the cue would say the wrong thing: dropped, never spoken.
+  @Field
+  var dropAfterMs: Double = 0
+}
+
+/// The engine and player looping silence while cues wait in the background.
+final class SilentHold {
+  let engine: AVAudioEngine
+  let player: AVAudioPlayerNode
+  var observer: NSObjectProtocol?
+
+  init(engine: AVAudioEngine, player: AVAudioPlayerNode) {
+    self.engine = engine
+    self.player = player
+  }
 }
 
 /// How a cue ended. Only the first outcome per cue counts.
@@ -100,9 +139,16 @@ public final class AudioCoachModule: Module {
   private var observers: [NSObjectProtocol] = []
   /// Estimated time the last queued cue will have finished (for timeouts).
   private var queueDrainsAt = Date.distantPast
-  /// Silent playback that keeps the app running while locked (opt-in experiment).
-  private var keepAliveEngine: AVAudioEngine?
-  private var keepAlivePlayer: AVAudioPlayerNode?
+  /// Silent, mixable playback that keeps the app running in the background while rest cues wait.
+  private var hold: SilentHold?
+  /// Scheduled rest cues not yet fired, by id. Main queue only.
+  private var scheduledCues: [String: DispatchWorkItem] = [:]
+  private var scheduledSpeakOptions = SpeakOptions()
+  /// Ids that have fired (bounded), so a reschedule never speaks a cue twice.
+  private var firedCueIds: [String] = []
+  /// What happened to the last scheduled cues (for the probe and diagnostics).
+  private var cueLog: [[String: Any]] = []
+  private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
   public func definition() -> ModuleDefinition {
     Name("AudioCoach")
@@ -117,17 +163,20 @@ public final class AudioCoachModule: Module {
     }
 
     OnDestroy {
+      self.cancelScheduledWork()
+      self.stopHold()
+      self.endBackgroundWork()
       self.removeObservers()
     }
 
-    // Changing the category while a cue or the keep-alive is playing would
+    // Changing the category while a cue or the hold is playing would
     // interrupt it. Then the options are stored and applied by the next idle
     // speak(); "applied" says which happened.
     AsyncFunction("configureSession") { (newOptions: SessionOptions) -> [String: Any] in
       self.options = newOptions
-      let idle = self.cueDelegate.pendingCount == 0 && self.keepAliveEngine == nil
+      let idle = self.cueDelegate.pendingCount == 0 && self.hold == nil
       if idle {
-        try self.applyCategory()
+        try self.applyCategory(self.options)
       }
       var state = self.sessionState()
       state["applied"] = idle
@@ -139,62 +188,10 @@ public final class AudioCoachModule: Module {
         promise.reject("ERR_EMPTY_CUE", "Cue text is empty")
         return
       }
-      let session = AVAudioSession.sharedInstance()
-      let otherAudioBefore = session.isOtherAudioPlaying
-      do {
-        // Changing the category while a cue or the keep-alive is playing would
-        // interrupt it; only (re)apply it when the session is idle.
-        if self.cueDelegate.pendingCount == 0 && self.keepAliveEngine == nil {
-          try self.applyCategory()
-        }
-        try session.setActive(true)
-      } catch {
-        promise.reject("ERR_AUDIO_SESSION", "Could not activate the audio session: \(error.localizedDescription)")
-        return
-      }
-      let utterance = AVSpeechUtterance(string: text)
-      if let id = speakOptions.voice, let chosen = AVSpeechSynthesisVoice(identifier: id) {
-        utterance.voice = chosen
-      } else if let language = speakOptions.language {
-        utterance.voice = AVSpeechSynthesisVoice(language: language)
-      }
-      if let rate = speakOptions.rate {
-        utterance.rate = Float(rate) * AVSpeechUtteranceDefaultSpeechRate
-      }
-      let category = session.category.rawValue
-      let deactivate = speakOptions.deactivateAfter
-      let queuedBehind = self.cueDelegate.pendingCount
-      // Slower speech needs a longer budget; faster speech keeps the default.
-      let rate = speakOptions.rate ?? 1.0
-      let budget = max(10.0, 0.15 * Double(text.count)) / (rate > 0 ? min(rate, 1.0) : 1.0)
-      let deadline = max(Date(), self.queueDrainsAt).addingTimeInterval(budget)
-      self.queueDrainsAt = deadline
-
-      self.cueDelegate.register(utterance) { outcome in
-        var result: [String: Any] = [
-          "finished": outcome == .finished,
-          "outcome": outcome.rawValue,
-          "otherAudioWasPlaying": otherAudioBefore,
-          "category": category,
-          "queuedBehind": queuedBehind,
-        ]
-        if outcome == .timedOut && self.cueDelegate.pendingCount == 0 {
-          // The synthesizer never reported back; stop it so the session can go.
-          _ = self.synthesizer.stopSpeaking(at: .immediate)
-        }
-        let deactivation = self.deactivateIfIdle(requested: deactivate)
-        result["deactivated"] = deactivation.deactivated
-        if let skipped = deactivation.skipped {
-          result["deactivationSkipped"] = skipped
-        }
-        if let deactivationError = deactivation.error {
-          result["deactivationError"] = deactivationError
-        }
+      if let failure = self.enqueueCue(text, speakOptions, self.options, settled: { result in
         promise.resolve(result)
-      }
-      self.synthesizer.speak(utterance)
-      DispatchQueue.main.asyncAfter(deadline: .now() + deadline.timeIntervalSinceNow) { [weak self] in
-        self?.cueDelegate.settle(utterance, .timedOut)
+      }) {
+        promise.reject("ERR_AUDIO_SESSION", failure)
       }
     }.runOnQueue(.main)
 
@@ -207,66 +204,51 @@ public final class AudioCoachModule: Module {
       self.cueDelegate.cancelAll()
     }.runOnQueue(.main)
 
-    // Opt-in experiment (FIZZ_BACKGROUND_AUDIO=1 builds only): loop silence so iOS
-    // keeps the app running while locked, letting a cue play at rest end. Needs
-    // UIBackgroundModes "audio"; refuses to start without it.
-    AsyncFunction("startKeepAlive") { () -> [String: Any] in
-      let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
-      guard modes.contains("audio") else {
-        return ["started": false, "reason": "This build has no audio background mode"]
+    // Replaces the rest's scheduled cues (Ben, 1 Nov; ADR 0040). JS calls it
+    // whenever the committed rest changes (start, Skip, ±15/30 s, Undo); the hold
+    // isn't released between a cancel and its replacement. Refuses without the
+    // audio background mode: then the notification is the background alert.
+    AsyncFunction("scheduleRestCues") { (cues: [ScheduledCue], speakOptions: SpeakOptions) -> [String: Any] in
+      self.cancelScheduledWork()
+      guard AudioCoachModule.hasAudioBackgroundMode else {
+        return ["scheduled": false, "count": 0, "reason": "noBackgroundMode", "holdRunning": false]
       }
-      if self.keepAliveEngine != nil {
-        return ["started": true, "reason": "already running"]
+      self.scheduledSpeakOptions = speakOptions
+      let nowMs = Date().timeIntervalSince1970 * 1000
+      for cue in cues {
+        if self.scheduledCues[cue.id] != nil || self.firedCueIds.contains(cue.id) { continue }
+        if cue.dropAfterMs <= nowMs || cue.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+        let item = DispatchWorkItem { [weak self] in
+          self?.fireScheduledCue(cue)
+        }
+        self.scheduledCues[cue.id] = item
+        // Wall time, so a cue is never late because the phone slept.
+        DispatchQueue.main.asyncAfter(wallDeadline: .now() + max(0, (cue.fireAtMs - nowMs) / 1000), execute: item)
       }
-      let session = AVAudioSession.sharedInstance()
-      try self.applyCategory()
-      try session.setActive(true)
-      let engine = AVAudioEngine()
-      let player = AVAudioPlayerNode()
-      engine.attach(player)
-      guard let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2),
-            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100) else {
-        // keepAliveEngine is still nil, so this releases the session we just activated.
-        _ = self.deactivateIfIdle(requested: true)
-        return ["started": false, "reason": "Could not create the silent buffer"]
-      }
-      buffer.frameLength = buffer.frameCapacity
-      if let channels = buffer.floatChannelData {
-        for c in 0..<Int(format.channelCount) {
-          channels[c].update(repeating: 0, count: Int(buffer.frameLength))
+      var result: [String: Any] = ["scheduled": !self.scheduledCues.isEmpty, "count": self.scheduledCues.count]
+      if self.scheduledCues.isEmpty {
+        self.releaseHoldIfDone()
+      } else if UIApplication.shared.applicationState == .background {
+        if let failure = self.startHoldIfWanted() {
+          result["holdError"] = failure
         }
       }
-      engine.connect(player, to: engine.mainMixerNode, format: format)
-      player.scheduleBuffer(buffer, at: nil, options: .loops)
-      do {
-        try engine.start()
-      } catch {
-        // Don't leave the session active (music ducked/paused) after a failed start.
-        engine.stop()
-        _ = self.deactivateIfIdle(requested: true)
-        throw error
-      }
-      player.play()
-      self.keepAliveEngine = engine
-      self.keepAlivePlayer = player
-      return ["started": true, "category": session.category.rawValue]
+      result["holdRunning"] = self.hold != nil
+      return result
     }.runOnQueue(.main)
 
-    AsyncFunction("stopKeepAlive") { () -> [String: Any] in
-      self.keepAlivePlayer?.stop()
-      self.keepAliveEngine?.stop()
-      let wasRunning = self.keepAliveEngine != nil
-      self.keepAlivePlayer = nil
-      self.keepAliveEngine = nil
-      let deactivation = self.deactivateIfIdle(requested: true)
-      var result: [String: Any] = ["wasRunning": wasRunning, "deactivated": deactivation.deactivated]
-      if let skipped = deactivation.skipped {
-        result["deactivationSkipped"] = skipped
-      }
-      if let error = deactivation.error {
-        result["deactivationError"] = error
-      }
-      return result
+    // Rest skipped, paused, logged through, finished or discarded, or cues turned off.
+    // A cue already speaking finishes; then the session is released.
+    AsyncFunction("cancelRestCues") { () -> [String: Any] in
+      let count = self.scheduledCues.count
+      self.cancelScheduledWork()
+      self.releaseHoldIfDone()
+      return ["cancelled": count, "holdRunning": self.hold != nil]
+    }.runOnQueue(.main)
+
+    // On main: the log is written there.
+    AsyncFunction("scheduledCueLog") { () -> [[String: Any]] in
+      return self.cueLog
     }.runOnQueue(.main)
 
     Function("getSessionState") { () -> [String: Any] in
@@ -470,8 +452,233 @@ public final class AudioCoachModule: Module {
     }
   }
 
+  private static var hasAudioBackgroundMode: Bool {
+    let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+    return modes.contains("audio")
+  }
+
+  /// Queues one utterance on the shared synthesizer. Returns an error message
+  /// (nothing queued, `settled` never called) or nil (`settled` is called once).
+  /// Main queue only.
+  private func enqueueCue(
+    _ text: String, _ speakOptions: SpeakOptions, _ sessionOptions: SessionOptions,
+    settled: @escaping ([String: Any]) -> Void
+  ) -> String? {
+    let session = AVAudioSession.sharedInstance()
+    let otherAudioBefore = session.isOtherAudioPlaying
+    do {
+      // Changing the category while a cue is playing would interrupt it; only
+      // (re)apply it when nothing of ours is speaking.
+      if cueDelegate.pendingCount == 0 {
+        if hold != nil {
+          // The hold mixes without ducking. Ducking starts on activation, so stop
+          // it and activate again with the cue's options.
+          stopHold()
+          try? session.setActive(false)
+        }
+        try applyCategory(sessionOptions)
+      }
+      try session.setActive(true)
+    } catch {
+      startHoldIfWanted()
+      return "Could not activate the audio session: \(error.localizedDescription)"
+    }
+    let utterance = AVSpeechUtterance(string: text)
+    if let id = speakOptions.voice, let chosen = AVSpeechSynthesisVoice(identifier: id) {
+      utterance.voice = chosen
+    } else if let language = speakOptions.language {
+      utterance.voice = AVSpeechSynthesisVoice(language: language)
+    }
+    if let rate = speakOptions.rate {
+      utterance.rate = Float(rate) * AVSpeechUtteranceDefaultSpeechRate
+    }
+    let category = session.category.rawValue
+    let deactivate = speakOptions.deactivateAfter
+    let queuedBehind = cueDelegate.pendingCount
+    // Slower speech needs a longer budget; faster speech keeps the default.
+    let rate = speakOptions.rate ?? 1.0
+    let budget = max(10.0, 0.15 * Double(text.count)) / (rate > 0 ? min(rate, 1.0) : 1.0)
+    let deadline = max(Date(), queueDrainsAt).addingTimeInterval(budget)
+    queueDrainsAt = deadline
+
+    cueDelegate.register(utterance) { [weak self] outcome in
+      guard let self = self else { return }
+      var result: [String: Any] = [
+        "finished": outcome == .finished,
+        "outcome": outcome.rawValue,
+        "otherAudioWasPlaying": otherAudioBefore,
+        "category": category,
+        "queuedBehind": queuedBehind,
+      ]
+      if outcome == .timedOut && self.cueDelegate.pendingCount == 0 {
+        // The synthesizer never reported back; stop it so the session can go.
+        _ = self.synthesizer.stopSpeaking(at: .immediate)
+      }
+      let deactivation = self.deactivateIfIdle(requested: deactivate)
+      result["deactivated"] = deactivation.deactivated
+      if let skipped = deactivation.skipped {
+        result["deactivationSkipped"] = skipped
+      }
+      if let deactivationError = deactivation.error {
+        result["deactivationError"] = deactivationError
+      }
+      // More rest cues to come while in the background: keep the app running.
+      self.startHoldIfWanted()
+      settled(result)
+    }
+    synthesizer.speak(utterance)
+    DispatchQueue.main.asyncAfter(deadline: .now() + deadline.timeIntervalSinceNow) { [weak self] in
+      self?.cueDelegate.settle(utterance, .timedOut)
+    }
+    return nil
+  }
+
+  private func fireScheduledCue(_ cue: ScheduledCue) {
+    scheduledCues.removeValue(forKey: cue.id)
+    firedCueIds.append(cue.id)
+    if firedCueIds.count > 50 {
+      firedCueIds.removeFirst(firedCueIds.count - 50)
+    }
+    let nowMs = Date().timeIntervalSince1970 * 1000
+    let appState = UIApplication.shared.applicationState
+    var entry: [String: Any] = [
+      "id": cue.id,
+      "fireAtMs": cue.fireAtMs,
+      "firedAtMs": nowMs,
+      "appState": AudioCoachModule.describe(appState),
+      "holdRunning": hold != nil,
+    ]
+    if appState == .active {
+      // On screen: JS speaks it, with the newest words.
+      entry["outcome"] = "skippedActive"
+      logCue(entry)
+      releaseHoldIfDone()
+      return
+    }
+    if nowMs > cue.dropAfterMs {
+      // iOS suspended the app past the cue's moment: the notification is the alert.
+      entry["outcome"] = "late"
+      logCue(entry)
+      releaseHoldIfDone()
+      return
+    }
+    beginBackgroundWork()
+    let failure = enqueueCue(cue.text, scheduledSpeakOptions, SessionOptions()) { [weak self] result in
+      entry["outcome"] = "spoken"
+      entry["speakOutcome"] = result["outcome"]
+      self?.logCue(entry)
+      self?.releaseHoldIfDone()
+      self?.endBackgroundWork()
+    }
+    if let failure = failure {
+      entry["outcome"] = "speakFailed"
+      entry["error"] = failure
+      logCue(entry)
+      releaseHoldIfDone()
+      endBackgroundWork()
+    }
+  }
+
+  private func logCue(_ entry: [String: Any]) {
+    cueLog.append(entry)
+    if cueLog.count > 20 {
+      cueLog.removeFirst(cueLog.count - 20)
+    }
+  }
+
+  private func cancelScheduledWork() {
+    scheduledCues.values.forEach { $0.cancel() }
+    scheduledCues.removeAll()
+  }
+
+  /// No cue left to wait for and none speaking: stop the hold and let the session go.
+  private func releaseHoldIfDone() {
+    guard scheduledCues.isEmpty, cueDelegate.pendingCount == 0, hold != nil else { return }
+    stopHold()
+    _ = deactivateIfIdle(requested: true)
+  }
+
+  /// Starts the hold only when it's needed: cues waiting, none speaking, app in
+  /// the background. Returns an error message when it couldn't start.
+  @discardableResult
+  private func startHoldIfWanted() -> String? {
+    guard hold == nil, !scheduledCues.isEmpty, cueDelegate.pendingCount == 0,
+          UIApplication.shared.applicationState == .background else { return nil }
+    guard AudioCoachModule.hasAudioBackgroundMode else { return "noBackgroundMode" }
+    let session = AVAudioSession.sharedInstance()
+    do {
+      // Mixable and never ducking: Ben's music plays on at full volume.
+      try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+      try session.setActive(true)
+    } catch {
+      return "Could not activate the audio session: \(error.localizedDescription)"
+    }
+    let engine = AVAudioEngine()
+    let player = AVAudioPlayerNode()
+    engine.attach(player)
+    guard let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2),
+          let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100) else {
+      _ = deactivateIfIdle(requested: true)
+      return "Could not create the silent buffer"
+    }
+    buffer.frameLength = buffer.frameCapacity
+    if let channels = buffer.floatChannelData {
+      for c in 0..<Int(format.channelCount) {
+        channels[c].update(repeating: 0, count: Int(buffer.frameLength))
+      }
+    }
+    engine.connect(player, to: engine.mainMixerNode, format: format)
+    player.scheduleBuffer(buffer, at: nil, options: .loops)
+    do {
+      try engine.start()
+    } catch {
+      engine.stop()
+      _ = deactivateIfIdle(requested: true)
+      return "Could not start the silent player: \(error.localizedDescription)"
+    }
+    player.play()
+    let started = SilentHold(engine: engine, player: player)
+    // A route or format change stops the engine: start a fresh one if still wanted.
+    started.observer = NotificationCenter.default.addObserver(
+      forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+    ) { [weak self] _ in
+      guard let self = self, self.hold === started else { return }
+      self.stopHold()
+      self.startHoldIfWanted()
+      if self.hold == nil {
+        _ = self.deactivateIfIdle(requested: true)
+      }
+    }
+    hold = started
+    return nil
+  }
+
+  private func stopHold() {
+    guard let current = hold else { return }
+    hold = nil
+    if let observer = current.observer {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    current.player.stop()
+    current.engine.stop()
+  }
+
+  /// A few seconds of guaranteed run time while switching from the hold to a cue and back.
+  private func beginBackgroundWork() {
+    guard backgroundTask == .invalid else { return }
+    backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "fizz.restCue") { [weak self] in
+      self?.endBackgroundWork()
+    }
+  }
+
+  private func endBackgroundWork() {
+    guard backgroundTask != .invalid else { return }
+    UIApplication.shared.endBackgroundTask(backgroundTask)
+    backgroundTask = .invalid
+  }
+
   /// Deactivates (notifying others, so ducked music comes back) only when no
-  /// cue is pending and the keep-alive isn't running. Main queue only.
+  /// cue is pending and the hold isn't running. Main queue only.
   private func deactivateIfIdle(requested: Bool) -> (deactivated: Bool, skipped: String?, error: String?) {
     if !requested {
       return (false, "notRequested", nil)
@@ -479,8 +686,8 @@ public final class AudioCoachModule: Module {
     if cueDelegate.pendingCount > 0 {
       return (false, "cuesPending", nil)
     }
-    if keepAliveEngine != nil {
-      return (false, "keepAliveRunning", nil)
+    if hold != nil {
+      return (false, "holdRunning", nil)
     }
     do {
       try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -490,7 +697,7 @@ public final class AudioCoachModule: Module {
     }
   }
 
-  private func applyCategory() throws {
+  private func applyCategory(_ options: SessionOptions) throws {
     var categoryOptions: AVAudioSession.CategoryOptions = []
     if options.duckOthers {
       categoryOptions.insert(.duckOthers)
@@ -540,7 +747,41 @@ public final class AudioCoachModule: Module {
       let optionsRaw = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
       let began = AVAudioSession.InterruptionType(rawValue: typeRaw) == .began
       let shouldResume = AVAudioSession.InterruptionOptions(rawValue: optionsRaw).contains(.shouldResume)
+      if began {
+        // A call or Siri stopped our audio; the hold is gone. Scheduled cues stay.
+        self?.stopHold()
+      } else {
+        // Mixable, so it may start again in the background; if not, the notification is the alert.
+        self?.startHoldIfWanted()
+      }
       self?.sendEvent("onInterruption", ["type": began ? "began" : "ended", "shouldResume": shouldResume])
+    })
+    observers.append(center.addObserver(
+      forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      // Every audio object is invalid now: drop the hold and build a fresh one if still wanted.
+      guard let self = self else { return }
+      if let current = self.hold, let observer = current.observer {
+        NotificationCenter.default.removeObserver(observer)
+      }
+      self.hold = nil
+      self.startHoldIfWanted()
+    })
+    // The hold runs only while the app is in the background with cues waiting.
+    observers.append(center.addObserver(
+      forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      guard let self = self, !self.scheduledCues.isEmpty else { return }
+      self.beginBackgroundWork()
+      self.startHoldIfWanted()
+      self.endBackgroundWork()
+    })
+    observers.append(center.addObserver(
+      forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      guard let self = self, self.hold != nil else { return }
+      self.stopHold()
+      _ = self.deactivateIfIdle(requested: true)
     })
     observers.append(center.addObserver(
       forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
@@ -556,6 +797,15 @@ public final class AudioCoachModule: Module {
   private func removeObservers() {
     observers.forEach { NotificationCenter.default.removeObserver($0) }
     observers.removeAll()
+  }
+
+  private static func describe(_ state: UIApplication.State) -> String {
+    switch state {
+    case .active: return "active"
+    case .inactive: return "inactive"
+    case .background: return "background"
+    @unknown default: return "unknown"
+    }
   }
 
   private static func describe(_ quality: AVSpeechSynthesisVoiceQuality) -> String {

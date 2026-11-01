@@ -164,6 +164,12 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
   /** (Ben, 27 Oct) `Rest when short on time`. Absent: `shortest` (Minimum rest). Your data (rule 10). */
   fitRestLevel: FitRestLevelSchema.optional(),
   /**
+   * (Ben, 1 Nov) `Rest when short on time` › `Shorten main lift too`: Medium and Minimum rest also shorten the main
+   * lift's rests (working, top set, back-off; ×0.8 / ×⅔ of his Rest times, never below 2:00). Absent or false: the
+   * main lift's rests never change for time (the 27 Oct rule). Your data (rule 10).
+   */
+  fitShortenMain: z.boolean().optional(),
+  /**
    * (Ben, 28 Oct) Profile › Rest times: Ben's own default rests (seconds), only those he changed from the standard
    * ones. Absent: the standard defaults. Your data (rule 10).
    */
@@ -219,6 +225,7 @@ export type TrainingChange =
   | { kind: 'check_in_schedule'; schedule: CheckInSchedule }
   /** (Ben, 27 Oct) Profile › Training › `Rest when short on time`. */
   | { kind: 'fit_rest_level'; level: FitRestLevel }
+  | { kind: 'fit_shorten_main'; on: boolean }
   /** (Ben, 28 Oct) Profile › Rest times: one default rest (0:30–6:00, 15 s steps). */
   | { kind: 'rest_default'; key: RestDefaultKey; seconds: number }
   /** (Ben, 28 Oct) Profile › Rest times › `Reset to defaults`. */

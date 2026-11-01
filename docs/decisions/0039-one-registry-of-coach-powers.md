@@ -159,3 +159,53 @@ Decisions:
 
 Not yet run on Ben's iPhone: real reasoning latencies on the ChatGPT-plan route are still unmeasured, so the 60 s and
 90/120 s figures are estimates to check against `failure.code` on his next timeouts.
+
+## Amendment (1 Nov 2026, Ben's build 500 report): plan work without a visible time limit, smaller plan turns, no-op edits, plan-day edits
+
+Build 500 had the 31 Oct changes and still failed from a live Push B chat: a plan question ended `Short answer (ran out of
+time)`; "Let's stick to 100 … Going forwards plan B should be slightly different?" got a `Couldn't apply … kept sets 4–5
+as planned.. Nothing changed.` card, then `Thinking… 0:15` that kept running. Ben: "Still running out of time which I
+don't want for changing plans." Causes, from the code: neither message read as plan work (no plan noun: "Push B should
+be different", "shoulder-led", "pre-fatigued"), so the first got the 30 s live cap and the short-answer retry; "the
+shoulders I just trained" read as an unclear pain mention, which turned the two-part reading off; the plan turn carried
+the whole-plan build view and build tools (about 97,000 characters on the fixture) at high effort; and a restatement of
+today's target was recorded as a failure.
+
+Decisions (amending 31 Oct decisions 1–3):
+
+1. **Plan work** (`coachTurnTiming`: his words are about the plan or ask today's change and a plan change): no visible
+   limit. `COACH_PLAN_WORK_CAP_MS` (5 min) as a safety cap, `COACH_PLAN_EVENT_MS` (3 min) to the first event and between
+   events on every plan step, and **no lighter retry** (`lightRetryMs: 0`, and the turn never retries plan work). A real
+   failure is one honest line with Try again. The turn already belongs to the service (28 Oct running-turn store), so Ben
+   can close the sheet; time in the background still doesn't count. The 90 s and 120 s constants are gone.
+2. **Quick work stays quick:** a simple live edit keeps 30 s and the one short retry; today's part of a two-part ask runs
+   first with the 20 s windows (`stepTiming`), the plan part after it with the long ones.
+3. **Effort:** plan work (targeted or the whole-plan proposal) is **medium**; high only when Ben asks for the deep version
+   (`asksDeepAnalysis`) or the coach calls `think_harder`. Workout builds stay high. The sheet shows `Thinking…` with its
+   timer on plan steps too.
+4. **Smaller plan turns:** a targeted plan turn (plan in use, a plan tool here, not a rebuild or a workout build) leaves
+   out `propose_workout`, `propose_plan`, `ask_build_question`, `propose_exercise`, `propose_workout_edit`, `fill_setup`,
+   `rename_workout` and `log_activity` (withheld as `plan_work`), and the context drops the build view, the addable list
+   (unless he asks to add) and exercise cues (`planWorkContext`). It keeps the plan days (now with each exercise's sets,
+   reps, target RPE and main mark), this week, the last 7 days, recent lifts, training details, preferences, pain flags
+   and memories. Measured with `requestChars` (about 4 characters a token): about 97,000 → under 60,000 on the Push B
+   fixture. This narrows "one registry" for one turn shape only; every power is still there on any other turn.
+5. **Reading his words:** "Push B should be (slightly) different", "should the plan change", "reorder Push B", and order
+   fatigue with a plan day ("pre-fatigued", "shoulder-led", "just trained", "comes after") count as plan work and as asked
+   for a plan proposal (`asksPlanDayChange`, `planLevelAsk`). "Let's stick to 100" counts as today's change. A muscle named
+   as what a lift trained ("the shoulders I just trained") is no pain question (`classifyPainMention`); any pain, vague or
+   effort word still is (rule 9).
+6. **No-op edits:** when every set asked for already has that target, `validateTodayAdjustment` says `already`
+   (`alreadyLine`: `Already 100 kg`, `Already 225 lb × 5`, `Already 22.5 kg each`); `edit_today` saves it `rejected` with
+   `noop` (nothing written) and the card reads `No change · Already 100 kg.`; the coach is told it is not a failure.
+   Refused lines drop the failure's own full stop before `. Nothing changed.`
+7. **`propose_plan_day_edit`** joins the registry (target `planInUse`, every chat): one plan day, every week, its order
+   (every exercise once) and per exercise working sets, reps, target RPE and main mark; a load only when Ben named it this
+   turn. Checked by `planDayEditPreview` (order lists the day exactly, exercises in the day, never splits a superset,
+   something changes) and the pain check (never more work on a flagged movement). Recorded as `propose_plan_swap` with
+   `op: 'day_edit'` and `dayEdit` (**no migration**); the same card (`Push B` and one line per change), Apply (one
+   versioned `plans.editDayRowsEveryWeek` write, op ID from the proposal, `Out of date` if the day changed) and Undo
+   (routine revert). Its tool line tells the coach to fix an ordering problem with a card: reorder, make the later lift
+   secondary (main false, fewer sets, lower RPE) or swap.
+
+Not yet run on Ben's iPhone.

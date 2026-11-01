@@ -21,7 +21,7 @@ export interface SpeakOptions {
 }
 
 export interface AudioSessionState {
-  /** configureSession only: false when a cue or the keep-alive was playing, so the options wait for the next idle cue. */
+  /** configureSession only: false when a cue or the background hold was playing, so the options wait for the next idle cue. */
   applied?: boolean;
   category: string;
   mode: string;
@@ -56,22 +56,49 @@ export interface SpeakResult {
   otherAudioWasPlaying: boolean;
   category: string;
   deactivated: boolean;
-  /** Why the session was left active: other cues pending, the keep-alive, or not requested. */
-  deactivationSkipped?: 'cuesPending' | 'keepAliveRunning' | 'notRequested';
+  /** Why the session was left active: other cues pending, the background hold, or not requested. */
+  deactivationSkipped?: 'cuesPending' | 'holdRunning' | 'notRequested';
   deactivationError?: string;
 }
 
-export interface KeepAliveStartResult {
-  started: boolean;
+/** One rest cue for the native scheduler (ADR 0040). Times are Unix ms, wall clock. */
+export interface ScheduledCue {
+  /** `rest:<timerId>:<deadline>:warn|end`; an id that has fired never fires again. */
+  id: string;
+  text: string;
+  fireAtMs: number;
+  /** Later than this the cue is dropped, never spoken. */
+  dropAfterMs: number;
+}
+
+export interface ScheduleCuesResult {
+  /** false with reason `noBackgroundMode` when the build has no UIBackgroundModes audio. */
+  scheduled: boolean;
+  count: number;
   reason?: string;
-  category?: string;
+  /** The silent, mixable player that keeps the app running in the background. */
+  holdRunning?: boolean;
+  holdError?: string;
 }
 
-export interface KeepAliveStopResult {
-  wasRunning: boolean;
-  deactivated: boolean;
-  deactivationSkipped?: string;
-  deactivationError?: string;
+export interface CancelCuesResult {
+  cancelled: number;
+  holdRunning: boolean;
+}
+
+/** What happened to a natively scheduled cue (raw; the probe validates fields before use). */
+export interface ScheduledCueLogEntry {
+  id?: unknown;
+  fireAtMs?: unknown;
+  firedAtMs?: unknown;
+  /** UIApplication state when it fired: active (JS spoke it), inactive, background. */
+  appState?: unknown;
+  holdRunning?: unknown;
+  /** spoken | skippedActive | late | speakFailed */
+  outcome?: unknown;
+  /** The utterance's own outcome when spoken: finished | cancelled | timedOut. */
+  speakOutcome?: unknown;
+  error?: unknown;
 }
 
 /** Signing profile fields read from a bundle's embedded.mobileprovision. */

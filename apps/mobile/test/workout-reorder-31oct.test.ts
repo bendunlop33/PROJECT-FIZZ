@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { dropRoundCommand, jumpRoundCommand, roundJumps, sessionRounds } from '@fizz/domain';
+import { dropRoundCommand, jumpRoundCommand, roundMoves, sessionRounds } from '@fizz/domain';
 import type { SessionAggregate, SessionCommand } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
@@ -68,9 +68,9 @@ describe('Do next / Move to end / drag on the stored workout (Ben, 31 Oct)', () 
     const gymId = await setUpGym(h, s);
     const { sessionId, a } = await pullDay(s, gymId);
     expect(names(a)).toEqual(['Bench press', 'Incline dumbbell press', 'Lat pulldown+Seated cable row']);
-    // The current exercise offers neither; the superset is offered Do next, Incline is offered Move to end.
-    expect(roundJumps(a, rowOf(a, 'Bench press'))).toEqual({ doNext: false, toEnd: false });
-    expect(roundJumps(a, rowOf(a, 'Seated cable row'))).toEqual({ doNext: true, toEnd: false });
+    // The current exercise has a set logged: it never moves. The superset can go up or first (after Bench), not further down.
+    expect(roundMoves(a, rowOf(a, 'Bench press'))).toEqual({ up: false, down: false, first: false, toEnd: false });
+    expect(roundMoves(a, rowOf(a, 'Seated cable row'))).toEqual({ up: true, down: false, first: true, toEnd: false });
     const opId = h.ids();
     const m = jumpRoundCommand(a, rowOf(a, 'Seated cable row'), 'do_next', { opId, at: h.now() });
     if (!m.ok) throw new Error(m.reason);

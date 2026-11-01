@@ -128,6 +128,8 @@ import {
   fitLostByGroup,
   type CarryDay,
   type CarryItem,
+  MAIN_LIFT_COPY,
+  noteTemplateVersion,
 } from '@fizz/domain';
 import { builderFocusCounts, builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SetTemplate, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
@@ -188,6 +190,12 @@ export interface BuilderServiceDeps {
   coachApplies?: (basis: DraftBasis) => Promise<AppliedStructural[]>;
   /** (D8) Of the applies checked on a draft, the ones that couldn't land there (the card reads `Couldn't apply here`). */
   coachRefused?: (checked: readonly string[], refused: readonly string[]) => void;
+  /**
+   * (Ben, 1 Nov) `Make main lift` › `Every week?`: the plan day's template takes the lift as its main lift
+   * (`plans.mainLiftEveryWeek`), and its Undo (`routines.revert`). Absent: Your workout doesn't offer it.
+   */
+  mainLiftEveryWeek?: (req: { routineId: string; exerciseId: string; opId: string; expectedVersion?: number }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
+  revertRoutine?: (req: { actionId: string; opId: string }) => Promise<{ ok: true; routine: Routine } | { ok: false; message: string }>;
   /** (D8) Ben undid a landed change on Your workout: the coach's Apply is undone too, so it never lands again. */
   coachUndone?: (applyActionId: string) => Promise<void>;
   /**
@@ -1138,6 +1146,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       }
       case 'swap':
         return { text: BUILDER_COPY.swapped, undoOpId: opId, why: null };
+      case 'make_main': {
+        const s = slotsOf(before.blocks).find((x) => x.key === op.slotKey);
+        return { text: MAIN_LIFT_COPY.made(s === undefined ? 'Exercise' : env.nameOf(s.exerciseId)), undoOpId: opId, why: null };
+      }
       case 'delete_set':
         return { text: BUILDER_COPY.setDeleted, undoOpId: opId, why: null };
       case 'add_exercise':
@@ -2110,13 +2122,48 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const kept = withKeepRemoved(stored ?? storedSetup(pageSetup(current), {}), marked.removed);
         // (D3 §2.3a) A slot Ben deletes from a workout Today drafted stays deleted when one of Today's options loads
         // Today's draft for another choice (its Undo puts the list back with the workout).
-        const setup = op.kind === 'delete_exercise' && todayDrafted(stored) ? { ...kept, todayRemoved: [...new Set([...(stored.todayRemoved ?? []), op.slotKey])].slice(-BUILD_LIMITS.maxExercises * 3) } : kept;
+        const removedKept = op.kind === 'delete_exercise' && todayDrafted(stored) ? { ...kept, todayRemoved: [...new Set([...(stored.todayRemoved ?? []), op.slotKey])].slice(-BUILD_LIMITS.maxExercises * 3) } : kept;
+        // (Ben, 1 Nov) `Make main lift`: Set up's main lift follows, so a later Set up change keeps it.
+        const madeMain = op.kind === 'make_main' ? slotsOf(r.workout.blocks).find((x) => x.key === op.slotKey)?.exerciseId : undefined;
+        const setup = madeMain === undefined ? removedKept : { ...removedKept, mainLiftExerciseId: madeMain };
         const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: w.basis, plan, setup, undoable: true });
         // (Ben, 27 Oct) A typed kg is kept as typed; off the gym's known kit the gym learns it (the screen writes it).
         const learn = op.kind === 'edit_row' && op.patch.kind === 'load' ? typedLearn(before, op.slotKey, r.rounded, env) : null;
         const toast = toastFor(op, before, r.advice, env, w.opId);
         return { change, env, toast: learn === null ? toast : { text: toast?.text ?? '', undoOpId: w.opId, why: null, learn } };
       });
+    },
+
+    /**
+     * (Ben, 1 Nov) `Make main lift` › `Every week?` on Your workout from a plan day: the day's template takes the lift
+     * as its main lift (one versioned write against the version this draft opened, rule 5), and the draft notes the
+     * template's new version so it isn't shown as changed elsewhere. `undo`: the template's write is reverted (only
+     * while nothing changed it since) and the draft notes that version too.
+     */
+    async mainLiftEveryWeek(draftId: string, req: { exerciseId: string; opId: string } | { undo: string; opId: string }): Promise<{ ok: true; actionId: string; snapshot: BuilderSnapshot | null } | { ok: false; message: string }> {
+      const p = await owner();
+      const read = await repos().workoutDrafts.get(draftId).catch(() => null);
+      const stored = read === null ? undefined : builderSetupOf(read);
+      if (read === null || read.ownerId !== p.id || stored?.templateRoutineId === undefined || stored.templateVersion === undefined || deps.mainLiftEveryWeek === undefined || deps.revertRoutine === undefined) return { ok: false, message: BUILDER_COPY.notFound };
+      let actionId: string;
+      let routine: Routine;
+      if ('undo' in req) {
+        const u = await deps.revertRoutine({ actionId: req.undo, opId: req.opId }).catch(() => ({ ok: false as const, message: BUILDER_COPY.cantUndo }));
+        if (!u.ok) return { ok: false, message: u.message };
+        actionId = req.undo;
+        routine = u.routine;
+      } else {
+        const r = await deps.mainLiftEveryWeek({ routineId: stored.templateRoutineId, exerciseId: req.exerciseId, opId: req.opId, expectedVersion: stored.templateVersion }).catch(() => ({ ok: false as const, reason: 'failed', message: BUILDER_COPY.failed }));
+        if (!r.ok) return { ok: false, message: r.reason === 'stale' ? BUILDER_COPY.planChanged : r.message };
+        actionId = r.actionId;
+        routine = r.routine;
+      }
+      const noted = await writeDraft(p, draftId, async (current) => {
+        const v = currentDraftVersion(current);
+        const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: v.plan.slots.map((x) => x.exerciseId), keySeed: `${current.id}:${req.opId}` });
+        return { change: noteTemplateVersion(current, { opId: `${req.opId}:noted`, at: deps.now(), routineId: routine.id, templateVersion: routine.version }), env, toast: null };
+      });
+      return { ok: true, actionId, snapshot: noted.snapshot };
     },
 
     /**

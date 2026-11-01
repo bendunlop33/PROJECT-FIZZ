@@ -8,6 +8,8 @@ import type { WhyPanel } from '../../workout/target-why';
 import { TargetWhyPanel } from './TargetWhyPanel';
 import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
 import type { DropTarget } from '../../ui/drag-logic';
+import { ExerciseSwipeRow } from '../../ui/exercise-swipe';
+import type { ExerciseSwipeAction, ExerciseSwipeActions } from '../../workout/exercise-swipe';
 
 /** A row's press with the drag's hold (`useDragHandle`, inside its `DragItem`). */
 function HeldPressable(props: PressableProps) {
@@ -28,6 +30,7 @@ function HeldPressable(props: PressableProps) {
  * exercise's menu (Swap, Superset, Remove…; §4, review S3) once the sheet
  * has closed. `＋ Add exercise` at the end (today only). Hold and drag
  * reorders what isn't started (a superset as one); the toast's Undo shows here.
+ * (Ben, 1 Nov, C) A row swipes: left `Later · Swap · Skip`, right `Add set`.
  */
 export function WorkoutRoundsSheet(p: {
   visible: boolean;
@@ -46,6 +49,11 @@ export function WorkoutRoundsSheet(p: {
   drag?: { draggable: (sessionExerciseId: string) => boolean; canDrop: (from: string, t: DropTarget) => boolean; onDrop: (from: string, t: DropTarget) => void };
   /** (Ben, 31 Oct) The screen's toast while the sheet is open: a drag's `<name> moved · Undo`. */
   toast?: ReactNode;
+  /**
+   * (Ben, 1 Nov, C) Swipe a row: left `Later · Swap · Skip` (full swipe skips), right `Add set`; the same as
+   * VoiceOver actions on the row. Absent: off.
+   */
+  swipe?: { actions: (sessionExerciseId: string) => ExerciseSwipeActions; onAction: (sessionExerciseId: string, action: ExerciseSwipeAction) => void };
 }) {
   const theme = useTheme();
   const [dragging, setDragging] = useState(false);
@@ -74,15 +82,27 @@ export function WorkoutRoundsSheet(p: {
           {head('', { width: theme.target.min.width })}
         </View>
         <DragList enabled={p.drag !== undefined} allowOnto canDrop={(from, t) => p.drag?.canDrop(from, t) ?? false} onDrop={(from, t) => p.drag?.onDrop(from, t)} onMenu={p.onMenu} onDragChange={setDragging} viewport={listView}>
-        {p.rows.map((r) => (
+        {p.rows.map((r) => {
+          const swipes = p.swipe?.actions(r.key) ?? { left: [], right: [] };
+          const swipeItems = [...swipes.left, ...swipes.right];
+          return (
           <DragItem key={r.key} dragKey={r.key} draggable={p.drag?.draggable(r.key) ?? false}>
+          <ExerciseSwipeRow
+            actions={swipes}
+            onAction={(action) => {
+              p.swipe?.onAction(r.key, action);
+            }}
+          >
           <HeldPressable
             accessibilityRole="button"
             accessibilityLabel={r.accessibilityLabel}
             accessibilityHint="Shows this round"
-            accessibilityActions={[{ name: 'activate' }, { name: 'menu', label: 'Exercise options' }]}
+            accessibilityActions={[{ name: 'activate' }, { name: 'menu', label: 'Exercise options' }, ...swipeItems.map((i) => ({ name: i.action, label: i.accessibilityLabel }))]}
             onAccessibilityAction={(e) => {
-              if (e.nativeEvent.actionName === 'menu') p.onMenu(r.key);
+              const name = e.nativeEvent.actionName;
+              const swiped = swipeItems.find((i) => i.action === name);
+              if (name === 'menu') p.onMenu(r.key);
+              else if (swiped !== undefined) p.swipe?.onAction(r.key, swiped.action);
               else p.onPick(r.roundIndex);
             }}
             onPress={() => {
@@ -132,8 +152,10 @@ export function WorkoutRoundsSheet(p: {
               <Icon name="ellipsis" color="text.secondary" size={18} />
             </Pressable>
           </HeldPressable>
+          </ExerciseSwipeRow>
           </DragItem>
-        ))}
+          );
+        })}
         </DragList>
         <View style={{ alignItems: 'flex-start', paddingTop: theme.space['2'] }}>
           <TextButton label="＋ Add exercise" onPress={p.onAddExercise} />

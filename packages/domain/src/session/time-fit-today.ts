@@ -2,6 +2,7 @@ import { coachEditStepOpId, type FitTodayStep, type FitTodayToTimeCommand, type 
 import { estimateBuilderSeconds } from '../builder/estimate';
 import { fitToMinutes, type BuilderFitStatus } from '../builder/fit';
 import { restAfterRows, roundRestOf, type RestDefaults } from '../builder/rest';
+import { pickedMainLift } from './main-lift';
 import { reduceSession } from './reducer';
 import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderInfoLookup, BuilderSetRow, BuilderSlot, BuilderWorkout, RestKind, RestLevel } from '../builder/types';
 
@@ -121,6 +122,10 @@ function pinnedRests(rows: readonly FitRow[], byId: ReadonlyMap<string, WorkoutS
 
 /** The main lifts: the draft's, or the plan day's (provenance), else one with a Top set, else the first compound in order. */
 function mainIds(a: SessionAggregate, live: readonly SessionExercise[], info: BuilderInfoLookup, fromDraft: ReadonlySet<string> | undefined): Set<string> {
+  // (Ben, 1 Nov) The main lift Ben picked today wins.
+  const picked = pickedMainLift(a.session);
+  const pickedRows = picked === null ? [] : live.filter((e) => e.exerciseId === picked);
+  if (pickedRows.length > 0) return new Set(pickedRows.map((e) => e.id));
   const drafted = live.filter((e) => fromDraft?.has(e.exerciseId) === true);
   if (drafted.length > 0) return new Set(drafted.map((e) => e.id));
   const planned = a.session.planDay?.mainLiftExerciseId ?? null;
@@ -134,7 +139,7 @@ function mainIds(a: SessionAggregate, live: readonly SessionExercise[], info: Bu
   return new Set(first === undefined ? [] : [first.id]);
 }
 
-function slotOf(a: SessionAggregate, ex: SessionExercise, main: boolean, touched: boolean, byId: ReadonlyMap<string, WorkoutSet>): BuilderSlot | null {
+function slotOf(a: SessionAggregate, ex: SessionExercise, main: boolean, touched: boolean, byId: ReadonlyMap<string, WorkoutSet>, shortenMain = false): BuilderSlot | null {
   const pending = pendingOf(a, ex.id);
   if (pending.length === 0) return null;
   const rows: FitRow[] = pending.map((s) => ({
@@ -156,7 +161,8 @@ function slotOf(a: SessionAggregate, ex: SessionExercise, main: boolean, touched
     source: 'plan',
     startLight: null,
     anchorE1rm: null,
-    ...(touched ? { touched: true as const, restS: pinnedRests(rows, byId) } : main ? { restS: pinnedRests(rows, byId) } : {}),
+    // (Ben, 1 Nov) With `Shorten main lift too` the main lift's rests aren't pinned: the shorter levels may take them.
+    ...(touched ? { touched: true as const, restS: pinnedRests(rows, byId) } : main && !shortenMain ? { restS: pinnedRests(rows, byId) } : {}),
   };
 }
 
@@ -178,7 +184,7 @@ function remainingWorkout(input: TimeFitInput): { w: BuilderWorkout; mainGroup: 
     const touched = ex.measurement !== 'reps' || (input.painFlagged?.has(ex.exerciseId) ?? false) || pending.some((s) => bensEdit(a, s));
     const main = mains.has(ex.id);
     if (main && mainGroup === null) mainGroup = input.info(ex.exerciseId)?.group ?? null;
-    const slot = slotOf(a, ex, main, touched, byId);
+    const slot = slotOf(a, ex, main, touched, byId, input.restDefaultsS?.shortenMain === true);
     if (slot === null) continue;
     const last = blocks[blocks.length - 1];
     if (ex.supersetGroup !== null && ex.supersetGroup === lastGroup && last !== undefined) last.slots.push(slot);
@@ -235,7 +241,7 @@ function restCuts(a: SessionAggregate, orig: BuilderWorkout, w: BuilderWorkout, 
     const round = b.slots.length > 1 ? roundRestOf(b, w.restLevel, defaults) : null;
     for (const slot of b.slots) {
       const o = origSlots.get(slot.key);
-      if (o === undefined || o.touched === true || o.main) continue;
+      if (o === undefined || o.touched === true || (o.main && defaults?.shortenMain !== true)) continue;
       if (round !== null && origBlockOf.get(slot.key)?.slots.some((x) => x.touched === true) === true) continue;
       const targets = restAfterRows(slot, info, w.restLevel, defaults);
       aligned(o, slot).kept.forEach((k, i) => {
