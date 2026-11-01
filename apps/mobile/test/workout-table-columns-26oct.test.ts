@@ -27,6 +27,8 @@ const CASES = {
   perHand: { hasLoad: true, texts: { previous: [`22.5${NBSP}×${NBSP}10`], load: ['22.5'], value: ['10'] } },
   assisted: { hasLoad: true, texts: { previous: [`27.5${NBSP}×${NBSP}8`], load: ['27.5'], value: ['6–8'] } },
   lbHeavy: { hasLoad: true, texts: { previous: [`315${NBSP}×${NBSP}12`], load: ['315'], value: ['12'] } },
+  // (Ben, 1 Nov: a three-digit load clipped in the exercise sheet) A four-digit lb load, as stored and with a separator.
+  lbThousand: { hasLoad: true, texts: { previous: [`1000${NBSP}×${NBSP}3`], load: ['1000', '1,000', '102.5'], value: ['3'] } },
   bodyweight: { hasLoad: false, texts: { previous: ['15', '—'], load: [], value: ['12–15'] } },
   timed: { hasLoad: false, hasRir: false, texts: { previous: ['0:45'], load: [], value: ['0:45'] } },
 } satisfies Record<string, Case>;
