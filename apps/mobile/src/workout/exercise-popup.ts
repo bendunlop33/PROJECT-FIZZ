@@ -1,4 +1,4 @@
-import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, supersetNextCommand, typeRestCommand, typedLoadPlan, shownPlannedIn, type GymLearn, type RestKind, type TargetExplanation } from '@fizz/domain';
+import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundMoves, roundSteps, sessionRounds, setMoveSteps, supersetNextCommand, typeRestCommand, typedLoadPlan, shownPlannedIn, type GymLearn, type RestKind, type TargetExplanation } from '@fizz/domain';
 import { BUILD_LIMITS, type CommandOf, type Load, type SessionAggregate, type SetType, type SetValues, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 
 import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
@@ -240,7 +240,7 @@ export function removePrompt(a: SessionAggregate, sessionExerciseId: string, op:
   return { kind: 'ask', command, name: ex.exerciseName, title: `Remove ${ex.exerciseName}?`, message: `Keeps ${String(loggedSets)} logged ${loggedSets === 1 ? 'set' : 'sets'}` };
 }
 
-export type ExerciseAction = 'swap' | 'move_up' | 'move_down' | 'superset_next' | 'unlink' | 'remove';
+export type ExerciseAction = 'swap' | 'move_up' | 'move_down' | 'do_first' | 'move_to_end' | 'superset_next' | 'unlink' | 'remove';
 
 /**
  * An exercise header's VoiceOver actions on the round page (v3 §6–§7), the same as its `⋯` and the
@@ -250,12 +250,15 @@ export type ExerciseAction = 'swap' | 'move_up' | 'move_down' | 'superset_next' 
 export function exerciseActions(a: SessionAggregate, sessionExerciseId: string): { name: ExerciseAction; label: string }[] {
   const ex = a.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
   if (ex === undefined) return [];
-  const moves = roundSteps(a, ex.id);
+  const moves = roundMoves(a, ex.id);
   const probe = { opId: 'probe', at: a.session.startedAt };
   return [
     ...(midSwapSlot(a, ex.id) !== null ? [{ name: 'swap' as const, label: POPUP_COPY.swapExercise }] : []),
     ...(moves.up ? [{ name: 'move_up' as const, label: POPUP_COPY.moveUp }] : []),
     ...(moves.down ? [{ name: 'move_down' as const, label: POPUP_COPY.moveDown }] : []),
+    // (Ben, 1 Nov) The menu's Now and Later, as VoiceOver actions too.
+    ...(moves.first ? [{ name: 'do_first' as const, label: 'Do first' }] : []),
+    ...(moves.toEnd ? [{ name: 'move_to_end' as const, label: 'Move to end' }] : []),
     ...(supersetNextCommand(a, ex.id, probe) !== null ? [{ name: 'superset_next' as const, label: POPUP_COPY.supersetNext }] : []),
     ...(ex.supersetGroup !== null ? [{ name: 'unlink' as const, label: POPUP_COPY.unlink }] : []),
     ...(canRemoveExercise(a, ex.id) ? [{ name: 'remove' as const, label: removeExerciseCommand(a, ex.id, probe).loggedSets > 0 ? 'Remove (keeps logged sets)' : POPUP_COPY.remove }] : []),

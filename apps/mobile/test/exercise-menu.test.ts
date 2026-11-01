@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { exerciseMenu, roundExerciseMenu, targetRpeChips, targetRpeMenu, targetRpeScopeMenu } from '../src/workout/exercise-menu';
+import { contextMenuHeight, contextMenuItems, contextMenuPlacement, exerciseMenu, roundContextMenu, targetRpeChips, targetRpeMenu, targetRpeScopeMenu, type ContextMenuModel } from '../src/workout/exercise-menu';
 
 /** Review S3: a tap must run the action written on the row, in both menu shapes. */
 describe('exercise ⋯ menu', () => {
@@ -132,25 +132,51 @@ describe('Target RIR', () => {
     expect([0, 1, 2, 3].map((i) => m.scopeAt(i))).toEqual([{ kind: 'set', setId: 'set-1' }, { kind: 'exercise', sessionExerciseId: 'ex-1' }, { kind: 'today' }, null]);
   });
 
-  it('(Ben, 31 Oct) the round page’s ⋯: Swap, Do next, Move to end, Add set, History, Plates, Notes, Skip; each mapped', () => {
-    const m = roundExerciseMenu({ canSwap: true, doNext: true, moveToEnd: true, plates: true });
-    expect(m.options).toEqual(['Swap exercise', 'Do next', 'Move to end', 'Add set', 'History', 'Plates', 'Notes', 'Skip exercise', 'Cancel']);
-    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['swap', 'do_next', 'move_to_end', 'add_set', 'history', 'plates', 'notes', 'skip_exercise', null]);
-    expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Skip exercise']);
-    // Gone from it: they live on the set, at the end of the list, in the Swap sheet and the name's pop-up.
-    for (const gone of ['Edit set', 'Target RIR', 'Delete this set', 'Add exercise', 'Not at this gym', 'How to', 'Move up', 'Move down', 'Superset with next', 'Superset with…', 'Unlink', 'Remove exercise']) expect(m.options).not.toContain(gone);
+  const labels = (m: ContextMenuModel) => contextMenuItems(m).map((i) => i.label);
+  const ALL_MOVES = { up: true, down: true, first: true, toEnd: true };
+  const NO_MOVES = { up: false, down: false, first: false, toEnd: false };
+
+  it('(Ben, 1 Nov, A) the round page’s menu: Undo, Later / Now / Up / Down, Swap, Add set, History, Notes, Plates, Adjust, Skip', () => {
+    const m = roundContextMenu({ canSwap: true, moves: ALL_MOVES, plates: true, coachChange: true, swapped: { from: 'Face pull', to: 'Rotation' }, adjust: true });
+    expect(m.undo.map((i) => [i.label, i.detail])).toEqual([['Undo swap', 'Rotation ← Face pull'], ['Undo coach change', undefined]]);
+    expect(m.moves.map((i) => [i.label, i.accessibilityLabel, i.action])).toEqual([
+      ['Later', 'Move to end', 'move_to_end'],
+      ['Now', 'Do first', 'do_first'],
+      ['Up', 'Move up', 'move_up'],
+      ['Down', 'Move down', 'move_down'],
+    ]);
+    expect(m.rows.map((i) => i.label)).toEqual(['Swap exercise', 'Add set', 'History', 'Notes', 'Plates', 'Adjust']);
+    expect(m.danger.map((i) => [i.label, i.destructive])).toEqual([['Skip exercise', true]]);
+    // No Cancel row (a tap outside dismisses it), and the name's pop-up keeps its own items.
+    for (const gone of ['Cancel', 'Edit set', 'Target RIR', 'Delete this set', 'Add exercise', 'Not at this gym', 'How to', 'Superset with…', 'Unlink', 'Remove exercise', 'Do next']) expect(labels(m)).not.toContain(gone);
   });
 
-  it('a done exercise: no Do next / Move to end, no Swap; dumbbells or a stack: no Plates', () => {
-    const done = roundExerciseMenu({ canSwap: false, doNext: false, moveToEnd: false, plates: false });
-    expect(done.options).toEqual(['Add set', 'History', 'Notes', 'Skip exercise', 'Cancel']);
+  it('only the moves that change the order; a done exercise has none, no Swap, no Skip', () => {
+    expect(roundContextMenu({ canSwap: true, moves: { up: false, down: true, first: false, toEnd: true }, plates: false }).moves.map((i) => i.label)).toEqual(['Later', 'Down']);
+    const done = roundContextMenu({ canSwap: false, moves: NO_MOVES, plates: false, canSkip: false });
+    expect(labels(done)).toEqual(['Add set', 'History', 'Notes']);
+    expect(done.moves).toEqual([]);
   });
 
-  it('the current exercise keeps Adjust last before Skip; a pending change shows its Undo', () => {
-    const m = roundExerciseMenu({ canSwap: true, doNext: false, moveToEnd: false, plates: false, coachChange: true, canUndoSwap: true, adjust: true });
-    expect(m.options).toEqual(['Swap exercise', 'Add set', 'History', 'Notes', 'Undo coach change', 'Undo swap', 'Adjust', 'Skip exercise', 'Cancel']);
-    expect(m.actionAt(6)).toBe('adjust');
-    expect(m.actionAt(7)).toBe('skip_exercise');
-    expect(roundExerciseMenu({ canSwap: false, doNext: false, moveToEnd: false, plates: false, coachChange: 'rule' }).options).toContain('Undo change');
+  it('the rule’s change says Undo change; dumbbells or a stack: no Plates; Adjust only when current', () => {
+    const m = roundContextMenu({ canSwap: false, moves: NO_MOVES, plates: false, coachChange: 'rule' });
+    expect(labels(m)).toEqual(['Undo change', 'Add set', 'History', 'Notes', 'Skip exercise']);
+  });
+
+  it('sits under the card when it fits, above it when not, and the card moves up when neither fits', () => {
+    const win = { width: 393, height: 852 };
+    const insets = { top: 59, bottom: 34 };
+    const m = roundContextMenu({ canSwap: true, moves: ALL_MOVES, plates: true, adjust: true });
+    const h = contextMenuHeight(m);
+    expect(h).toBe(7 * 44 + 58 + 2 * 6);
+    const below = contextMenuPlacement({ x: 16, y: 120, width: 361, height: 60 }, h, win, insets);
+    expect(below.menu).toEqual({ top: 188, left: 377 - 250, width: 250 });
+    const above = contextMenuPlacement({ x: 16, y: 700, width: 361, height: 60 }, h, win, insets);
+    expect(above.menu.top).toBe(700 - 8 - h);
+    const tall = contextMenuPlacement({ x: 16, y: 400, width: 361, height: 60 }, 700, win, insets);
+    expect(tall.card.y).toBeLessThan(400);
+    expect(tall.menu.top).toBeGreaterThanOrEqual(tall.card.y + 60);
+    // From the Workout sheet: no card on screen, it sits near the top.
+    expect(contextMenuPlacement(null, h, win, insets).card.y).toBe(59 + 12 + 40);
   });
 });

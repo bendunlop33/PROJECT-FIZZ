@@ -220,8 +220,9 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
     );
 
   /**
-   * (Ben, 31 Oct) `Do next` / `Move to end`: the round (a superset as one) straight after the current one, or
-   * last; today's remaining rounds only (`jumpRoundCommand`), with Undo. Refused: nothing is sent.
+   * (Ben, 31 Oct; 1 Nov) `Do next` / `Do first` / `Move to end`: the round (a superset as one) straight after
+   * the current one, first, or last; today's remaining rounds only (`jumpRoundCommand`), with Undo. The current
+   * set follows the order (the reducer). Refused: nothing is sent.
    */
   const jumpRound = (sessionExerciseId: string, jump: RoundJump) =>
     edit(
@@ -229,7 +230,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
         const m = jumpRoundCommand(a, sessionExerciseId, jump, { opId, at: at() });
         return m.ok ? m.command : null;
       },
-      (after) => (jump === 'do_next' ? UNDO_TOAST.doNext(nameOf(after, sessionExerciseId)) : UNDO_TOAST.movedToEnd(nameOf(after, sessionExerciseId))),
+      (after) => (jump === 'do_next' ? UNDO_TOAST.doNext : jump === 'do_first' ? UNDO_TOAST.doFirst : UNDO_TOAST.movedToEnd)(nameOf(after, sessionExerciseId)),
       { advise: true },
     );
 

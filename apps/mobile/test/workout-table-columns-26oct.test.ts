@@ -8,7 +8,7 @@ import { kg, ms, values } from '../../../packages/domain/test/fixtures';
 import { apply, logCmd, setsFor, startFixture, BENCH } from '../../../packages/domain/test/session-fixture';
 import { boxTextRoom, PREVIOUS_FONT_FLOOR, setColumns, textEms, textFits, VALUE_FONT_FLOOR, type SetColumnsInput } from '../src/workout/set-columns';
 import { buildRounds, type RoundRow } from '../src/workout/rounds';
-import { exerciseMenu, rirMenu, roundExerciseMenu } from '../src/workout/exercise-menu';
+import { contextMenuItems, exerciseMenu, rirMenu, roundContextMenu } from '../src/workout/exercise-menu';
 import { AX_FONT_SCALE } from '../src/workout/screen-rules';
 
 /**
@@ -27,6 +27,8 @@ const CASES = {
   perHand: { hasLoad: true, texts: { previous: [`22.5${NBSP}×${NBSP}10`], load: ['22.5'], value: ['10'] } },
   assisted: { hasLoad: true, texts: { previous: [`27.5${NBSP}×${NBSP}8`], load: ['27.5'], value: ['6–8'] } },
   lbHeavy: { hasLoad: true, texts: { previous: [`315${NBSP}×${NBSP}12`], load: ['315'], value: ['12'] } },
+  // (Ben, 1 Nov: a three-digit load clipped in the exercise sheet) A four-digit lb load, as stored and with a separator.
+  lbThousand: { hasLoad: true, texts: { previous: [`1000${NBSP}×${NBSP}3`], load: ['1000', '1,000', '102.5'], value: ['3'] } },
   bodyweight: { hasLoad: false, texts: { previous: ['15', '—'], load: [], value: ['12–15'] } },
   timed: { hasLoad: false, hasRir: false, texts: { previous: ['0:45'], load: [], value: ['0:45'] } },
 } satisfies Record<string, Case>;
@@ -168,10 +170,10 @@ describe('the round page source (Ben, 26 Oct)', () => {
 
   it('the header: name, muscles, progress and ⋯ only; Adjust stays in the current exercise’s ⋯', () => {
     expect(table).not.toContain('p.adjust}');
-    // (Ben, 31 Oct) The trimmed round menu keeps Adjust on the current exercise, last before Skip.
-    const menu = roundExerciseMenu({ canSwap: true, doNext: false, moveToEnd: false, plates: false, adjust: true });
-    expect(menu.options.at(-3)).toBe('Adjust');
-    expect(menu.actionAt(menu.options.length - 3)).toBe('adjust');
+    // (Ben, 1 Nov) The round menu keeps Adjust on the current exercise, last before Skip.
+    const items = contextMenuItems(roundContextMenu({ canSwap: true, moves: { up: false, down: false, first: false, toEnd: false }, plates: false, adjust: true }));
+    expect(items.at(-2)?.action).toBe('adjust');
+    expect(items.at(-1)?.action).toBe('skip_exercise');
     expect(exerciseMenu(true, false, {}).options).not.toContain('Adjust');
   });
 });
