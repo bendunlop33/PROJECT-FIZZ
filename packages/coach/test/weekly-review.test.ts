@@ -53,18 +53,17 @@ const facts = weeklyFacts(input);
 const ctx = { facts, templates, painFlagged: new Set<string>(), prefix: 'r1', taken: [] };
 
 describe('weekly review: the claim check on the coach’s words (rule 6)', () => {
-  // (Ben, 1 Nov) Muscle's range is approved V4's 6–10 (it was 6–20).
   it('numbers code gave pass; a wrong number hides its sentence whole', () => {
     const r = checkWeeklyReview(
       {
         verdict: 'Solid week, 2 of 3 sessions.',
-        lines: ['Bench press est. 1RM is up to 114 kg.', 'Chest had 3 sets against a 6–10 range.', 'You ran 1 run this week.', 'Squat hit 130 kg.', 'Bench 1RM 120 kg.', 'You trained 5 sessions.', 'Back is 20% down.'],
+        lines: ['Bench press est. 1RM is up to 114 kg.', 'Chest had 3 sets against a 6–20 range.', 'You ran 1 run this week.', 'Squat hit 130 kg.', 'Bench 1RM 120 kg.', 'You trained 5 sessions.', 'Back is 20% down.'],
         tweaks: [],
       },
       ctx,
     );
     expect(r.verdict).toBe('Solid week, 2 of 3 sessions.');
-    expect(r.lines).toEqual(['Bench press est. 1RM is up to 114 kg.', 'Chest had 3 sets against a 6–10 range.', 'You ran 1 run this week.']);
+    expect(r.lines).toEqual(['Bench press est. 1RM is up to 114 kg.', 'Chest had 3 sets against a 6–20 range.', 'You ran 1 run this week.']);
     expect(r.hidden).toEqual(['Squat hit 130 kg.', 'Bench 1RM 120 kg.', 'You trained 5 sessions.', 'Back is 20% down.']);
   });
 

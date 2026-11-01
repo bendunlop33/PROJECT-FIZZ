@@ -21,7 +21,7 @@ import { isSetCountable } from '../exclusions';
 import { e1rmConventionAllowed, estimateOneRepMax, roundEstimate } from '../progress/e1rm';
 import { planDaysDoneThisWeek, plannedRepsOf, planWeekOf, pausedInWeek, type PlanWeekDay } from '../progress/plan-tracker';
 import { toProgressSession } from '../progress/projection';
-import { addMuscleSets, directRange, leadMuscleGroup, MUSCLE_SET_RANGES, type MuscleSetTotals } from '../progress/muscle-sets';
+import { addMuscleSets, directRange, leadMuscleGroup, MUSCLE_FLAG_CEILING, MUSCLE_SET_RANGES, type MuscleSetTotals } from '../progress/muscle-sets';
 import { isInHistory } from '../session/deletion';
 import { toMs } from '../time';
 import type { HealthDailyValue } from '../health';
@@ -71,14 +71,15 @@ export const WEEKLY_REVIEW = {
 const W = WEEKLY_REVIEW;
 
 /**
- * Weekly direct working sets per muscle group by goal: approved rule 1 / V4 (Muscle 6–10; Strength's other groups
- * 4–10), reconciled with the plan Muscles screen (Ben, 1 Nov). `both` reads the muscle band. The range a group is
- * judged against is `directRange` (priority groups 10–20; 4–8 when other lifts already cover ≥ 6 assisted sets).
+ * Weekly direct working sets per muscle group by goal (playbook-v1 rule 1 / volume-by-frequency V4; Coaching
+ * knowledge). The low edge a group is judged against is `directRange` (Muscle 6, 4 when other lifts already cover ≥ 6
+ * assisted sets, 10 for a priority group; Strength 4). The high edge stays where it was: Muscle 20 (the top of the
+ * approved range; no approved rule calls 11–20 too much), Strength 10. `both` uses the muscle band.
  */
 export const WEEKLY_SET_RANGE: Readonly<Record<TrainingGoal, { min: number; max: number }>> = {
-  muscle: { ...MUSCLE_SET_RANGES.muscle },
+  muscle: { min: MUSCLE_SET_RANGES.muscle.min, max: MUSCLE_FLAG_CEILING },
   strength: { ...MUSCLE_SET_RANGES.strength },
-  both: { ...MUSCLE_SET_RANGES.muscle },
+  both: { min: MUSCLE_SET_RANGES.muscle.min, max: MUSCLE_FLAG_CEILING },
 };
 
 // ---------------------------------------------------------------------------
@@ -590,7 +591,7 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
   // The range that applies (V4 as amended, Ben 1 Nov): the plan's assisted sets when there is a plan line, else the week's.
   const rangeOf = (g: MuscleGroup): { min: number; max: number } | null => {
     const r = directRange(input.goal, { priority: priorities.has(g), assisted: (hasPlan ? plannedTotals : doneTotals).get(g)?.assisted ?? 0 });
-    return r === null ? null : { min: r.min, max: r.max };
+    return r === null || input.goal === null ? null : { min: r.min, max: Math.max(r.min, WEEKLY_SET_RANGE[input.goal].max) };
   };
   const order = (g: MuscleGroup): number => {
     const b = builderGroupOfMuscleGroup(g);

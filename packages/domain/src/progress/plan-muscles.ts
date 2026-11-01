@@ -1,6 +1,6 @@
 import type { MuscleGroup } from '@fizz/schemas';
 
-import { addMuscleSets, directMuscleGroup, directRange, muscleSetCredits, muscleStatus, PLAN_MUSCLE_GROUPS, type MuscleCreditInfo, type MuscleRange, type MuscleSetTotals, type MuscleStatus, type VolumeGoal } from './muscle-sets';
+import { MUSCLE_FLAG_CEILING, addMuscleSets, directMuscleGroup, directRange, muscleSetCredits, muscleStatus, overTarget, PLAN_MUSCLE_GROUPS, type MuscleCreditInfo, type MuscleRange, type MuscleSetTotals, type MuscleStatus, type VolumeGoal } from './muscle-sets';
 import { oneDecimal } from './activity';
 import { setsText } from './text';
 
@@ -93,7 +93,7 @@ export function muscleFlags(totals: MuscleSetTotals, g: MuscleGoalInput): Muscle
     const st = muscleStatus(t.direct, r);
     if (st !== 'in') out.push({ group: m, direct: t.direct, assisted: t.assisted, range: r, status: st });
   }
-  const gap = (f: MuscleFlag) => (f.status === 'below' ? f.range.min - f.direct : f.direct - f.range.max);
+  const gap = (f: MuscleFlag) => (f.status === 'below' ? f.range.min - f.direct : f.direct - MUSCLE_FLAG_CEILING);
   return out.sort((a, b) => gap(b) - gap(a) || PLAN_MUSCLE_GROUPS.indexOf(a.group) - PLAN_MUSCLE_GROUPS.indexOf(b.group));
 }
 
@@ -112,7 +112,7 @@ export const PLAN_MUSCLES_COPY = {
   skipped: (n: number) => `${String(n)} ${n === 1 ? 'day' : 'days'} skipped`,
   line: (text: string) => `Muscles · ${text}`,
   /** `Biceps 2/wk · below 4–8` */
-  gap: (f: Pick<MuscleFlag, 'group' | 'direct' | 'range' | 'status'>) => `${f.group} ${setsText(f.direct)}/wk · ${f.status} ${String(f.range.min)}–${String(f.range.max)}`,
+  gap: (f: Pick<MuscleFlag, 'group' | 'direct' | 'range' | 'status'>) => (f.status === 'above' ? `${f.group} ${setsText(f.direct)}/wk · above ${String(MUSCLE_FLAG_CEILING)}` : `${f.group} ${setsText(f.direct)}/wk · ${f.status} ${String(f.range.min)}–${String(f.range.max)}`),
   /** The coach's own offer (rule 3: an offer, never applied): `Biceps only 2 sets a week · Rebalance?` */
   offer: (f: Pick<MuscleFlag, 'group' | 'direct' | 'status'>) => (f.status === 'below' ? `${f.group} only ${setsText(f.direct)} ${f.direct === 1 ? 'set' : 'sets'} a week · Rebalance?` : `${f.group} ${setsText(f.direct)} sets a week · Rebalance?`),
   assisted: (n: number) => `+${setsText(n)} assisted`,
@@ -173,10 +173,11 @@ export interface MuscleBarLook {
   tone: 'in' | 'out' | 'none';
 }
 
-export function muscleBarLook(value: number, range: Pick<MuscleRange, 'min' | 'max'> | null, opts: { scaleMax: number; marker?: number | null; neutral?: boolean }): MuscleBarLook {
+export function muscleBarLook(value: number, range: Pick<MuscleRange, 'min' | 'max'> | null, opts: { scaleMax: number; marker?: number | null; neutral?: boolean; ceiling?: number }): MuscleBarLook {
   const top = Math.max(1, opts.scaleMax);
   const share = (n: number) => Math.max(0, Math.min(1, n / top));
-  const tone = opts.neutral === true || range === null ? 'none' : muscleStatus(value, range) === 'in' ? 'in' : 'out';
+  // Green in range, amber below it (or above the 20-a-week ceiling), neutral above the target but under the ceiling.
+  const tone = opts.neutral === true || range === null ? 'none' : muscleStatus(value, range, opts.ceiling) !== 'in' ? 'out' : overTarget(value, range, opts.ceiling) ? 'none' : 'in';
   return { fill: share(value), band: range === null ? null : { from: share(range.min), to: share(range.max) }, marker: opts.marker == null ? null : share(opts.marker), tone };
 }
 

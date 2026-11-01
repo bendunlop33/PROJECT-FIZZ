@@ -55,7 +55,7 @@ const isBicepsLed = (_s: AppServices, id: string): boolean => {
 };
 
 describe('Plan › Muscles and Rebalance on Ben’s PPL A/B (real SQLite)', () => {
-  it('flags Biceps → Rebalance adds curls to Pull A and Pull B every week, in range, within each day’s minutes → Undo', async () => {
+  it('flags Biceps → Rebalance adds curls to Pull A and Pull B every week (+2, the rest still flagged), within each day’s minutes → Undo', async () => {
     const { s, days } = await bensPlan();
     const pullA = days.get('Pull A') ?? '';
     const pullB = days.get('Pull B') ?? '';
@@ -87,7 +87,8 @@ describe('Plan › Muscles and Rebalance on Ben’s PPL A/B (real SQLite)', () =
     if (card === null) throw new Error('no card');
     const bicepsAdds = card.lines.filter((l) => /^Pull [AB]: \+ /.test(l.text) && /curl/i.test(l.text));
     expect(bicepsAdds.map((l) => l.text.split(':')[0])).toEqual(['Pull A', 'Pull B']);
-    expect(card.bars.find((b) => b.group === 'Biceps')).toMatchObject({ before: 0, statusAfter: 'in' });
+    // +2 per group per proposal (rule 1 / V5): 0 → 2, still below, and shown so.
+    expect(card.bars.find((b) => b.group === 'Biceps')).toMatchObject({ before: 0, after: 2, statusAfter: 'below' });
     expect(card.minutes.every((m) => !m.over)).toBe(true);
     expect(card.canApply).toBe(true);
 
@@ -101,12 +102,13 @@ describe('Plan › Muscles and Rebalance on Ben’s PPL A/B (real SQLite)', () =
 
     const after = await s.planMuscles.muscles();
     for (const name of ['Pull A', 'Pull B']) expect(after?.view.byDay.find((d) => d.name === name)?.chips.find((c) => c.group === 'Biceps')?.sets ?? 0).toBeGreaterThan(0);
-    expect(after?.view.flags.some((f) => f.group === 'Biceps')).toBe(false);
-    expect(after?.view.bars.find((b) => b.group === 'Biceps')?.direct).toBeGreaterThanOrEqual(6);
+    // The rest of the gap stays visible on the bars after Apply.
+    expect(after?.view.flagLines).toContain('Biceps 2/wk · below 6–10');
+    expect(after?.view.bars.find((b) => b.group === 'Biceps')?.direct).toBe(2);
     // Every later week has them too (future weeks read the plan's own version).
     for (const chip of after?.view.chips.filter((c) => c.key !== 'avg') ?? []) {
       const w = await s.planMuscles.muscles(chip.key);
-      expect(w?.view.bars.find((b) => b.group === 'Biceps')?.direct ?? 0).toBeGreaterThanOrEqual(2);
+      expect(w?.view.bars.find((b) => b.group === 'Biceps')?.direct ?? 0).toBe(2);
     }
 
     const undone = await s.planMuscles.undo({ planId: r.planId, expectedVersion: r.version, opId: 'rebalance-undo' });

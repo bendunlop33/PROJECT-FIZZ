@@ -3,7 +3,7 @@ import { EXCLUSION_WORD } from '../exclusions';
 import { deriveWorkoutTitle } from '../session/first-run';
 import { countAxisTicks, countSessions, timeInGym, type LeftOutSession } from './activity';
 import { muscleFrequency, type MuscleInfo } from './muscles';
-import { directRange, PLAN_MUSCLE_GROUPS, type MuscleRange, type VolumeGoal } from './muscle-sets';
+import { directRange, MUSCLE_FLAG_CEILING, PLAN_MUSCLE_GROUPS, type MuscleRange, type VolumeGoal } from './muscle-sets';
 import { muscleBarLook, muscleWhyText, PLAN_MUSCLES_COPY, type MuscleBarLook } from './plan-muscles';
 import { oneDecimal } from './activity';
 import type { ProgressSession } from './projection';
@@ -373,7 +373,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
     assistedText: r.assisted > 0 ? PLAN_MUSCLES_COPY.assisted(r.assisted) : null,
     perWeek: r.directPerWeek === null ? null : perWeekText(r.directPerWeek),
     fraction: maxSets === 0 ? 0 : r.direct / maxSets,
-    look: muscleBarLook(r.direct, ranges[i] ?? null, { scaleMax: maxSets }),
+    look: muscleBarLook(r.direct, ranges[i] ?? null, { scaleMax: maxSets, ceiling: MUSCLE_FLAG_CEILING * weeksIn }),
     why: muscleWhyText(r.label as MuscleGroup, { direct: r.direct, assisted: r.assisted }, ranges[i] ?? null, r.contributors.filter((c) => c.factor === 0.5).slice(0, 3).map((c) => c.name)),
     zero: r.sets === 0 && r.sessions === 0,
     words: `${r.label}, ${countNoun(r.sessions, 'session', 'sessions')}, ${setsWords(r.direct)}${r.assisted > 0 ? `, plus ${setsWords(r.assisted)} assisted` : ''}.`,

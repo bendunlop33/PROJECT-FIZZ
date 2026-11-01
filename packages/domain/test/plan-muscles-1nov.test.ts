@@ -5,6 +5,7 @@ import {
   directMuscleGroup,
   directRange,
   leadMuscleGroup,
+  muscleBarLook,
   muscleFlags,
   muscleFrequency,
   muscleGroupCredits,
@@ -212,17 +213,18 @@ describe('Plan › Muscles view: weeks, deload, lead-in, skips, block average', 
 });
 
 describe('Rebalance (Ben, 1 Nov: holistic)', () => {
-  it('Ben’s PPL A/B: Biceps covered by a superset on the pull days, to the lower edge (4); Back stays in range; no day past its minutes', () => {
+  it('Ben’s PPL A/B: Biceps gets +2 (rule 1 / V5 step) as supersets on the pull days; the rest of the gap stays flagged; Back unchanged; no day past its minutes', () => {
     const res = rebalancePlan({ ...MUSCLE, days: benPpl(), ports });
-    expect(res.flagsAfter).toEqual([]);
+    // 0 → 2 of 4–8: still below, and shown so.
+    expect(res.flagsAfter.map((f) => [f.group, f.direct, f.status])).toEqual([['Biceps', 2, 'below']]);
     const adds = res.ops.filter((o): o is Extract<RebalanceOp, { kind: 'add' }> => o.kind === 'add');
     expect(adds.map((o) => [o.dayIndex, o.exerciseId, o.sets])).toEqual([
-      [1, 'curl', 2],
-      [4, 'curl', 2],
+      [1, 'curl', 1],
+      [4, 'curl', 1],
     ]);
     // Paired with the day's non-competing accessory (the crunch), after the main lift.
     for (const a of adds) expect(a.supersetWith).toBeTruthy();
-    expect(res.after.get('Biceps')?.direct).toBe(4);
+    expect(res.after.get('Biceps')?.direct).toBe(2);
     expect(res.after.get('Back')?.direct).toBe(res.before.get('Back')?.direct);
     for (const d of res.days) expect(rebalanceDayMinutes(d)).toBeLessThanOrEqual(d.minutes ?? Infinity);
     // The new rows go after every main lift.
@@ -247,14 +249,18 @@ describe('Rebalance (Ben, 1 Nov: holistic)', () => {
     expect(res.ops[0]).toMatchObject({ kind: 'swap', fromExerciseId: 'cablerow', toExerciseId: 'chinup' });
   });
 
-  it('an over-range Back is trimmed (never a main lift, never below 2 a row)', () => {
+  it('a Back above 20 direct sets is trimmed to 20 (never a main lift, never below 2 a row); 11–20 is never trimmed', () => {
     const days = [
       day(0, 'Pull A', [r('row', 3, true), r('pulldown', 4), r('cablerow', 4)], 60),
       day(1, 'Pull B', [r('chinup', 3, true), r('pulldown', 4), r('shrug', 3)], 60),
     ];
     const res = rebalancePlan({ ...MUSCLE, days, ports: { ...ports, isolationsFor: () => [] } });
     expect(res.before.get('Back')?.direct).toBe(21);
-    expect(res.after.get('Back')?.direct).toBeLessThanOrEqual(10);
+    expect(res.after.get('Back')?.direct).toBe(20);
+    // 14 Back sets (above the 6–10 target) are neither flagged nor trimmed.
+    const fourteen = rebalancePlan({ ...MUSCLE, days: [day(0, 'Pull', [r('row', 3, true), r('pulldown', 4), r('cablerow', 4), r('shrug', 3)], 90)], ports: { ...ports, isolationsFor: () => [] } });
+    expect(fourteen.flagsBefore.some((f) => f.group === 'Back')).toBe(false);
+    expect(fourteen.ops.filter((o) => o.kind === 'trim' && o.group === 'Back')).toEqual([]);
     expect(res.ops.every((o) => o.kind !== 'trim' || (!['row', 'chinup'].includes(o.exerciseId) && (o.to === 0 || o.to >= 2)))).toBe(true);
     expect(res.ops.some((o) => o.kind === 'trim')).toBe(true);
   });
@@ -266,5 +272,33 @@ describe('Rebalance (Ben, 1 Nov: holistic)', () => {
     for (const d of res.days) expect(rebalanceDayMinutes(d)).toBeLessThanOrEqual(d.minutes ?? Infinity);
     // Honest: still flagged.
     expect(res.flagsAfter.map((f) => f.group)).toEqual(['Biceps']);
+  });
+
+  it('a day with no room frees minutes on that day from a group above its target (never below it), then fits the fill', () => {
+    // Pull A at its cap with Back at 14 (above the 6–10 target): one pulldown set gives room for 1 curl set.
+    const pull = day(0, 'Pull A', [r('row', 3, true), r('pulldown', 4), r('cablerow', 4), r('shrug', 3)], null);
+    const days = [{ ...pull, minutes: rebalanceDayMinutes(pull) }];
+    const res = rebalancePlan({ ...MUSCLE, days, ports: { ...ports, isolationsFor: () => ['curl'] } });
+    const trims = res.ops.filter((o) => o.kind === 'trim');
+    expect(trims.length).toBeGreaterThan(0);
+    expect(res.ops.some((o) => o.kind === 'add' && o.exerciseId === 'curl')).toBe(true);
+    expect(res.after.get('Back')?.direct).toBeGreaterThanOrEqual(10);
+    for (const d of res.days) expect(rebalanceDayMinutes(d)).toBeLessThanOrEqual(d.minutes ?? Infinity);
+  });
+});
+
+describe('the high side (stay inside approved rules)', () => {
+  it('above the target but at most 20 a week: neutral, not flagged; above 20: flagged high', () => {
+    const at14 = new Map([['Chest', { direct: 14, assisted: 0 }]]) as Parameters<typeof muscleFlags>[0];
+    expect(muscleFlags(at14, MUSCLE).some((f) => f.group === 'Chest')).toBe(false);
+    const at22 = new Map([['Chest', { direct: 22, assisted: 0 }]]) as Parameters<typeof muscleFlags>[0];
+    const f = muscleFlags(at22, MUSCLE).find((x) => x.group === 'Chest');
+    expect(f?.status).toBe('above');
+    expect(PLAN_MUSCLES_COPY.gap(f ?? (undefined as never))).toBe('Chest 22/wk · above 20');
+    expect(planMusclesLine(muscleFlags(at14, MUSCLE).filter((x) => x.group === 'Chest'), 'muscle')).toBe('Muscles · all in range');
+    expect(muscleBarLook(14, { min: 6, max: 10 }, { scaleMax: 22 }).tone).toBe('none');
+    expect(muscleBarLook(8, { min: 6, max: 10 }, { scaleMax: 22 }).tone).toBe('in');
+    expect(muscleBarLook(4, { min: 6, max: 10 }, { scaleMax: 22 }).tone).toBe('out');
+    expect(muscleBarLook(22, { min: 6, max: 10 }, { scaleMax: 22 }).tone).toBe('out');
   });
 });

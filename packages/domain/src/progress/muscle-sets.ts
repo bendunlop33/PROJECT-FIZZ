@@ -138,8 +138,21 @@ export function directRange(goal: VolumeGoal | null, opts: { priority: boolean; 
 
 export type MuscleStatus = 'below' | 'in' | 'above';
 
-export function muscleStatus(direct: number, range: Pick<MuscleRange, 'min' | 'max'>): MuscleStatus {
-  return direct < range.min ? 'below' : direct > range.max ? 'above' : 'in';
+/**
+ * (Ben's coordinator, 1 Nov: stay inside approved rules) Rule 1's ranges are targets: no approved rule says a group
+ * above 10 is too much. A group is flagged high only above **20** direct sets a week, the top of the approved Muscle
+ * range (V4: priority groups 10–20). Between the range's top and 20 the bar is neutral and nothing is flagged.
+ */
+export const MUSCLE_FLAG_CEILING = 20;
+
+/** `below` the range, `above` the flag ceiling (20 a week; `ceiling` for a longer window), else `in`. */
+export function muscleStatus(direct: number, range: Pick<MuscleRange, 'min' | 'max'>, ceiling: number = MUSCLE_FLAG_CEILING): MuscleStatus {
+  return direct < range.min ? 'below' : direct > Math.max(range.max, ceiling) ? 'above' : 'in';
+}
+
+/** Above the range's top but not flagged (up to the ceiling): the bar shows neutral. */
+export function overTarget(direct: number, range: Pick<MuscleRange, 'min' | 'max'>, ceiling: number = MUSCLE_FLAG_CEILING): boolean {
+  return direct > range.max && muscleStatus(direct, range, ceiling) === 'in';
 }
 
 /** The groups a plan's bars show (the 10 groups Ben listed; Forearms isn't a weekly-volume group, D5). */

@@ -25,7 +25,7 @@ describe('unchanged by the one muscle count', () => {
     expect(pbRange({ ...a, effort: 'standard', priorities: [], other: [] }, 'Chest')).toEqual([8, 14]);
   });
 
-  it('the weekly review’s base bands are approved V4 (Muscle 6–10, Strength 4–10)', () => {
-    expect(WEEKLY_SET_RANGE).toEqual({ muscle: { min: 6, max: 10 }, strength: { min: 4, max: 10 }, both: { min: 6, max: 10 } });
+  it('the weekly review’s bands keep their high edge (Muscle 20, Strength 10)', () => {
+    expect(WEEKLY_SET_RANGE).toEqual({ muscle: { min: 6, max: 20 }, strength: { min: 4, max: 10 }, both: { min: 6, max: 20 } });
   });
 });

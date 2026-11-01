@@ -43,7 +43,7 @@ describe('Plan › Muscles', () => {
     await r.press('Rebalance');
     await r.waitFor((t) => t.includes('Apply changes'), 'the Rebalance card');
     expect(r.text()).toMatch(/Pull A: \+ [^|]*curl/i);
-    expect(r.text()).toMatch(/Biceps 0 → \d+/);
+    expect(r.text()).toContain('Biceps 0 → 2');
     expectHealthy(r);
     await r.unmount();
   });

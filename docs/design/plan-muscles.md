@@ -45,9 +45,14 @@ Approved playbook rule 1 / V4 (`docs/training-guides/README.md` rule 1 "Revised 
 | General fitness (a builder plan's Fitness focus) | 4–10 |
 | No goal | none: no range, no flags |
 
+**High side (1 Nov, staying inside approved rules):** rule 1's ranges are targets; no approved rule says above 10 is
+too much. So bars go amber and flags fire only **below** the range, or **above 20** direct sets a week (the top of the
+approved Muscle range, `MUSCLE_FLAG_CEILING`). Between the range's top and 20 the bar is neutral and nothing is
+flagged. The weekly review keeps its high edge as before (Muscle 20, Strength 10); its low edge follows the table.
+
 The goal is the training profile's; with none, a builder plan's focus (Balanced reads as `both`). Priorities are a
 builder plan's picks (`Arms` → Biceps and Triceps); Ben has none now. `WEEKLY_SET_RANGE` (the weekly review) is
-reconciled to these: Muscle was 6–20 (a Proposal reading), now 6–10.
+reconciled on its low edge only (its high edge stays 20 / 10).
 
 ## 4. No lost functionality: every reader, before → after
 
@@ -58,25 +63,27 @@ reconciled to these: Muscle was 6–20 (a Proposal reading), now 6–10.
 | Monthly recap muscles | V1 this month vs last | **direct** this month vs last (same comparison); `assisted` kept on the row and in its words; a helper-only group stays listed |
 | `muscleGroupCredits` (exercise filter chips) | primary groups | unchanged (moved to `muscle-sets.ts`) |
 | `leadMuscleGroup` (weekly review, Progress › Reviews tracker) | lead group | unchanged (moved to `muscle-sets.ts`) |
-| Weekly review sets per muscle, planned vs done, marks, wording | direct, range 6–20 Muscle | same counts and marks; range per group from `directRange` (6–10, 4–8 covered) |
+| Weekly review sets per muscle, planned vs done, marks, wording | direct, range 6–20 Muscle | same counts, marks and high edge (20); low edge per group from `directRange` (6, 4 covered, 10 priority) |
 | `workoutGroups` / `workoutGroupsOf` (Up next, plan-day matching, D19 ticks) | first primary group | untouched |
 | `pbRange`, `PB_EFFORT` (builder bands, rates) | builder's own | untouched |
 
-Tests changed (and why): `packages/domain/test/weekly-review.test.ts` (2) and `packages/coach/test/weekly-review.test.ts`
-(1): Muscle's range 6–20 → approved 6–10. `packages/domain/test/progress.test.ts` check 15: Triceps from bench now reads
+Tests changed (and why): `packages/domain/test/progress.test.ts` check 15: Triceps from bench now reads
 `0 sets, plus 2 sets assisted` (it asserted the ½ number as the primary display; `sets` is still 2).
-`apps/mobile/test/plan-adapt.test.ts`: the coach's plan context gains `muscles`. Pins for what didn't change:
-`packages/domain/test/muscle-count-pins-1nov.test.ts` (Up next / plan-day groups, builder bands, review bands).
+`apps/mobile/test/plan-adapt.test.ts`: the coach's plan context gains `muscles`. The weekly review tests are back to
+their original 6–20. Pins for what didn't change: `packages/domain/test/muscle-count-pins-1nov.test.ts` (Up next /
+plan-day groups, builder bands, review bands).
 
 ## 5. Rebalance (one proposal for the whole plan)
 
 `rebalancePlan` (`packages/domain/src/plan-builder/rebalance.ts`), the same engine for Plan › Muscles and the coach's
 check. Every candidate is simulated on the whole plan and taken only if its group gets closer to range and **no other
-group leaves its range**. Order (Ben, 1 Nov): trim an overshoot (never a main lift, never below 2 sets a row) → swap
+group leaves its range**. Order (Ben, 1 Nov): trim an overshoot **above 20** (never a main lift, never below 2 sets a
+row; a day with no room for a gap fill may also give up sets of a group above its target on that day, never below the
+target) → swap
 an accessory for a catalogue alternative (no time added) → a new isolation superset with a non-competing accessory
 (no shared muscle group, after the last main lift) → straight sets last. New work goes to the group's own split days
-(`PRESET_SPLITS`: Biceps with Back on the pull days), at most two days, split evenly, sized to the **lower edge** of the
-range. Never past a day's minutes: estimate = 10 + 3 min per set (approved rule 1), 2.3 inside a superset (the
+(`PRESET_SPLITS`: Biceps with Back on the pull days), at most two days, split evenly, towards the **lower edge** of the
+range but at most **+2 sets per group per proposal** (rule 1 / V5); the rest of the gap stays amber after Apply. Never past a day's minutes: estimate = 10 + 3 min per set (approved rule 1), 2.3 inside a superset (the
 builder's pace); a day already at its cap gets nothing added. Never a not-preferred exercise, one with a pain flag,
 one the gym can't do, or one Ben took out of that day himself.
 
@@ -98,11 +105,10 @@ change); Undo is `undoPlanEdit`. Builder plans only (a coach plan has no weeks t
 
 1. **Frequency.** "Each group ≥ 2×/week" is in playbook v1's profile table (rule G, graded Practice), not a numbered
    approved rule. Rebalance doesn't enforce it; it only spreads new sets over the group's own split days.
-2. **V5 step size.** V5 says add 1–2 sets per group at a time; Rebalance sizes to the range's lower edge (Ben, 1 Nov),
-   which can be +4. Ben's 1 Nov rule wins here; V5 should say so.
+2. **Step size.** Rebalance adds at most +2 sets per group per proposal (V5), so Ben's "Biceps 0 → 4" takes two
+   Rebalances; whether a gap fill to the lower edge counts as V5 "growth" is for Ben.
 3. **Swaps rarely help direct sets**: alternatives of a back exercise lead with Back, so a swap mostly moves the range
    (more assisted), not the direct count. Superset first is what usually happens.
-4. **A 6-day PPL often reads Chest/Back "high"** at Muscle's 6–10 (non-priority). That is V4 as approved; picking
-   priorities (10–20) is the way to say otherwise.
+4. **The high side** is flagged only above 20 until Ben approves an upper bound for non-priority groups.
 5. Progress's range on a month is the weekly range × the window's weeks.
 6. Not run on Ben's iPhone.
