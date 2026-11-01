@@ -302,8 +302,9 @@ function make(status: RenderedStatus, text: string, spoken: string, detail: stri
 
 const plural = (n: number, one: string): string => `${String(n)} ${n === 1 ? one : `${one}s`}`;
 
+/** The record's failure as a clause: its own closing full stop goes, so `…: X. Nothing changed.` never reads `X..` (Ben, 1 Nov). */
 function failureOr(record: ActionRecord, fallback: string): string {
-  return record.failure ?? fallback;
+  return (record.failure ?? fallback).replace(/\s*\.+\s*$/, '');
 }
 
 /** `Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8 · after Bench press.`; cardio: `Added Rowing machine: 1 × 5,000 m.` */
@@ -380,6 +381,11 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
         return make(status, text, speakable(text));
       }
       if (st === 'stale') return make(status, "Couldn't change today's workout: your workout moved on. Nothing changed.", 'Your workout moved on. Nothing changed.');
+      // (Ben, 1 Nov, build 500) Already as asked: a plain line, not a failure.
+      if (d.noop === true) {
+        const text = `${failureOr(record, 'Already as asked')}.`;
+        return make(status, text, speakable(text));
+      }
       const text = `Couldn't change today's workout: ${failureOr(record, 'the change was refused')}. Nothing changed.`;
       return make(status, text, speakable(text));
     }
@@ -552,6 +558,11 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       // (Ben, 30 Oct) Every day of his plan with it, always a proposal: the card has each day, Apply and Undo.
       if (st === 'proposed') {
         // (Ben, 31 Oct) An add: what goes in and where, in every day listed.
+        // (Ben, 1 Nov) A day edit: the day, then its changes.
+        if (d.op === 'day_edit') {
+          const text = `Every week: ${d.days.map((x) => x.routineName).join(', ')}: ${(d.dayEdit?.lines ?? []).join('; ')}.`;
+          return make(status, text, speakable(text));
+        }
         const what = d.op === 'add' ? `+ ${d.addName}${d.afterName == null ? '' : ` after ${d.afterName}`}` : `${d.removeName ?? 'Exercise'} → ${d.addName}`;
         const text = `Every week: ${what} (${d.days.map((x) => x.routineName).join(', ')}).`;
         return make(status, text, speakable(text));

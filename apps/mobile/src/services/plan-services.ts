@@ -1,4 +1,6 @@
 import {
+  applyPlanDayEdit,
+  type PlanDayEdit,
   localDateOf,
   activePause,
   activePin,
@@ -1126,6 +1128,57 @@ export function createPlanServices(deps: PlanServicesDeps) {
         if (r.status === 'stale') return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
         const learned = r.status === 'written' && e.load != null && e.toExerciseId !== null ? ((await deps.learnTyped?.(e.toExerciseId, e.load).catch(() => null)) ?? null) : null;
         return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed', learned };
+      } catch {
+        return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      }
+    },
+
+    /**
+     * (Ben, 1 Nov, build 500) `Every week` for a whole plan-day change (`propose_plan_day_edit`'s Apply): its order and
+     * each named row's working sets, reps, target RPE, main mark and a load Ben named (`applyPlanDayEdit`). The same
+     * versioned write and `update_routine` record as `editDayEveryWeek` (its action ID from the op ID, rule 5); Undo is
+     * the routine's revert. Done workouts never change (rule 2).
+     */
+    async editDayRowsEveryWeek(req: { routineId: string; expectedVersion: number; opId: string; edit: PlanDayEdit; lines: readonly string[] }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: 'stale' | 'missing' | 'failed'; message: string }> {
+      try {
+        const p = await owner();
+        if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        const repos = deps.store().repos;
+        const actionId = deriveId(`plan-day-every-week:${req.opId}`);
+        const prior = await repos.coach.getAction(actionId).catch(() => null);
+        const current = await repos.routines.get(req.routineId).catch(() => null);
+        if (current === null || current.ownerId !== p.id || isDeleted(current)) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        if (prior !== null) return { ok: true, actionId, routine: current, duplicate: true };
+        if (current.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const rowIds = new Set(current.exercises.map((x) => x.id));
+        if ((req.edit.order !== null && (req.edit.order.length !== rowIds.size || req.edit.order.some((id) => !rowIds.has(id)))) || req.edit.rows.some((r) => !rowIds.has(r.rowId))) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        // A typed weight is in the exercise's own load convention (per dumbbell, plates, stack…).
+        const of = await exerciseOf();
+        const edit: PlanDayEdit = { ...req.edit, rows: req.edit.rows.map((r) => (r.load === undefined ? r : { ...r, load: { ...r.load, convention: of(current.exercises.find((x) => x.id === r.rowId)?.exerciseId ?? '')?.defaultLoadConvention ?? r.load.convention } })) };
+        const at = deps.now();
+        const touched = new Set(edit.rows.map((r) => r.rowId));
+        const exercises = applyPlanDayEdit(current.exercises, edit, (rowId, n) => deriveId(`plan-day-edit-set:${req.opId}:${rowId}:${String(n)}`)).map((x) => (touched.has(x.id) ? { ...x, structureChangedAtUtc: at.utc } : x));
+        if (JSON.stringify(exercises) === JSON.stringify([...current.exercises].sort((a, b) => a.order - b.order))) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const next: Routine = { ...current, exercises, version: current.version + 1, updatedAtUtc: at.utc, lastOpId: req.opId };
+        const action: ActionRecord = {
+          actionId,
+          turnId: null,
+          opId: req.opId,
+          status: 'committed',
+          author: 'ben',
+          detail: { kind: 'update_routine', routineId: current.id, routineName: current.name, changes: (req.lines.length === 0 ? ['Day changed'] : req.lines).slice(0, 20).map((text) => ({ change: 'edit', text: text.slice(0, 200) })), before: current, versionBefore: current.version, versionAfter: next.version, draft: null },
+          failure: null,
+          reason: null,
+          evidenceRefs: [],
+          guardNotes: [],
+          entityVersions: [{ entity: 'routine', id: current.id, before: current.version, after: next.version }],
+          undoneBy: null,
+          createdAt: at,
+        };
+        const r = await repos.drafts.applyRoutineChange({ ownerId: p.id, routine: next, expectedRoutineVersion: current.version, action, at });
+        if (r.status === 'missing') return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        if (r.status === 'stale') return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed' };
       } catch {
         return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
       }

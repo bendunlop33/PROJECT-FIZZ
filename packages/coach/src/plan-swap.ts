@@ -96,6 +96,50 @@ export function createPlanAddExecutor(deps: PlanAddDeps): CoachExecutors {
   return { propose_plan_add: propose };
 }
 
+/** (Ben, 1 Nov) What the app's port is asked to check for `propose_plan_day_edit`; `load` only a weight Ben named. */
+export interface PlanDayEditRequest {
+  day: string;
+  order: string[] | null;
+  changes: { exercise: string; sets: number | null; reps: { min: number; max: number } | null; targetRpe: number | null; main: boolean | null; load: number | null }[];
+}
+
+export interface PlanDayEditDeps {
+  store: CoachWriteStore;
+  /** Reads the plan day and checks the change; nothing is written here. */
+  prepare(req: PlanDayEditRequest): Promise<PlanSwapPrepared>;
+}
+
+/**
+ * (Ben, 1 Nov, build 500) One plan day's order and its exercises' sets, reps, RPE and main mark, every week: always a
+ * proposal (rule 3) with the day's before/after; a refusal is one honest line on a card, and the coach is told it.
+ */
+export function createPlanDayEditExecutor(deps: PlanDayEditDeps): CoachExecutors {
+  const propose: ToolExecutor = async (call, ctx): Promise<ToolResult> => {
+    if (call.tool !== 'propose_plan_day_edit') throw new TypeError(call.tool);
+    const a = call.args;
+    const req: PlanDayEditRequest = {
+      day: a.day.trim(),
+      order: a.order === null ? null : a.order.map((x) => x.trim()),
+      changes: a.changes.map((c) => ({ exercise: c.exercise.trim(), sets: c.workingSets, reps: c.reps === null ? null : { min: Math.min(c.reps.min, c.reps.max), max: Math.max(c.reps.min, c.reps.max) }, targetRpe: c.targetRpe, main: c.main, load: namedLoadIn(c.load, ctx.benWords) })),
+    };
+    const r = await deps.prepare(req).catch((): PlanSwapPrepared => ({ kind: 'refused', line: 'Not proposed: the plan couldn’t be read just now.' }));
+    if (r.kind === 'refused') {
+      const detail: ActionDetail = { kind: 'propose_plan_swap', op: 'day_edit', planId: NO_PLAN, planName: '', addId: (a.changes[0]?.exercise ?? a.day).slice(0, 64) || 'day', addName: a.day.slice(0, 120) || 'Plan day', days: [] };
+      const refused = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord(ctx, detail, { status: 'rejected', failure: r.line.slice(0, 200), reason: a.reason.slice(0, 240) }) });
+      if (refused.status === 'conflict') throw new Error('Could not record the refused plan day edit');
+      return { kind: 'action', record: refused.action, replayed: refused.status === 'replayed' };
+    }
+    const saved = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord(ctx, r.detail, { status: 'proposed', reason: a.reason.slice(0, 240) }) });
+    if (saved.status === 'conflict') throw new Error('Could not record the plan day edit');
+    return { kind: 'action', record: saved.action, replayed: saved.status === 'replayed' };
+  };
+  return { propose_plan_day_edit: propose };
+}
+
+/** Sent when `propose_plan_day_edit` is offered (a plan in use). */
+export const PLAN_DAY_EDIT_LINE =
+  'When the order of a plan day tires a later lift ("Push B is shoulder-led and bench comes after", "pre-fatigued"), or Ben asks for a day to be different from now on, call propose_plan_day_edit with a concrete fix for that day: reorder it (the tired lift earlier), or keep the order and make the later lift secondary (main false, fewer sets, a lower targetRpe), or swap it with propose_plan_swap. YOUR DATA plan.inUse.days has each day’s exercises with their sets and reps. It is a proposal Ben applies with Undo: never say it changed, never answer in text only.';
+
 /** Sent when `propose_plan_add` is offered (a plan in use). */
 export const PLAN_ADD_LINE =
   'To add an exercise to days of Ben’s plan from now on ("add curls to my pull days", "fix the plan too" after you found a gap), call propose_plan_add: the days by their names in YOUR DATA plan.inUse.days, `after` the exercise it goes after (null: at the end), your sets and reps. It is a proposal Ben applies with Undo: never say it changed.';

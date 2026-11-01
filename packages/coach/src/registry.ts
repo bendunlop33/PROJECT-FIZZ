@@ -443,6 +443,21 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Add one exercise to chosen days of the plan in use, every week from now on ("add curls to my pull days", "fix the plan too" after a gap you found). add: its catalogueId (YOUR DATA plan.inUse.days, build.usable, addable or find_exercises). days: the plan day names from plan.inUse.days it goes into. after: the catalogueId it goes straight after in each day that has it (null: at the end). workingSets and reps: yours. load: only a weight Ben named this turn, in his words; else null (the app plans it from his history). Never an exercise in YOUR DATA notPreferred. Ben sees each day before and after and taps Apply; never say it changed. reason: one short line.',
   },
   {
+    // (Ben, 1 Nov, build 500: "Push B should be slightly different" after the shoulder press tired the bench) One plan
+    // day's order and its exercises' sets, reps, target RPE and main mark, every week. Offered whenever a plan is in use,
+    // in every chat (ADR 0039). Always a proposal with the day's before/after, Apply and Undo (rule 3); versioned (rule 5).
+    name: 'propose_plan_day_edit',
+    effect: 'propose',
+    writes: ['proposal'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Change the order or sets of one day of your plan, as a proposal you apply or undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Change one day of the plan in use every week from now on ("Push B should be different, my shoulders are pre-fatigued for bench", "put bench first on Push B", "fewer sets of bench on Push B"). day: the plan day name from YOUR DATA plan.inUse.days. order: every exercise of that day once (catalogueIds), in the new order; null to keep it. changes: per exercise (catalogueId in that day) its workingSets, reps, targetRpe and main (false: a secondary lift after a pre-fatiguing one); null keeps that part. load: only a weight Ben named this turn, else null (the app plans loads from his history). Ben sees the day before and after and taps Apply; never say it changed. reason: one short line.',
+  },
+  {
     // (Ben, 20 Oct) Offered only while Lift targets is on (the app wires the executor then). Applies with Undo
     // only when Ben asked; code decides from his words (`liftTargetAsked` in the turn), else nothing is saved.
     name: 'set_lift_target',
@@ -626,6 +641,7 @@ export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   pause_plan: 'planInUse',
   propose_plan_swap: 'planInUse',
   propose_plan_add: 'planInUse',
+  propose_plan_day_edit: 'planInUse',
   think_harder: 'lightTurn',
   set_lift_target: 'liftTargetsOn',
   propose_workout_edit: 'builderDraft',
@@ -648,7 +664,7 @@ export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['
 export interface WithheldTool {
   name: CoachToolName;
   /** For `Why?` → `Not used`. */
-  reason: 'turn_kind' | 'no_target' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off';
+  reason: 'turn_kind' | 'no_target' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off' | 'plan_work';
 }
 
 export interface TurnRegistry {

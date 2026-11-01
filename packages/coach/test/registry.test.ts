@@ -434,6 +434,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Build a multi-day plan you ask for, as a proposal you apply or undo",
               "Swap one exercise in every day of your plan, as a proposal you apply or undo",
               "Add an exercise to days of your plan, as a proposal you apply or undo",
+              "Change the order or sets of one day of your plan, as a proposal you apply or undo",
               "Set a lift target you ask for, with Undo",
               "Change your workout before you start it, as a change you apply or skip",
               "Set up today’s workout from what you say (day, length, main lift), with Undo on Set up",
