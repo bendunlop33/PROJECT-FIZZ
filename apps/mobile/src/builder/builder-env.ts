@@ -39,6 +39,7 @@ import {
   type SlotLoadInput,
   type SubstituteContext,
   restDefaultsOf,
+  warmupPrefsOf,
 } from '@fizz/domain';
 import { builderFocusOf, isBrowseOnlyFocus, isBuilderStrength, type BuilderFocus, type BuilderGroup, type CheckedOnRecord, type EquipmentInstance, type Exercise, type PainFlag, type PlanDraft, type Routine, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
@@ -154,6 +155,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     // (Ben, 27 Oct) Profile › Training › `Rest when short on time`: how far Time may shorten accessory rests.
     const warmupsOpt = warmups === 'full' ? {} : { warmups };
     const fitRestOpt = trainingProfile?.fitRestLevel === undefined ? {} : { fitRestLevel: trainingProfile.fitRestLevel };
+    // (Ben, 1 Nov) Warm-up settings: Your workout plans its warm-ups with them, as Today and Start do.
+    const warmupPrefsOpt = trainingProfile?.warmups === undefined ? {} : { warmupPrefs: warmupPrefsOf(trainingProfile) };
     // (Ben, 28 Oct) Profile › Rest times: every default rest here (rests, Time, the drafts saved) is Ben's.
     const restDefaultsOpt = trainingProfile?.restDefaultsS === undefined ? {} : { restDefaultsS: restDefaultsOf(trainingProfile) };
     // (Ben, 23 Oct: plan length = block 1) The applied plan's deload week (derived from its Apply, pauses and his plan
@@ -343,14 +346,14 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     };
     // (Ben, 28 Oct) The one estimate at Ben's own pace (his logged times; the defaults until there are some).
     const pace = await learnedPace(deps.store(), p.id, nowMs);
-    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...warmupsOpt, ...fitRestOpt, ...restDefaultsOpt, ...paceOpt(pace) };
+    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...warmupsOpt, ...warmupPrefsOpt, ...fitRestOpt, ...restDefaultsOpt, ...paceOpt(pace) };
     // Prehab and forearm work (cuff, shins, wrist curls) is in `candidates` for Swap / Add, never picked by itself.
     const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id) && !isBrowseOnlyFocus(info(id)?.angle ?? ''));
     // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree
     // (an lb bar's mass in kg, the slot's convention).
     const checkedOn = (id: string): CheckedOnRecord | null => checkedOnOf(loads(id));
     // (WU1–WU12) With the gym's load inputs, saving plans every slot's warm-ups for its place in the workout.
-    const codec: DraftCodecContext = { info, loads, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...warmupsOpt, ...restDefaultsOpt };
+    const codec: DraftCodecContext = { info, loads, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...warmupsOpt, ...warmupPrefsOpt, ...restDefaultsOpt };
     return {
       ctx,
       pool,

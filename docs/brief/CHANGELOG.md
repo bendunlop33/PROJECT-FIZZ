@@ -1091,3 +1091,9 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Today:** a change re-plans only warm-ups not yet done, in the open workout (one Undo) and Today's draft (planned again when it's next built).
 - **Open:** not run on Ben's iPhone. The lb bar ladder reads "45 then multiples of 20 lb" as bar + 20 lb steps (65, 85, 105…), the easy-to-load reading; Ben to confirm.
 
+## 2026-11-01: Lock Screen: warm-ups can be logged, and the Live Activity no longer cuts text off (Ben, 1 Nov, build 500)
+
+- **Ben's words:** "I can't log warm up sets in lock screen"; his screenshot showed `Until 19:53 · Dumbb…` and `Target 32 kg eac…` cut off.
+- **Warm-up Log:** a warm-up with a load of its own logs it (`Log warm-up 40 kg × 8`); one whose load the planner derives gets the app's warm-up lookup (catalogue facts, main lifts, warm-up settings) with the workout, so the Lock Screen shows and logs exactly the step the workout shows. Same set-version check as working sets (stale taps ignored). With no rest between warm-ups the Ready card with Log shows straight after the previous log; with a short rest the Ready drawn for the rest's end has it.
+- **Layout:** line 1 `⏱ Rest · DB shoulder press` full width with a smaller timer top right; `Next  32 kg ea × 6–8` (`Next  warm-up 40 kg × 8`; Ben's draft keeps `your edit`, the coach's `coach target`); `Last  35 kg ea × 7`; −15 s / +15 s / Skip or Log. `Until 19:53` dropped (still read by VoiceOver). `ea`, not `each` (VoiceOver says `each`). Every line one line, shrinking to fit. Ready uses the same lines (`Ready · DB shoulder press`, set number top right); the Dynamic Island's expanded view follows.
+- **Open:** the widget layout isn't render-tested here; needs a check on Ben's iPhone.

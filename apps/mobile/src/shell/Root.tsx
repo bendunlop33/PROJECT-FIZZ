@@ -17,6 +17,7 @@ import { createLastTimeCache } from '../live-activity/last-time-cache';
 import { lockScreenButtonsAvailable, lockScreenLogAvailable, nativeTapQueue, onLockScreenTap } from '../live-activity/tap-bridge';
 import { createLockScreenTapHandler } from '../live-activity/taps';
 import { activePainFlagged } from '../workout/pain-flagged';
+import { activeWarmupLookup } from '../workout/warmup-lookup';
 import { lazyLiveActivityPort } from '../live-activity/lazy-port';
 import type { LiveActivityPort } from '../live-activity/controller';
 import { guardNativeCall, guardNativeCallAsync, launchSafeMode, nativeFeatureOn, nativeFeaturePause, setLaunchGuardBackground } from '../diagnostics/crash-capture';
@@ -96,6 +97,8 @@ function guardedHealthPort(): HealthPort | null {
 const liveActivity = createLiveActivityController(guardedLiveActivityPort, {
   tz: () => deviceTimeZone(),
   painFlagged: activePainFlagged,
+  // (Ben, 1 Nov) Warm-ups with no load of their own get the planner's step and a Log.
+  warmup: activeWarmupLookup,
   lastComparable: (state) => lastTime.lookup(state),
   buttons: lockScreenButtonsAvailable,
   log: lockScreenLogAvailable,

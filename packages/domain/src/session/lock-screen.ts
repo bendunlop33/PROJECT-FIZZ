@@ -1,15 +1,16 @@
 import type { SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { clockText } from '../calendar';
-import { formatDuration, NBSP } from '../display';
+import { formatDuration, NBSP, valuesText } from '../display';
 import { toMs } from '../time';
 import { equipmentOfRow } from './equipment-snapshot';
-import { blockSets, partRootOf } from './gym-switch';
+import { blockSets } from './gym-switch';
 import { shownTargetShortIn, type CarryOptions } from './carry';
 import { STALE_SESSION_MS } from './recovery';
-import { getSessionPhase } from './view';
+import { getSessionPhase, prefillDraft } from './view';
 import { isPastLog } from './time-shift';
 import { lastTimeOfSet, type LastComparableLookup } from './last-time';
 import { lockScreenLogOf, type LockScreenLog } from './lock-screen-log';
+import { compactEachText, compactExerciseName } from '../today-v2/workout-list';
 
 /**
  * What the Lock Screen Live Activity shows for the workout in progress
@@ -24,13 +25,19 @@ export type LockScreenState = 'ready' | 'resting' | 'working' | 'paused';
 export interface LockScreenContent {
   sessionId: string;
   state: LockScreenState;
-  /** `Rest` · `Ready · Push A` · `Work · Plank` · `Paused · Push A`. */
+  /**
+   * `Rest · DB shoulder press` · `Ready · DB shoulder press` · `Work · Plank` · `Paused · Push A` (Ben, 1 Nov: the
+   * exercise in its compact name, full width, the timer top right).
+   */
   title: string;
-  /** `Until 18:42 · Bench press · Set 3 of 4 next`; '' when none. */
+  /**
+   * Rest and Ready (Ben, 1 Nov): the next set, `Next  32 kg ea × 6–8` (a warm-up: `Next  warm-up 40 kg × 8`); Work
+   * and Paused: their own line. '' when none.
+   */
   line1: string;
-  /** `Target 100 kg × 6–8` (Ben's own draft: `Your edit 105 kg × 6–8`); '' when none. */
+  /** Rest and Ready (Ben, 1 Nov): `Last  35 kg ea × 7` for the next set; '' when there's no like-for-like set (or history isn't read yet). */
   line2: string;
-  /** (Ben, 26 Oct) The next set last time: `Last 100 kg × 7`; '' when there's no like-for-like set (or history isn't read yet). */
+  /** Unused by Rest and Ready since 1 Nov (kept for the widget's props); '' . */
   line3: string;
   /**
    * The running rest the Lock Screen's −15 s / +15 s / Skip act on (Ben, 26 Oct),
@@ -90,10 +97,28 @@ function nextSetOf(state: SessionAggregate, setId: string | null, carry: CarryOp
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
   // Ben's own draft values over the target, as the table shows them (B2, 21 Oct): `Your edit 105 kg × 6–8`.
   // A load carried from his last logged set reads the same (21 Oct).
-  const target = shownTargetShortIn(state, set, ex, { convention: ex.loadConvention, equipment: eq }, carry);
+  // (Ben, 1 Nov) A warm-up with no load of its own shows the planner's step (the app's lookup), as the workout does.
+  const step = set.setType === 'warmup' && set.planned.load === null && set.draft === null && carry.warmup !== undefined ? prefillDraft(state, set.id, [], { painFlagged: carry.painFlagged, warmup: carry.warmup }).values : null;
+  const target = step !== null && step.load !== null && step.reps !== null ? `Target ${valuesText(step, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq })}` : shownTargetShortIn(state, set, ex, { convention: ex.loadConvention, equipment: eq }, carry);
   const perSide = target !== null && ex.laterality === 'unilateral' && set.planned.reps !== null ? `${NBSP}per side` : '';
   return { set, ex, number: own.indexOf(set) + 1, of: own.length, target: target === null ? null : `${target}${perSide}` };
 }
+
+/**
+ * (Ben, 1 Nov) `Next  32 kg ea × 6–8` from the target text (`Target …`): the values, `ea` for per hand; a warm-up
+ * reads `Next  warm-up 40 kg × 8`; Ben's draft `Next  your edit …`, the coach's `Next  coach target …`. '' when none.
+ */
+function nextLine(next: NextSet | null): string {
+  if (next === null || next.target === null) return '';
+  // Ben's own draft and the coach's change still say so (review B2, rule 3): `Next  your edit 105 kg × 6–8`.
+  const m = /^(Target|Your edit|Coach target)[\s\u00a0]+/.exec(next.target);
+  const word = m?.[1] === 'Your edit' ? 'your edit ' : m?.[1] === 'Coach target' ? 'coach target ' : '';
+  const values = compactEachText(m === null ? next.target : next.target.slice(m[0].length));
+  return `Next${LINE_GAP}${next.set.setType === 'warmup' ? 'warm-up ' : ''}${word}${values}`;
+}
+
+/** Two spaces between the line's word and its values (`Next  …`, `Last  …`). */
+const LINE_GAP = '  ';
 
 /** `100 kg × 6–8` read aloud: `100 kilograms, 6 to 8 reps`. */
 function valueWords(text: string): string {
@@ -116,18 +141,18 @@ export function lockScreenTargetWords(target: string): string {
   return `${word} ${valueWords(rest)}`;
 }
 
-/** `Last 100 kg × 7` read aloud: ` Last time 100 kilograms, 7 reps.`; '' for none. */
-function lastWords(line3: string): string {
-  return line3 === '' ? '' : ` Last time ${valueWords(line3.replace(/^Last /, ''))}.`;
+/** `Last  100 kg × 7` read aloud: ` Last time 100 kilograms, 7 reps.`; '' for none. */
+function lastWords(line: string): string {
+  return line === '' ? '' : ` Last time ${valueWords(line.replace(/^Last\s+/, '').replace(/\bea\b/g, 'each'))}.`;
 }
 
-/** `Last 100 kg × 7` for the next set; '' when none. */
+/** `Last  100 kg × 7` (`ea` for per hand) for the next set; '' when none. */
 function lastLine(state: SessionAggregate, setId: string | null, opts: LockScreenOptions): string {
   if (setId === null || opts.lastComparable === undefined) return '';
   const set = state.sets.find((s) => s.id === setId);
   if (!set) return '';
   const last = lastTimeOfSet(state, setId, opts.lastComparable(set.sessionExerciseId));
-  return last === null ? '' : `Last ${last.text}`;
+  return last === null ? '' : `Last${LINE_GAP}${compactEachText(last.text)}`;
 }
 
 /**
@@ -161,31 +186,25 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
       const t = state.restTimer;
       const endMs = t ? toMs(t.deadlineUtc) : nowMs + phase.remainingMs;
       const startMs = t ? Math.min(toMs(t.startedAtUtc), endMs) : nowMs;
-      const until = `Until ${clockText(endMs, tz)}`;
       const next = nextSetOf(state, phase.nextSetId, carry);
-      const doneEx = t ? state.sets.find((s) => s.id === t.setId)?.sessionExerciseId : undefined;
-      let line1 = until;
-      let nextWords = '';
-      if (next !== null) {
-        // Another part of the same exercise (after a gym switch) is still the same exercise.
-        const sameExercise = doneEx !== undefined && partRootOf(state.exercises, doneEx) === partRootOf(state.exercises, next.ex.id);
-        line1 = sameExercise ? `${until} · ${next.ex.exerciseName} · Set ${String(next.number)} of ${String(next.of)} next` : `${until} · Next: ${next.ex.exerciseName}`;
-        nextWords = sameExercise ? ` Next: ${next.ex.exerciseName}, set ${String(next.number)} of ${String(next.of)}` : ` Next: ${next.ex.exerciseName}`;
-      }
+      // (Ben, 1 Nov) `Rest · DB shoulder press` (the next set's exercise), `Next  …`, `Last  …`; the clock time is gone.
+      const title = next === null ? 'Rest' : `Rest · ${compactExerciseName(next.ex.exerciseName)}`;
+      const line1 = nextLine(next);
+      const line2 = lastLine(state, phase.nextSetId, carry);
       const target = next?.target ?? '';
-      const line3 = lastLine(state, phase.nextSetId, carry);
+      const nextWords = next === null ? '' : ` Next: ${next.ex.exerciseName}, ${next.set.setType === 'warmup' ? 'warm-up' : `set ${String(next.number)} of ${String(next.of)}`}`;
       return {
         ...base,
         state: 'resting',
-        title: 'Rest',
+        title,
         line1,
-        line2: target,
-        line3,
+        line2,
+        line3: '',
         countdown: { startMs, endMs },
         // Only a running rest has buttons (a paused one is the Paused state).
         rest: t?.status === 'running' ? { timerId: t.id, timerVersion: t.version } : null,
         side: '',
-        a11y: `Rest, until ${clockText(endMs, tz)}.${nextWords}${target === '' ? '' : `, ${lockScreenTargetWords(target)}`}${nextWords === '' && target === '' ? '' : '.'}${lastWords(line3)}`,
+        a11y: `Rest, until ${clockText(endMs, tz)}.${nextWords}${target === '' ? '' : `, ${lockScreenTargetWords(target)}`}${nextWords === '' && target === '' ? '' : '.'}${lastWords(line2)}`,
         staleAtMs: endMs,
         afterRest: afterRestOf(state, endMs, tz, carry),
       };
@@ -238,22 +257,24 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
     case 'all_done':
     case 'finished': {
       const next = phase.kind === 'ready' ? nextSetOf(state, phase.setId, carry) : null;
-      const line1 = next === null ? (phase.kind === 'all_done' ? 'All sets done' : '') : `${next.ex.exerciseName} · Set ${String(next.number)} of ${String(next.of)}`;
       const target = next?.target ?? '';
       // (Ben, 27 Oct) Everything logged (from the Lock Screen too): Finish is in the app.
       const finish = phase.kind === 'all_done' ? 'Open GymSmarter to finish' : '';
-      const line3 = phase.kind === 'ready' ? lastLine(state, phase.setId, carry) : '';
+      // (Ben, 1 Nov) As Rest: `Ready · DB shoulder press`, `Next  …`, `Last  …`; the set number on the right (`Set 3`).
+      const line1 = next === null ? (phase.kind === 'all_done' ? 'All sets done' : '') : nextLine(next);
+      const line2 = phase.kind === 'ready' ? lastLine(state, phase.setId, carry) : finish;
+      const where = next === null ? '' : `${next.ex.exerciseName} · ${next.set.setType === 'warmup' ? 'Warm-up' : `Set ${String(next.number)} of ${String(next.of)}`}`;
       return {
         ...base,
         state: 'ready',
-        title: `Ready · ${name}`,
+        title: next === null ? `Ready · ${name}` : `Ready · ${compactExerciseName(next.ex.exerciseName)}`,
         line1,
-        line2: target === '' ? finish : target,
-        line3,
+        line2,
+        line3: '',
         log: phase.kind === 'ready' ? lockScreenLogOf(state, phase.setId, carry) : null,
         countdown: null,
         side: next === null ? '' : `Set ${String(next.number)}`,
-        a11y: `Ready, ${name}.${line1 === '' ? '' : ` ${line1}.`}${target === '' ? '' : ` ${lockScreenTargetWords(target)[0]?.toUpperCase() ?? ''}${lockScreenTargetWords(target).slice(1)}.`}${lastWords(line3)}${finish === '' ? '' : ` ${finish}.`}`,
+        a11y: `Ready, ${name}.${where === '' ? (line1 === '' ? '' : ` ${line1}.`) : ` ${where}.`}${target === '' ? '' : ` ${lockScreenTargetWords(target)[0]?.toUpperCase() ?? ''}${lockScreenTargetWords(target).slice(1)}.`}${phase.kind === 'ready' ? lastWords(line2) : ''}${finish === '' ? '' : ` ${finish}.`}`,
         staleAtMs: null,
       };
     }

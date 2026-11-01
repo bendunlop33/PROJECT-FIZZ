@@ -1,4 +1,4 @@
-import { buildLockScreenContent, lockScreenLogTarget, lockScreenTapBase, type LastComparableLookup, type LockScreenContent, type LockScreenLog, type LockScreenState } from '@fizz/domain';
+import { buildLockScreenContent, lockScreenLogTarget, lockScreenTapBase, type LastComparableLookup, type LockScreenContent, type LockScreenLog, type LockScreenState, type WarmupLookup } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import type { NativePause } from '../diagnostics/launch-guard';
@@ -168,6 +168,8 @@ export function createLiveActivityController(
     painFlagged?: () => ReadonlySet<string> | undefined;
     /** Last time per workout row, as read so far (`last-time-cache.ts`). */
     lastComparable?: (state: SessionAggregate) => LastComparableLookup;
+    /** (Ben, 1 Nov) The warm-up planner's lookup for the workout (`activeWarmupLookup`): a warm-up with no load of its own gets the planner's step and a Log. */
+    warmup?: (sessionId: string) => WarmupLookup | undefined;
     /** The −15 s / +15 s / Skip buttons can be delivered on this phone and build (`lock-screen-taps.ts`). */
     buttons?: () => boolean;
     /** (Ben, 27 Oct) `Log` on the Ready state too (`FIZZ_LA_LOG`); only with `buttons`. */
@@ -264,7 +266,8 @@ export function createLiveActivityController(
     applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
     lastState = state;
     const lookup = state === null ? undefined : opts.lastComparable?.(state);
-    const content = state === null ? null : buildLockScreenContent(state, nowMs, opts.tz(state), { painFlagged: opts.painFlagged?.(), ...(lookup === undefined ? {} : { lastComparable: lookup }) });
+    const warmup = state === null ? undefined : opts.warmup?.(state.session.id);
+    const content = state === null ? null : buildLockScreenContent(state, nowMs, opts.tz(state), { painFlagged: opts.painFlagged?.(), ...(lookup === undefined ? {} : { lastComparable: lookup }), ...(warmup === undefined ? {} : { warmup }) });
     const running = listIds();
     const launch = !adopted;
     const before = shown;

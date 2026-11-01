@@ -137,6 +137,7 @@ import {
   type HistoryLike,
   type HistoryWorkout,
   restDefaultsOf,
+  warmupPrefsOf,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import { learnedPace, paceOpt } from './pace';
@@ -1008,6 +1009,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       newKey: (id) => deriveId(`today-slot:${today}:${id}`),
       // (Ben, 23 Oct) The plan's Warm-ups setting (Full / Short / None), as Your workout and Start plan them.
       ...(warmups === 'full' ? {} : { warmups }),
+      // (Ben, 1 Nov) Warm-up settings (Simple warm-up weights, per exercise): Today's draft plans its warm-ups with them.
+      ...(training?.warmups === undefined ? {} : { warmupPrefs: warmupPrefsOf(training) }),
       // (Ben, 27 Oct) `Rest when short on time`, as Your workout's Time.
       ...(training?.fitRestLevel === undefined ? {} : { fitRestLevel: training.fitRestLevel }),
       // (Ben, 28 Oct) Profile › Rest times, as Your workout's: today's drafts, their ~N min and Time use Ben's defaults.
@@ -1533,7 +1536,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
   /** The builder's codec over Today's facts (per-slot state, rests from the rest level, the history each load came from). */
   function codecOf(data: TodaySessionData) {
-    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restDefaultsS === undefined ? {} : { restDefaultsS: data.internal.ctx.restDefaultsS }), ...(data.internal.ctx.warmups === undefined ? {} : { warmups: data.internal.ctx.warmups }) };
+    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restDefaultsS === undefined ? {} : { restDefaultsS: data.internal.ctx.restDefaultsS }), ...(data.internal.ctx.warmups === undefined ? {} : { warmups: data.internal.ctx.warmups }), ...(data.internal.ctx.warmupPrefs === undefined ? {} : { warmupPrefs: data.internal.ctx.warmupPrefs }) };
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {

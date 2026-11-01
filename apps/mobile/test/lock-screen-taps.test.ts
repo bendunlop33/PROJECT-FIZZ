@@ -159,7 +159,7 @@ describe('Lock Screen: last time for the next set (Ben, 26 Oct)', () => {
     await harness.settle(s);
     const props = fake.props();
     expect(props.state).toBe('resting');
-    expect(plain(props.line3)).toBe('Last 100 kg × 7');
+    expect(plain(props.line2)).toBe('Last  100 kg × 7');
     expect(props.a11y).toContain('Last time 100 kilograms, 7 reps.');
     const [alert] = [...harness.pending.values()];
     expect(plain(alert?.body ?? '')).toMatch(/^Bench press · set \d · target .+ · last 100 kg × 7$/);
@@ -175,7 +175,7 @@ describe('Lock Screen: last time for the next set (Ben, 26 Oct)', () => {
     const gymId = await setUpGym(harness, s);
     await startAndLogFirstWorkingSet(harness, s, gymId);
     await harness.settle(s);
-    expect(fake.props().line3).toBe('');
+    expect(fake.props().line2).toBe('');
     expect([...harness.pending.values()][0]?.body).not.toContain('last');
   });
 });

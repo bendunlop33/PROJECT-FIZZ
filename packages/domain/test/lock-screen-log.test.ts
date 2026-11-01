@@ -110,10 +110,11 @@ describe('lockScreenLogOf: what Log shows and saves', () => {
     expect(log?.values.load).toEqual(lb(225));
   });
 
-  it('per-hand dumbbells say `each` and log the per-dumbbell load', () => {
+  it('per-hand dumbbells say `ea` (Ben, 1 Nov; VoiceOver `each`) and log the per-dumbbell load', () => {
     const s = afterWarmup(benchAs(startFixture().state, 'per_hand', 'kg', 22.5), kg(10, 'per_hand'));
     const log = lockScreenLogOf(s, bench(s).b1.id);
-    expect(plain(log?.label)).toBe('Log 22.5 kg each × 8');
+    expect(plain(log?.label)).toBe('Log 22.5 kg ea × 8');
+    expect(log?.a11y).toBe('Log 22.5 kilograms each, 8 reps');
     expect(log?.values.load).toEqual(kg(22.5, 'per_hand'));
   });
 
@@ -135,15 +136,18 @@ describe('lockScreenLogOf: what Log shows and saves', () => {
     expect(log?.values.load).toEqual(bench(s).b1.planned.load);
   });
 
-  it('no Log for a timed set, a missing value, a warm-up without a draft, paused, or a finished set', () => {
+  it('no Log for a timed set, a missing value, a warm-up with no load and no planner lookup, paused, or a finished set', () => {
     const { state } = startFixture();
     const hang = setsFor(state, HANG)[0];
     expect(lockScreenLogOf(state, hang?.id ?? null)).toBeNull();
-    // The warm-up (its load is the warm-up planner's) …
-    expect(lockScreenLogOf(state, bench(state).warm.id)).toBeNull();
-    // … unless Ben saved its values.
-    const drafted = apply(state, { type: 'save_draft', at: at(5), setId: bench(state).warm.id, values: values(kg(60), 10) });
-    expect(plain(lockScreenLogOf(drafted, bench(state).warm.id)?.label)).toBe('Log 60 kg × 10');
+    // (Ben, 1 Nov) A warm-up with a load of its own logs it, labelled as a warm-up …
+    expect(plain(lockScreenLogOf(state, bench(state).warm.id)?.label)).toBe('Log warm-up 60 kg × 10');
+    // … one whose load the planner derives needs the app's lookup …
+    const noWarmLoad = { ...state, sets: state.sets.map((x) => (x.id === bench(state).warm.id ? { ...x, planned: { ...x.planned, load: null } } : x)) };
+    expect(lockScreenLogOf(noWarmLoad, bench(state).warm.id)).toBeNull();
+    // … and Ben's saved values win.
+    const drafted = apply(state, { type: 'save_draft', at: at(5), setId: bench(state).warm.id, values: values(kg(50), 10) });
+    expect(plain(lockScreenLogOf(drafted, bench(state).warm.id)?.label)).toBe('Log warm-up 50 kg × 10');
     const s = afterWarmup();
     const paused = apply(s, { type: 'pause', at: at(95), opId: 'p' });
     expect(lockScreenLogOf(paused, bench(s).b1.id)).toBeNull();
@@ -369,3 +373,68 @@ describe('lockScreenLoggedNotice: `Set 1 logged from Lock Screen · Undo` on the
     expect(b1).toBeDefined();
   });
 });
+
+describe('warm-ups from the Lock Screen (Ben, 1 Nov: "I can\u2019t log warm up sets in lock screen")', () => {
+  /** The bench warm-up with no load of its own (a coach-built workout's): the planner derives it from the working load. */
+  function noWarmLoad(): SessionAggregate {
+    const { state } = startFixture();
+    const id = bench(state).warm.id;
+    return { ...state, sets: state.sets.map((x) => (x.id === id ? { ...x, planned: { ...x.planned, load: null } } : x)) };
+  }
+  const lookup = { warmup: { facts: () => ({ mechanic: 'compound' as const, movementPattern: 'horizontal_push', primaryMuscles: ['chest'], measurement: 'reps' }), main: () => true } };
+
+  it('with the app’s planner lookup, Ready offers `Log warm-up …` with the step the workout shows', () => {
+    const s = noWarmLoad();
+    const c = buildLockScreenContent(s, ms(1), TZ, lookup);
+    expect(c?.state).toBe('ready');
+    expect(plain(c?.line1)).toMatch(/^Next {2}warm-up \d+(\.\d+)? kg × \d+$/);
+    const log = c?.log;
+    expect(log).not.toBeNull();
+    expect(plain(log?.label)).toMatch(/^Log warm-up \d+(\.\d+)? kg × \d+$/);
+    // The same values the active set view prefills for the warm-up.
+    const view = buildActiveSetView({ aggregate: s, nowMs: ms(1), gymName: null, previous: {}, painFlagged: new Set(), edits: null, warmupFacts: { [BENCH]: lookup.warmup.facts() }, mainExerciseIds: new Set([BENCH]) });
+    expect(plain(view?.primary.label)).toBe(plain(log?.label).replace('Log warm-up ', 'Log '));
+  });
+
+  it('the tap logs exactly those values, once, and a newer set version is ignored (rule 5)', () => {
+    const s = noWarmLoad();
+    const log = lockScreenLogOf(s, bench(s).warm.id, lookup);
+    const tap = parseLockScreenLog(lockScreenLogTarget(log ?? (null as never)));
+    if (tap === null) throw new Error('no tap');
+    const d = lockScreenLogCommand(s, tap, at(10), ms(9));
+    if (d.kind !== 'dispatch') throw new Error(d.reason);
+    expect(d.command.values).toEqual(log?.values);
+    expect(d.command.expectedSetVersion).toBe(bench(s).warm.version);
+    const done = expectOk(reduceSession(s, d.command)).state;
+    expect(lockScreenLogCommand(done, tap, at(11), ms(10))).toEqual({ kind: 'ignore', reason: 'already_logged' });
+    // Edited in the app since (a new version): the old picture is stale.
+    const edited = { ...s, sets: s.sets.map((x) => (x.id === tap.setId ? { ...x, version: x.version + 1 } : x)) };
+    expect(lockScreenLogCommand(edited, tap, at(10), ms(9))).toEqual({ kind: 'ignore', reason: 'stale' });
+  });
+
+  it('warm-ups with no rest between them: Ready with Log straight after the previous log', () => {
+    const { state } = startFixture();
+    const warm = bench(state).warm;
+    // A second warm-up before the working sets, with no rest after the first.
+    const second: WorkoutSet = { ...warm, id: '00000000-0000-4000-8000-00000000f001', index: warm.index, planned: { ...warm.planned, load: kg(80) } };
+    const zero = { ...state, sets: [...state.sets.map((x) => (x.id === warm.id ? { ...x, rest: { ...x.rest, seconds: 0 } } : x.sessionExerciseId === warm.sessionExerciseId && x.index >= warm.index ? { ...x, index: x.index + 1 } : x)), second].map((x) => (x.id === second.id ? { ...x, index: warm.index + 1 } : x)) };
+    const s = apply(zero, logCmd(warm.id, values(kg(60), 10), 30));
+    const c = buildLockScreenContent(s, ms(30), TZ);
+    expect(c?.state).toBe('ready');
+    expect(c?.countdown).toBeNull();
+    expect(plain(c?.log?.label)).toBe('Log warm-up 80 kg × 10');
+  });
+
+  it('a short rest between warm-ups: the Ready drawn for the rest’s end has the next warm-up’s Log', () => {
+    const { state } = startFixture();
+    const warm = bench(state).warm;
+    const second: WorkoutSet = { ...warm, id: '00000000-0000-4000-8000-00000000f002', planned: { ...warm.planned, load: kg(80) } };
+    const two = { ...state, sets: [...state.sets.map((x) => (x.sessionExerciseId === warm.sessionExerciseId && x.id !== warm.id ? { ...x, index: x.index + 1 } : x)), { ...second, index: warm.index + 1 }] };
+    const s = apply(two, logCmd(warm.id, values(kg(60), 10), 30));
+    const c = buildLockScreenContent(s, ms(31), TZ);
+    expect(c?.state).toBe('resting');
+    expect(plain(c?.line1)).toBe('Next  warm-up 80 kg × 10');
+    expect(plain(c?.afterRest?.log?.label)).toBe('Log warm-up 80 kg × 10');
+  });
+});
+

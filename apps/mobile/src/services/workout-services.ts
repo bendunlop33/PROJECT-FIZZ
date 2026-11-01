@@ -396,6 +396,7 @@ import type {
 
 import { undoOpId, undoRefusalText } from '../workout/undo-op';
 import { setActivePainFlagged } from '../workout/pain-flagged';
+import { setActiveWarmupLookup } from '../workout/warmup-lookup';
 import { planRefs, readPlanLinks } from './plan-day-links';
 import { planWeekDayOf, planWeekdaysNow, planWeekWorkoutOf } from './plan-week';
 import { deloadAtOf } from './deload-at';
@@ -3337,12 +3338,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         builderInfo[id] = e === null ? null : builderInfoOf(e);
         if (e?.defaultLoadConvention === 'bodyweight') bodyweightExercises.add(id);
       }
+      const mainExerciseIds = await draftMains(p.id, aggregate);
+      // (Ben, 1 Nov) The Lock Screen's warm-up Log plans warm-ups as this workout's views do.
+      if (aggregate.session.status === 'active') setActiveWarmupLookup(aggregate.session.id, warmupLookupOf({ aggregate, ...warmupInputOf({ builderInfo, mainExerciseIds, warmupPrefs: warmupPrefsOf(training) }) }));
       return {
         exerciseInfo,
         bodyweightExercises,
         worksLines,
         builderInfo,
-        mainExerciseIds: await draftMains(p.id, aggregate),
+        mainExerciseIds,
         aggregate,
         gymName: gym?.name ?? null,
         gymNames: await gymNamesOf(p.id),
