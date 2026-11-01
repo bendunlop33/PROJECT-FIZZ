@@ -23,7 +23,7 @@ describe('a no-op today edit (Ben, 1 Nov)', () => {
     if (load == null) throw new Error('no planned load');
     const p = plan(s, pending.map((x) => ({ op: 'set' as const, setId: x.id, target: { load, reps: null, rpe: null } })));
     expect(p).toMatchObject({ status: 'rejected', already: true });
-    expect(p.status === 'rejected' ? p.failure.replace(/ /g, ' ') : '').toBe(`Already ${String(load.value)} ${load.unit}`);
+    expect(p.status === 'rejected' ? p.failure.replace(/\u00a0/g, ' ') : '').toBe(`Already ${String(load.value)} ${load.unit}`);
   });
 
   it('a real change is not `already`', () => {
@@ -36,7 +36,7 @@ describe('a no-op today edit (Ben, 1 Nov)', () => {
   });
 
   it('the line: one value, reps only, kg and lb, per-hand dumbbells, mixed', () => {
-    const nb = (t: string) => t.replace(/ /g, ' ');
+    const nb = (t: string) => t.replace(/\u00a0/g, ' ');
     expect(nb(alreadyLine([{ asked: { load: kg(100), reps: null }, convention: 'total' }, { asked: { load: kg(100), reps: null }, convention: 'total' }]))).toBe('Already 100 kg');
     expect(nb(alreadyLine([{ asked: { load: lb(225), reps: { min: 5, max: 5 } }, convention: 'total' }]))).toBe('Already 225 lb × 5');
     expect(nb(alreadyLine([{ asked: { load: kg(22.5, 'per_hand'), reps: null }, convention: 'per_hand' }]))).toBe('Already 22.5 kg each');
