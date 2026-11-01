@@ -3,7 +3,8 @@ import { daysBetween } from '../calendar';
 import { normaliseExclusions } from '../exclusions';
 import { muscleRegion } from '../session/first-run';
 import { oneDecimal } from './activity';
-import { MUSCLE_GROUPS, muscleGroupOf, type MuscleGroup } from './muscle-groups';
+import { MUSCLE_GROUPS, muscleGroupOf } from './muscle-groups';
+import { muscleGroupCredits, muscleSetCredits } from './muscle-sets';
 import type { ProgressExercise, ProgressSession, ProgressSet } from './projection';
 import { inRange, type ProgressWindow } from './window';
 
@@ -41,20 +42,6 @@ export function hardSetKind(set: Pick<ProgressSet, 'setType' | 'rpe' | 'rir'>): 
 
 export function isHardSet(set: Pick<ProgressSet, 'setType' | 'rpe' | 'rir'>): boolean {
   return hardSetKind(set) === 'hard';
-}
-
-/** Body-part credit per set: 1 for a group among the primary muscles, ½ for one among the helpers; the higher one wins (PG26). */
-export function muscleGroupCredits(info: Pick<MuscleInfo, 'primaryMuscles' | 'secondaryMuscles'>): Map<MuscleGroup, 1 | 0.5> {
-  const out = new Map<MuscleGroup, 1 | 0.5>();
-  for (const m of info.primaryMuscles) {
-    const g = muscleGroupOf(m);
-    if (g !== null) out.set(g, 1);
-  }
-  for (const m of info.secondaryMuscles ?? []) {
-    const g = muscleGroupOf(m);
-    if (g !== null && !out.has(g)) out.set(g, 0.5);
-  }
-  return out;
 }
 
 export const SPLIT_ORDER: readonly ExerciseSplit[] = ['push', 'pull', 'legs', 'core', 'other'];
@@ -154,10 +141,19 @@ export interface FrequencyRow {
   label: string;
   /** Workouts in the window with at least 1 counted set for this group. */
   sessions: number;
-  /** Sets in the window, in halves (`8.5`). */
+  /** Sets in the window, in halves (`8.5`): playbook V1's count, always `direct + assisted`. */
   sets: number;
-  /** Sets a week, one decimal; windows of 14 days or more only. */
+  /**
+   * (Ben, 1 Nov: option C) Sets counted in full for this group (each exercise's lead group, `muscleSetCredits`):
+   * what the row shows first. Push/Pull/Legs: every set (`sets`).
+   */
+  direct: number;
+  /** The rest of V1's credit (another primary group 1, a helper ½), shown as `+7 assisted`. Push/Pull/Legs: 0. */
+  assisted: number;
+  /** Sets a week, one decimal; windows of 14 days or more only (V1's count). */
   perWeek: number | null;
+  /** Direct sets a week, one decimal; windows of 14 days or more only. */
+  directPerWeek: number | null;
   /** The latest date this group got at least 1 counted set, up to the window's end; null = never. */
   lastTrained: string | null;
   /** Largest total first. */
@@ -214,6 +210,7 @@ export interface MuscleFrequency {
 
 interface GroupTally {
   halves: number;
+  directHalves: number;
   sessions: number;
   lastTrained: string | null;
   contributors: Map<string, FrequencyContributor>;
@@ -233,7 +230,7 @@ export function muscleFrequency(
   grouping: ProgressGrouping,
 ): MuscleFrequency {
   const keys: readonly string[] = grouping === 'body_part' ? MUSCLE_GROUPS : SPLIT_ORDER;
-  const tallies = new Map<string, GroupTally>(keys.map((k) => [k, { halves: 0, sessions: 0, lastTrained: null, contributors: new Map(), muscles: new Map() }]));
+  const tallies = new Map<string, GroupTally>(keys.map((k) => [k, { halves: 0, directHalves: 0, sessions: 0, lastTrained: null, contributors: new Map(), muscles: new Map() }]));
   let warmups = 0;
   let easy = 0;
   let markedCounted = 0;
@@ -247,6 +244,17 @@ export function muscleFrequency(
       const info = exercises.get(exerciseId);
       c = grouping === 'body_part' ? (info ? muscleGroupCredits(info) : new Map()) : new Map([[exerciseSplit(info), 1 as const]]);
       creditsCache.set(exerciseId, c);
+    }
+    return c;
+  };
+  // (Ben, 1 Nov) Which of a set's credit is direct (its lead group): Push/Pull/Legs counts every set direct.
+  const directCache = new Map<string, Set<string>>();
+  const directOf = (exerciseId: string): Set<string> => {
+    let c = directCache.get(exerciseId);
+    if (c === undefined) {
+      const info = exercises.get(exerciseId);
+      c = grouping === 'body_part' ? new Set([...muscleSetCredits(info)].filter(([, x]) => x.direct === 1).map(([g]) => g)) : new Set(creditsOf(exerciseId).keys());
+      directCache.set(exerciseId, c);
     }
     return c;
   };
@@ -265,6 +273,7 @@ export function muscleFrequency(
     if (s.date > window.to) continue;
     const inWindow = inRange(s.date, window);
     const halvesToday = new Map<string, number>();
+    const directToday = new Map<string, number>();
     const muscleHalvesToday = new Map<string, number>();
     for (const ex of s.exercises) {
       // Cardio (19 Oct) isn't strength work: its minutes on a rower don't count as sets for any muscle.
@@ -285,8 +294,10 @@ export function muscleFrequency(
         }
       }
       if (n.hard === 0) continue;
+      const direct = directOf(ex.exerciseId);
       for (const [key, credit] of credits) {
         halvesToday.set(key, (halvesToday.get(key) ?? 0) + n.hard * credit * 2);
+        if (direct.has(key)) directToday.set(key, (directToday.get(key) ?? 0) + n.hard * 2);
         if (!inWindow) continue;
         const t = tallies.get(key);
         if (t === undefined) continue;
@@ -315,7 +326,10 @@ export function muscleFrequency(
     for (const [key, halves] of halvesToday) {
       const t = tallies.get(key);
       if (t === undefined) continue;
-      if (inWindow) t.halves += halves;
+      if (inWindow) {
+        t.halves += halves;
+        t.directHalves += directToday.get(key) ?? 0;
+      }
       // A session counts for a group with at least 1 counted set that day (PG26), so sets ≥ sessions always.
       if (halves >= 2) {
         if (inWindow) t.sessions += 1;
@@ -326,8 +340,9 @@ export function muscleFrequency(
 
   const weeks = (daysBetween(window.from, window.to) + 1) / 7;
   const rows: FrequencyRow[] = keys.map((key) => {
-    const t = tallies.get(key) ?? { halves: 0, sessions: 0, lastTrained: null, contributors: new Map<string, FrequencyContributor>(), muscles: new Map<string, { halves: number; sessions: number }>() };
+    const t = tallies.get(key) ?? { halves: 0, directHalves: 0, sessions: 0, lastTrained: null, contributors: new Map<string, FrequencyContributor>(), muscles: new Map<string, { halves: number; sessions: number }>() };
     const sets = t.halves / 2;
+    const direct = t.directHalves / 2;
     const contributors = [...t.contributors.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
     const subRows: FrequencySubRow[] =
       grouping === 'body_part'
@@ -341,7 +356,10 @@ export function muscleFrequency(
       label: grouping === 'body_part' ? key : SPLIT_LABEL[key as ExerciseSplit],
       sessions: t.sessions,
       sets,
+      direct,
+      assisted: sets - direct,
       perWeek: window.days >= 14 ? oneDecimal(sets / weeks) : null,
+      directPerWeek: window.days >= 14 ? oneDecimal(direct / weeks) : null,
       lastTrained: t.lastTrained,
       contributors,
       subRows,

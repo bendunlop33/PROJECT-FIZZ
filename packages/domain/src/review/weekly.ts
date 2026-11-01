@@ -2,7 +2,6 @@ import type { HistoryLike } from '../history-summary';
 import {
   BUILDER_GROUPS,
   builderGroupOfMuscleGroup,
-  isBuilderStrength,
   muscleGroupOf,
   type ActivityKind,
   type BuilderMuscleInfo,
@@ -22,6 +21,7 @@ import { isSetCountable } from '../exclusions';
 import { e1rmConventionAllowed, estimateOneRepMax, roundEstimate } from '../progress/e1rm';
 import { planDaysDoneThisWeek, plannedRepsOf, planWeekOf, pausedInWeek, type PlanWeekDay } from '../progress/plan-tracker';
 import { toProgressSession } from '../progress/projection';
+import { addMuscleSets, directRange, leadMuscleGroup, MUSCLE_SET_RANGES, type MuscleSetTotals } from '../progress/muscle-sets';
 import { isInHistory } from '../session/deletion';
 import { toMs } from '../time';
 import type { HealthDailyValue } from '../health';
@@ -71,14 +71,14 @@ export const WEEKLY_REVIEW = {
 const W = WEEKLY_REVIEW;
 
 /**
- * Weekly working sets per muscle group by goal (playbook-v1 rule 1 / volume-by-frequency V4; Coaching
- * knowledge). Muscle: priority groups 10–20, the rest 6–10, so a group is low under 6 and high over 20;
- * strength: other groups 4–10. `both` uses the muscle band. [Proposal, for Ben to confirm the bands.]
+ * Weekly direct working sets per muscle group by goal: approved rule 1 / V4 (Muscle 6–10; Strength's other groups
+ * 4–10), reconciled with the plan Muscles screen (Ben, 1 Nov). `both` reads the muscle band. The range a group is
+ * judged against is `directRange` (priority groups 10–20; 4–8 when other lifts already cover ≥ 6 assisted sets).
  */
 export const WEEKLY_SET_RANGE: Readonly<Record<TrainingGoal, { min: number; max: number }>> = {
-  muscle: { min: 6, max: 20 },
-  strength: { min: 4, max: 10 },
-  both: { min: 6, max: 20 },
+  muscle: { ...MUSCLE_SET_RANGES.muscle },
+  strength: { ...MUSCLE_SET_RANGES.strength },
+  both: { ...MUSCLE_SET_RANGES.muscle },
 };
 
 // ---------------------------------------------------------------------------
@@ -230,6 +230,8 @@ export interface WeeklyReviewInput {
   /** Profile's days a week; null: not set. */
   aim: number | null;
   goal: TrainingGoal | null;
+  /** (Ben, 1 Nov) Priority muscle groups (a builder plan's picks); absent: none. Their range is 10–20. */
+  priorities?: readonly MuscleGroup[];
   /** Muscles and kind per exercise (catalogue or Ben's own). */
   info: (exerciseId: string) => BuilderMuscleInfo | null;
   /** The lifts Ben chose (or the plan's main lifts), in order; capped at 6. */
@@ -349,16 +351,6 @@ export function weeklyReviewWeek(nowMs: number, tz: string): string {
   const { mondayLocalDate } = localWeekBounds(nowMs, tz);
   const sunday = addDays(mondayLocalDate, 6);
   return nowMs >= localHourUtcMs(sunday, W.sundayEveningHour, tz) ? mondayLocalDate : addDays(mondayLocalDate, -7);
-}
-
-/** The muscle group the builder credits an exercise's sets to: the first primary muscle with a builder group. */
-export function leadMuscleGroup(info: BuilderMuscleInfo | null): MuscleGroup | null {
-  if (info === null || !isBuilderStrength(info)) return null;
-  for (const m of info.primaryMuscles) {
-    const g = muscleGroupOf(m);
-    if (g !== null && builderGroupOfMuscleGroup(g) !== null) return g;
-  }
-  return null;
 }
 
 /** First-primary-muscle groups of a workout (as Up next and the plan count, `workoutGroupsOf`). */
@@ -567,11 +559,15 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
 
   // Sets per muscle: the builder's convention.
   const sets = new Map<MuscleGroup, number>();
+  // (Ben, 1 Nov: option C) The same count's assisted sets, shown behind Why? and deciding the direct range.
+  const doneTotals: MuscleSetTotals = new Map();
+  const plannedTotals: MuscleSetTotals = new Map();
   for (const s of thisWeek) {
     for (const e of s.exercises) {
       const g = leadMuscleGroup(input.info(e.exerciseId));
       const n = e.sets.filter((x) => WORKING.has(x.setType)).length;
       if (g !== null && n > 0) sets.set(g, (sets.get(g) ?? 0) + n);
+      addMuscleSets(doneTotals, input.info(e.exerciseId), n);
     }
   }
   const planned = new Map<MuscleGroup, number>();
@@ -585,17 +581,24 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
       for (const e of t.exercises) {
         const g = leadMuscleGroup(input.info(e.exerciseId));
         if (g !== null && e.workingSets > 0) planned.set(g, (planned.get(g) ?? 0) + e.workingSets);
+        addMuscleSets(plannedTotals, input.info(e.exerciseId), e.workingSets);
       }
     }
   }
-  const range = input.goal === null ? null : WEEKLY_SET_RANGE[input.goal];
+  const priorities = new Set(input.priorities ?? []);
+  const hasPlan = planTemplates.length > 0 && pausedDays === 0;
+  // The range that applies (V4 as amended, Ben 1 Nov): the plan's assisted sets when there is a plan line, else the week's.
+  const rangeOf = (g: MuscleGroup): { min: number; max: number } | null => {
+    const r = directRange(input.goal, { priority: priorities.has(g), assisted: (hasPlan ? plannedTotals : doneTotals).get(g)?.assisted ?? 0 });
+    return r === null ? null : { min: r.min, max: r.max };
+  };
   const order = (g: MuscleGroup): number => {
     const b = builderGroupOfMuscleGroup(g);
     return (b === null ? 99 : BUILDER_GROUPS.indexOf(b)) * 20 + ['Quads', 'Hamstrings', 'Glutes', 'Calves'].indexOf(g);
   };
   const groups: GroupSets[] = [...new Set([...sets.keys(), ...planned.keys()])]
     .sort((a, b) => order(a) - order(b))
-    .map((g) => ({ group: g, sets: sets.get(g) ?? 0, planned: planTemplates.length === 0 || pausedDays > 0 ? null : (planned.get(g) ?? 0), range }));
+    .map((g) => ({ group: g, sets: sets.get(g) ?? 0, planned: planTemplates.length === 0 || pausedDays > 0 ? null : (planned.get(g) ?? 0), range: rangeOf(g) }));
 
   // Lifts Ben chose.
   const targets = new Map(input.liftTargets.map((t) => [t.exerciseId, t]));

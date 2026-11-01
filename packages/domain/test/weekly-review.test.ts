@@ -161,8 +161,9 @@ describe('weekly review facts: edge cases (rule 6: from stored records only)', (
     const templates: ReviewTemplate[] = [{ planId: id(60), routineId: CHEST_DAY, name: 'Chest', version: 3, exercises: [{ exerciseId: BENCH, name: 'Bench', workingSets: 4 }, { exerciseId: DB_PRESS, name: 'DB press', workingSets: 3 }] }];
     const f = weeklyFacts(input({ sessions: [s], plans: [plan()], templates, goal: 'muscle' }));
     expect(f.groups).toEqual([
-      { group: 'Chest', sets: 3, planned: 4, range: { min: 6, max: 20 } },
-      { group: 'Shoulders', sets: 2, planned: 3, range: { min: 6, max: 20 } },
+      // (Ben, 1 Nov) Muscle's range is approved V4's 6–10 (it was 6–20, a Proposal reading).
+      { group: 'Chest', sets: 3, planned: 4, range: { min: 6, max: 10 } },
+      { group: 'Shoulders', sets: 2, planned: 3, range: { min: 6, max: 10 } },
     ]);
     expect(weeklyFacts(input({ sessions: [s], goal: 'strength' })).groups[0]?.range).toEqual({ min: 4, max: 10 });
     expect(weeklyFacts(input({ sessions: [s] })).groups[0]?.range).toBeNull();
@@ -516,7 +517,8 @@ describe('review fixes (b3-wave3 truth and UX reviews, 21 Oct)', () => {
     const r = stored(weeklyReviewFacts(f));
     const card = reviewCardView(r, read(r), '2026-10-19');
     expect(card.facts).toHaveLength(5);
-    expect(card.facts[1]).toMatch(/^Chest: 1 sets ▼ 6–20$/);
+    // (Ben, 1 Nov) Muscle's range is approved V4's 6–10.
+    expect(card.facts[1]).toMatch(/^Chest: 1 sets ▼ 6–10$/);
     expect(card.facts.some((x) => x.includes('no new best in 3 sessions'))).toBe(true);
     expect(card.facts.some((x) => x.includes('est. 1RM'))).toBe(false);
   });
