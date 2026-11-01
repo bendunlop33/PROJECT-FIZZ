@@ -18,6 +18,7 @@ export type ExerciseMenuAction =
   | 'target_rpe'
   | 'add_set'
   | 'swap'
+  | 'make_main'
   | 'do_next'
   | 'move_to_end'
   | 'not_at_gym'
@@ -51,6 +52,8 @@ const TARGET_RPE: MenuItem = { action: 'target_rpe', label: 'Target RIR', destru
 const ADD_SET: MenuItem = { action: 'add_set', label: 'Add set', destructive: false };
 /** Only while the exercise has a pending set (B3: applies at once with Undo). */
 const SWAP: MenuItem = { action: 'swap', label: 'Swap exercise', destructive: false };
+/** (Ben, 1 Nov) Today's main lift is this one (one per day), then `Every week?`. After Swap. */
+const MAKE_MAIN: MenuItem = { action: 'make_main', label: 'Make main lift', destructive: false };
 /** (Ben, 20 Oct; ADR 0029) The gym doesn't have it: marked on the gym, then the swap sheet. */
 const NOT_AT_GYM: MenuItem = { action: 'not_at_gym', label: 'Not at this gym', destructive: false };
 /** (Ben, 19 Oct) Pair it with another exercise, or a second copy of itself; its sets alternate. */
@@ -141,6 +144,8 @@ export interface RoundExerciseMenuOptions {
   canUndoSwap?: boolean;
   /** The current exercise: the coach's `Adjust` chips (the only way to them on the round page). */
   adjust?: boolean;
+  /** (Ben, 1 Nov) `Make main lift` (`mainLiftOffer`): a plan workout's compound that isn't today's main lift. */
+  makeMain?: boolean;
 }
 
 /**
@@ -155,6 +160,7 @@ export function roundExerciseMenu(o: RoundExerciseMenuOptions): ExerciseMenu {
   const c = o.coachChange ?? false;
   return menuOf([
     ...(o.canSwap ? [SWAP] : []),
+    ...(o.makeMain === true ? [MAKE_MAIN] : []),
     ...(o.doNext ? [DO_NEXT] : []),
     ...(o.moveToEnd ? [MOVE_TO_END] : []),
     ADD_SET,

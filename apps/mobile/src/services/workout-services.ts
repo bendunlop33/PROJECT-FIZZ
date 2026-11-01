@@ -342,6 +342,7 @@ import {
   mainFlags,
   type TemplateFitResult,
   followMainLift,
+  pickedMainLift,
   MAIN_LIFT_COPY,
   mainLiftTemplateClash,
 } from '@fizz/domain';
@@ -2640,6 +2641,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   /** The `main` slots of the draft version a workout started from (none when it didn't, or the draft can't be read). */
   async function draftMains(ownerId: string, aggregate: SessionAggregate): Promise<ReadonlySet<string>> {
+    // (Ben, 1 Nov) The main lift Ben made today's (`Make main lift`) wins over the draft's.
+    const picked = pickedMainLift(aggregate.session);
+    if (picked !== null) return new Set([picked]);
     const ref = aggregate.session.coachDraft;
     if (ref === undefined) return new Set();
     const d = await ctx.store().repos.workoutDrafts.get(ref.draftId).catch(() => null);

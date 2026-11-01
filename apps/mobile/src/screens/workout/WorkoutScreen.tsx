@@ -63,6 +63,7 @@ import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './Wo
 import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu, rirMenu, roundExerciseMenu, targetRpeMenu, targetRpeScopeMenu, type ExerciseMenu, type ExerciseMenuAction } from '../../workout/exercise-menu';
+import { canMakeMain, makeMainLiftNow, type MainLiftActionPorts } from '../../workout/main-lift-action';
 import { exerciseActions } from '../../workout/exercise-popup';
 import { cuesWorkEnd, shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
@@ -1199,7 +1200,22 @@ export function WorkoutScreen() {
       coachChange: facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true,
       canUndoSwap: facts.swappedFrom !== null,
       adjust: current,
+      makeMain: canMakeMain(loaded, sessionExerciseId),
     });
+  }
+
+  /** (Ben, 1 Nov) `Make main lift` (workout/main-lift-action.ts): a plan workout's compound that isn't today's main lift. */
+  function mainLiftPorts(): MainLiftActionPorts {
+    return {
+      now: services.now,
+      newId: newUuid,
+      dispatch: run,
+      undoOp: (req) => services.workout.undoOp(req),
+      everyWeek: (req) => services.plans.mainLiftEveryWeek(req),
+      revert: (req) => services.routines.revert(req),
+      toast: (t) => { if (t === null) setToast(null); else showToast(t); },
+      changed: () => { changed(); void reload(); },
+    };
   }
 
   function tableModeNow(): boolean {
@@ -1224,6 +1240,9 @@ export function WorkoutScreen() {
         return true;
       case 'swap':
         workoutEdits.openSwap(ex.sessionExerciseId);
+        return true;
+      case 'make_main':
+        void makeMainLiftNow(mainLiftPorts(), loaded.aggregate, ex);
         return true;
       case 'remove_superset':
         if (v3) workoutEdits.unlink(ex.sessionExerciseId);

@@ -129,6 +129,7 @@ import {
   type CarryDay,
   type CarryItem,
   MAIN_LIFT_COPY,
+  noteTemplateVersion,
 } from '@fizz/domain';
 import { builderFocusCounts, builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SetTemplate, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
@@ -2159,11 +2160,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       }
       const noted = await writeDraft(p, draftId, async (current) => {
         const v = currentDraftVersion(current);
-        const now = builderSetupOf(current);
         const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: v.plan.slots.map((x) => x.exerciseId), keySeed: `${current.id}:${req.opId}` });
-        if (now == null || now.templateRoutineId !== routine.id) return { refused: 'changed_since', env };
-        const setup = { ...now, templateVersion: routine.version };
-        return { change: builderDraftEdit(current, { opId: `${req.opId}:noted`, at: deps.now(), basis: { version: current.version }, plan: v.plan, setup, undoable: false }), env, toast: null };
+        return { change: noteTemplateVersion(current, { opId: `${req.opId}:noted`, at: deps.now(), routineId: routine.id, templateVersion: routine.version }), env, toast: null };
       });
       return { ok: true, actionId, snapshot: noted.snapshot };
     },
