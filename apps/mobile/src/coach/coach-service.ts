@@ -42,6 +42,8 @@ import {
   createTrainingReadExecutors,
   createExerciseListExecutors,
   createLiftTargetExecutors,
+  createWarmupPrefsExecutors,
+  type WarmupPrefsDeps,
   type LiftTargetDeps,
   createStructuralExecutors,
   createBuildExecutor,
@@ -454,6 +456,8 @@ export interface CoachServiceDeps {
    * off: the tool is never offered and the coach doesn't see targets (they come through `training`).
    */
   liftTargets?: { on: () => Promise<boolean>; prepare: LiftTargetDeps['prepare'] };
+  /** (Ben, 1 Nov) `update_warmup_prefs`'s checks. Absent: the tool is never offered. */
+  warmupPrefs?: { prepare: WarmupPrefsDeps['prepare'] };
   store: () => Store;
   profile: () => Promise<UserProfile | null>;
   now: () => ZonedTimestamp;
@@ -1909,6 +1913,9 @@ export function createCoachService(deps: CoachServiceDeps) {
     // (Ben, 20 Oct) Lift targets on: the coach may set one Ben asks for (the turn checks he asked).
     const liftTargetsOn = (kind === 'general' || kind === 'workout') && deps.liftTargets !== undefined && (await deps.liftTargets.on().catch(() => false));
     if (liftTargetsOn && deps.liftTargets !== undefined) Object.assign(executors, createLiftTargetExecutors({ store: coachStore(), prepare: deps.liftTargets.prepare }));
+    // (Ben, 1 Nov) Warm-up settings: every chat (the turn applies a call only when Ben asked).
+    const warmupTool = (kind === 'general' || kind === 'workout') && deps.warmupPrefs !== undefined;
+    if (warmupTool && deps.warmupPrefs !== undefined) Object.assign(executors, createWarmupPrefsExecutors({ store: coachStore(), prepare: deps.warmupPrefs.prepare }));
     try {
       const result = await runCoachTurn(
         {
@@ -1932,6 +1939,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(chat && build !== null ? { buildAvailable: true } : {}),
           ...(planInThread !== null || planInUse !== null || planFromNothing ? { planInContext: true } : {}),
           ...(liftTargetsOn ? { liftTargetsOn: true } : {}),
+          ...(warmupTool ? { trainingProfile: true } : {}),
           ...(weekRead !== null && executors.propose_week !== undefined ? { week: true } : {}),
           ...(inUse !== null ? { planInUse: true } : {}),
           ...(executors.propose_workout_edit !== undefined ? { builderDraft: true } : {}),

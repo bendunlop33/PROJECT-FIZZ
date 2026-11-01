@@ -447,6 +447,8 @@ function undoWhat(target: ActionRecord): string {
       return 'today’s Set up';
     case 'propose_plan_swap':
       return d.op === 'add' ? `${d.addName} in your plan` : `${d.removeName ?? 'Exercise'} → ${d.addName} in your plan`;
+    case 'update_warmup_prefs':
+      return 'the warm-up change';
   }
 }
 

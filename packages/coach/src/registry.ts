@@ -457,6 +457,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Set one of Ben’s lift targets when he asks: the exercise (a name or ID of one he logs), kind one_rm ("bench 100 kg") or weight_reps ("bench 90 kg for 5", with reps), the load and unit he said, and byDate (YYYY-MM-DD) when he gave a date, else null. The load is in the exercise’s own convention: dumbbells per hand (a pair of 40s is 40, not 80; if unclear whether he means each or the pair, ask), machines the stack, barbells the total. The saved target comes back in `line` with its convention ("40 kg each"); say it that way in reply. It replaces that exercise’s target; at most 3. benAsked true only when his message this turn asks for this target, with benQuote his words copied exactly; false when it is your idea (he sees it as an offer to apply; a "yes" to your question applies that offer, so never call again for it).',
   },
   {
+    // (Ben, 1 Nov) Every chat whenever a training profile exists (ADR 0039). Applies with Undo only when Ben asked
+    // (the turn reads his words, `asksForWarmupChange`); else nothing changes and the coach asks him.
+    name: 'update_warmup_prefs',
+    effect: 'versioned_update',
+    writes: ['warmup_prefs'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Change your warm-up settings when you ask, with Undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Change Ben’s warm-up settings when he asks: simpleLoads true for Simple warm-up weights (the bar, then 10 kg steps; dumbbells in 5s; machines in 10s), false for the exact percentages, null to leave it. exercises: per exercise (a name or ID he has), warmups off (none), normal (the usual warm-ups, even on prehab), or default; [] for none. Today’s warm-ups not yet done are planned again; logged sets never change. benAsked true only when his message this turn asks for this, with benQuote his words copied exactly; false when it is your idea (nothing changes; ask him).',
+  },
+  {
     // ADR 0039 (Ben, 29 Oct): the builder's Your workout draft before Start, from any chat while one is in context
     // (`builderDraft`). The builder's own edit coach makes the change from Ben's words; it is always a proposal with
     // Apply / Skip (rule 3: in the builder before Start, what he asks for comes back as a proposal).
@@ -521,7 +535,8 @@ export const COACH_NEVER: readonly string[] = [
 // (Ben, 20 Oct) `plan_pause`: the plan in use paused or resumed when Ben asks; its days never change.
 /** (20 Oct) `gym_equipment`: a gym's profile and items (`update_gym`); every record keeps its version, Undo puts it back. */
 /** (Ben, 20 Oct) `lift_target`: a target on Ben's training profile he asked for; Undo puts back what was there. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target']);
+/** (Ben, 1 Nov) `warmup_prefs`: his warm-up settings and today's pending warm-ups; Undo puts both back. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target', 'warmup_prefs']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -598,6 +613,8 @@ export interface TurnGate {
   gymWords?: boolean;
   /** (Ben, 20 Oct) The Lift targets setting is on. Absent or false: `set_lift_target` is withheld. */
   liftTargetsOn?: boolean;
+  /** (Ben, 1 Nov) A training profile exists: `update_warmup_prefs`. */
+  trainingProfile?: boolean;
   /** ADR 0039: this week has days (a plan in use, or Ben's split) and its tool is wired: `propose_week`. */
   week?: boolean;
   /** ADR 0039: a plan is in use (paused or not): `pause_plan`. */
@@ -615,7 +632,7 @@ export interface TurnGate {
  * (no live workout: nothing to edit today; no plan: nothing to pause). Tools not listed act on something that is
  * always there (Ben's memories, his gyms, his history) or are opened by his words alone (`needMet`).
  */
-export type ToolTarget = 'liveWorkout' | 'week' | 'planInUse' | 'lightTurn' | 'liftTargetsOn' | 'builderDraft' | 'setupOpen';
+export type ToolTarget = 'liveWorkout' | 'week' | 'planInUse' | 'lightTurn' | 'liftTargetsOn' | 'builderDraft' | 'setupOpen' | 'trainingProfile';
 
 export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   edit_today: 'liveWorkout',
@@ -628,6 +645,7 @@ export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   propose_plan_add: 'planInUse',
   think_harder: 'lightTurn',
   set_lift_target: 'liftTargetsOn',
+  update_warmup_prefs: 'trainingProfile',
   propose_workout_edit: 'builderDraft',
   fill_setup: 'setupOpen',
 };

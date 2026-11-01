@@ -43,6 +43,7 @@ import { collectFacts, type FactText, type NumberFacts, EFFORT_WORDS_LINE } from
 import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PLAN_ADD_LINE, PLAN_SWAP_LINE, threadPlanScope } from './plan-swap';
 import { splitSentences } from './sentences';
 import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
+import { asksForWarmupChange, WARMUP_PREFS_NOT_ASKED_LINE, WARMUP_PREFS_TOOL_LINE } from './warmup-prefs';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -240,6 +241,8 @@ export interface CoachTurnRequest {
   planInContext?: boolean;
   /** (Ben, 20 Oct) The Lift targets setting is on: `set_lift_target` may be offered. Absent: never. */
   liftTargetsOn?: boolean;
+  /** (Ben, 1 Nov) A training profile exists and the warm-up tool is wired: `update_warmup_prefs`. Absent: never. */
+  trainingProfile?: boolean;
   /** ADR 0039: this week has days and the week tools are wired (`propose_week`, `log_activity`), from any chat. */
   week?: boolean;
   /** ADR 0039: a plan is in use (`pause_plan`), from any chat. */
@@ -917,7 +920,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     // Mid-workout on the workout's own sheet the turn starts light (low effort, his lighter model if chosen).
     ...(liveWorkout ? { lightTurn: true } : {}),
   });
-  const gate = req.liftTargetsOn === true ? { ...gated, liftTargetsOn: true } : gated;
+  const gate = { ...gated, ...(req.liftTargetsOn === true ? { liftTargetsOn: true } : {}), ...(req.trainingProfile === true ? { trainingProfile: true } : {}) };
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
   const turn: CoachTurn = {
@@ -1034,7 +1037,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
-  const findLine = (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
+  const findLine = (registry.tools.some((t) => t.name === 'update_warmup_prefs') ? `\n${WARMUP_PREFS_TOOL_LINE}` : '') + (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
   const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine + weekLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
@@ -1434,6 +1437,21 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     // ADR 0039: this week's reshape and the plan's pause are offered from every chat; Ben's words this turn decide
     // whether a call applies at once (rule 3). The week's own idea is saved as a proposal he applies; a pause he didn't
     // ask for is never run (the coach asks him).
+    // (Ben, 1 Nov) Warm-up settings change only on his words this turn (rule 3); otherwise nothing runs and the coach asks.
+    if (parsed.call.tool === 'update_warmup_prefs') {
+      const benWords = askInput.kind === 'words' ? askInput.text : words;
+      const asked = benWords !== null && asksForWarmupChange(benWords) && !declinesChange(benWords) && askClaimOf(parsed.call.args).benAsked !== false;
+      if (!asked) {
+        logLine({ tool: parsed.call.tool, outcome: 'proposed', text: 'Not asked, not applied.', actionId: null });
+        input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: WARMUP_PREFS_NOT_ASKED_LINE }) });
+        continue;
+      }
+      const executor = ports.executors.update_warmup_prefs;
+      if (executor === undefined) throw new Error('No executor for update_warmup_prefs');
+      const result = await executor(parsed.call, { ...callCtx, opId: parsed.opId });
+      input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, noteResult(parsed.call.tool, result)) });
+      continue;
+    }
     if (parsed.call.tool === 'propose_week' || parsed.call.tool === 'pause_plan') {
       const tool = parsed.call.tool;
       const benWords = askInput.kind === 'words' ? askInput.text : words;

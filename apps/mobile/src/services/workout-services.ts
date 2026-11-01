@@ -341,6 +341,10 @@ import {
   fitTemplateToMinutes,
   mainFlags,
   type TemplateFitResult,
+  warmupPrefsOf,
+  warmupPrefsCommand,
+  warmupLookupOf,
+  type ResolvedWarmupPrefs,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import { muscleGroupOf, worksLine } from '@fizz/schemas';
@@ -372,6 +376,7 @@ import type {
   SessionCheckIn,
   SessionPlanDay,
   SessionCommand,
+  CommandOf,
   SetExclusion,
   SetType,
   SetValues,
@@ -651,6 +656,8 @@ export interface ActiveWorkoutData {
   worksLines?: Readonly<Record<string, string | null>>;
   /** The builder's group and role per exercise ID, for the `+N min` fit (workout-table-v3 §5); null when the builder has none. */
   builderInfo?: Readonly<Record<string, BuilderExerciseInfo | null>>;
+  /** (Ben, 1 Nov) Profile › Training warm-up preferences. */
+  warmupPrefs?: ResolvedWarmupPrefs;
   /** The main lifts of the builder or plan draft this workout started from (`session.coachDraft`), for the `+N min` fit. */
   mainExerciseIds?: ReadonlySet<string>;
   /**
@@ -3268,6 +3275,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
     },
 
+    /**
+     * (Ben, 1 Nov) The open workout's not-yet-done warm-ups planned again under new warm-up preferences, as one
+     * `adjust_pending_targets` under `actionId` (its Undo is `revert_target_adjustment` on that ID). Planned with the
+     * facts and main lifts the workout's views use, from each first working set's planned load. Null: no workout open,
+     * or nothing would change. Logged sets never change (rule 2).
+     */
+    async warmupPrefsCommand(prefs: ResolvedWarmupPrefs, op: { opId: string; actionId: string; at: ZonedTimestamp }): Promise<{ sessionId: string; command: CommandOf<'adjust_pending_targets'> } | null> {
+      const data = await workout.load().catch(() => null);
+      if (data === null || data.aggregate.session.status !== 'active') return null;
+      const lookup = warmupLookupOf({ aggregate: data.aggregate, ...warmupInputOf({ ...data, warmupPrefs: prefs }) });
+      const command = warmupPrefsCommand({
+        aggregate: data.aggregate,
+        // Start's W: the first working set's planned load (a warm-up with a load of its own was planned from it).
+        workingLoad: (w) => w.planned.load,
+        lookup: { ...(lookup ?? {}), prefs },
+        ...op,
+      });
+      return command === null ? null : { sessionId: data.aggregate.session.id, command };
+    },
+
     /** Everything the Active workout screen needs, read once per change. */
     async load(sessionId?: string): Promise<ActiveWorkoutData | null> {
       const p = await ctx.profile();
@@ -3333,6 +3360,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // (Ben, 28 Oct) Profile › Rest times: for the `+N min` fit's levels and a warm-up added here. The workout's
         // own rests are what Start stored (an open workout keeps its rests).
         restDefaultsS: restDefaultsOf(training),
+        // (Ben, 1 Nov) Warm-ups filled at display follow his warm-up preferences.
+        warmupPrefs: warmupPrefsOf(training),
       };
     },
 
@@ -6025,9 +6054,10 @@ export type WorkoutServices = ReturnType<typeof createWorkoutServices>;
  * (WU1–WU12) The warm-up planner's facts for the active workout's views (catalogue facts by exercise ID and the
  * workout's main lifts), so warm-ups filled at display are planned as Start plans them.
  */
-function warmupInputOf(data: Pick<ActiveWorkoutData, 'builderInfo' | 'mainExerciseIds'>): { warmupFacts?: Record<string, WarmupExerciseFacts | null>; mainExerciseIds?: ReadonlySet<string> } {
+function warmupInputOf(data: Pick<ActiveWorkoutData, 'builderInfo' | 'mainExerciseIds' | 'warmupPrefs'>): { warmupFacts?: Record<string, WarmupExerciseFacts | null>; mainExerciseIds?: ReadonlySet<string>; warmupPrefs?: ResolvedWarmupPrefs } {
   const info = data.builderInfo;
   return {
+    ...(data.warmupPrefs === undefined ? {} : { warmupPrefs: data.warmupPrefs }),
     ...(info === undefined ? {} : { warmupFacts: Object.fromEntries(Object.entries(info).map(([id, i]) => [id, i?.warmup ?? null])) }),
     ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }),
   };
