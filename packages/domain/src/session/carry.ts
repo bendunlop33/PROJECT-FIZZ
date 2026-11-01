@@ -1,5 +1,6 @@
 import type { WarmupExerciseFacts } from '../warmup/plan';
 import type { WarmupLookup } from '../warmup/session';
+import type { ResolvedWarmupPrefs } from '../training-profile';
 import type { Load, PlannedSet, PlannedSetEdit, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { isLoadAchievable, loadDirection, roundToAvailableLoad } from '../equipment';
 import { loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
@@ -89,14 +90,16 @@ export interface CarryOptions {
  * (WU1–WU12) The warm-up planner's lookup from a view's input: catalogue facts by exercise ID and the workout's main
  * lifts (exercise IDs), so warm-ups derived at display are planned as Start plans them.
  */
-export function warmupLookupOf(input: { aggregate?: { exercises: readonly { id: string; exerciseId: string }[] }; warmupFacts?: Readonly<Record<string, WarmupExerciseFacts | null>> | undefined; mainExerciseIds?: ReadonlySet<string> | undefined }): WarmupLookup | undefined {
+export function warmupLookupOf(input: { aggregate?: { exercises: readonly { id: string; exerciseId: string }[] }; warmupFacts?: Readonly<Record<string, WarmupExerciseFacts | null>> | undefined; mainExerciseIds?: ReadonlySet<string> | undefined; warmupPrefs?: ResolvedWarmupPrefs | undefined }): WarmupLookup | undefined {
   const facts = input.warmupFacts;
   const mains = input.mainExerciseIds;
-  if (facts === undefined && mains === undefined) return undefined;
+  const prefs = input.warmupPrefs;
+  if (facts === undefined && mains === undefined && prefs === undefined) return undefined;
   const rows = input.aggregate?.exercises ?? [];
   return {
     ...(facts === undefined ? {} : { facts: (id: string) => facts[id] ?? null }),
     ...(mains === undefined ? {} : { main: (sessionExerciseId: string) => mains.has(rows.find((e) => e.id === sessionExerciseId)?.exerciseId ?? '') }),
+    ...(prefs === undefined ? {} : { prefs }),
   };
 }
 

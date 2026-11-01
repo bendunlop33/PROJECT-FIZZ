@@ -14,7 +14,8 @@ import { apply, logCmd, setsFor } from './session-fixture';
  * history), the workout derives the same steps for display and prefill
  * without writing them. Dumbbell shoulder press 35 each × 6, the workout's
  * first exercise: a secondary compound in the heavy band (WU6) → 50 % × 8,
- * 60 % × 3, 80 % × 2 → 17.5 × 8, 20 × 3, 27.5 × 2 on this rack.
+ * 60 % × 3, 80 % × 2 → 15 × 8, 20 × 3, 30 × 2 on this rack (simple warm-up weights, Ben 1 Nov: multiples of
+ * 5 kg; were 17.5, 20, 27.5).
  */
 
 const DSP = id(700);
@@ -57,29 +58,29 @@ describe('warm-ups with no load ramp to the working load (23 Oct)', () => {
   it('3 warm-ups before 35 kg each: Start stores the planner’s steps; every row shows them, lightest first, below the working load; the open warm-up logs its step', () => {
     const s = start(kg(35, 'per_hand'));
     expect(loads(s)).toEqual([
-      ['open', 'warmup', '17.5'],
+      ['open', 'warmup', '15'],
       ['pending', 'warmup', '20'],
-      ['pending', 'warmup', '27.5'],
+      ['pending', 'warmup', '30'],
       ['pending', 'working', '35'],
       ['pending', 'working', '35'],
     ]);
     expect(rowsOf(s).filter((r) => r.setType === 'warmup').map((r) => r.cells.value)).toEqual(['8', '3', '2']);
     // Never the working weight on a warm-up (it was `Log 35 kg each × 5`).
     const v = buildActiveSetView(input(s, previous(s, 35)));
-    expect(v.primary.label.replaceAll(NBSP, ' ')).toBe('Log 17.5 kg each × 8');
+    expect(v.primary.label.replaceAll(NBSP, ' ')).toBe('Log 15 kg each × 8');
     // Stored at Start: what the rows show is what the sets hold.
-    expect(setsFor(s, DSP).filter((x) => x.setType === 'warmup').map((x) => [x.planned.load?.value, x.planned.reps?.min])).toEqual([[17.5, 8], [20, 3], [27.5, 2]]);
+    expect(setsFor(s, DSP).filter((x) => x.setType === 'warmup').map((x) => [x.planned.load?.value, x.planned.reps?.min])).toEqual([[15, 8], [20, 3], [30, 2]]);
   });
 
   it('a row keeps its load after it stops being current (select another row), and a logged row shows what was logged', () => {
     let s = start(kg(35, 'per_hand'));
     const [w1, w2, w3] = setsFor(s, DSP);
     s = select(s, w3?.id ?? '');
-    expect(loads(s).map((r) => r[2])).toEqual(['17.5', '20', '27.5', '35', '35']);
+    expect(loads(s).map((r) => r[2])).toEqual(['15', '20', '30', '35', '35']);
     expect(loads(s)[2]?.[0]).toBe('open');
     // Ben logs warm-up 1 heavier than planned: the logged value shows; the planned ones stay as they were (rule 2).
     s = apply(s, logCmd(w1?.id ?? '', values(kg(22.5, 'per_hand'), 5), 20));
-    expect(loads(s).map((r) => r[2])).toEqual(['22.5', '20', '27.5', '35', '35']);
+    expect(loads(s).map((r) => r[2])).toEqual(['22.5', '20', '30', '35', '35']);
     expect(loads(s)[0]?.[0]).toBe('done');
     expect(w2).toBeDefined();
   });
@@ -90,17 +91,17 @@ describe('warm-ups with no load ramp to the working load (23 Oct)', () => {
     const shown = loads(lowered);
     expect(shown.slice(3).map((r) => r[2])).toEqual(['25', '25']);
     for (const r of shown.slice(0, 3)) expect(Number(r[2])).toBeLessThan(25);
-    // 17.5 and 20 were already below 25: they stay as stored; 27.5 is re-planned below 25.
-    expect(shown.slice(0, 2).map((r) => r[2])).toEqual(['17.5', '20']);
+    // 15 and 20 were already below 25: they stay as stored; 30 is re-planned below 25.
+    expect(shown.slice(0, 2).map((r) => r[2])).toEqual(['15', '20']);
     const w3 = setsFor(lowered, DSP).filter((x) => x.setType === 'warmup')[2];
-    expect(w3?.planned.load).toEqual(kg(27.5, 'per_hand'));
+    expect(w3?.planned.load).toEqual(kg(30, 'per_hand'));
     expect((prefillDraft(lowered, w3?.id ?? '').values.load?.value ?? 99) < 25).toBe(true);
   });
 
   it('working sets with no target show the history the open row prefills (not `—`), and the warm-ups are the planner’s steps to it (derived, not stored)', () => {
     const s = start(null);
     const prev = previous(s, 35);
-    expect(loads(s, prev).map((r) => r[2])).toEqual(['17.5', '20', '27.5', '35', '35']);
+    expect(loads(s, prev).map((r) => r[2])).toEqual(['15', '20', '30', '35', '35']);
     expect(rowsOf(s, prev).filter((r) => r.setType === 'warmup').map((r) => r.cells.value)).toEqual(['8', '3', '2']);
     expect(setsFor(s, DSP).filter((x) => x.setType === 'warmup').every((x) => x.planned.load === null && x.draft === null)).toBe(true);
     // Without the catalogue facts the views fall back on the item (dumbbells: one 50 % step, gaps filled), still below W.
@@ -135,6 +136,6 @@ describe('warm-ups with no load ramp to the working load (23 Oct)', () => {
     const ex = s.exercises[0];
     // No working target and no history: the warm-up stays empty (it used to copy last time's 35).
     expect(prefillDraft(s, w?.id ?? '', []).values.load).toBeNull();
-    expect(prefillDraft(s, w?.id ?? '', previous(s, 35)[ex?.id ?? '']?.sets ?? []).values.load).toEqual(kg(17.5, 'per_hand'));
+    expect(prefillDraft(s, w?.id ?? '', previous(s, 35)[ex?.id ?? '']?.sets ?? []).values.load).toEqual(kg(15, 'per_hand'));
   });
 });

@@ -393,8 +393,8 @@ describe('(c) warm-ups obey equipment caps and pain blocks', () => {
     const capped = BARS.find((b) => b.maxLoad !== undefined);
     if (capped?.kind !== 'barbell') throw new Error('fixture');
     const ramp = warmUpRamp(kg(180), capped);
-    // WU4 on a bar capped at 100: bar, 40 % → 70, 60 % and 80 % both capped at 100 (merged), and WU4's gap step (45) between the bar and 70.
-    expect(ramp.map((r) => r.load)).toEqual([20, 45, 70, 100]);
+    // WU4 on a bar capped at 100: bar, 40 % → 70, 60 % and 80 % both capped at 100 (merged), and WU4's gap step between the bar and 70: 40 on simple loads (Ben, 1 Nov; was 45).
+    expect(ramp.map((r) => r.load)).toEqual([20, 40, 70, 100]);
     expect(ramp.every((r) => r.load <= (capped.maxLoad ?? Infinity))).toBe(true);
   });
 

@@ -1,3 +1,4 @@
+import type { ResolvedWarmupPrefs } from '../training-profile';
 import type { BuilderPace } from './pace';
 import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, PlanWarmups, SetType, WeightUnit } from '@fizz/schemas';
 import type { RuleReps } from '../rep-range';
@@ -327,6 +328,8 @@ export interface BuilderContext {
    * Today, Your workout and Start plan warm-ups the same way; a slot with Ben's own warm-ups keeps them.
    */
   warmups?: PlanWarmups;
+  /** (Ben, 1 Nov) Profile › Training warm-up preferences (`warmupPrefsOf`). Absent: simple loads on, no per-exercise settings. */
+  warmupPrefs?: ResolvedWarmupPrefs;
   /**
    * (Ben, 27 Oct) Profile › Training › `Rest when short on time`: the shortest rest level a time fit may take the
    * accessories' rests to (`normal`: never shortened). Absent: `DEFAULT_FIT_REST_LEVEL` (`shortest`, Minimum rest).

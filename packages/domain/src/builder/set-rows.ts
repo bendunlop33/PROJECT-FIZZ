@@ -1,6 +1,8 @@
 import { BUILD_LIMITS, type LoadConvention, type SetType, type WeightUnit } from '@fizz/schemas';
 import { compareDifficulty, getAchievableLoads, isBarLoaded, loadDirection } from '../equipment';
 import { planWarmups, warmupProfileOf, type WarmupCut, type WarmupExerciseFacts, type WarmupPlanInput, type WarmupProfile } from '../warmup/plan';
+import { simpleWarmupLoadsIf } from '../warmup/simple';
+import type { WarmupExerciseSetting } from '@fizz/schemas';
 import { backoffTarget, followTop, lowerWithTop } from './backoff';
 import { builderLoad, convertValue, fitHere, formulaApplies, loadForSet, loadFrameOf, roundContextOf, roundDownHere, type RoundContext } from './loads';
 import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, RepRangeT, RoundedLoad, SlotLoadInput } from './types';
@@ -146,6 +148,10 @@ export interface WarmupRowsContext {
   /** The builder's group (WU2's fallback when the facts are missing). */
   group?: string | null;
   cut?: WarmupCut;
+  /** (Ben, 1 Nov) `Simple warm-up weights`; absent = on (the default). */
+  simpleLoads?: boolean;
+  /** (Ben, 1 Nov) Ben's setting for this exercise's warm-ups; absent = the default. */
+  setting?: WarmupExerciseSetting | null;
 }
 
 /**
@@ -163,12 +169,13 @@ export function builderWarmupInput(input: Pick<SetRowsInput, 'main' | 'role' | '
     convention: frame.convention,
     bodyweightExercise: weighted,
     fallback: { compound: input.role === 'compound', group: input.group ?? null, barbell: input.barbell },
+    setting: input.setting ?? null,
   });
   const reps = Math.max(1, Math.round(input.reps ?? 1));
   const base = { cls: profile.cls, reps, warmed: input.warmed === true, firstOfSession: input.firstOfSession === true, floorStart: profile.floorStart, profile };
   if (profile.cls === 'weighted_bodyweight') return { ...base, load: null, barMass: null, loads: [] };
   if (eq === null || weighted || loadDirection(frame.convention) !== 'resistance') return null;
-  return { ...base, load: top, barMass: eq.kind === 'barbell' && isBarLoaded(eq) ? eq.barMass : null, loads: getAchievableLoads(eq).loads };
+  return { ...base, load: top, barMass: eq.kind === 'barbell' && isBarLoaded(eq) ? eq.barMass : null, loads: getAchievableLoads(eq).loads, simple: simpleWarmupLoadsIf(eq, input.simpleLoads !== false) };
 }
 
 /**

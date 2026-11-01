@@ -25,6 +25,7 @@ import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
 import { changedTargetFields, draftWithNewTarget, markCarriedLoad, pendingOwnValues } from './pending-values';
 import { carriedLoad, hasOwnValuesAnyFlags, painFlaggedOf, shownPlannedIn, shownTargetShortIn, warmupLookupOf, type CarryOptions } from './carry';
 import type { WarmupExerciseFacts } from '../warmup/plan';
+import type { ResolvedWarmupPrefs } from '../training-profile';
 import { isPastLog } from './time-shift';
 import { logSetValues, missingLogValue, shownSetValues } from './log-values';
 
@@ -199,6 +200,8 @@ export interface ActiveViewInput {
    */
   warmupFacts?: Readonly<Record<string, WarmupExerciseFacts | null>>;
   mainExerciseIds?: ReadonlySet<string>;
+  /** (Ben, 1 Nov) His warm-up preferences (`warmupPrefsOf`). Omitted: simple loads on. */
+  warmupPrefs?: ResolvedWarmupPrefs;
   /**
    * The built-in rule's target RPE per session exercise (`ruleTargetRpes`),
    * the last fallback of each set's target RPE (`targetRpeOf`). Omitted: only

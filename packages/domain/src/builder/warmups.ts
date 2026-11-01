@@ -1,4 +1,5 @@
 import { isWarmed, planSessionWarmupsAs, warmupTimeS, type SessionWarmupItem, type WarmupProfile } from '../warmup/plan';
+import { warmupSettingOf } from '../training-profile';
 import { infoOrDefault } from './arrange';
 import { slotLoadOf } from './reps';
 import { builderWarmupInput, isTimedSlot } from './set-rows';
@@ -12,10 +13,11 @@ import type { BuilderContext, BuilderSetRow, BuilderSlot, BuilderWorkout } from 
  * - WU11: the session's warm-ups fit the D17 budget (10 min), cut in WU11's order;
  * - (Ben, 23 Oct) the plan's Warm-ups setting (`ctx.warmups`): `short` takes every WU11 cut to its floors, `none`
  *   plans none.
+ * - (Ben, 1 Nov) Ben's warm-up preferences (`ctx.warmupPrefs`): simple loads (default on) and per-exercise off/normal.
  * Slots Ben set his own warm-ups on (`ownWarmups`, or a warm-up kg he typed), timed slots and slots with no working
  * load keep theirs (their time still counts against the budget). Working sets are never touched. Pure.
  */
-export function settleWarmups(w: BuilderWorkout, ctx: Pick<BuilderContext, 'info' | 'loads' | 'warmups'>): BuilderWorkout {
+export function settleWarmups(w: BuilderWorkout, ctx: Pick<BuilderContext, 'info' | 'loads' | 'warmups' | 'warmupPrefs'>): BuilderWorkout {
   type Entry = { slot: BuilderSlot; item: SessionWarmupItem | null; fixedS: number; plannable: boolean };
   const entries: Entry[] = [];
   const earlier: WarmupProfile[] = [];
@@ -28,12 +30,12 @@ export function settleWarmups(w: BuilderWorkout, ctx: Pick<BuilderContext, 'info
       const fixedS = warmupTimeS(own.map((r) => ({ load: r.load ?? 0, reps: r.reps })));
       const keep = slot.ownWarmups === true || own.some((r) => r.typed === true) || isTimedSlot(slot) || work === undefined;
       const load = slotLoadOf(ctx.loads(slot.exerciseId), slot.main);
-      const plan = work === undefined ? null : builderWarmupInput({ main: slot.main, role: info.role, barbell: info.barbell, load, reps: work.reps, group: info.group, ...(info.warmup === undefined ? {} : { facts: info.warmup }) }, work.load);
+      const plan = work === undefined ? null : builderWarmupInput({ main: slot.main, role: info.role, barbell: info.barbell, load, reps: work.reps, group: info.group, ...(info.warmup === undefined ? {} : { facts: info.warmup }), simpleLoads: ctx.warmupPrefs?.simpleLoads !== false, setting: warmupSettingOf(ctx.warmupPrefs, slot.exerciseId) }, work.load);
       const sameUnit = plan === null || plan.cls === 'weighted_bodyweight' || load.equipment === null || slot.unit === load.equipment.unit;
       const plannable = !keep && plan !== null && sameUnit && (plan.cls === 'weighted_bodyweight' || work.load != null);
       const warmed = plan !== null && isWarmed(plan.profile, earlier, si > 0);
       if (plan !== null && work !== undefined) earlier.push(plan.profile);
-      const item: SessionWarmupItem | null = plan === null || !plannable ? null : { cls: plan.cls, reps: plan.reps, load: plan.load, warmed, firstOfSession: first, floorStart: plan.floorStart, barMass: plan.barMass, loads: plan.loads };
+      const item: SessionWarmupItem | null = plan === null || !plannable ? null : { cls: plan.cls, reps: plan.reps, load: plan.load, warmed, firstOfSession: first, floorStart: plan.floorStart, barMass: plan.barMass, loads: plan.loads, simple: plan.simple ?? null };
       entries.push({ slot, item, fixedS: plannable ? 0 : fixedS, plannable });
       first = false;
     });

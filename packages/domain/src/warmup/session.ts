@@ -1,7 +1,9 @@
 import type { EquipmentInstance, Load, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { getAchievableLoads, isBarLoaded, loadDirection } from '../equipment';
 import { equipmentOfRow } from '../session/equipment-snapshot';
+import { warmupSettingOf, type ResolvedWarmupPrefs } from '../training-profile';
 import { fitWarmupCount, planWarmups, warmupProfileOf, type WarmupExerciseFacts, type WarmupProfile } from './plan';
+import { simpleWarmupLoadsIf } from './simple';
 
 /**
  * Warm-ups in a workout (WU1–WU12 through `planWarmups`). Pure.
@@ -29,6 +31,8 @@ export interface WarmupLookup {
   facts?: (exerciseId: string) => WarmupExerciseFacts | null;
   /** The workout's main lift (WU4/WU5 whatever its equipment); absent = not known (classified from the item). */
   main?: (sessionExerciseId: string) => boolean;
+  /** (Ben, 1 Nov) His warm-up preferences (`warmupPrefsOf`); absent = simple loads on, no per-exercise settings. */
+  prefs?: ResolvedWarmupPrefs;
 }
 
 export interface PlannedWarmupStep {
@@ -47,6 +51,7 @@ export function sessionWarmupProfile(ex: Pick<SessionExercise, 'exerciseId' | 'i
     bodyweightExercise: ex.loadConvention === 'added' && (bodyweightExercise || kind === null || kind === 'bodyweight_station'),
     // No catalogue facts: a bar or plate-loaded item reads as a compound; anything else as an isolation (one step).
     fallback: { compound: kind === 'barbell' || kind === 'trap_bar' || kind === 'plate_loaded_machine' || kind === 'smith_machine', barbell: eq !== null && isBarLoaded(eq) },
+    setting: warmupSettingOf(lookup.prefs, ex.exerciseId),
   });
 }
 
@@ -58,13 +63,63 @@ export function sessionWarmupProfile(ex: Pick<SessionExercise, 'exerciseId' | 'i
  * working set uses its logged load. Empty when nothing is known, or the class takes no warm-ups.
  */
 export function plannedWarmupSteps(state: WarmupState, sessionExerciseId: string, workingLoad: (set: WorkoutSet) => Load | null, lookup: WarmupLookup = {}): ReadonlyMap<string, PlannedWarmupStep> {
+  return warmupStepsFor(state, sessionExerciseId, workingLoad, lookup, null);
+}
+
+/**
+ * (Ben, 1 Nov) Pending warm-ups the planner placed (a load of their own that Ben didn't type or edit and the coach
+ * didn't set), which a change to his warm-up preferences plans again. Never a done, skipped or edited set (rule 2).
+ */
+export function isReplannableWarmup(s: WorkoutSet): boolean {
+  return s.setType === 'warmup' && s.status === 'pending' && s.draft === null && s.planned.edit === undefined && s.planned.source !== 'coach' && s.planned.durationS === null && s.planned.load !== null;
+}
+
+export interface WarmupReplan {
+  /** New targets for planner-placed pending warm-ups, by set ID. */
+  changes: { setId: string; load: Load; reps: number }[];
+  /** Pending planner warm-ups of an exercise whose warm-ups are now off (or that has no room below W any more). */
+  removeSetIds: string[];
+}
+
+/**
+ * (Ben, 1 Nov) Today's not-yet-done warm-ups after his warm-up preferences change (`Simple warm-up weights`, warm-ups
+ * per exercise): each planner-placed pending warm-up (`isReplannableWarmup`) takes the planner's step for its place
+ * under the new preferences; an exercise whose warm-ups are now off loses its pending ones. Warm-ups with no load
+ * of their own already follow the preferences on display (`plannedWarmupSteps`). Logged sets are never touched.
+ */
+export function replanPendingWarmups(state: WarmupState, workingLoad: (set: WorkoutSet) => Load | null, lookup: WarmupLookup): WarmupReplan {
+  const changes: WarmupReplan['changes'] = [];
+  const removeSetIds: string[] = [];
+  for (const ex of state.exercises) {
+    const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted' && s.setType === 'warmup' && isReplannableWarmup(s));
+    if (own.length === 0) continue;
+    const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
+    const work = state.sets.find((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted' && s.setType !== 'warmup' && s.status !== 'skipped');
+    const profile = sessionWarmupProfile(ex, eq, lookup, work?.planned.bodyweightExercise === true);
+    if (profile.cls === 'none') {
+      removeSetIds.push(...own.map((s) => s.id));
+      continue;
+    }
+    const steps = warmupStepsFor(state, ex.id, workingLoad, lookup, isReplannableWarmup);
+    for (const s of own) {
+      const step = steps.get(s.id);
+      if (step === undefined || step.load === null) continue;
+      const was = s.planned.load;
+      if (was !== null && Math.abs(was.value - step.load.value) < 1e-9 && s.planned.reps?.min === step.reps && s.planned.reps.max === step.reps) continue;
+      changes.push({ setId: s.id, load: step.load, reps: step.reps });
+    }
+  }
+  return { changes, removeSetIds };
+}
+
+function warmupStepsFor(state: WarmupState, sessionExerciseId: string, workingLoad: (set: WorkoutSet) => Load | null, lookup: WarmupLookup, replan: ((s: WorkoutSet) => boolean) | null): ReadonlyMap<string, PlannedWarmupStep> {
   const out = new Map<string, PlannedWarmupStep>();
   const ex = state.exercises.find((e) => e.id === sessionExerciseId);
   if (ex === undefined) return out;
   const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
   const warm = own.filter((s) => s.setType === 'warmup' && s.status !== 'skipped');
   const pendingOpen = (s: WorkoutSet): boolean => s.status === 'pending' && (s.draft?.load ?? null) === null && s.planned.durationS === null;
-  const noLoad = (s: WorkoutSet): boolean => pendingOpen(s) && s.planned.load === null;
+  const noLoad = (s: WorkoutSet): boolean => pendingOpen(s) && (s.planned.load === null || (replan !== null && replan(s)));
   if (!warm.some(pendingOpen)) return out;
   const work = own.find((s) => s.setType !== 'warmup' && s.status !== 'skipped');
   if (work === undefined) return out;
@@ -74,6 +129,8 @@ export function plannedWarmupSteps(state: WarmupState, sessionExerciseId: string
   if (R === null) return out;
   const order = [...state.exercises].sort((a, b) => a.order - b.order);
   const firstOfSession = order[0]?.id === ex.id;
+  // (Ben, 1 Nov) Prehab work, or warm-ups he turned off for this exercise: none planned.
+  if (profile.cls === 'none') return out;
   if (profile.cls === 'weighted_bodyweight') {
     // WU7: bodyweight only (nothing added; shown as BW).
     const reps = planWarmups({ cls: profile.cls, reps: R, load: null, warmed: false, firstOfSession, floorStart: false, barMass: null, loads: [] })[0]?.reps;
@@ -86,8 +143,9 @@ export function plannedWarmupSteps(state: WarmupState, sessionExerciseId: string
   const open = (s: WorkoutSet): boolean => noLoad(s) || (pendingOpen(s) && s.planned.load !== null && s.planned.load.unit === top.unit && s.planned.load.convention === top.convention && s.planned.load.value >= top.value - 1e-9);
   if (!warm.some(open)) return out;
   const loads = getAchievableLoads(eq).loads;
-  const full = planWarmups({ cls: profile.cls, reps: R, load: top.value, warmed: false, firstOfSession, floorStart: profile.floorStart, barMass: isBarLoaded(eq) && eq.kind === 'barbell' ? eq.barMass : null, loads });
-  const steps = fitWarmupCount(full, warm.length, top.value, loads);
+  const simple = simpleWarmupLoadsIf(eq, lookup.prefs?.simpleLoads !== false);
+  const full = planWarmups({ cls: profile.cls, reps: R, load: top.value, warmed: false, firstOfSession, floorStart: profile.floorStart, barMass: isBarLoaded(eq) && eq.kind === 'barbell' ? eq.barMass : null, loads, simple });
+  const steps = fitWarmupCount(full, warm.length, top.value, loads, simple?.loads ?? []);
   // Lightest first, in set order; fewer steps than warm-ups (no room below W): the heaviest go to the last warm-ups.
   const offset = warm.length - steps.length;
   warm.forEach((s, k) => {

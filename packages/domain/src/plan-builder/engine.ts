@@ -758,6 +758,7 @@ export function pbDayWarmups(day: Pick<PbDay, 'exercises'>, a: Pick<PlanBuilderA
       floorStart: profile.floorStart,
       barMass: guess ? (bar === null ? null : NOMINAL_BAR) : bar,
       loads: guess ? NOMINAL_LOADS : loadable ? kit.loads : [],
+      simple: guess || !loadable ? null : (kit.simple ?? null),
     });
     at.push(k);
     nominal.push(guess);

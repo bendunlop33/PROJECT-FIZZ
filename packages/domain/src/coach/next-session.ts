@@ -8,6 +8,7 @@ import { equipmentOfRow } from '../session/equipment-snapshot';
 import { deriveId } from '../stable';
 import { usualTargetRpeOf, type TargetRpeSource } from './target-rpe';
 import { nextTargetBlocks } from '../session/gym-switch';
+import { isPrehabExerciseId } from '../warmup/plan';
 
 /**
  * Next-session targets from the coach (ADR 0020 §4–5, playbook D21,
@@ -172,6 +173,11 @@ export interface NextSessionValidationInput {
    * (Apply or Skip): his answer stands for them, so the coach's target is left out with a note; the others are kept.
    */
   answeredByBen?: ReadonlySet<string>;
+  /**
+   * (Ben, 1 Nov: cuff rotations "should stay easy") Prehab exercises: an increase goes up at most one load step on
+   * the item (one dumbbell). Absent: `isPrehabExerciseId` (the catalogue's prehab entries).
+   */
+  isPrehab?: (exerciseId: string) => boolean;
 }
 
 function pct(last: CoachTarget, after: CoachTarget): number | null {
@@ -242,6 +248,15 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
       if (banded !== null && after.load !== null) {
         notes.push({ kind: 'reset_band', setIds: [], text: `Reset limited to ${loadText(banded, banded.convention, basis.equipment)}` });
         after.load = banded;
+      }
+    }
+    // (Ben, 1 Nov) Prehab work stays easy: one load step up at a time.
+    const prehab = (input.isPrehab ?? isPrehabExerciseId)(ex.exerciseId);
+    if (prehab && flag === null && after.load !== null && basis.last.load !== null && basis.equipment !== null && after.load.unit === basis.last.load.unit && loadDirection(after.load.convention) === 'resistance' && after.load.value > basis.last.load.value) {
+      const one = stepLoad(basis.last.load.value, basis.equipment, 'increase');
+      if (one.ok && after.load.value > one.value + 1e-9) {
+        after.load = { ...after.load, value: one.value };
+        notes.push({ kind: 'capped', setIds: [], text: `Kept to one step up: ${loadText(after.load, after.load.convention, basis.equipment)}` });
       }
     }
     if (flag !== null && (isIncrease(basis.last, after, ex.loadConvention) || wantSets > basis.lastSets)) {
