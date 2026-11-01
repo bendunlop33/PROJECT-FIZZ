@@ -96,7 +96,8 @@ describe('Benâ€™s live Pull A chat (build 493): "add them in after the raises â€
     const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'words', text: ASK, spoken: false }, turnId: h.ids() });
     expect(r.status).toBe('completed');
     // Today first, light; the plan part after it.
-    expect(model.requests.map((q) => q.effort)).toEqual(['low', 'high', 'high']);
+    // (Ben, 1 Nov) The plan part is medium effort now (high only when he asks for the deep version).
+    expect(model.requests.map((q) => q.effort)).toEqual(['low', 'medium', 'medium']);
     expect(model.requests[0]?.instructions).toContain('Ben asked for two things');
     expect(model.requests[0]?.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['edit_today', 'propose_plan_add', 'propose_plan_swap']));
 
@@ -151,8 +152,8 @@ describe('Benâ€™s live Pull A chat (build 493): "add them in after the raises â€
     expect(r.cards.find((c) => c.record.detail.kind === 'edit_today')?.record.status).toBe('committed');
     const rows = (await s.workout.load(sessionId))?.aggregate.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseName) ?? [];
     expect(rows.some((n) => /curl/i.test(n))).toBe(true);
-    // Two requests after the add, never a third: the lighter retry, then an honest failure.
-    expect(model.requests).toHaveLength(3);
+    // (Ben, 1 Nov) Plan work gets no short-answer retry: one plan request after the add, then an honest failure.
+    expect(model.requests).toHaveLength(2);
     expect(r.error).toBe('timeout');
   });
 
