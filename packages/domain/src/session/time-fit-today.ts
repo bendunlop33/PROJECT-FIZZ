@@ -2,6 +2,7 @@ import { coachEditStepOpId, type FitTodayStep, type FitTodayToTimeCommand, type 
 import { estimateBuilderSeconds } from '../builder/estimate';
 import { fitToMinutes, type BuilderFitStatus } from '../builder/fit';
 import { restAfterRows, roundRestOf, type RestDefaults } from '../builder/rest';
+import { pickedMainLift } from './main-lift';
 import { reduceSession } from './reducer';
 import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderInfoLookup, BuilderSetRow, BuilderSlot, BuilderWorkout, RestKind, RestLevel } from '../builder/types';
 
@@ -121,6 +122,10 @@ function pinnedRests(rows: readonly FitRow[], byId: ReadonlyMap<string, WorkoutS
 
 /** The main lifts: the draft's, or the plan day's (provenance), else one with a Top set, else the first compound in order. */
 function mainIds(a: SessionAggregate, live: readonly SessionExercise[], info: BuilderInfoLookup, fromDraft: ReadonlySet<string> | undefined): Set<string> {
+  // (Ben, 1 Nov) The main lift Ben picked today wins.
+  const picked = pickedMainLift(a.session);
+  const pickedRows = picked === null ? [] : live.filter((e) => e.exerciseId === picked);
+  if (pickedRows.length > 0) return new Set(pickedRows.map((e) => e.id));
   const drafted = live.filter((e) => fromDraft?.has(e.exerciseId) === true);
   if (drafted.length > 0) return new Set(drafted.map((e) => e.id));
   const planned = a.session.planDay?.mainLiftExerciseId ?? null;

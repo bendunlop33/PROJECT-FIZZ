@@ -341,6 +341,9 @@ import {
   fitTemplateToMinutes,
   mainFlags,
   type TemplateFitResult,
+  followMainLift,
+  MAIN_LIFT_COPY,
+  mainLiftTemplateClash,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import { muscleGroupOf, worksLine } from '@fizz/schemas';
@@ -4396,6 +4399,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (c.kind === 'stale') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name), current: c.current, changedAtUtc: c.current.updatedAtUtc, lines: [] };
         const nameOf = new Map<string, string>();
         for (const e of [...current.exercises, ...c.next.exercises]) if (!nameOf.has(e.exerciseId)) nameOf.set(e.exerciseId, (await exerciseById(e.exerciseId))?.name ?? 'Exercise');
+        // (Ben, 1 Nov) `Make main lift` in the editor: a plan day's key and name follow its one main lift (every week).
+        const followed = followMainLift(c.next, (id) => nameOf.get(id) ?? 'Exercise');
+        if (followed !== c.next) {
+          const others = await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]);
+          if (mainLiftTemplateClash(followed, others, followed.planDay?.mainLiftExerciseId ?? '')) return { ok: false, reason: 'invalid', message: MAIN_LIFT_COPY.clash };
+        }
+        const saved = followed;
         const action: ActionRecord = {
           actionId,
           turnId: null,
@@ -4407,21 +4417,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             routineId: current.id,
             routineName: current.name,
             // Against what the editor opened (a pre-library workout's loads read as Auto), so only Ben's changes are listed (review N4).
-            changes: routineChangeLines(editableEdit(current), c.next, (id) => nameOf.get(id) ?? 'Exercise'),
+            changes: routineChangeLines(editableEdit(current), saved, (id) => nameOf.get(id) ?? 'Exercise'),
             before: current,
             versionBefore: current.version,
-            versionAfter: c.next.version,
+            versionAfter: saved.version,
             draft: null,
           },
           failure: null,
           reason: null,
           evidenceRefs: [],
           guardNotes: [],
-          entityVersions: [{ entity: 'routine', id: current.id, before: current.version, after: c.next.version }],
+          entityVersions: [{ entity: 'routine', id: current.id, before: current.version, after: saved.version }],
           undoneBy: null,
           createdAt: at,
         };
-        const r = await ctx.store().repos.drafts.applyRoutineChange({ ownerId: p.id, routine: c.next, expectedRoutineVersion: current.version, action, at });
+        const r = await ctx.store().repos.drafts.applyRoutineChange({ ownerId: p.id, routine: saved, expectedRoutineVersion: current.version, action, at });
         if (r.status === 'missing') return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
         if (r.status === 'stale') {
           const now = r.routine ?? current;

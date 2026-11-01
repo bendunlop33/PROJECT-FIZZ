@@ -88,6 +88,9 @@ import {
   finishedGymWorkoutOn,
   setDaysWeekSlots,
   upNextPlanningWeekday,
+  MAIN_LIFT_COPY,
+  mainLiftTemplateClash,
+  templateWithMainLift,
 } from '@fizz/domain';
 import type { PlanSplitView } from '@fizz/coach';
 import type { PlanWrite, Store } from '@fizz/persistence';
@@ -1126,6 +1129,62 @@ export function createPlanServices(deps: PlanServicesDeps) {
         if (r.status === 'stale') return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
         const learned = r.status === 'written' && e.load != null && e.toExerciseId !== null ? ((await deps.learnTyped?.(e.toExerciseId, e.load).catch(() => null)) ?? null) : null;
         return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed', learned };
+      } catch {
+        return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      }
+    },
+
+    /**
+     * (Ben, 1 Nov) `Make main lift` for every week: the plan day's template (or a saved workout) gets `exerciseId` as
+     * its one main lift (`templateWithMainLift`: the one before a normal compound with its sets, the key and name
+     * following), so Today's `Main lift` row, the next workout's top set and back-offs, its rest, Next time and block
+     * progress read it from then on. Done workouts never change (rule 2). One versioned write with Ben's
+     * `update_routine` record (op ID; a stale version is refused: rule 5); Undo is `routines.revert(actionId)`.
+     * `expectedVersion` absent: the version read now (a tap from a live workout or Your workout, which hold no
+     * template version of their own). Refused when the exercise isn't in it, or another template of that plan day
+     * already has that main lift.
+     */
+    async mainLiftEveryWeek(req: { routineId: string; exerciseId: string; opId: string; expectedVersion?: number }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: 'stale' | 'missing' | 'failed' | 'clash' | 'not_in_plan'; message: string }> {
+      try {
+        const p = await owner();
+        if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        const repos = deps.store().repos;
+        const actionId = deriveId(`main-lift-every-week:${req.opId}`);
+        const prior = await repos.coach.getAction(actionId).catch(() => null);
+        const current = await repos.routines.get(req.routineId).catch(() => null);
+        if (current === null || current.ownerId !== p.id || isDeleted(current)) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        if (prior !== null) return { ok: true, actionId, routine: current, duplicate: true };
+        if (req.expectedVersion !== undefined && current.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        const row = [...current.exercises].sort((a, b) => a.order - b.order).find((e) => e.exerciseId === req.exerciseId);
+        if (row === undefined) return { ok: false, reason: 'not_in_plan', message: MAIN_LIFT_COPY.notInPlan };
+        const others = await repos.routines.listByOwner(p.id).catch(() => [] as Routine[]);
+        if (mainLiftTemplateClash(current, others, req.exerciseId)) return { ok: false, reason: 'clash', message: MAIN_LIFT_COPY.clash };
+        const of = await exerciseOf();
+        const liftName = of(req.exerciseId)?.name ?? 'Exercise';
+        const m = templateWithMainLift(current, { rowId: row.id, liftName });
+        if (m === null) return { ok: true, actionId, routine: current, duplicate: true };
+        const at = deps.now();
+        const next: Routine = { ...current, exercises: m.exercises, name: m.name, version: current.version + 1, updatedAtUtc: at.utc, lastOpId: req.opId };
+        if (m.planDay !== undefined) next.planDay = m.planDay;
+        const action: ActionRecord = {
+          actionId,
+          turnId: null,
+          opId: req.opId,
+          status: 'committed',
+          author: 'ben',
+          detail: { kind: 'update_routine', routineId: current.id, routineName: current.name, changes: [{ change: 'edit', text: MAIN_LIFT_COPY.made(liftName).slice(0, 200) }], before: current, versionBefore: current.version, versionAfter: next.version, draft: null },
+          failure: null,
+          reason: null,
+          evidenceRefs: [],
+          guardNotes: [],
+          entityVersions: [{ entity: 'routine', id: current.id, before: current.version, after: next.version }],
+          undoneBy: null,
+          createdAt: at,
+        };
+        const r = await repos.drafts.applyRoutineChange({ ownerId: p.id, routine: next, expectedRoutineVersion: current.version, action, at });
+        if (r.status === 'missing') return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+        if (r.status === 'stale') return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+        return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed' };
       } catch {
         return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
       }

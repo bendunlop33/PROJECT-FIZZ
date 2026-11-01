@@ -91,6 +91,9 @@ function routineBefore(routine: Routine, d: Extract<ActionRecord['detail'], { ki
     const back: Routine = { ...routine, name: b.name, exercises: b.exercises, ...next };
     if (b.source === undefined) delete back.source;
     else back.source = b.source;
+    // (Ben, 1 Nov) A change that moved the plan day's key (`Make main lift` every week) puts it back too.
+    if (b.planDay === undefined) delete back.planDay;
+    else back.planDay = b.planDay;
     return back;
   }
   if (d.slot === undefined) return null;

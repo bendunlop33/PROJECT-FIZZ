@@ -675,6 +675,20 @@ export const UndoOpCommandSchema = z.object({
 });
 
 /**
+ * (Ben, 1 Nov) `Make main lift` on an exercise of today's plan workout: today's main lift is now this one (one per
+ * day; the one before becomes a normal compound). Every set keeps its planned values (load, reps, rest) and a done set
+ * is never touched (rule 2); the plan day's main lift (`planDay.mainLiftExerciseId`) and the workout's name follow
+ * (`Push B · <lift>`). Versioned on the session; Undo is `undo_op` on this op (rule 5).
+ */
+export const SetMainLiftCommandSchema = z.object({
+  type: z.literal('set_main_lift'),
+  ...base,
+  opId: OperationIdSchema,
+  sessionExerciseId: IdSchema,
+  expectedVersion: z.int().min(1),
+});
+
+/**
  * A note on an exercise or a set (active-workout §4.4 `Notes`; Your data).
  * Null clears it. Allowed during and after the workout; changes no value,
  * target or rest. Versioned on the session.
@@ -942,6 +956,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   ReorderSetsCommandSchema,
   AddWarmupCommandSchema,
   TickAllPlannedCommandSchema,
+  SetMainLiftCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];
