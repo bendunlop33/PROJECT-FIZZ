@@ -60,19 +60,19 @@ describe('Do next / Move to end (Ben, 31 Oct)', () => {
 
   it('only offered when it moves something: a started round never moves, nothing goes above it, nothing where it already is', () => {
     const s0 = benchStarted();
-    expect(roundMoves(s0, rowId(s0, BENCH))).toEqual({ up: false, down: false, lead: null, toEnd: false });
+    expect(roundMoves(s0, rowId(s0, BENCH))).toEqual({ up: false, down: false, first: false, toEnd: false });
     expect(jumpRoundCommand(s0, rowId(s0, BENCH), 'to_end', op('x'))).toEqual({ ok: false, reason: 'started' });
     // The superset is already next, and can't go above Bench (sets logged); Dead hang is already last.
-    expect(roundMoves(s0, rowId(s0, ROW))).toEqual({ up: false, down: true, lead: null, toEnd: true });
+    expect(roundMoves(s0, rowId(s0, ROW))).toEqual({ up: false, down: true, first: false, toEnd: true });
     expect(jumpRoundCommand(s0, rowId(s0, ROW), 'do_first', op('x'))).toEqual({ ok: false, reason: 'nowhere' });
-    expect(roundMoves(s0, rowId(s0, HANG))).toEqual({ up: true, down: false, lead: 'do_next', toEnd: false });
+    expect(roundMoves(s0, rowId(s0, HANG))).toEqual({ up: true, down: false, first: true, toEnd: false });
   });
 
   it('a done or started round stays where it is, and nothing passes one', () => {
     let s = benchStarted();
     for (const x of setsFor(s, HANG)) s = apply(s, logCmd(x.id, values(null, null, { durationS: 45 }), 500));
     // Dead hang done (out of order): hidden for it, and the superset can’t go past it to the end.
-    expect(roundMoves(s, rowId(s, HANG))).toEqual({ up: false, down: false, lead: null, toEnd: false });
+    expect(roundMoves(s, rowId(s, HANG))).toEqual({ up: false, down: false, first: false, toEnd: false });
     expect(jumpRoundCommand(s, rowId(s, HANG), 'do_next', op('x'))).toEqual({ ok: false, reason: 'started' });
     expect(jumpRoundCommand(s, rowId(s, HANG), 'do_first', op('x'))).toEqual({ ok: false, reason: 'started' });
     expect(jumpRoundCommand(s, rowId(s, ROW), 'to_end', op('x'))).toEqual({ ok: false, reason: 'crosses_started' });
@@ -80,7 +80,7 @@ describe('Do next / Move to end (Ben, 31 Oct)', () => {
     let done = startFixture().state;
     for (const x of done.sets) done = apply(done, logCmd(x.id, values(x.planned.load, 8, x.planned.durationS ? { durationS: 45 } : {}), 600));
     expect(currentRoundIndex(done)).toBe(-1);
-    for (const id of [BENCH, ROW, HANG]) expect(roundMoves(done, rowId(done, id))).toEqual({ up: false, down: false, lead: null, toEnd: false });
+    for (const id of [BENCH, ROW, HANG]) expect(roundMoves(done, rowId(done, id))).toEqual({ up: false, down: false, first: false, toEnd: false });
   });
 
   it('a round behind the current one (Ben jumped ahead) lands straight after it', () => {
@@ -123,15 +123,15 @@ describe('Moving the current exercise (Ben, 1 Nov)', () => {
     expect(b.audit).toEqual(a.audit);
   };
 
-  it('offers Do first on the current exercise or the one already next, Do next otherwise', () => {
+  it('offers Do first wherever it moves the exercise up, the current one included', () => {
     const s0 = startFixture().state;
-    expect(roundMoves(s0, rowId(s0, BENCH))).toEqual({ up: false, down: true, lead: null, toEnd: true });
-    expect(roundMoves(s0, rowId(s0, ROW))).toEqual({ up: true, down: true, lead: 'do_first', toEnd: true });
-    expect(roundMoves(s0, rowId(s0, FACE))).toEqual({ up: true, down: true, lead: 'do_first', toEnd: true });
-    expect(roundMoves(s0, rowId(s0, HANG))).toEqual({ up: true, down: false, lead: 'do_next', toEnd: false });
-    // The current exercise (Ben jumped to Dead hang, nothing logged): Do first, never Do next.
+    expect(roundMoves(s0, rowId(s0, BENCH))).toEqual({ up: false, down: true, first: false, toEnd: true });
+    expect(roundMoves(s0, rowId(s0, ROW))).toEqual({ up: true, down: true, first: true, toEnd: true });
+    expect(roundMoves(s0, rowId(s0, FACE))).toEqual({ up: true, down: true, first: true, toEnd: true });
+    expect(roundMoves(s0, rowId(s0, HANG))).toEqual({ up: true, down: false, first: true, toEnd: false });
+    // The current exercise (Ben jumped to Dead hang, nothing logged): Do first; Do next has nowhere to go.
     const s1 = apply(s0, { type: 'set_active_set', at: at(10), opId: 'jump-h', setId: firstPending(s0, HANG), expectedVersion: s0.session.version });
-    expect(roundMoves(s1, rowId(s1, HANG))).toEqual({ up: true, down: false, lead: 'do_first', toEnd: false });
+    expect(roundMoves(s1, rowId(s1, HANG))).toEqual({ up: true, down: false, first: true, toEnd: false });
     expect(jumpRoundCommand(s1, rowId(s1, HANG), 'do_next', op('x'))).toEqual({ ok: false, reason: 'current' });
   });
 
@@ -188,7 +188,9 @@ describe('Moving the current exercise (Ben, 1 Nov)', () => {
 
   it('idempotent on its opId and refused on a stale version', () => {
     const s0 = startFixture().state;
-    const cmd = jump(s0, BENCH, 'to_end', 'end-x');
+    const m = jumpRoundCommand(s0, rowId(s0, BENCH), 'to_end', op('end-x'));
+    if (!m.ok) throw new Error(m.reason);
+    const cmd = m.command;
     const r1 = expectOk(reduceSession(s0, cmd));
     const again = expectOk(reduceSession(r1.state, cmd));
     expect(again.duplicate).toBe(true);

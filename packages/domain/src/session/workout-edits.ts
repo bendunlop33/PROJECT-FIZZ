@@ -167,24 +167,23 @@ export function jumpRoundCommand(state: SessionAggregate, sessionExerciseId: str
   return moveRoundCommand(state, sessionExerciseId, from > current ? current + 1 : current, op);
 }
 
-/** The moves an exercise's `⋯` offers (Ben, 1 Nov): only those that would change the order. */
+/**
+ * The moves an exercise's menu offers (Ben, 1 Nov: "Why can't I move this up or down or to the start?"):
+ * only those that would change the order. `first` is `Now` (Do first), `toEnd` is `Later` (Move to end).
+ */
 export interface RoundMoves {
   up: boolean;
   down: boolean;
-  /**
-   * `Do next`, or `Do first` when the round is the current one or already next (Ben, 1 Nov: "Why can't I
-   * move this up or down or to the start?"); null when neither moves it.
-   */
-  lead: 'do_next' | 'do_first' | null;
+  first: boolean;
   toEnd: boolean;
 }
 
-/** Which of Move up / Move down / Do next or Do first / Move to end would move this exercise's round. */
+/** Which of Move up / Move down / Do first / Move to end would move this exercise's round. */
 export function roundMoves(state: SessionAggregate, sessionExerciseId: string): RoundMoves {
   const probe = { opId: 'probe', at: state.session.startedAt };
   const ok = (j: RoundJump): boolean => jumpRoundCommand(state, sessionExerciseId, j, probe).ok;
   const steps = roundSteps(state, sessionExerciseId);
-  return { up: steps.up, down: steps.down, lead: ok('do_next') ? 'do_next' : ok('do_first') ? 'do_first' : null, toEnd: ok('to_end') };
+  return { up: steps.up, down: steps.down, first: ok('do_first'), toEnd: ok('to_end') };
 }
 
 /**
