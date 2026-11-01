@@ -232,9 +232,9 @@ export function BuilderWorkoutScreen() {
       if (r.status === 'written') {
         changed();
         const learn = r.toast?.learn;
-        const made = op.kind === 'make_main' ? slotsOf(r.snapshot?.workout.blocks ?? []).find((x) => x.key === op.slotKey)?.exerciseId : undefined;
+        const made = op.kind === 'make_main' ? slotsOf(r.snapshot.workout.blocks).find((x) => x.key === op.slotKey)?.exerciseId : undefined;
         if (learn !== undefined && r.toast !== null) void learnTyped(learn, r.toast.undoOpId);
-        else if (r.toast !== null && made !== undefined && r.snapshot?.planDay?.templateRoutineId != null) {
+        else if (r.toast !== null && made !== undefined && r.snapshot.planDay?.templateRoutineId != null) {
           // (Ben, 1 Nov) Today first; then `Every week?` puts it on the plan day's template.
           const draftId = r.snapshot.draftId;
           const toastText = r.toast.text;

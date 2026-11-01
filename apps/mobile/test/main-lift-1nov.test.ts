@@ -208,7 +208,7 @@ describe('Make main lift on Your workout', () => {
 
     const opId = 'yw-main-1';
     const w = await s.builder.edit(c.draftId, { kind: 'make_main', slotKey: slot.key }, { opId, basis: { version: snap.version } });
-    if (w.status !== 'written' || w.snapshot === null) throw new Error(`not written: ${w.status} ${'message' in w ? String(w.message) : ''} ${JSON.stringify(slotsOf(snap.workout.blocks).map((x) => [x.exerciseId === pick.exerciseId, x.main]))}`);
+    if (w.status !== 'written') throw new Error(`not written: ${w.status}`);
     const after = slotsOf(w.snapshot.workout.blocks);
     expect(after.filter((x) => x.main).map((x) => x.exerciseId)).toEqual([pick.exerciseId]);
     // Every row keeps its planned values (the old main keeps its top set and back-offs).

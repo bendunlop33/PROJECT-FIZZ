@@ -64,7 +64,9 @@ describe('one main lift per day (pure)', () => {
 
   it('another template of the same plan day with that main lift: a clash (one per plan day and lift)', () => {
     const r = pushB();
-    const other = { ...pushB(), id: id(801), planDay: { ...pushB().planDay!, mainLiftExerciseId: INCLINE } };
+    const key = pushB().planDay;
+    if (key === undefined) throw new Error('no key');
+    const other = { ...pushB(), id: id(801), planDay: { ...key, mainLiftExerciseId: INCLINE } };
     expect(mainLiftTemplateClash(r, [r, other], INCLINE)).toBe(true);
     expect(mainLiftTemplateClash(r, [r, { ...other, deletedAtUtc: '2026-10-01T00:00:00.000Z' }], INCLINE)).toBe(false);
     expect(mainLiftTemplateClash(r, [r, { ...other, planDay: { ...other.planDay, dayIndex: 2 } }], INCLINE)).toBe(false);
