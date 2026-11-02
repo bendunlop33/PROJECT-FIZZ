@@ -5,7 +5,7 @@ import { PRESET_SPLITS } from '../training-profile';
 import { pbResizeSlot, pbSlotSets, pbWeekDaysOf, type PbEditBlock } from './edit';
 
 import { directMuscleGroup, MUSCLE_FLAG_CEILING, muscleSetCredits, muscleStatus, PLAN_MUSCLE_GROUPS, type MuscleSetTotals } from '../progress/muscle-sets';
-import { muscleFlags, plannedMuscleSets, PLAN_MUSCLES_COPY, rangesOf, type InfoOf, type MuscleFlag, type MuscleGoalInput, type PlanMuscleDay, type PlanMuscleRow } from '../progress/plan-muscles';
+import { dayMuscleFlags, muscleFlags, plannedMuscleSets, PLAN_MUSCLES_COPY, rangesOf, SESSION_GROUP_CAP, type InfoOf, type MuscleFlag, type MuscleGoalInput, type PlanMuscleDay, type PlanMuscleRow } from '../progress/plan-muscles';
 
 /**
  * (Ben, 1 Nov: "You need to look at it holistically") **Rebalance**: one proposal for the whole plan that brings every
@@ -20,6 +20,11 @@ import { muscleFlags, plannedMuscleSets, PLAN_MUSCLES_COPY, rangesOf, type InfoO
  *    11–20 too much) loses sets from its own accessories (never a main lift; never below 2 sets a row; a row goes only
  *    when the excess is at least its sets), largest first. A day with no room for a gap fill may also give up sets
  *    from a group above its target, on that day only, never taking it below its target.
+ * 1b. **Per-session cap** (VC3 / FQ2, Ben 2 Nov): a day with more than **8** direct sets for one group moves the
+ *    excess (its accessories, largest first) to another day that trains the group, where it fits the day's minutes
+ *    and keeps that day at 8 or under (the day with the fewest of the group's sets first: a second exposure, FQ1);
+ *    with no such day, trims the excess (never a main lift, never below 2 sets a row). FQ3: a row is never removed if
+ *    that takes a main lift below 2 days a week.
  * 2. **Swap**: an accessory for one of its alternatives (the caller's, already checked for the gym, pain flags and
  *    not-preferred) when that covers a low group with no time added and keeps the other groups in range.
  * 3. **Superset**: the new isolation paired with a non-competing accessory on the day (no muscle group in common,
@@ -29,7 +34,8 @@ import { muscleFlags, plannedMuscleSets, PLAN_MUSCLES_COPY, rangesOf, type InfoO
  * A low group's sets go to the days of its own split day (Biceps with Back on the pull days, `PRESET_SPLITS`), else
  * the days that already train it (direct or assisted), at most two days (Ben's own example:
  * "Add curls to Pull A and Pull B"), split as evenly as possible, at the end of the day (after every main lift: no
- * arm isolation before a main lift, rule G order). Sized towards the **lower edge** of its range, at most **+2 sets
+ * arm isolation before a main lift, rule G order), never taking a day above 8 direct sets for the group (FQ2), and
+ * preferring a day that gives the group a second exposure (FQ1, a tie-breaker only). Sized towards the **lower edge** of its range, at most **+2 sets
  * per group per proposal** (rule 1 / V5); the rest of the gap stays flagged.
  *
  * Time (approved rule 1: sets that fit ≈ (minutes − 10) ÷ 3): a day's estimate is 10 min + 3 min per straight working
@@ -124,6 +130,25 @@ function groupsOf(infoOf: InfoOf, exerciseId: string): Set<MuscleGroup> {
   return new Set(muscleSetCredits(infoOf(exerciseId)).keys());
 }
 
+/** Direct sets for `group` on one day. */
+function dayDirect(d: PlanMuscleDay, group: MuscleGroup, infoOf: InfoOf): number {
+  let n = 0;
+  for (const r of d.rows) if (directMuscleGroup(infoOf(r.exerciseId)) === group) n += r.sets;
+  return n;
+}
+
+/**
+ * FQ3 (rule 2): removing every row of `exerciseId` from `dayIndex` would take a main lift (an exercise that is a main
+ * row on any day) below 2 days a week, when it had 2 or more.
+ */
+function dropsMainExposure(days: readonly PlanMuscleDay[], exerciseId: string, dayIndex: number): boolean {
+  const live = days.filter((d) => d.skipped !== true);
+  if (!live.some((d) => d.rows.some((r) => r.main && r.exerciseId === exerciseId))) return false;
+  const on = live.filter((d) => d.rows.some((r) => r.exerciseId === exerciseId));
+  const after = on.filter((d) => d.dayIndex !== dayIndex || d.rows.filter((r) => r.exerciseId === exerciseId).length > 1).length;
+  return on.length >= 2 && after < 2;
+}
+
 export function rebalancePlan(input: RebalanceInput): RebalanceResult {
   const { ports } = input;
   const original = input.days.map((d) => ({ ...d, rows: d.rows.map((r) => ({ ...r })) }));
@@ -151,7 +176,7 @@ export function rebalancePlan(input: RebalanceInput): RebalanceResult {
       let step: { d: PlanMuscleDay; r: PlanMuscleRow; to: number } | null = null;
       for (const c of rows) {
         const to = c.r.sets > REBALANCE_TIME.minRowSets ? c.r.sets - 1 : excess >= c.r.sets ? 0 : null;
-        if (to === null) continue;
+        if (to === null || (to === 0 && dropsMainExposure(days, c.r.exerciseId, c.d.dayIndex))) continue;
         const nd: PlanMuscleDay = { ...c.d, rows: to === 0 ? c.d.rows.filter((x) => x.key !== c.r.key) : c.d.rows.map((x) => (x.key === c.r.key ? { ...x, sets: to } : x)) };
         const trial = replaceDay(days, nd);
         if (breaks(now, totals(trial), input, f.group)) continue;
@@ -165,6 +190,75 @@ export function rebalancePlan(input: RebalanceInput): RebalanceResult {
       else ops.push({ id: nextId('trim'), kind: 'trim', dayIndex: s.d.dayIndex, key: s.r.key, exerciseId: s.r.exerciseId, from: s.r.sets, to: s.to, group: f.group });
       days = replaceDay(days, { ...s.d, rows: s.to === 0 ? s.d.rows.filter((x) => x.key !== s.r.key) : s.d.rows.map((x) => (x.key === s.r.key ? { ...x, sets: s.to } : x)) });
     }
+  }
+
+  // 1b. VC3 / FQ2: no day above 8 direct sets for one group. Move the excess first, else trim it.
+  const capOfDay = (i: number): number => {
+    const o = dayOf(original, i);
+    return o === undefined ? 0 : o.minutes === null ? rebalanceDayMinutes(o) : Math.max(o.minutes, 0);
+  };
+  const unresolved = new Set<string>();
+  for (let guard = 0; guard < 200; guard += 1) {
+    const flag = dayMuscleFlags(days, ports.infoOf).find((f) => !unresolved.has(`${String(f.dayIndex)}|${f.group}`));
+    if (flag === undefined) break;
+    const src = dayOf(days, flag.dayIndex);
+    if (src === undefined) break;
+    const excess = flag.direct - SESSION_GROUP_CAP;
+    // The smallest row that covers the excess first, then the largest.
+    const rows = src.rows
+      .filter((r) => !r.main && directMuscleGroup(ports.infoOf(r.exerciseId)) === flag.group)
+      .sort((a, b) => (a.sets >= excess ? 0 : 1) - (b.sets >= excess ? 0 : 1) || (a.sets >= excess ? a.sets - b.sets : b.sets - a.sets) || b.order - a.order);
+    const without = (r: PlanMuscleRow, take: number): PlanMuscleDay => ({ ...src, rows: take >= r.sets ? src.rows.filter((x) => x.key !== r.key) : src.rows.map((x) => (x.key === r.key ? { ...x, sets: r.sets - take } : x)) });
+    /** Another day that trains the group (direct), without the exercise (nor taken out by Ben), staying ≤ 8 and in its minutes. */
+    const destFor = (trial: readonly PlanMuscleDay[], r: PlanMuscleRow, take: number): PlanMuscleDay | null => {
+      const key = `rebalance:${r.exerciseId}:`;
+      const c = trial
+        .filter((d) => d.dayIndex !== src.dayIndex && d.skipped !== true && dayDirect(d, flag.group, ports.infoOf) > 0 && dayDirect(d, flag.group, ports.infoOf) + take <= SESSION_GROUP_CAP)
+        .filter((d) => !d.rows.some((x) => x.exerciseId === r.exerciseId) && !(d.avoid ?? []).includes(r.exerciseId))
+        .map((d) => ({ d, next: { ...d, rows: [...d.rows, { key: `${key}${String(d.dayIndex)}`, exerciseId: r.exerciseId, sets: take, main: false, order: Math.max(-1, ...d.rows.map((x) => x.order)) + 1, superset: null }] } }))
+        .filter((x) => rebalanceDayMinutes(x.next) <= capOfDay(x.d.dayIndex))
+        // FQ1: the day with the fewest of the group's sets (spreads the exposures), then the earliest.
+        .sort((a, b) => dayDirect(a.d, flag.group, ports.infoOf) - dayDirect(b.d, flag.group, ports.infoOf) || a.d.dayIndex - b.d.dayIndex)[0];
+      return c?.next ?? null;
+    };
+    const record = (r: PlanMuscleRow, take: number, dest: PlanMuscleDay | null): void => {
+      const to = Math.max(0, r.sets - take);
+      const prev = ops.find((o): o is Extract<RebalanceOp, { kind: 'trim' }> => o.kind === 'trim' && o.dayIndex === src.dayIndex && o.key === r.key);
+      if (prev !== undefined) prev.to = to;
+      else ops.push({ id: nextId('trim'), kind: 'trim', dayIndex: src.dayIndex, key: r.key, exerciseId: r.exerciseId, from: r.sets, to, group: flag.group });
+      let next = replaceDay(days, without(r, take));
+      if (dest !== null) {
+        next = replaceDay(next, dest);
+        ops.push({ id: nextId('add'), kind: 'add', dayIndex: dest.dayIndex, key: `rebalance:${r.exerciseId}:${String(dest.dayIndex)}`, exerciseId: r.exerciseId, sets: take, supersetWith: null, group: flag.group });
+      }
+      days = next;
+    };
+    let done = false;
+    // Move first: the whole row, else the excess (a moved row is never under 2 sets, nor is what stays).
+    for (const r of rows) {
+      const takes = [r.sets, Math.min(excess, r.sets - REBALANCE_TIME.minRowSets)].filter((t, i, a) => t >= REBALANCE_TIME.minRowSets && a.indexOf(t) === i);
+      for (const take of takes) {
+        const dest = destFor(replaceDay(days, without(r, take)), r, take);
+        if (dest === null) continue;
+        record(r, take, dest);
+        done = true;
+        break;
+      }
+      if (done) break;
+    }
+    // Else trim to 8 (never a main lift, never below 2 sets a row; a row goes only when the excess covers it).
+    if (!done) {
+      for (const r of rows) {
+        const take = excess >= r.sets ? r.sets : Math.min(excess, r.sets - REBALANCE_TIME.minRowSets);
+        if (take <= 0) continue;
+        if (take >= r.sets && dropsMainExposure(days, r.exerciseId, src.dayIndex)) continue;
+        if (breaks(totals(days), totals(replaceDay(days, without(r, take))), input, flag.group)) continue;
+        record(r, take, null);
+        done = true;
+        break;
+      }
+    }
+    if (!done) unresolved.add(`${String(flag.dayIndex)}|${flag.group}`);
   }
 
   // 2–4. Cover low groups, the biggest gap first.
@@ -249,7 +343,7 @@ export function rebalancePlan(input: RebalanceInput): RebalanceResult {
             tries.push({ day: { ...day, rows: [...day.rows.map((r) => (r.key === partner.key ? { ...r, superset: label } : r)), { key, exerciseId: pick, sets, main: false, order, superset: label }] }, with: partner.key });
           }
           tries.push({ day: { ...day, rows: [...day.rows, { key, exerciseId: pick, sets, main: false, order, superset: null }] }, with: null });
-          const ok = tries.find((x) => rebalanceDayMinutes(x.day) <= cap && !breaks(totals(days), totals(replaceDay(days, x.day)), input, f.group));
+          const ok = tries.find((x) => rebalanceDayMinutes(x.day) <= cap && dayDirect(x.day, f.group, ports.infoOf) <= SESSION_GROUP_CAP && !breaks(totals(days), totals(replaceDay(days, x.day)), input, f.group));
           if (ok !== undefined) return { sets, ...ok };
         }
         return null;

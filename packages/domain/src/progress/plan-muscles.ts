@@ -10,6 +10,9 @@ import { setsText } from './text';
  * marker. Pure: the service hands in each week's days as they will run (week edits, skips, deload set counts) and the
  * done totals (Progress's own count, `muscleFrequency`); this file only counts, compares and words.
  *
+ * VC1–VC4 (Ben, 2 Nov): between a group's range top and 20 direct the bar is neutral (VC1); above 20 direct is
+ * flagged (VC2; no total-sets backstop); a day with more than 8 direct sets for one group is amber on By day (VC3).
+ *
  * Flags come from the **typical week** only (the plan's days as their workouts run now, every day, no deload, no
  * skips): a deload, the lead-in or a week shortened by skips shows neutral bars and one short note.
  */
@@ -97,6 +100,32 @@ export function muscleFlags(totals: MuscleSetTotals, g: MuscleGoalInput): Muscle
   return out.sort((a, b) => gap(b) - gap(a) || PLAN_MUSCLE_GROUPS.indexOf(a.group) - PLAN_MUSCLE_GROUPS.indexOf(b.group));
 }
 
+/**
+ * (VC3 / FQ2, Ben 2 Nov) The per-session cap: more than this many **direct** hard sets for one group on one day is
+ * flagged amber on By day, and Rebalance moves the excess to another of the group's days (else trims it). Approved
+ * rule 1's planning cap; the plan builder never plans above it.
+ */
+export const SESSION_GROUP_CAP = 8;
+
+export interface DayMuscleFlag {
+  dayIndex: number;
+  dayName: string;
+  group: MuscleGroup;
+  direct: number;
+}
+
+/** Each day's groups above `SESSION_GROUP_CAP` direct sets (skipped days count nothing), in day then bar order. */
+export function dayMuscleFlags(days: readonly PlanMuscleDay[], infoOf: InfoOf): DayMuscleFlag[] {
+  const out: DayMuscleFlag[] = [];
+  for (const d of [...days].sort((a, b) => a.dayIndex - b.dayIndex)) {
+    if (d.skipped === true) continue;
+    for (const c of dayChips(d, infoOf).sort((a, b) => PLAN_MUSCLE_GROUPS.indexOf(a.group) - PLAN_MUSCLE_GROUPS.indexOf(b.group))) {
+      if (c.sets > SESSION_GROUP_CAP) out.push({ dayIndex: d.dayIndex, dayName: d.name, group: c.group, direct: c.sets });
+    }
+  }
+  return out;
+}
+
 export const PLAN_MUSCLES_COPY = {
   title: 'Muscles',
   setsPerWeek: 'Sets per week',
@@ -116,6 +145,8 @@ export const PLAN_MUSCLES_COPY = {
   /** The coach's own offer (rule 3: an offer, never applied): `Biceps only 2 sets a week · Rebalance?` */
   offer: (f: Pick<MuscleFlag, 'group' | 'direct' | 'status'>) => (f.status === 'below' ? `${f.group} only ${setsText(f.direct)} ${f.direct === 1 ? 'set' : 'sets'} a week · Rebalance?` : `${f.group} ${setsText(f.direct)} sets a week · Rebalance?`),
   assisted: (n: number) => `+${setsText(n)} assisted`,
+  /** VC3: `Chest 10 on Push A · above 8` */
+  dayGap: (f: Pick<DayMuscleFlag, 'group' | 'direct' | 'dayName'>) => `${f.group} ${setsText(f.direct)} on ${f.dayName} · above ${String(SESSION_GROUP_CAP)}`,
 } as const;
 
 /** `Muscles · Biceps low`, `Muscles · Biceps, Calves low · Chest high`, `Muscles · all in range`; null with no goal. */
@@ -201,6 +232,8 @@ export interface PlanMuscleChip {
   group: MuscleGroup;
   sets: number;
   text: string;
+  /** VC3: more than 8 direct sets for the group on this day (amber). */
+  over: boolean;
 }
 
 export interface PlanMuscleDayView {
@@ -226,8 +259,10 @@ export interface PlanMusclesView {
   note: string | null;
   /** The typical week's groups out of range (Rebalance's input). */
   flags: MuscleFlag[];
-  /** `Biceps 2/wk · below 4–8`, one per flag. */
+  /** `Biceps 2/wk · below 4–8`, one per flag, then `Chest 10 on Push A · above 8` per day flag. */
   flagLines: string[];
+  /** VC3: the typical week's days with a group above 8 direct sets. */
+  dayFlags: DayMuscleFlag[];
   /** The selected week has a done-so-far (`Done by week ›` shows). */
   hasDone: boolean;
   byDay: PlanMuscleDayView[];
@@ -252,7 +287,7 @@ export function dayChips(d: PlanMuscleDay, infoOf: InfoOf): PlanMuscleChip[] {
     const g = directMuscleGroup(infoOf(r.exerciseId));
     if (g !== null && PLAN_MUSCLE_GROUPS.includes(g)) by.set(g, (by.get(g) ?? 0) + r.sets);
   }
-  return [...by.entries()].sort((a, b) => b[1] - a[1] || PLAN_MUSCLE_GROUPS.indexOf(a[0]) - PLAN_MUSCLE_GROUPS.indexOf(b[0])).map(([group, sets]) => ({ group, sets, text: `${group} ${String(sets)}` }));
+  return [...by.entries()].sort((a, b) => b[1] - a[1] || PLAN_MUSCLE_GROUPS.indexOf(a[0]) - PLAN_MUSCLE_GROUPS.indexOf(b[0])).map(([group, sets]) => ({ group, sets, text: `${group} ${String(sets)}`, over: sets > SESSION_GROUP_CAP }));
 }
 
 /** The block average: each group's mean over the block's weeks (lead-in left out), one decimal. */
@@ -308,6 +343,8 @@ export function planMusclesView(input: PlanMusclesInput): PlanMusclesView {
     };
   });
   const flags = muscleFlags(plannedMuscleSets(input.typical, input.infoOf), input);
+  // VC3 is a flag like the weekly ones: from the typical week, with a goal (no goal: no flags).
+  const dayFlags = input.goal === null ? [] : dayMuscleFlags(input.typical, input.infoOf);
   const chipOf = (w: PlanMuscleWeek): PlanMuscleChipView => ({ key: w.key, label: w.label, selected: w.key === selected, current: w.current, accessibilityLabel: [w.kind === 'lead_in' ? 'Lead-in week' : `Week ${w.key}`, ...(w.deload ? ['deload'] : []), ...(w.current ? ['this week'] : [])].join(', ') });
   const chips = [...input.weeks.map(chipOf), ...(input.weeks.length > 1 ? [{ key: AVG_KEY, label: PLAN_MUSCLES_COPY.avg, selected: selected === AVG_KEY, current: false, accessibilityLabel: 'Block average' }] : [])];
   return {
@@ -316,9 +353,11 @@ export function planMusclesView(input: PlanMusclesInput): PlanMusclesView {
     bars,
     note,
     flags,
-    flagLines: flags.map((f) => PLAN_MUSCLES_COPY.gap(f)),
+    flagLines: [...flags.map((f) => PLAN_MUSCLES_COPY.gap(f)), ...dayFlags.map((f) => PLAN_MUSCLES_COPY.dayGap(f))],
+    dayFlags,
     hasDone: done !== null,
-    byDay: days.map((d) => ({ dayIndex: d.dayIndex, name: d.name, skipped: d.skipped === true, chips: dayChips(d, input.infoOf) })),
+    // The chip's amber reads only where flags do (a goal; not a deload / lead-in / skipped week).
+    byDay: days.map((d) => ({ dayIndex: d.dayIndex, name: d.name, skipped: d.skipped === true, chips: dayChips(d, input.infoOf).map((c) => ({ ...c, over: c.over && !neutral && input.goal !== null })) })),
     noGoal: input.goal === null,
   };
 }
