@@ -1,5 +1,6 @@
 import { muscleGroupOf, type LoadConvention, type PlanWarmups, type WarmupExerciseSetting } from '@fizz/schemas';
 import type { SimpleWarmupLoads } from './simple';
+import { additivePass, plateLadder, plateLadderReps, type LadderKit } from './plate-ladder';
 import { catalogueExerciseId } from '../catalogue-id';
 
 /**
@@ -249,6 +250,57 @@ function rawSteps(i: WarmupPlanInput, W: number): Raw[] {
 export function planWarmups(i: WarmupPlanInput): WarmupStep[] {
   const simple = i.simple ?? null;
   if (simple === null) return planOn(i, null);
+  // (Ben, 2 Nov) Bars and plate-loaded machines: plates only go on, warm-up to warm-up and on to the working set.
+  const kit = ladderKitOf(i, simple);
+  if (kit === null) return planSimple(i, simple);
+  return plateWarmups(i, kit) ?? platePassed(planSimple(i, simple), i, kit);
+}
+
+function ladderKitOf(i: WarmupPlanInput, simple: SimpleWarmupLoads): LadderKit | null {
+  const kit = simple.plates ?? null;
+  if (kit === null || kit.plates.length === 0) return null;
+  return { kit, step: simple.step, minPlate: simple.minPlate ?? 0, loads: i.loads };
+}
+
+/** (Ben, 2 Nov) WU4 on a bar, heavy band, not warmed (no WU11 short cut): `plateLadder`; null otherwise or when none fits. */
+function plateWarmups(i: WarmupPlanInput, k: LadderKit): WarmupStep[] | null {
+  const W = i.load;
+  const R = Math.max(1, Math.round(i.reps));
+  const cut = i.cut ?? 'full';
+  if (W === null || !(W > 0) || i.cls !== 'heavy' || !heavyBand(R) || i.warmed || (cut !== 'full' && cut !== 'no_bar') || !(k.kit.base > 0)) return null;
+  const barOk = !i.floorStart && cut === 'full' && W <= 3 * k.kit.base + EPS;
+  const loads = plateLadder({ W, reps: R, barOk, firstAtLeast: i.floorStart ? (i.fullPlateStart ?? null) : null }, k);
+  if (loads === null || loads.length === 0) return null;
+  const reps = plateLadderReps(loads, k.kit.base, R);
+  return wu10(
+    loads.map((load, j) => ({ load, reps: reps[j] ?? 3 })),
+    W,
+    R,
+    true,
+  );
+}
+
+/** (Ben, 2 Nov) The table's steps moved to plate-friendly loads (`additivePass`), keeping their count and reps. */
+function platePassed(steps: readonly WarmupStep[], i: WarmupPlanInput, k: LadderKit): WarmupStep[] {
+  const W = i.load;
+  if (W === null || steps.length === 0 || steps.some((s) => !(s.load > 0))) return [...steps];
+  const R = Math.max(1, Math.round(i.reps));
+  const heavy = heavyBand(R);
+  const loads = additivePass(
+    steps.map((s) => s.load),
+    { W, cap: (heavy ? 0.9 : 0.85) * W, gap: i.cls === 'heavy' && heavy, repBand: !heavy },
+    k,
+  );
+  return wu10(
+    steps.map((s, j) => ({ load: loads[j] ?? s.load, reps: s.reps })),
+    W,
+    R,
+    heavy,
+  );
+}
+
+/** The 1 Nov simple loads (10 kg steps, the 20 kg ladder from 100 kg). */
+function planSimple(i: WarmupPlanInput, simple: SimpleWarmupLoads): WarmupStep[] {
   const fine = planOnGrid(i, { step: simple.step, loads: simple.loads });
   const W = i.load;
   const coarse = simple.coarse;
@@ -588,15 +640,28 @@ function gapFill(steps: readonly WarmupStep[], W: number, loads: readonly number
 /** A nominal working load and a fine ladder: the table's shape before any gym's loads are known. */
 const SHAPE_W = 100;
 const SHAPE_LOADS: readonly number[] = Array.from({ length: 2 * SHAPE_W + 1 }, (_, k) => k / 2);
+/**
+ * (Ben, 2 Nov) A nominal bar for the shape: 20 kg, 25 → 1.25 kg plates, two pairs each (the gym presets), with
+ * `Simple warm-up weights` on, so a bar lift's shape has the plate ladder's count (100 × 5 → 2), as Start will plan it.
+ */
+const SHAPE_BAR_SIMPLE: SimpleWarmupLoads = {
+  step: 10,
+  loads: SHAPE_LOADS.filter((l) => l >= 20 && (l - 20) % 10 === 0),
+  coarse: null,
+  plates: { unit: 'kg', base: 20, sides: 2, plates: [25, 20, 15, 10, 5, 2.5, 1.25].map((mass) => ({ mass, perSide: 2 })) },
+  minPlate: 5,
+};
 
 /**
  * `warmupShape`: the reps of each warm-up the planner gives an exercise before its working load is known (a
  * coach-built workout is planned before Start fits its loads): the table's steps on a nominal load (`bar`: a
  * barbell's empty-bar step, assumed to fit). With `count` (Ben asked the coach for a number), that many, as
- * `fitWarmupCount` picks them. Start then plans the loads, and reps again, on the gym's real loads.
+ * `fitWarmupCount` picks them. Start then plans the loads, and reps again, on the gym's real loads. A bar lift's
+ * shape uses a nominal bar with Simple warm-up weights on (`SHAPE_BAR_SIMPLE`; Ben, 2 Nov), unless `simple` is given.
  */
 export function warmupShape(i: Omit<WarmupPlanInput, 'load' | 'loads' | 'barMass' | 'cut'> & { bar: boolean }, count: number | null = null): number[] {
-  const full = planWarmups({ ...i, load: SHAPE_W, loads: SHAPE_LOADS, barMass: i.bar ? SHAPE_W / 5 : null });
+  const simple = i.simple === undefined ? (i.bar ? SHAPE_BAR_SIMPLE : null) : i.simple;
+  const full = planWarmups({ ...i, load: SHAPE_W, loads: SHAPE_LOADS, barMass: i.bar ? SHAPE_W / 5 : null, simple });
   const steps = count === null ? full : fitWarmupCount(full, count, SHAPE_W, SHAPE_LOADS);
   return steps.map((s) => s.reps);
 }

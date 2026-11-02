@@ -73,7 +73,8 @@ describe('reviewEdits: Ben’s own edits against what was drafted', () => {
     const { ctx, drafted, mine } = scene();
     const edits = reviewEdits({ drafted: { workout: drafted, minutes: 60 }, workout: mine, minutes: 60, ctx });
     if (edits === null) throw new Error('no edits');
-    expect(edits.map((e) => e.text)).toEqual(expect.arrayContaining(['Barbell bench press top 100 → 110 kg', 'Triceps pushdown 3 → 6 sets', 'Cable crunch rest 1:15 → 1:00', 'Cable fly removed']));
+    // (Ben, 2 Nov) Bench's shorter plate-friendly warm-ups leave the 60 min draft at normal rests: the crunch's was 1:30 (1:15 before).
+    expect(edits.map((e) => e.text)).toEqual(expect.arrayContaining(['Barbell bench press top 100 → 110 kg', 'Triceps pushdown 3 → 6 sets', 'Cable crunch rest 1:30 → 1:00', 'Cable fly removed']));
     expect(edits.every((e) => e.cause === 'ben')).toBe(true);
     expect(edits.map((e) => e.id)).toEqual(edits.map((_, i) => `e${String(i + 1)}`));
     // Removals come last; the drafted value is kept as `before`.
@@ -196,7 +197,7 @@ describe('the claim check with the review’s facts', () => {
   it('rest times: only the rest code gave for the exercise named', () => {
     const f = facts();
     expect(checkClaims('Cable crunch rest 1:00 is fine.', f).hidden).toEqual([]);
-    expect(checkClaims('Cable crunch rest was 1:15.', f).hidden).toEqual([]);
+    expect(checkClaims('Cable crunch rest was 1:30.', f).hidden).toEqual([]);
     expect(checkClaims('Cable crunch rest 0:45.', f).shown).toBeNull();
     expect(checkClaims('Cable crunch: 60 s rest is fine.', f).shown).toBeNull();
     expect(checkClaims('Cable crunch 60 s rest is fine.', f).hidden).toEqual([]);

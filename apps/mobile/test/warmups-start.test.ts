@@ -94,10 +94,16 @@ describe('builder → Start: the stored warm-ups are the planner’s and the bui
     if (bench === undefined) throw new Error('no bench');
     const top = bench.rows.find((r) => r.type === 'top') ?? bench.rows.find((r) => r.type !== 'warmup');
     const warm = bench.rows.filter((r) => r.type === 'warmup');
-    // WU4 (heavy band, not warmed, a barbell lift not from the floor): the bar first, then 40 / 60 / 80 %.
+    // WU4 (heavy band, not warmed, a barbell lift not from the floor; Ben, 2 Nov): the bar + plates first (at most 60),
+    // 2–3 steps of whole 5 kg plates, × 5 first and × 2 on top (was the bar, then 40 / 60 / 80 %).
     expect(top?.reps).toBeLessThanOrEqual(6);
-    expect(warm[0]).toMatchObject({ load: 20, reps: 5 });
-    expect(warm.map((r) => r.reps).slice(1)).toEqual([5, 3, 2]);
+    expect(warm.length).toBeGreaterThanOrEqual(2);
+    expect(warm.length).toBeLessThanOrEqual(3);
+    expect(warm[0]?.reps).toBe(5);
+    expect(warm[0]?.load as number).toBeGreaterThan(20);
+    expect(warm[0]?.load as number).toBeLessThanOrEqual(60);
+    expect(warm[warm.length - 1]?.reps).toBe(2);
+    for (const r of warm) expect(((r.load as number) - 20) % 10).toBe(0);
     for (const r of warm) expect(r.load as number).toBeLessThan(top?.load as number);
     // WU2: anything after the bench that works the chest or pushes horizontally is warmed (no warm-ups).
     for (const sl of slots.slice(slots.indexOf(bench) + 1)) {
@@ -202,11 +208,12 @@ describe('a coach-built workout → Start: the planner fills its warm-ups (the t
       ],
       'start-coach-wu',
     );
-    // Bench 5 reps (heavy band), first: bar × 5, then 40 / 60 / 80 % of its working load, snapped down.
+    // Bench 5 reps (heavy band), first (Ben, 2 Nov): the plate ladder, 60 × 5 then × 2 on top, every warm-up loaded
+    // (was the bar × 5, then 40 / 60 / 80 %).
     climbs(a, 'Bench press');
     const bench = stepsOf(a, 'Bench press');
-    expect(bench[0]).toEqual([20, 5]);
-    expect(bench.map(([, r]) => r)).toEqual([5, 5, 3, 2]);
+    expect(bench[0]).toEqual([60, 5]);
+    expect(bench.map(([, r]) => r)).toEqual([5, 2]);
     // Incline press after bench: warmed (same muscle group and pattern, WU2). A coach workout marks its compounds as
     // main lifts (WL9), so it keeps WU5's warmed step only: 80 % × 4 (R 8), snapped down on the dumbbells.
     const incline = stepsOf(a, 'Incline dumbbell press');

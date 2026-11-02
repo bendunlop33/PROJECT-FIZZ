@@ -408,8 +408,9 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
   it('a top set comes first with its own RPE; the rest are back-offs at the working RPE', () => {
     const r = checked(args([pex('barbell-bench-press', { workingSets: 3, reps: { min: 6, max: 8 }, targetRpe: 8, topSet: { reps: { min: 3, max: 5 }, targetRpe: 9 } })]));
     expect(r.plan.slots[0]?.setTemplates.filter((t) => t.setType !== 'warmup').map((t) => [t.setType, t.targetRpe, t.reps?.min])).toEqual([['top', 9, 3], ['backoff', 8, 6], ['backoff', 8, 6], ['backoff', 8, 6]]);
-    // Warm-ups before it are the planner's (WU4 for the top set's 3 reps, the main lift first: bar, 40 / 60 / 75 / 87.5 %).
-    expect(r.plan.slots[0]?.setTemplates.filter((t) => t.setType === 'warmup').map((t) => [t.reps?.min, t.targetRpe, t.load])).toEqual([[5, null, undefined], [5, null, undefined], [3, null, undefined], [2, null, undefined], [1, null, undefined]]);
+    // Warm-ups before it are the planner's (WU4 for the top set's 3 reps, the main lift first; Ben, 2 Nov: the plate
+    // ladder's 3 steps, × 5, × 2, then a single; was the bar, 40 / 60 / 75 / 87.5 %).
+    expect(r.plan.slots[0]?.setTemplates.filter((t) => t.setType === 'warmup').map((t) => [t.reps?.min, t.targetRpe, t.load])).toEqual([[5, null, undefined], [2, null, undefined], [1, null, undefined]]);
   });
 
   it('review S1 / r2 S1: rest snaps to the nearest preset, then clamps to 0:30–6:00 (Q7, 20 Oct: was 5:00)', () => {

@@ -244,9 +244,14 @@ describe("Ben's own edits (§2.3–§2.5)", () => {
     expect(main).toBeDefined();
     if (main === undefined) return;
     const warm = main.rows.filter((r) => r.type === 'warmup');
-    expect(warm.length).toBe(4);
-    // The planner's ladder from the bar leaves no gap a loadable step fits in (below the bar is nothing).
-    expect(addWarmup(main, c)).toEqual({ ok: false, reason: 'no_gap' });
+    // (Ben, 2 Nov) The planner's ladder for 100 kg is 60, 80 (was the bar, 40, 60, 80).
+    expect(warm.map((r) => r.load)).toEqual([60, 80]);
+    // + Warm-up fills the biggest gap (0 → 60): 30, lightest first.
+    const more = addWarmup(main, c);
+    expect(more.ok && more.slot.rows.filter((r) => r.type === 'warmup').map((r) => r.load)).toEqual([30, 60, 80]);
+    // A ladder from the bar in 10 kg steps leaves no gap a loadable step fits in (below the bar is nothing).
+    const full = { ...main, rows: [...[20, 40, 60, 80].map((load) => ({ type: 'warmup' as const, reps: 3, load, rpe: null })), ...main.rows.filter((r) => r.type !== 'warmup')] };
+    expect(addWarmup(full, c)).toEqual({ ok: false, reason: 'no_gap' });
     const six = { ...main, rows: [...Array.from({ length: 6 }, (_, i) => ({ type: 'warmup' as const, reps: 5, load: 20 + 10 * i, rpe: null })), ...main.rows.filter((r) => r.type !== 'warmup')] };
     expect(addWarmup(six, c)).toEqual({ ok: false, reason: 'max_warmups' });
     const fewer = { ...main, rows: main.rows.filter((r, i) => r.type !== 'warmup' || i === 0) };

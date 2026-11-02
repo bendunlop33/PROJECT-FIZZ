@@ -1,5 +1,6 @@
 import type { EquipmentInstance, PlateCount, WeightUnit } from '@fizz/schemas';
 import { getAchievableLoads } from '../equipment';
+import { plateKitOf, type PlateKit } from '../plate-path';
 import { toScaled } from '../units';
 
 /**
@@ -21,6 +22,13 @@ export interface SimpleWarmupLoads {
   loads: readonly number[];
   /** Bars: the 20 kg (40 lb) ladder, tried when W ≥ `from`. */
   coarse: { from: number; step: number; loads: readonly number[] } | null;
+  /**
+   * (Ben, 2 Nov) Bars, plate-loaded and Smith machines: the item's plates, so each warm-up only adds plates to the one
+   * before and builds towards the working set's stack (`plate-ladder.ts`). Absent or null: no plate path.
+   */
+  plates?: PlateKit | null;
+  /** (Ben, 2 Nov) The lightest plate a warm-up uses (5 kg / 5 lb: no 2.5 or 1.25 kg plates in warm-ups). */
+  minPlate?: number;
 }
 
 const BAR_STEP: Record<WeightUnit, number> = { kg: 10, lb: 20 };
@@ -28,6 +36,8 @@ const BAR_COARSE_STEP: Record<WeightUnit, number> = { kg: 20, lb: 40 };
 const BAR_COARSE_FROM: Record<WeightUnit, number> = { kg: 100, lb: 220 };
 const DB_STEP: Record<WeightUnit, number> = { kg: 5, lb: 10 };
 const MACHINE_STEP: Record<WeightUnit, number> = { kg: 10, lb: 20 };
+/** (Ben, 2 Nov) Warm-ups use no plate lighter than this (whole 5 kg multiples: no 2.5 or 1.25 kg plates). */
+export const WARMUP_MIN_PLATE: Record<WeightUnit, number> = { kg: 5, lb: 5 };
 /** At most this many plate sizes on each side of a bar for a warm-up (when the inventory can do it). */
 export const SIMPLE_MAX_PLATE_SIZES = 2;
 
@@ -78,6 +88,8 @@ export function simpleWarmupLoads(eq: EquipmentInstance): SimpleWarmupLoads | nu
         step: BAR_STEP[u],
         loads: all.filter((v) => ok(v, BAR_STEP[u])),
         coarse: { from: BAR_COARSE_FROM[u], step: BAR_COARSE_STEP[u], loads: all.filter((v) => ok(v, BAR_COARSE_STEP[u])) },
+        plates: plateKitOf(eq),
+        minPlate: WARMUP_MIN_PLATE[u],
       };
     }
     case 'dumbbells':
@@ -88,7 +100,7 @@ export function simpleWarmupLoads(eq: EquipmentInstance): SimpleWarmupLoads | nu
     }
     case 'plate_loaded_machine':
     case 'smith_machine':
-      return { step: MACHINE_STEP[u], loads: all.filter((v) => onGrid(v, 0, MACHINE_STEP[u])), coarse: null };
+      return { step: MACHINE_STEP[u], loads: all.filter((v) => onGrid(v, 0, MACHINE_STEP[u])), coarse: null, plates: plateKitOf(eq), minPlate: WARMUP_MIN_PLATE[u] };
     case 'kettlebell':
     case 'assisted_stack':
     case 'bodyweight_station':

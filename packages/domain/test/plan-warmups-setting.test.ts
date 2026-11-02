@@ -155,8 +155,9 @@ describe('settleWarmups follows the setting (Today, Your workout and Start plan 
     const bench = makeSlot('bench', { main: true }, ctx);
     const crunch = makeSlot('crunch', { main: false }, ctx);
     const w: BuilderWorkout = { restLevel: 'normal', blocks: [{ slots: [bench], auto: false }, { slots: [crunch], auto: false }] };
-    expect(steps(settleWarmups(w, ctx))).toEqual([4, 1]);
-    expect(steps(settleWarmups(w, { ...ctx, warmups: 'full' }))).toEqual([4, 1]);
+    // (Ben, 2 Nov) The bench's full ladder is 2 plate-friendly warm-ups (was 4: the bar, 40, 60, 80).
+    expect(steps(settleWarmups(w, ctx))).toEqual([2, 1]);
+    expect(steps(settleWarmups(w, { ...ctx, warmups: 'full' }))).toEqual([2, 1]);
     expect(steps(settleWarmups(w, { ...ctx, warmups: 'short' }))).toEqual([2, 0]);
     expect(steps(settleWarmups(w, { ...ctx, warmups: 'none' }))).toEqual([0, 0]);
     // Ben set the crunch's warm-up himself (Your workout): kept under None; the bench's planned ones go.
