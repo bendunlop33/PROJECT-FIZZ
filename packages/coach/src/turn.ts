@@ -44,6 +44,8 @@ import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PLAN_
 import { splitSentences } from './sentences';
 import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
 import { asksForWarmupChange, WARMUP_PREFS_NOT_ASKED_LINE, WARMUP_PREFS_TOOL_LINE } from './warmup-prefs';
+import { asksExercisePreference, EXERCISE_PREF_NOT_ASKED_LINE, EXERCISE_PREF_TOOL_LINE } from './exercise-prefs';
+import { asksMuscleBalance, REBALANCE_TOOL_LINE } from './plan-rebalance';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -255,6 +257,10 @@ export interface CoachTurnRequest {
   liftTargetsOn?: boolean;
   /** (Ben, 1 Nov) A training profile exists and the warm-up tool is wired: `update_warmup_prefs`. Absent: never. */
   trainingProfile?: boolean;
+  /** (Ben, 2 Nov) A builder plan is in use and the preference tool is wired: `set_exercise_preference` on his like/dislike words. */
+  exercisePrefs?: boolean;
+  /** (Ben, 2 Nov) Rebalance can run on the plan in use and its tool is wired: `propose_rebalance` on his muscle or balance words. */
+  rebalance?: boolean;
   /** ADR 0039: this week has days and the week tools are wired (`propose_week`, `log_activity`), from any chat. */
   week?: boolean;
   /** ADR 0039: a plan is in use (`pause_plan`), from any chat. */
@@ -516,7 +522,7 @@ export const OFFER_INSTEAD_LINE = 'Not applied: Ben did not ask for this. He now
 
 /** Tools the app can actually run in this build; others are withheld, never offered. */
 /** (Ben, 1 Nov) The plan-in-use tools that make a targeted plan change. */
-export const PLAN_EDIT_TOOLS: ReadonlySet<string> = new Set(['propose_plan_swap', 'propose_plan_add', 'propose_plan_day_edit']);
+export const PLAN_EDIT_TOOLS: ReadonlySet<string> = new Set(['propose_plan_swap', 'propose_plan_add', 'propose_plan_day_edit', 'propose_rebalance']);
 /** (Ben, 1 Nov) Left out of a targeted plan turn: building a whole workout or plan, and tools no plan change uses. */
 export const PLAN_WORK_LEAVES_OUT: ReadonlySet<string> = new Set(['propose_workout', 'propose_plan', 'ask_build_question', 'propose_exercise', 'propose_workout_edit', 'fill_setup', 'rename_workout', 'log_activity']);
 
@@ -938,7 +944,15 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     // Mid-workout on the workout's own sheet the turn starts light (low effort, his lighter model if chosen).
     ...(liveWorkout ? { lightTurn: true } : {}),
   });
-  const gate = { ...gated, ...(req.liftTargetsOn === true ? { liftTargetsOn: true } : {}), ...(req.trainingProfile === true ? { trainingProfile: true } : {}) };
+  // (Ben, 2 Nov) Two targeted tool groups, loaded only on the words that need them (so other turns don't grow).
+  const gateWords = chatTurn && askInput.kind === 'words' ? askInput.text : null;
+  const gate = {
+    ...gated,
+    ...(req.liftTargetsOn === true ? { liftTargetsOn: true } : {}),
+    ...(req.trainingProfile === true ? { trainingProfile: true } : {}),
+    ...(req.exercisePrefs === true && gateWords !== null && asksExercisePreference(gateWords) ? { exercisePrefs: true } : {}),
+    ...(req.rebalance === true && gateWords !== null && asksMuscleBalance(gateWords) ? { rebalanceOpen: true } : {}),
+  };
   // (Ben, 1 Nov, build 500) A targeted change to or question about the plan in use (not a rebuild, not a workout build):
   // what it needs and no more. The build tools and their view (a third of the request) are left out; it comes back sooner.
   const fullRegistry = runnable(buildTurnRegistry(gate), ports.executors);
@@ -1065,7 +1079,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
-  const findLine = (registry.tools.some((t) => t.name === 'update_warmup_prefs') ? `\n${WARMUP_PREFS_TOOL_LINE}` : '') + (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
+  const findLine = (registry.tools.some((t) => t.name === 'update_warmup_prefs') ? `\n${WARMUP_PREFS_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'set_exercise_preference') ? `\n${EXERCISE_PREF_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_rebalance') ? `\n${REBALANCE_TOOL_LINE}` : '') + (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
   const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_day_edit') ? `\n${PLAN_DAY_EDIT_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine + weekLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
@@ -1210,7 +1224,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let planNudged = false;
   let planHeld: string | null = null;
   let solutionHeld: { message: string; streamed: string } | null = null;
-  const planCardMade = (): boolean => entries.some((e) => e.origin === 'this_turn' && (e.record.detail.kind === 'propose_plan_swap' || e.record.detail.kind === 'build_plan'));
+  const planCardMade = (): boolean =>
+    entries.some((e) => e.origin === 'this_turn' && (e.record.detail.kind === 'propose_plan_swap' || e.record.detail.kind === 'build_plan' || e.record.detail.kind === 'propose_rebalance' || (e.record.detail.kind === 'set_exercise_preference' && e.record.detail.swapActionId !== null)));
   const anyCard = (): boolean => entries.some((e) => e.origin === 'this_turn');
   const fixToolHere = registry.tools.some((t) => t.name === 'edit_today' || PLAN_EDIT_TOOLS.has(t.name));
   // Coach v3: reads per turn, and identical reads answered from this turn's cache (keyed by the opId).
@@ -1473,6 +1488,16 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
         input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', ref, offered: renderActionResult(result.record, 'sheet').text, line: LIFT_TARGET_NOT_ASKED_LINE }) });
       } else input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, ref) });
       continue;
+    }
+    // (Ben, 2 Nov) His stated like or dislike of an exercise applies at once with Undo; otherwise nothing runs (rule 3).
+    if (parsed.call.tool === 'set_exercise_preference') {
+      const benWords = askInput.kind === 'words' ? askInput.text : words;
+      const asked = benWords !== null && asksExercisePreference(benWords) && !declinesChange(benWords) && askClaimOf(parsed.call.args).benAsked !== false;
+      if (!asked) {
+        logLine({ tool: parsed.call.tool, outcome: 'proposed', text: 'Not asked, not applied.', actionId: null });
+        input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: EXERCISE_PREF_NOT_ASKED_LINE }) });
+        continue;
+      }
     }
     // ADR 0039: this week's reshape and the plan's pause are offered from every chat; Ben's words this turn decide
     // whether a call applies at once (rule 3). The week's own idea is saved as a proposal he applies; a pause he didn't
