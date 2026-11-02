@@ -515,7 +515,9 @@ export function liveTime(i: { estimate: number; length: number; floor?: number; 
     const down = stepTimeMinutes(held, -1);
     // Below the length before the first Time change only, unless `+` filled past it (a shorter Time fills less).
     const cut = i.filled === true || down < floor ? down : stepTimeMinutes(floor, -1);
-    const up = stepTimeMinutes(held, 1);
+    // While a cut is live (`cutLive`), past the length too: more Time first gives back what it cut, and a cut that
+    // landed under its length would otherwise be asked for the same length again.
+    const up = Math.max(stepTimeMinutes(held, 1), i.cutLive === true ? stepTimeMinutes(length, 1) : 0);
     return { minutes: estimate, over: estimate > length + TIME_STEP_RULES.nearMin, less: cut < held ? cut : null, more: up > held ? up : null };
   }
   if (more <= length) more = stepTimeMinutes(length, 1);

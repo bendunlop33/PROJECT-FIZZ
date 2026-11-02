@@ -122,6 +122,8 @@ describe('Time ± lands within 3 minutes of each 5-minute step (Ben, 2 Nov)', ()
     expect(liveTime({ estimate: 53, length: 55, growFromEstimate: true })).toMatchObject({ less: 50, more: 60 });
     // Ben's own edit moved it well past the length: steps from the estimate, and it reads over.
     expect(liveTime({ estimate: 64, length: 55, growFromEstimate: true })).toMatchObject({ over: true, more: 65 });
+    // A cut that landed more than 3 under its length (a fit set outright): `+` still goes past the length.
+    expect(liveTime({ estimate: 41, length: 45, growFromEstimate: true, cutLive: true }).more).toBe(50);
     // A fill `+` made (length above the length before Time): `−` steps 5 down, not back below the original.
     expect(liveTime({ estimate: 89, length: 90, floor: 63, growFromEstimate: true, filled: true }).less).toBe(85);
   });

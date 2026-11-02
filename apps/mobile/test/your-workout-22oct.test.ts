@@ -439,7 +439,8 @@ describe('Time on Your workout (source): the same control as Today’s; the scre
     expect(page).toContain("import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';");
     expect(page).toContain('<TimeNoteRow');
     // (Ben, 28 Oct) `+` asks the service to make the workout longer (`grow`); `−` and Undo fit as before.
-    expect(page).toContain("services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version, ...(grow ? { grow: true } : {}) })");
+    // (Ben, 2 Nov) Each tap also sends `step` (it lands near its 5-minute step; your-workout-time-step-2nov.test.ts).
+    expect(page).toContain("services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version, ...(grow ? { grow: true } : {}), ...tap })");
     expect(page).toContain('onUndo={(back) => void setTime({ to: back })}');
     for (const banned of ['fitToMinutes', 'fitWorkoutToTime', 'unfitWorkout', 'builderCoach.askEdit({ draftId: cur.draftId, words: `']) expect(page).not.toContain(banned);
   });
