@@ -61,8 +61,8 @@ function menuItems(r: Rendered, name: string): string[] {
   return (menuOf(r, name)?.queryAll((x) => x.type === 'Pressable' && typeof x.props.onPress === 'function') ?? []).map((x) => String(x.props.accessibilityLabel));
 }
 
-async function openMenu(r: Rendered, name: string): Promise<string[]> {
-  await tap(byLabel(r, `${name} menu`));
+async function openMenu(r: Rendered, name: string, button = `${name} menu`): Promise<string[]> {
+  await tap(byLabel(r, button));
   await r.waitFor(() => menuItems(r, name).length > 0, `${name}'s menu`);
   return menuItems(r, name);
 }
@@ -90,16 +90,16 @@ async function overviewAction(r: Rendered, name: string, action: string): Promis
 const rowActions = (r: Rendered, name: string): string[] => ((overviewRow(r, name)?.props.accessibilityActions ?? []) as { name: string }[]).map((a) => a.name);
 
 describe('the round page’s exercise menu (Ben, 1 Nov, A)', () => {
-  it('on the current exercise with nothing logged: Later and Down; Plates for the barbell; Adjust; Skip last; no Cancel', async () => {
+  it('on the current exercise with nothing logged: Later and Down; Plates for the barbell; Adjust; the former pop-up’s rows; Skip and Remove last; no Cancel', async () => {
     const ben = await benWithHistory(h);
     const sessionId = await workoutOf(ben.s, ben.gymId, ['Bench press', 'Incline dumbbell press', 'Lat pulldown']);
     const r = await renderScreen(h, ben.launched, WorkoutScreen, { name: 'Workout' }, (t) => t.includes('Bench press') && t.includes('＋ Set'));
     expectHealthy(r);
 
-    expect(await openMenu(r, 'Bench press')).toEqual(['Move to end', 'Move down', 'Swap exercise', 'Add set', 'History', 'Notes', 'Plates', 'Adjust', 'Skip exercise']);
+    expect(await openMenu(r, 'Bench press')).toEqual(['Move to end', 'Move down', 'Swap exercise', 'Add set', 'History', 'Notes', 'Plates', 'Adjust', 'How to', 'Add warm-up', 'Rest, 3:00', 'Superset with next', 'Why this weight?', 'Skip exercise', 'Remove exercise']);
     // The icon row's own words; no Cancel row (a tap outside closes it).
     expect(r.text()).toContain('|Later|Down|');
-    for (const gone of ['Cancel', 'Edit set', 'Target RIR', 'Delete this set', 'Add exercise', 'Not at this gym', 'Remove exercise', 'Do next', 'Now', 'Up']) expect(r.text()).not.toContain(`|${gone}|`);
+    for (const gone of ['Cancel', 'Edit set', 'Target RIR', 'Delete this set', 'Add exercise', 'Not at this gym', 'Unlink', 'Move up', 'Do next', 'Now', 'Up']) expect(r.text()).not.toContain(`|${gone}|`);
 
     // Later on the current exercise: it goes last, the next one becomes current, no set changes; Undo hands back.
     const load = async () => (await ben.s.workout.load(sessionId))?.aggregate as SessionAggregate;
@@ -178,6 +178,107 @@ describe('swipes in the Workout list (Ben, 1 Nov, C)', () => {
     await r.waitFor(() => !rowActions(r, 'Lat pulldown').includes('skip_exercise'), 'the done row’s swipes');
     expect(rowActions(r, 'Lat pulldown')).toContain('add_set');
     for (const gone of ['swap', 'move_to_end']) expect(rowActions(r, 'Lat pulldown')).not.toContain(gone);
+    expect(r.errors).toEqual([]);
+    await r.unmount();
+  });
+});
+
+describe('the name’s pop-up moved into the menu (Ben, 2 Nov: "Yes move to menu")', () => {
+  const header = (r: Rendered, name: string): TestInstance | undefined => r.all((x) => x.props.accessibilityRole === 'header' && typeof x.props.accessibilityLabel === 'string' && x.props.accessibilityLabel.includes(`, ${name}, `) && typeof x.props.onAccessibilityAction === 'function')[0];
+
+  it('a tap on the name opens nothing; VoiceOver has exactly the menu’s items on the header', async () => {
+    const ben = await benWithHistory(h);
+    await workoutOf(ben.s, ben.gymId, ['Bench press', 'Incline dumbbell press', 'Lat pulldown']);
+    const r = await renderScreen(h, ben.launched, WorkoutScreen, { name: 'Workout' }, (t) => t.includes('Bench press') && t.includes('＋ Set'));
+    const head = header(r, 'Bench press');
+    expect(head).toBeDefined();
+    expect(head?.props.onPress).toBeUndefined();
+    expect(typeof head?.props.onLongPress).toBe('function');
+    expect(head?.props.accessibilityHint).toBeUndefined();
+    const items = await openMenu(r, 'Bench press');
+    const a11y = ((head?.props.accessibilityActions ?? []) as { name: string; label: string }[]).filter((x) => !['next', 'previous', 'menu'].includes(x.name)).map((x) => x.label);
+    expect(a11y).toEqual(items);
+    expect(r.errors).toEqual([]);
+    await r.unmount();
+  });
+
+  it('each former pop-up action runs from the menu on the stored workout: Superset with next / Unlink, Add warm-up, Rest, Why this weight?, How to, Remove', async () => {
+    const ben = await benWithHistory(h);
+    const sessionId = await workoutOf(ben.s, ben.gymId, ['Bench press', 'Incline dumbbell press', 'Lat pulldown']);
+    const load = async () => (await ben.s.workout.load(sessionId))?.aggregate as SessionAggregate;
+    const exOf = async (name: string) => (await load()).exercises.find((e) => e.exerciseName === name && e.removed === undefined);
+    const r = await renderScreen(h, ben.launched, WorkoutScreen, { name: 'Workout' }, (t) => t.includes('Bench press') && t.includes('＋ Set'));
+
+    // Superset with next: Bench and Incline paired; then the menu offers Unlink instead, and it splits them.
+    await openMenu(r, 'Bench press');
+    await pick(r, 'Bench press', 'Superset with next');
+    await r.waitFor((t) => t.includes('|1a|Bench press|') && t.includes('|1b|Incline dumbbell press|'), 'the superset on the page');
+    expect((await exOf('Bench press'))?.supersetGroup).not.toBeNull();
+    expect((await exOf('Incline dumbbell press'))?.supersetGroup).toBe((await exOf('Bench press'))?.supersetGroup);
+    await r.waitFor(() => menuItems(r, 'Bench press').length === 0, 'the menu gone');
+    const items = await openMenu(r, 'Bench press', '1a Bench press menu');
+    expect(items).toContain('Unlink');
+    // No warm-ups in a superset (the pop-up's rule): Add warm-up isn't offered.
+    expect(items).not.toContain('Add warm-up');
+    await pick(r, 'Bench press', 'Unlink');
+    await r.waitFor((t) => t.includes('Superset removed'), 'the Unlink toast');
+    expect((await exOf('Bench press'))?.supersetGroup).toBeNull();
+
+    // Add warm-up: one more warm-up set on Bench, with Undo.
+    const warmups = async () => {
+      const a = await load();
+      const id = a.exercises.find((e) => e.exerciseName === 'Bench press')?.id;
+      return a.sets.filter((x) => x.sessionExerciseId === id && x.setType === 'warmup' && x.status !== 'deleted').length;
+    };
+    const w0 = await warmups();
+    await r.waitFor(() => menuItems(r, 'Bench press').length === 0, 'the menu gone');
+    await openMenu(r, 'Bench press');
+    await pick(r, 'Bench press', 'Add warm-up');
+    await r.waitFor((t) => t.includes('Warm-up added') && t.includes('Undo'), 'the warm-up toast with Undo');
+    expect(await warmups()).toBe(w0 + 1);
+
+    // Rest: the per-type sheet; + on Working sets adds 15 s to Bench's pending working sets (today only).
+    const workingRest = async () => {
+      const a = await load();
+      const id = a.exercises.find((e) => e.exerciseName === 'Bench press')?.id;
+      return a.sets.find((x) => x.sessionExerciseId === id && x.setType === 'working' && x.status === 'pending')?.rest.seconds;
+    };
+    const rest0 = await workingRest();
+    await r.waitFor(() => menuItems(r, 'Bench press').length === 0, 'the menu gone');
+    await openMenu(r, 'Bench press');
+    await pick(r, 'Bench press', 'Rest, 3:00');
+    await r.waitFor((t) => t.includes('|Rest|') && t.includes('|Working sets|') && t.includes('|3:00|'), 'the Rest sheet');
+    expect(rest0).toBe(180);
+    await tap(byLabel(r, 'More Working sets'));
+    await r.waitFor((t) => t.includes('|3:15|'), 'the rest stepped');
+    expect(await workingRest()).toBe(195);
+    await r.press('Done');
+
+    // Why this weight?: the stored target's reasons (no rule runs), in an alert.
+    const { Alert } = await import('react-native');
+    const alert = vi.spyOn(Alert, 'alert');
+    await r.waitFor(() => menuItems(r, 'Bench press').length === 0, 'the menu gone');
+    await openMenu(r, 'Bench press');
+    await pick(r, 'Bench press', 'Why this weight?');
+    await r.waitFor(() => alert.mock.calls.length > 0, 'the Why alert');
+    expect(alert.mock.calls[0]?.[0]).toBe('Why this weight?');
+    expect(String(alert.mock.calls[0]?.[1]).length).toBeGreaterThan(0);
+
+    // How to: the exercise's guide.
+    await r.waitFor(() => menuItems(r, 'Bench press').length === 0, 'the menu gone');
+    await openMenu(r, 'Bench press');
+    await pick(r, 'Bench press', 'How to');
+    await r.waitFor(() => r.nav.some((c) => c.method === 'navigate' && c.args[0] === 'HowTo'), 'the How to guide');
+
+    // Remove (nothing logged: at once, with Undo).
+    await r.waitFor(() => menuItems(r, 'Bench press').length === 0, 'the menu gone');
+    await openMenu(r, 'Bench press');
+    await pick(r, 'Bench press', 'Remove exercise');
+    await r.waitFor((t) => t.includes('Bench press removed') && t.includes('Undo'), 'the Remove toast with Undo');
+    expect(await exOf('Bench press')).toBeUndefined();
+    await r.press('Undo');
+    await r.waitFor((t) => !t.includes('Bench press removed'), 'the Remove toast gone');
+    expect(await exOf('Bench press')).toBeDefined();
     expect(r.errors).toEqual([]);
     await r.unmount();
   });

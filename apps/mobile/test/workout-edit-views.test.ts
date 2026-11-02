@@ -6,7 +6,7 @@ import { assisted, at, dumbbells, exercise, GYM, id, idGen, kg, lb, ms, profile,
 import { apply, BENCH, FACE, HANG, logCmd, ROW, setsFor, startFixture } from '../../../packages/domain/test/session-fixture';
 import { DRAG, dragStep, dropIndex, dropTargetAt, type DragPhase } from '../src/ui/drag-logic';
 import { holdMenu, nextField, popupRowActions, typeMenu } from '../src/ui/exercise-popup-model';
-import { popupCellWrite, popupRestCommand, rpeNumber, sessionPopupView, whyWeightLines } from '../src/workout/exercise-popup';
+import { exerciseMenuMore, exerciseRestRows, popupCellWrite, popupRestCommand, rpeNumber, sessionPopupView, whyWeightLines } from '../src/workout/exercise-popup';
 import { buildRounds } from '../src/workout/rounds';
 
 /**
@@ -216,6 +216,58 @@ describe('the workout’s exercise pop-up (sessionPopupView)', () => {
     expect(whyWeightLines(exp)).toEqual(['Set by: Built-in progression', 'Last time: 1 Oct · 100 × 8, 8, 7', 'RPE 8']);
     expect(whyWeightLines({ ...exp, recorded: false, rows: [] })).toEqual(['Not recorded']);
     expect(whyWeightLines(null)).toEqual([]);
+  });
+});
+
+describe('(Ben, 2 Nov) the round menu offers what the pop-up offered, on the same rules', () => {
+  const rowIdOf = (s: SessionAggregate, exerciseId: string): string => s.exercises.find((e) => e.exerciseId === exerciseId && e.removed === undefined)?.id ?? '';
+  const parity = (s: SessionAggregate, exerciseId: string) => {
+    const v = popup(s, exerciseId);
+    const m = exerciseMenuMore(s, rowIdOf(s, exerciseId), true);
+    const rest = v.rests.find((x) => x.kind === 'working') ?? v.rests[0];
+    expect(m.more.warmup).toBe(v.canAddWarmup);
+    expect(m.more.supersetNext).toBe(v.canSupersetNext);
+    expect(m.more.unlink).toBe(v.canUnlink);
+    expect(m.canRemove).toBe(v.canDeleteExercise);
+    expect(m.more.rest).toBe(rest?.text ?? null);
+    expect(exerciseRestRows(s, rowIdOf(s, exerciseId))).toEqual(v.rests);
+    return m;
+  };
+
+  it('a fresh workout: every exercise (straight sets, superset members, timed) matches the pop-up', () => {
+    const s = startFixture().state;
+    for (const x of [BENCH, ROW, FACE, HANG]) parity(s, x);
+    // Bench: warm-up, rest by type and pairing; the superset member: Unlink, one round rest, no warm-up.
+    expect(parity(s, BENCH).more).toMatchObject({ howTo: true, warmup: true, supersetNext: true, unlink: false, why: true });
+    expect(parity(s, ROW).more).toMatchObject({ warmup: false, unlink: true });
+    expect(exerciseRestRows(s, rowIdOf(s, ROW)).map((r) => r.label)).toEqual(['After each round']);
+  });
+
+  it('a finished exercise: no warm-up, no rest rows, no Remove; Why stays (its last set’s target)', () => {
+    let s = startFixture().state;
+    for (const x of setsFor(s, BENCH)) s = apply(s, logCmd(x.id, values(x.planned.load, 8), 100));
+    const m = parity(s, BENCH);
+    expect(m.more).toMatchObject({ warmup: false, rest: null, why: true });
+    expect(m.canRemove).toBe(false);
+    expect(exerciseMenuMore(s, 'nope', true)).toEqual({ more: { howTo: false, warmup: false, rest: null, supersetNext: false, unlink: false, why: false }, canRemove: false });
+  });
+
+  it('per-hand dumbbells in lb and an assisted machine: the same flags as their pop-up (no warm-up ramp on assistance)', () => {
+    const CURL = id(270);
+    const PULL = id(271);
+    const exs = new Map<string, Exercise>([
+      [CURL, exercise(270, 'Dumbbell curl', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' })],
+      [PULL, exercise(271, 'Assisted pull-up', { compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance' })],
+    ]);
+    const rack = dumbbells({ unit: 'lb', loads: [10, 15, 20, 25, 30, 35] });
+    const machine = assisted();
+    const r = routine([
+      routineExercise(700, { exerciseId: CURL, equipmentId: rack.id, order: 0, setTemplates: [template(7001, { targetLoad: lb(25, 'per_hand'), targetReps: { min: 8, max: 12 } })] }),
+      routineExercise(701, { exerciseId: PULL, equipmentId: machine.id, order: 1, setTemplates: [template(7011, { targetLoad: kg(25, 'assistance') })] }),
+    ]);
+    const s = startWorkout({ opId: 'start-pp', owner: profile({ preferredUnit: 'lb' }), gymId: GYM, routine: r, exercises: exs, gymEquipment: [rack, machine], at: at(0), newId: idGen() }).aggregate;
+    parity(s, CURL);
+    expect(parity(s, PULL).more.warmup).toBe(false);
   });
 });
 

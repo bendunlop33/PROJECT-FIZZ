@@ -21,8 +21,12 @@ const builderSheets = read('screens', 'builder', 'BuilderSheets.tsx');
 const builderWorkout = read('screens', 'builder', 'BuilderWorkoutScreen.tsx');
 
 describe('one implementation for both pages (§7: "same components, not copies")', () => {
-  it('the exercise pop-up and the Swap / Add sheet come from ui/ on both pages', () => {
-    for (const src of [builderSheets, edits]) expect(src).toContain('<ExercisePopup');
+  it('the exercise pop-up stays on Your workout; the workout’s Rest sheet and the Swap / Add sheet come from ui/', () => {
+    // (Ben, 2 Nov) Mid-workout the pop-up's actions moved into the round menu; its rest rows are the shared `RestRows`.
+    expect(builderSheets).toContain('<ExercisePopup');
+    expect(edits).not.toContain('<ExercisePopup');
+    expect(edits).toContain("import { RestSheet } from '../../ui/exercise-popup';");
+    expect(read('ui', 'exercise-popup.tsx')).toContain('<RestRows rests={view.rests}');
     expect(builderSheets).toContain("export { SwapSheet } from '../../ui/swap-sheet';");
     expect(edits).toContain("import { SwapSheet } from '../../ui/swap-sheet';");
     expect(builderSheets).not.toContain('InputAccessoryView');
@@ -43,8 +47,12 @@ describe('one implementation for both pages (§7: "same components, not copies")
 });
 
 describe('the round page (§7)', () => {
-  it('the exercise name opens the pop-up; Swap and Add use the builder’s sheet; the old mid-workout swap sheet is gone', () => {
-    expect(workout).toContain('workoutEdits.open(card.sessionExerciseId)');
+  it('the exercise name opens nothing (Ben, 2 Nov); Swap and Add use the builder’s sheet; the old mid-workout swap sheet is gone', () => {
+    expect(workout).not.toContain('onName=');
+    expect(table).not.toContain('p.onName');
+    expect(table).not.toMatch(/\bonName:/);
+    expect(table).not.toContain('Opens the exercise');
+    expect(workout).not.toContain('workoutEdits.open(');
     expect(workout).toContain('{workoutEdits.node}');
     expect(workout).not.toContain('MidSwapSheet');
     expect(workout).toContain("onAddExercise={shown === rounds.length - 1 ? () => { workoutEdits.openAdd(); } : null}");
@@ -68,8 +76,8 @@ describe('the round page (§7)', () => {
     for (const src of [edits, workout, table]) {
       for (const fn of ['builderLoad', 'setRowsFor', 'roundDownHere', 'roundToAvailableLoad', 'expectedLoad', 'warmupGap']) expect(src).not.toContain(fn);
     }
-    expect(edits).toContain('popupCellWrite(');
     expect(edits).toContain('addWarmupCommand(');
+    expect(edits).toContain('popupRestCommand(');
   });
   it('minimal copy: no rule labels or reassurance', () => {
     for (const src of [edits, read('ui', 'exercise-popup.tsx'), read('ui', 'exercise-popup-model.ts')]) {

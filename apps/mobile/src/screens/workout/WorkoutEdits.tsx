@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert } from 'react-native';
 
 import {
@@ -13,7 +13,6 @@ import {
   type BuilderAdvice,
   type CommandOutcome,
   type GymLearn,
-  type HistoryGlanceView,
   type RoundJump,
   type SupersetPartner,
 } from '@fizz/domain';
@@ -24,20 +23,20 @@ import { newUuid } from '../../device/runtime';
 import { haptic } from '../../device/haptics';
 import type { ActiveWorkoutData } from '../../services/workout-services';
 import type { AppServices } from '../../services/app-services';
-import { HistoryGlance } from '../../progress/history-glance';
-import { ExercisePopup } from '../../ui/exercise-popup';
-import { holdMenu, POPUP_COPY, typeMenu, type PopupSetRow } from '../../ui/exercise-popup-model';
+import { RestSheet } from '../../ui/exercise-popup';
+import { holdMenu, POPUP_COPY, typeMenu, type PopupRestRow } from '../../ui/exercise-popup-model';
 import { SwapSheet } from '../../ui/swap-sheet';
 import { SWAP_SHEET_COPY, type ChoiceSection } from '../../ui/swap-sheet-model';
 import { useAddOwn } from '../../ui/use-add-own';
 import { useExercisePicker, usePickerView } from '../../ui/use-exercise-picker';
-import { popupCellWrite, popupRestCommand, POPUP_REFUSAL, removePrompt, sessionPopupView } from '../../workout/exercise-popup';
+import { exerciseRestRows, popupRestCommand, POPUP_REFUSAL, removePrompt } from '../../workout/exercise-popup';
 import type { Round } from '../../workout/rounds';
 import { UNDO_TOAST } from '../../workout/undo-op';
 
 /**
  * Same editing as the builder, mid-workout (workout-table-v3 §7): the shared
- * exercise pop-up and Swap / Add sheet on today's session, the round page's
+ * Swap / Add sheet on today's session, the round menu's Rest sheet and
+ * Add warm-up (Ben, 2 Nov: the name's pop-up moved into the menu), the round page's
  * set and exercise actions (drag, VoiceOver, long-press menus), and the
  * builder's "not recommended because…" advice on Ben's own changes. Every
  * write is one of the workout's own commands with a fresh opId, versioned on
@@ -57,7 +56,7 @@ export interface EditToast {
 export interface WorkoutEditsInput {
   services: AppServices;
   sessionId: string;
-  /** The workout this render draws (the pop-up's values). */
+  /** The workout this render draws (the Rest sheet's values). */
   data: ActiveWorkoutData | null;
   /** The workout as the screen has it now (read when a write is worked out, after taps). */
   latest: () => ActiveWorkoutData | null;
@@ -81,14 +80,12 @@ export interface WorkoutEditsInput {
   addSet: (sessionExerciseId: string) => void;
   /** Any open cell editor closes (and saves) first. */
   beforeEdit: () => void;
-  /** (Ben, 31 Oct) The pop-up's `How to`: the guide for this exercise, or null when it has none. */
-  howTo?: (sessionExerciseId: string) => (() => void) | null;
   /**
    * (Ben, 31 Oct) `Not at this gym ›` in the Swap sheet (it left the `⋯`): offered when `can` holds;
    * `mark` tells the gym (with its own Undo toast) and the sheet stays open to pick the swap.
    */
   notHere?: { can: (sessionExerciseId: string) => boolean; mark: (sessionExerciseId: string) => void };
-  /** The screen's toast, shown in the pop-up's footer while it's open. */
+  /** The screen's toast, shown in a sheet's footer while it's open. */
   toast: ReactNode;
 }
 
@@ -102,26 +99,12 @@ type SheetFor = { mode: 'swap'; sessionExerciseId: string } | { mode: 'add' } | 
 const sheetFor = (s: Sheet): SheetFor => (s.mode === 'add' ? { mode: 'add' } : { mode: s.mode, sessionExerciseId: s.sessionExerciseId });
 
 export function useWorkoutEdits(p: WorkoutEditsInput) {
-  const [popupFor, setPopupFor] = useState<string | null>(null);
+  /** (Ben, 2 Nov) The round menu's `Rest`: rest by set type for this exercise. */
+  const [restFor, setRestFor] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   /** (Ben, 31 Oct) The swap sheet's `Not at this gym ›` was tapped since it opened: the row goes (its toast has Undo). */
   const [markedHere, setMarkedHere] = useState(false);
   const picker = useExercisePicker();
-  // (Ben, 26 Oct) The pop-up's read-only History: read once when it opens on an exercise (stored history, local).
-  const [glance, setGlance] = useState<{ for: string; view: HistoryGlanceView | null } | null>(null);
-  useEffect(() => {
-    if (popupFor === null) return;
-    let live = true;
-    void p.services.workout
-      .exerciseGlance(p.sessionId, popupFor)
-      .catch(() => null)
-      .then((view) => {
-        if (live) setGlance({ for: popupFor, view });
-      });
-    return () => {
-      live = false;
-    };
-  }, [p.services, p.sessionId, popupFor]);
   const own = useRef<SessionAggregate | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const latest = useRef(p);
@@ -451,152 +434,53 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
     });
   }
 
-  // ---- The pop-up -----------------------------------------------------------
+  // ---- The round menu's former pop-up rows (Ben, 2 Nov) -------------------
 
-  const data = p.data;
-  // (Ben, 31 Oct) `How to` left the round page's `⋯`: the pop-up links the guide.
-  const howTo = popupFor === null ? null : (p.howTo?.(popupFor) ?? null);
-  const popupExercise = popupFor === null ? undefined : p.rounds.flatMap((r) => r.exercises).find((e) => e.sessionExerciseId === popupFor);
-  const view =
-    data === null || popupExercise === undefined
-      ? null
-      : sessionPopupView({ aggregate: data.aggregate, exercise: popupExercise, works: data.worksLines?.[popupExercise.exerciseId] ?? null, mayHurt: data.painFlagged.has(popupExercise.exerciseId), painFlagged: data.painFlagged });
-
-  async function editCell(row: PopupSetRow, field: 'reps' | 'kg' | 'rpe', value: number): Promise<string | null> {
-    return inTurn(async () => {
+  /** `Add warm-up` (`addWarmupCommand`), with Undo; a refusal says why in the toast. */
+  const addWarmup = (sessionExerciseId: string) =>
+    inTurn(async () => {
       latest.current.beforeEdit();
       const a = current();
-      if (a === null) return POPUP_REFUSAL.changed;
-      const w = popupCellWrite(a, row.key, field, value, latest.current.latest()?.bodyweightExercises, latest.current.latest()?.painFlagged);
+      if (a === null) return;
       const opId = newUuid();
-      switch (w.kind) {
-        case 'refused':
-          return w.text;
-        case 'unchanged':
-          return w.note;
-        case 'correct': {
-          const r = await latest.current.services.workout.correctSet({ sessionId: latest.current.sessionId, setId: w.setId, expectedSetVersion: w.expectedSetVersion, patch: w.patch, opId });
-          if (!r.ok) {
-            void latest.current.reload();
-            return r.message;
-          }
-          own.current = r.aggregate;
-          latest.current.adopt(r.aggregate);
-          latest.current.changed();
-          if (!r.duplicate) latest.current.undoToast(UNDO_TOAST.correctedNamed(row.spokenName), opId);
-          return null;
-        }
-        case 'planned': {
-          const r = await send({ type: 'edit_planned_set', at: at(), opId, setId: w.setId, expectedSetVersion: w.expectedSetVersion, patch: w.patch });
-          if (!r.ok) return latest.current.refusalText(r.error.code, r.error.message);
-          // (Ben, 27 Oct) Kept as typed; off the known kit the gym learns it (`Main Gym: 27.5 kg added · Undo`).
-          if (!r.duplicate && w.learn != null) latest.current.learnTyped(w.learn, [opId]);
-          // `Set 3 updated · Undo`, as the round page's own target edits (review S4).
-          else if (!r.duplicate) latest.current.undoToast(UNDO_TOAST.correctedNamed(row.spokenName), opId);
-          return w.note;
-        }
-        case 'add_weight': {
-          // (Ben, 27 Oct) kg on a bodyweight exercise: `+ Weight` for today, then this target as typed; one Undo for both.
-          const modeOp = newUuid();
-          const m = await send({ type: 'set_load_mode', at: at(), opId: modeOp, expectedVersion: a.session.version, sessionExerciseId: w.sessionExerciseId, mode: 'added' });
-          if (!m.ok) return latest.current.refusalText(m.error.code, m.error.message);
-          const set = m.aggregate.sets.find((x) => x.id === w.setId);
-          if (set === undefined) return POPUP_REFUSAL.changed;
-          const r = await send({ type: 'edit_planned_set', at: at(), opId, setId: w.setId, expectedSetVersion: set.version, patch: { load: w.load, loadAsTyped: true } });
-          if (!r.ok) return latest.current.refusalText(r.error.code, r.error.message);
-          const undo = () => {
-            void (async () => {
-              for (const target of [opId, modeOp]) {
-                const u = await latest.current.services.workout.undoOp({ sessionId: latest.current.sessionId, targetOpId: target });
-                if (!u.ok) {
-                  latest.current.showToast({ text: u.message });
-                  break;
-                }
-              }
-              latest.current.changed();
-              void latest.current.reload();
-              haptic('undo');
-            })();
-          };
-          latest.current.showToast({ text: `${row.spokenName}: +${String(w.load.value)} ${w.load.unit}`, action: 'Undo', onAction: undo });
-          return null;
-        }
+      const c = addWarmupCommand(a, sessionExerciseId, { opId, at: at(), newSetId: newUuid(), warmupRestS: p.latest()?.restDefaultsS?.warmup });
+      if (!c.ok) {
+        latest.current.showToast({ text: POPUP_REFUSAL[c.reason] });
+        return;
       }
+      const r = await send(c.command);
+      if (!r.ok) {
+        refused(r);
+        return;
+      }
+      haptic('step');
+      latest.current.undoToast(UNDO_TOAST.addedNamed('Warm-up'), opId);
     });
+
+  /** A rest row's 15 s step in the `Rest` sheet, read again from the state now (quick taps add up). */
+  function restStep(sessionExerciseId: string, rest: PopupRestRow, dir: 1 | -1) {
+    // No toast per 15 s step (the stepper repeats while held, and its −/+ is its own reverse; the value
+    // is on screen). Decision for review S4: `set_rest_after` has no `undo_op`; today only, never a done set.
+    void edit((a, opId) => popupRestCommand(a, sessionExerciseId, { kind: rest.kind, seconds: currentRest(a, sessionExerciseId, rest.kind) ?? rest.seconds }, dir, { opId, at: at() }), null);
   }
+
+  const data = p.data;
+  const restExercise = restFor === null || data === null ? undefined : data.aggregate.exercises.find((e) => e.id === restFor && e.removed === undefined);
 
   const liveIds = (current()?.exercises ?? []).filter((e) => e.removed === undefined).map((e) => e.exerciseId);
   const pickerView = usePickerView(picker, liveIds, (sheet?.sections ?? []).flatMap((x) => x.items.map((i) => i.exerciseId)));
 
   const node = (
     <>
-      <ExercisePopup
-        view={view}
-        resetKey={popupFor}
-        onEditCell={editCell}
-        onType={(row, type) => setType(row.key, type)}
-        onDeleteRow={(row) => {
-          deleteSet(row.key);
-        }}
-        onMoveRow={(row, dir) => void stepSet(row.key, dir)}
-        onAddWarmup={() =>
-          inTurn(async () => {
-            latest.current.beforeEdit();
-            const a = current();
-            if (a === null || popupFor === null) return POPUP_REFUSAL.changed;
-            const opId = newUuid();
-            const c = addWarmupCommand(a, popupFor, { opId, at: at(), newSetId: newUuid(), warmupRestS: p.latest()?.restDefaultsS?.warmup });
-            if (!c.ok) return POPUP_REFUSAL[c.reason];
-            const r = await send(c.command);
-            if (!r.ok) return latest.current.refusalText(r.error.code, r.error.message);
-            latest.current.undoToast(UNDO_TOAST.addedNamed('Warm-up'), opId);
-            return null;
-          })
-        }
-        onAddSet={() => {
-          if (popupFor !== null) latest.current.addSet(popupFor);
-        }}
-        onRestStep={(rest, dir) => {
-          const id = popupFor;
-          if (id === null) return;
-          // No toast per 15 s step (the stepper repeats while held, and its −/+ is its own reverse; the value
-          // is on screen). Decision for review S4: `set_rest_after` has no `undo_op`; today only, never a done set.
-          void edit((a, opId) => popupRestCommand(a, id, { kind: rest.kind, seconds: currentRest(a, id, rest.kind) ?? rest.seconds }, dir, { opId, at: at() }), null);
-        }}
-        onMove={(dir) => {
-          if (popupFor !== null) void moveRound(popupFor, dir);
-        }}
-        onSupersetNext={() => {
-          if (popupFor !== null) void supersetNext(popupFor);
-        }}
-        onUnlink={() => {
-          if (popupFor !== null) void unlink(popupFor);
-        }}
-        onSwap={() => {
-          const id = popupFor;
-          setPopupFor(null);
-          if (id !== null) void openSwap(id);
-        }}
-        onHowTo={howTo ?? undefined}
-        onDelete={() => {
-          const id = popupFor;
-          setPopupFor(null);
-          if (id !== null) remove(id);
+      <RestSheet
+        name={restExercise?.exerciseName ?? null}
+        rests={restExercise === undefined || data === null ? [] : exerciseRestRows(data.aggregate, restExercise.id)}
+        onStep={(rest, dir) => {
+          if (restFor !== null) restStep(restFor, rest, dir);
         }}
         onClose={() => {
-          setPopupFor(null);
+          setRestFor(null);
         }}
-        why={() => (popupFor === null ? Promise.resolve([]) : latest.current.services.workoutEdit.why(latest.current.sessionId, popupFor))}
-        kgStep={async (row, value, dir) => {
-          const a = current();
-          const set = a?.sets.find((s) => s.id === row.key);
-          const ex = set === undefined ? undefined : a?.exercises.find((e) => e.id === set.sessionExerciseId);
-          if (ex === undefined) return null;
-          const k = await latest.current.services.overview.loadKeypad({ equipmentId: ex.equipmentId, unit: ex.unit, convention: ex.loadConvention, value }).catch(() => null);
-          const t = k === null ? null : dir === 1 ? k.up : k.down;
-          return t !== null && t.enabled ? t.value : null;
-        }}
-        history={glance !== null && glance.for === popupFor ? <HistoryGlance view={glance.view} /> : null}
         toast={p.toast}
       />
       <SwapSheet
@@ -657,10 +541,12 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
 
   return {
     node,
-    open: (sessionExerciseId: string) => {
+    /** (Ben, 2 Nov) The round menu's `Rest`: the exercise's rest by set type. */
+    openRest: (sessionExerciseId: string) => {
       latest.current.beforeEdit();
-      setPopupFor(sessionExerciseId);
+      setRestFor(sessionExerciseId);
     },
+    addWarmup: (sessionExerciseId: string) => void addWarmup(sessionExerciseId),
     openSwap: (sessionExerciseId: string) => void openSwap(sessionExerciseId),
     openAdd: () => void openAdd(),
     /** (Review 26 Oct #2) `Superset with…` on the shared sheet: partners first, then every exercise. */
@@ -679,7 +565,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
   };
 }
 
-/** The rest a pop-up row shows, read again from the state now (quick taps add up). */
+/** The rest a `Rest` row shows, read again from the state now (quick taps add up). */
 function currentRest(a: SessionAggregate, sessionExerciseId: string, kind: string): number | null {
   if (kind === 'round') {
     const ex = a.exercises.find((e) => e.id === sessionExerciseId);

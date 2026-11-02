@@ -12,7 +12,6 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = join(__dirname, '..', 'src');
 const workout = readFileSync(join(SRC, 'screens', 'workout', 'WorkoutScreen.tsx'), 'utf8');
-const edits = readFileSync(join(SRC, 'screens', 'workout', 'WorkoutEdits.tsx'), 'utf8');
 
 describe('the workout screen never puts an old weight back (R2)', () => {
   it('its unsaved edits are reconciled with every new workout state, through the domain helper', () => {
@@ -32,8 +31,5 @@ describe('the workout screen never puts an old weight back (R2)', () => {
     expect(workout.match(/copied: true, setVersion: f(ocus)?\.setVersion/g)?.length).toBe(3);
     // (Ben, 26 Oct) A row's last-time copy into a set not current: on the version read after it became current.
     expect(workout).toContain('setEdits({ setId, values, copied: true, setVersion: set.version });');
-  });
-  it('a pop-up value already on the row writes nothing (R4)', () => {
-    expect(edits).toMatch(/case 'unchanged':\s*return w\.note;/);
   });
 });

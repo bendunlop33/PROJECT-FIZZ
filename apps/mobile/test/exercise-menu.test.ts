@@ -147,8 +147,50 @@ describe('Target RIR', () => {
     ]);
     expect(m.rows.map((i) => i.label)).toEqual(['Swap exercise', 'Add set', 'History', 'Notes', 'Plates', 'Adjust']);
     expect(m.danger.map((i) => [i.label, i.destructive])).toEqual([['Skip exercise', true]]);
-    // No Cancel row (a tap outside dismisses it), and the name's pop-up keeps its own items.
+    // No Cancel row (a tap outside dismisses it); without `more` / `canRemove`, no second section and no Remove.
+    expect(m.more).toEqual([]);
     for (const gone of ['Cancel', 'Edit set', 'Target RIR', 'Delete this set', 'Add exercise', 'Not at this gym', 'How to', 'Superset with…', 'Unlink', 'Remove exercise', 'Do next']) expect(labels(m)).not.toContain(gone);
+  });
+
+  const MORE_ALL = { howTo: true, warmup: true, rest: '2:00', supersetNext: true, unlink: true, why: true };
+  const MORE_NONE = { howTo: false, warmup: false, rest: null, supersetNext: false, unlink: false, why: false };
+
+  it('(Ben, 2 Nov) the name’s former pop-up: How to, Add warm-up, Rest, Superset with next, Unlink, Why this weight? after Adjust; Skip then Remove in red', () => {
+    const m = roundContextMenu({ canSwap: true, moves: ALL_MOVES, plates: true, adjust: true, more: MORE_ALL, canRemove: true });
+    expect(m.more.map((i) => [i.label, i.action])).toEqual([
+      ['How to', 'how_to'],
+      ['Add warm-up', 'add_warmup'],
+      ['Rest', 'rest'],
+      ['Superset with next', 'superset_next'],
+      ['Unlink', 'unlink'],
+      ['Why this weight?', 'why_weight'],
+    ]);
+    // Rest shows the value beside it, and VoiceOver reads it.
+    expect(m.more.find((i) => i.action === 'rest')).toMatchObject({ detail: '2:00', accessibilityLabel: 'Rest, 2:00' });
+    expect(m.more.some((i) => i.destructive === true)).toBe(false);
+    expect(m.danger.map((i) => [i.label, i.action, i.destructive])).toEqual([
+      ['Skip exercise', 'skip_exercise', true],
+      ['Remove exercise', 'remove_exercise', true],
+    ]);
+    // Menu order: the second section sits between the rows and the red ones; the pop-up's Move up / down are the
+    // icon row's Up / Down (never twice).
+    expect(labels(m).slice(-9)).toEqual(['Adjust', 'How to', 'Add warm-up', 'Rest', 'Superset with next', 'Unlink', 'Why this weight?', 'Skip exercise', 'Remove exercise']);
+    expect(labels(m).filter((l) => l === 'Up' || l === 'Move up')).toEqual(['Up']);
+  });
+
+  it('(Ben, 2 Nov) each second-section row only when it applies; Remove only when allowed', () => {
+    const none = roundContextMenu({ canSwap: false, moves: NO_MOVES, plates: false, more: MORE_NONE, canRemove: false });
+    expect(none.more).toEqual([]);
+    expect(labels(none)).toEqual(['Add set', 'History', 'Notes', 'Skip exercise']);
+    expect(roundContextMenu({ canSwap: false, moves: NO_MOVES, plates: false, more: { ...MORE_NONE, unlink: true } }).more.map((i) => i.label)).toEqual(['Unlink']);
+    expect(roundContextMenu({ canSwap: false, moves: NO_MOVES, plates: false, more: { ...MORE_NONE, supersetNext: true } }).more.map((i) => i.label)).toEqual(['Superset with next']);
+    // A done exercise: no Skip, but Remove can still be offered (with logged sets it asks first and keeps them).
+    expect(roundContextMenu({ canSwap: false, moves: NO_MOVES, plates: false, canSkip: false, canRemove: true }).danger.map((i) => i.label)).toEqual(['Remove exercise']);
+  });
+
+  it('(Ben, 2 Nov) the height counts the second section and its separator', () => {
+    const m = roundContextMenu({ canSwap: true, moves: ALL_MOVES, plates: true, adjust: true, more: MORE_ALL, canRemove: true });
+    expect(contextMenuHeight(m)).toBe((6 + 6 + 2) * 44 + 58 + 3 * 6);
   });
 
   it('only the moves that change the order; a done exercise has none, no Swap, no Skip', () => {
