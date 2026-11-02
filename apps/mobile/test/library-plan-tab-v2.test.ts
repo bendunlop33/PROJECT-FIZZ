@@ -15,7 +15,7 @@ import { createHarness, setUpGym, type Harness } from './harness';
 /**
  * (Ben, 27 Oct: "don't really understand this page. Seems poorly designed.") Library › Plan v2 (plan-tab-v2.md) end
  * to end on real SQLite, offline: the overview joins each plan day to its workout (no extra reads per row), so the
- * page shows **one** list: Push ✓ with its date, Up next, `Week 1 of 6 · deload in week 6`; a past week keeps its
+ * page shows **one** list: Push ✓ with its date, Up next, `Week 1 of 6 · ends Sun …` (Ben, 2 Nov: the deload is on the strip); a past week keeps its
  * ticks; a day opened from another week shows that week's planned targets; a force-close shows the same page. And
  * the screen's structure: the duplicate rotation list and the big `Edit plan` button are gone, every action stays.
  */
@@ -63,7 +63,7 @@ function nextMonday(): void {
 function pageOf(ov: PlanOverviewWithBlock | null, selected: number | null = null): PlanTabView {
   if (ov === null) throw new Error('no plan');
   const b = ov.block ?? null;
-  return planTabView({ overview: ov, block: b === null ? null : { views: b.views, current: b.current, done: b.done, editable: b.editable, actions: b.actions }, selected });
+  return planTabView({ overview: ov, block: b === null ? null : { views: b.views, current: b.current, done: b.done, editable: b.editable, actions: b.actions, startsOn: b.startsOn, endsOn: b.endsOn ?? null }, selected });
 }
 
 describe('Library › Plan v2: one list', () => {
@@ -82,7 +82,7 @@ describe('Library › Plan v2: one list', () => {
     // Every plan day's workout knows its plan day, so the page joins them without a read per row.
     expect(ov?.days.every((d) => d.dayIndex !== null)).toBe(true);
     let page = pageOf(ov);
-    expect(page.line).toBe('Week 1 of 6 · deload in week 6');
+    expect(page.line.replace(/\u00a0/g, ' ')).toMatch(/^Week 1 of 6 · ends Sun \d+ \w+$/);
     expect(page.chips?.map((c) => c.label)).toEqual(['1', '2', '3', '4', '5', '6 · Deload']);
     expect(page.chips?.find((c) => c.week === 1)).toMatchObject({ current: true, selected: true });
     expect(page.rows.map((r) => r.name)).toEqual(ov?.block?.views[0]?.days.map((d) => d.name));
@@ -107,7 +107,7 @@ describe('Library › Plan v2: one list', () => {
     nextMonday();
     ov = await s.plans.overview();
     page = pageOf(ov);
-    expect(page.line).toBe('Week 2 of 6 · deload in week 6');
+    expect(page.line.replace(/\u00a0/g, ' ')).toMatch(/^Week 2 of 6 · ends Sun \d+ \w+$/);
     expect(page.rows.find((r) => r.name === 'Push')?.state).not.toBe('done');
     const week1 = pageOf(ov, 1);
     expect(week1.listTitle).toBe('Week 1');
@@ -150,7 +150,7 @@ describe('Library › Plan v2: the screen', () => {
     expect(block).toContain('planTabEditAction(view)');
     expect(block).toContain('openNextBlock(plan.planId)');
     expect(block).toContain("openPlanChange(plan.planId, a.kind === 'week' ? 'week' : 'goals')");
-    for (const k of ["item.kind === 'pause'", "item.kind === 'resume'", "navigation.navigate('Coach'", '<ChangePlanSheet', '<EditPlanButton', "stack.navigate('LibraryChanges')", '<WeekCircles', 'void end();']) expect(block).toContain(k);
+    for (const k of ["item.kind === 'pause'", "item.kind === 'resume'", "navigation.navigate('Coach'", '<ChangePlanSheet', '<EditPlanButton', "stack.navigate('LibraryChanges')", '<WeekStrip', 'void end();']) expect(block).toContain(k);
     // Do today (leading swipe) and Move (trailing swipe), the same in ⋯, long-press and VoiceOver actions.
     expect(block).toContain('<SwipeRow');
     expect(block).toMatch(/rightAction: \{ label: today\.label/);

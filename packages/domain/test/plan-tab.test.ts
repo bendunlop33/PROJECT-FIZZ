@@ -8,7 +8,7 @@ import {
   planTabEditAction,
   planTabLine,
   planTabMenu,
-  planWeekCircles,
+  planWeekStrip,
   planTabView,
   type PbBlockDay,
   type PbBlockStripCell,
@@ -71,17 +71,18 @@ function overview(days: PlanOverviewDay[] = [0, 1, 2, 3, 4].map((i) => oday(i)))
   };
 }
 
-describe('header line (planTabLine)', () => {
-  it('`Week 3 of 6 · deload in week 6`; in the deload week `Deload week`; done `Block done`', () => {
-    expect(planTabLine({ current: 3, done: false, of: 6, deloadWeeks: [6] })).toBe('Week 3 of 6 · deload in week 6');
-    expect(planTabLine({ current: 6, done: false, of: 6, deloadWeeks: [6] })).toBe('Week 6 of 6 · Deload week');
-    expect(planTabLine({ current: 6, done: true, of: 6, deloadWeeks: [6] })).toBe('Block done');
+describe('header line (planTabLine; Ben, 2 Nov: one plan screen)', () => {
+  it('`Week 3 of 6 · ends Sun 6 Dec`; the deload is on the strip, not the line; done `Block done`', () => {
+    expect(plain(planTabLine({ current: 3, done: false, of: 6, endsOn: '2026-12-06' }))).toBe('Week 3 of 6 · ends Sun 6 Dec');
+    expect(plain(planTabLine({ current: 6, done: false, of: 6, endsOn: '2026-12-06' }))).toBe('Week 6 of 6 · ends Sun 6 Dec');
+    expect(planTabLine({ current: 6, done: true, of: 6, endsOn: '2026-12-06' })).toBe('Block done');
+    expect(planTabLine({ current: 3, done: false, of: 6 })).toBe('Week 3 of 6');
   });
 
-  it('Push (every 4th): the next deload ahead; Maintain (none) or past the last: just the week', () => {
-    expect(planTabLine({ current: 5, done: false, of: 12, deloadWeeks: [4, 8, 12] })).toBe('Week 5 of 12 · deload in week 8');
-    expect(planTabLine({ current: 3, done: false, of: 6, deloadWeeks: [] })).toBe('Week 3 of 6');
-    expect(planTabLine({ current: 5, done: false, of: 6, deloadWeeks: [4] })).toBe('Week 5 of 6');
+  it('the lead-in: `Starts Mon 9 Nov · ends …`; paused: `Week 3 of 6 · Paused · until 9 Nov`, no end date (it moves)', () => {
+    expect(plain(planTabLine({ current: 1, done: false, of: 6, startsOn: '2026-11-09', endsOn: '2026-12-20' }))).toBe('Starts Mon 9 Nov · ends Sun 20 Dec');
+    expect(planTabLine({ current: 3, done: false, of: 6, endsOn: '2026-12-06', paused: 'Paused · until 9 Nov' })).toBe('Week 3 of 6 · Paused · until 9 Nov');
+    expect(planTabLine({ current: 3, done: false, of: 6, paused: 'Paused' })).toBe('Week 3 of 6 · Paused');
   });
 });
 
@@ -119,7 +120,9 @@ describe('one list of days (states, dates, weekday, main lifts)', () => {
     const b = block(1, { days: (w) => (w === 1 ? [day(0), day(1), day(2, { done: true, doneOn: '2026-10-26' }), day(3), day(4)] : [0, 1, 2, 3, 4].map((d) => day(d))) });
     const v = view({ overview: overview(days), block: b, selected: null });
     expect(v.title).toBe('Push / Pull / Legs');
-    expect(v.line).toBe('Week 1 of 6 · deload in week 6');
+    expect(v.line).toBe('Week 1 of 6');
+    expect(plain(view({ overview: { ...overview(days), paused: { text: 'Paused' } }, block: { ...b, endsOn: '2026-12-06' }, selected: null }).line)).toBe('Week 1 of 6 · Paused');
+    expect(plain(view({ overview: overview(days), block: { ...b, endsOn: '2026-12-06' }, selected: null }).line)).toBe('Week 1 of 6 · ends Sun 6 Dec');
     expect(v.listTitle).toBe('This week');
     expect(v.listMeta).toBe('1 of 5 days · 92% sets');
     expect(v.thisWeek).toBe(true);
@@ -238,8 +241,8 @@ describe('every action stays reachable: ⋯ has Pause and Ask coach; the rest be
   });
 });
 
-describe('week circles (redesign 27 Oct D1)', () => {
-  it('done = ✓, this week = its number filled, later = outlined numbers, `Deload` under a deload week; a tapped week is ringed', () => {
+describe('week strip (Ben, 2 Nov: one plan screen)', () => {
+  it('done = filled (no tick), this week = accent, later = neutral, a deload week `6 ↓`; a tapped week is outlined', () => {
     const chips = planTabChips(
       [
         { week: 1, deload: false, state: 'done' },
@@ -251,18 +254,19 @@ describe('week circles (redesign 27 Oct D1)', () => {
       ],
       5,
     );
-    const c = planWeekCircles(chips);
-    expect(c.map((x) => [x.state, x.text, x.caption, x.selected])).toEqual([
-      ['done', null, null, false],
-      ['done', null, null, false],
-      ['current', '3', null, false],
-      ['later', '4', null, false],
-      ['later', '5', null, true],
-      ['later', '6', 'Deload', false],
+    const c = planWeekStrip(chips);
+    expect(c.map((x) => [x.state, x.label, x.deload, x.selected])).toEqual([
+      ['done', '1', false, false],
+      ['done', '2', false, false],
+      ['current', '3', false, false],
+      ['later', '4', false, false],
+      ['later', '5', false, true],
+      ['later', '6 ↓', true, false],
     ]);
-    expect(c.map((x) => x.accessibilityLabel)).toEqual(['Week 1, done', 'Week 2, done', 'Week 3, this week', 'Week 4', 'Week 5', 'Week 6, deload']);
+    expect(c.some((x) => x.label.includes('✓'))).toBe(false);
+    expect(c.map((x) => x.accessibilityLabel)).toEqual(['Week 1, done', 'Week 2, done', 'Week 3, this week', 'Week 4', 'Week 5, showing', 'Week 6, deload']);
     // The current week selected is never drawn as a separate pick.
-    expect(planWeekCircles(planTabChips([{ week: 1, deload: false, state: 'current' }], 1))[0]?.selected).toBe(false);
+    expect(planWeekStrip(planTabChips([{ week: 1, deload: false, state: 'current' }], 1))[0]?.selected).toBe(false);
   });
 });
 
