@@ -452,6 +452,10 @@ function undoWhat(target: ActionRecord): string {
       return 'the warm-up change';
     case 'fix_workout':
       return d.op === 'delete' ? `deleting ${d.title}` : d.op === 'move' ? `the move of ${d.title}` : `the pairing with ${d.title}`;
+    case 'set_exercise_preference':
+      return `the preference on ${d.name}`;
+    case 'propose_rebalance':
+      return 'the rebalance';
   }
 }
 

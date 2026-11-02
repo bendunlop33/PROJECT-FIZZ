@@ -1184,5 +1184,16 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Merge two app workouts: not built.** The store has no merge of two workouts' sets; the coach proposes deleting the duplicate instead.
 - **Read:** `get_recent_sessions` with a date now gives each workout's times and that day's Health workouts with their pairing (`paired`, `same_workout`, `not_paired`, `counts_as_planned`, `counts_as_logged`, `on_its_own`). Data, not instructions (rule 8).
 - **What the coach can do:** `Fix a past workout (its date, a duplicate, a Health pairing), as a proposal you apply or undo`. Never list: `Delete or change a past workout without your Apply`; `Delete or rewrite a set, an import or a check-in`.
-- **Migration 42** adds `fix_workout` to `coach_actions` (rows kept, as 41). Others may also be taking 42 on parallel branches: renumber at merge.
+- **Migration 43** adds `fix_workout` to `coach_actions` (rows kept; the CHECK keeps 42's kinds, `set_exercise_preference` and `propose_rebalance`).
 - **Open:** not run on Ben's iPhone. Pairing a Health run with a planned run on another day, or when two runs that day, isn't possible by hand (no write path exists; Ben to say if he wants one).
+## 2026-11-02: The coach sets exercise likes and dislikes, and rebalances the plan's muscles (Ben, 2 Nov)
+
+- **Ben's words (1 Nov):** his "remove leg extension" preference didn't change his plan; the coach couldn't set one.
+- **Where preferences live:** the plan builder's Any preferences on the plan in use (Plan setup › Edit plan), not Profile. The builder, the plan swap and Rebalance already read them.
+- **"I don't like leg extensions, take them out":** `set_exercise_preference` saves it at once (`Leg extension: not preferred`, Undo). When his plan has it, the same card shows the plan swap (`Leg extension → Split squat`, every day that has it, Apply / Skip, then Undo, `Today too`). The substitute is for the same muscles, doable at his gym, not pain-flagged, not itself disliked. Already disliked on Plan setup: no second write, the swap is offered on its own. Also `preferred` ("I like hack squats") and clearing one. Plan setup's `Replace` picks the same way (same-muscle now).
+- **"Am I doing enough biceps?", "rebalance my plan":** `propose_rebalance` puts Plan › Muscles' Rebalance card in the chat: the same engine and service, so the coach and the screen show the same lines, bars and day lengths; per-line skip, Apply, Undo; `Out of date` once the plan has moved on. Every group in range: no card, the coach says so. Ranges as approved (FQ/VC/ST not used); no "focus" input.
+- **Smaller turns:** both tools load only on like/dislike or muscle/balance words.
+- **Records:** migration 42 adds both record kinds to `coach_actions`. ADR 0039 amendment (2 Nov).
+- **Ben to decide:** a Profile entry for exercise likes and dislikes (today only in Plan setup); preferences when no builder plan is in use (they have nowhere to live; the coach says so).
+- **Open:** not run on Ben's iPhone.
+

@@ -1,10 +1,11 @@
 /**
- * Schema version 42 (Ben, 2 Nov: fixing past workouts from the coach). Frozen once released.
+ * Schema version 42 (Ben, 2 Nov: "I don't like leg extensions, take them out"; "rebalance my plan"). Frozen once released.
  *
- * - `coach_actions.kind` gains `fix_workout`: a past workout's date or times moved, a duplicate deleted (soft, restorable),
- *   or a Health workout paired or unpaired. The coach's record is a proposal; Ben's Apply is a second record written
- *   with the change, and Undo reverts that one. SQLite can't alter a CHECK, so the table is rebuilt with the same
- *   columns, rows, indexes and trigger, as migration 41 did; the CHECK keeps 41's kinds.
+ * - `coach_actions.kind` gains `set_exercise_preference` (one exercise's preference on the plan in use's Any
+ *   preferences, set because Ben said it; Undo puts it back) and `propose_rebalance` (Plan › Muscles' Rebalance made by
+ *   the coach, a proposal Ben applies). The preferences themselves stay in the plan's JSON document (no column). SQLite
+ *   can't alter a CHECK, so the table is rebuilt with the same columns, rows, indexes and trigger, as migration 41 did;
+ *   the CHECK keeps 41's kinds.
  */
 export const MIGRATION_0042 = `
 CREATE TABLE coach_actions_v42 (
@@ -13,7 +14,7 @@ CREATE TABLE coach_actions_v42 (
   op_id TEXT NOT NULL,
   turn_id TEXT,
   session_id TEXT,
-  kind TEXT NOT NULL CHECK (kind IN ('adjust_pending_sets', 'add_exercise_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'propose_next_workout_change', 'set_pain_flag', 'save_memory', 'suggest_memory', 'forget_memory', 'add_playbook_candidate', 'update_routine', 'fit_today', 'build_workout', 'build_question', 'edit_today', 'build_plan', 'propose_exercise', 'pause_plan', 'update_gym', 'set_lift_target', 'log_activity', 'propose_week', 'propose_workout_edit', 'fill_setup', 'propose_plan_swap', 'update_warmup_prefs', 'fix_workout', 'undo')),
+  kind TEXT NOT NULL CHECK (kind IN ('adjust_pending_sets', 'add_exercise_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'propose_next_workout_change', 'set_pain_flag', 'save_memory', 'suggest_memory', 'forget_memory', 'add_playbook_candidate', 'update_routine', 'fit_today', 'build_workout', 'build_question', 'edit_today', 'build_plan', 'propose_exercise', 'pause_plan', 'update_gym', 'set_lift_target', 'log_activity', 'propose_week', 'propose_workout_edit', 'fill_setup', 'propose_plan_swap', 'update_warmup_prefs', 'set_exercise_preference', 'propose_rebalance', 'undo')),
   status TEXT NOT NULL CHECK (status IN ('committed', 'proposed', 'rejected', 'stale', 'failed')),
   version INTEGER NOT NULL CHECK (version >= 1),
   created_at_utc TEXT NOT NULL,

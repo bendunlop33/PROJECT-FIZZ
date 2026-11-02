@@ -621,6 +621,28 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Not changed: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
+    case 'set_exercise_preference': {
+      // (Ben, 2 Nov) The exercise and where it now stands; Undo on the card, the plan swap (if any) under it.
+      if (st === 'committed') {
+        const text = `${d.name}: ${d.preference === 'not_preferred' ? 'not preferred' : d.preference === 'preferred' ? 'preferred' : 'no preference'}`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not changed: your plan changed.', 'Not changed. Your plan changed.');
+      const text = `Preference not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
+    case 'propose_rebalance': {
+      // (Ben, 2 Nov) Plan › Muscles' Rebalance: each line, as the screen's card.
+      if (st === 'proposed') {
+        // Short enough for the tool log and speech; the card shows every line.
+        const full = `Rebalance: ${d.lines.map((l) => l.text).join('; ')}.`;
+        const text = full.length <= 240 ? full : `Rebalance: ${String(d.lines.length)} changes (${[...new Set(d.lines.map((l) => l.text.split(':')[0] ?? ''))].join(', ')}).`.slice(0, 240);
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
+      const text = `Not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
     case 'build_question': {
       // workout-builder v2 §4.2: the card shows the checked question and its answers; nothing else was written.
       const text = d.question;

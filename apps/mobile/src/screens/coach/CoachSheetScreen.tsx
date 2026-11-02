@@ -52,8 +52,9 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SecondaryButton, SheetKeyboardAvoidingView, TEXT_PRESSED_OPACITY, TextButton, TextField, useKeyboardVisible } from '../../ui';
-import { PlanSwapCard } from './PlanSwapCard';
 import { WorkoutFixCard } from './WorkoutFixCard';
+import { PlanSwapCard, PlanSwapCardById } from './PlanSwapCard';
+import { RebalanceCard } from './RebalanceCard';
 import { DraftEditCard, SetupFillCard, useOpenSetup } from './DraftCards';
 import { CoachCard } from './CoachCard';
 import { HeaderButton, SendButton } from './SheetButtons';
@@ -999,6 +1000,17 @@ function Row({
       if (row.card.draftEdit !== undefined && onDraft !== undefined) return <DraftEditCard record={row.card.draftEdit} onChanged={onDraft.changed} />;
       if (row.card.planSwap !== undefined) return <PlanSwapCard record={row.card.planSwap} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
       if (row.card.workoutFix !== undefined) return <WorkoutFixCard record={row.card.workoutFix} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
+      if (row.card.rebalance !== undefined) return <RebalanceCard record={row.card.rebalance} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
+      if (row.card.prefSwap !== undefined) {
+        // (Ben, 2 Nov) One card: the preference (Undo) with its plan swap proposal under it (Apply / Skip, then Undo).
+        const card = row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card;
+        return (
+          <View style={{ gap: theme.space['2'] }}>
+            <CoachCard card={card} onUndo={onUndo} onProposal={onProposal} onGymChange={onGymChange} onMemory={onMemory} onNewExercise={onNewExercise} />
+            <PlanSwapCardById actionId={row.card.prefSwap.swapActionId} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />
+          </View>
+        );
+      }
       if (row.card.setupFill !== undefined && onDraft !== undefined) return <SetupFillCard record={row.card.setupFill} onOpen={onDraft.openSetup} />;
       if (row.card.activityOffer !== undefined && onDraft !== undefined) return <ActivityOfferCard record={row.card.activityOffer} onChanged={onDraft.changed} />;
       if (row.card.plan !== undefined && onDraft !== undefined) return <PlanCard record={row.card.plan} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
