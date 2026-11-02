@@ -336,6 +336,8 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
       supersetGroup: rex.supersetGroup,
       transitionRestS: rex.transitionRestS,
       progressionRuleId: rex.progressionRuleId,
+      // (Ben, 2 Nov) A warm-up cardio row Ben asked for keeps its mark in the workout and its history (never on a lift).
+      ...(rex.warmup === true && (exercise.measurement === 'cardio' || exercise.measurement === 'duration') ? { warmup: true as const } : {}),
     });
 
     rex.setTemplates.forEach((tpl, index) => {

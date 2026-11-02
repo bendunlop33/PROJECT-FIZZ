@@ -370,8 +370,16 @@ export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
       const line = parts.join(', ');
       const unit = sets.find((s) => s.planned.load !== null)?.planned.load?.unit ?? null;
       const sub = lastTimeSub(ex.exerciseId, input.history(ex.exerciseId), unit, input.targetsHit(ex.exerciseId)) ?? (sets.some((s) => s.planned.provenance?.estimate === true) ? 'est.' : null);
-      return detailRow(ex.id, ex.exerciseId, ex.exerciseName, line, sub, labels[i] ?? null);
+      return detailRow(ex.id, ex.exerciseId, ex.exerciseName, line, withWarmupMark(sub, ex.warmup === true), labels[i] ?? null);
     }) };
+}
+
+/** (Ben, 2 Nov) The plan day's row meta: `Warm-up` first on a warm-up cardio row Ben asked for, then last time's line. */
+export const WARMUP_ROW_TEXT = 'Warm-up';
+
+function withWarmupMark(sub: string | null, warmup: boolean): string | null {
+  if (!warmup) return sub;
+  return sub === null ? WARMUP_ROW_TEXT : `${WARMUP_ROW_TEXT} · ${sub}`;
 }
 
 function detailRow(key: string, exerciseId: string, name: string, line: string, sub: string | null, superset: string | null = null): PlanDayDetailRow {
@@ -430,7 +438,7 @@ export function planDayFromTemplates(input: PlanDayTemplateInput): PlanDayDetail
       });
       const scheme = sameOf(values, rest.length);
       const parts = [...(tops.length === 0 ? [] : [tops.length === 1 ? 'Top set' : `${String(tops.length)} top sets`]), ...(rest.length > 0 || tops.length === 0 ? [scheme === null ? `${String(rest.length)} ${rest.length === 1 ? 'set' : 'sets'}` : `${String(rest.length)} × ${scheme}`] : [])];
-      return detailRow(re.id, re.exerciseId, name, parts.join(', '), lastTimeSub(re.exerciseId, input.history(re.exerciseId), input.unit, input.targetsHit(re.exerciseId)), labels[i] ?? null);
+      return detailRow(re.id, re.exerciseId, name, parts.join(', '), withWarmupMark(lastTimeSub(re.exerciseId, input.history(re.exerciseId), input.unit, input.targetsHit(re.exerciseId)), re.warmup === true && (ex?.measurement === 'cardio' || ex?.measurement === 'duration')), labels[i] ?? null);
     });
   return { header: planDayHeader(input.dayN, input.of, input.gymName, null), rows };
 }

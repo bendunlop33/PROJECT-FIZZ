@@ -137,6 +137,7 @@ export function toDraftPlan(input: BuilderWorkout, ctx: DraftCodecContext): Draf
         checkedOn: ctx.checkedOnOf(slot.exerciseId),
         ...(slot.historyVersion === undefined ? {} : { checkedHistoryVersion: slot.historyVersion }),
         builder: metaOf(slot, block, si === 0),
+        ...(slot.warmup === true ? { warmup: true as const } : {}),
       });
       order += 1;
     });
@@ -203,6 +204,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
   if (meta?.carried !== undefined) out.carried = meta.carried;
   if (meta?.why !== undefined && meta.why.length > 0) out.why = [...meta.why];
   if (s.checkedHistoryVersion != null) out.historyVersion = s.checkedHistoryVersion;
+  if (s.warmup === true) out.warmup = true;
   return out;
 }
 

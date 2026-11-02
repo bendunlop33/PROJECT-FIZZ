@@ -115,6 +115,8 @@ export interface TableCard {
   /** "1 of 3 sets done". */
   progressAccessibility: string;
   painBadge: boolean;
+  /** (Ben, 2 Nov) A cardio row Ben asked for as a warm-up (`SessionExercise.warmup`): `Warm-up` in its meta. */
+  warmupRow: boolean;
   /** The shared column header; null when the rows disagree (then each cell carries its unit). */
   columns: TableColumns | null;
   /** v3 load column header: `KG`, `KG EACH`, `KG STACK`, `LB`, `ASSIST KG`, `+KG`; null without a load column. */
@@ -136,6 +138,8 @@ export interface SupersetMember {
   /** `kg stack`, `kg each`, `bodyweight`. */
   unitCaption: string;
   painBadge: boolean;
+  /** (Ben, 2 Nov) A cardio row Ben asked for as a warm-up: `Warm-up` in its meta. */
+  warmupRow: boolean;
   /** This member's own columns. */
   columns: TableColumns;
   /** Ben's note on this member today, or null. */
@@ -578,6 +582,7 @@ function exerciseCard(input: ActiveViewInput, root: SessionExercise, parts: read
       progressText: `${String(progress.done)}/${String(progress.total)}`,
       progressAccessibility: `${String(progress.done)} of ${String(progress.total)} sets done`,
       painBadge: painBadgeOf(input, action),
+      warmupRow: root.warmup === true || action.warmup === true,
       columns,
       rows,
       isCurrent: activeSetId !== null && blockLive.some((s) => s.id === activeSetId),
@@ -610,6 +615,7 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
       name: action.exerciseName,
       unitCaption: unitWords(action) ?? (action.loadConvention === 'bodyweight' ? 'bodyweight' : action.unit),
       painBadge: painBadgeOf(input, action),
+      warmupRow: root.warmup === true || action.warmup === true,
       columns: own,
       note: action.note ?? root.note ?? null,
       isCurrent,
