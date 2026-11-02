@@ -138,6 +138,20 @@ export function pbBlockWeekOf(input: PbBlockInput): PbBlockWeek {
   };
 }
 
+/**
+ * (Ben, 2 Nov; plan-summary.md) The block's last day (a Sunday, local `YYYY-MM-DD`) if every week from now on is
+ * trained: the lead-in's next Monday + N weeks − 1 day, else this week's Monday + the weeks left. Once done: the last
+ * counted week's Sunday. A week only counts once trained (and not fully paused), so this moves with gaps. Pure.
+ */
+export function pbBlockEndsOn(block: Pick<PbBlockWeek, 'week' | 'of' | 'done' | 'mondays' | 'leadIn'>): string | null {
+  if (block.of <= 0) return null;
+  if (block.leadIn !== undefined) return addDays(block.leadIn.startsOn, block.of * 7 - 1);
+  const last = block.mondays[block.mondays.length - 1];
+  if (last === undefined) return null;
+  if (block.done) return addDays(last, 6);
+  return addDays(last, (block.of - block.week) * 7 + 6);
+}
+
 /** The builder record of the plan version in use (Apply's), else null (a coach plan, or not applied). */
 export function pbAppliedBuilder(plan: Pick<PlanDraft, 'status' | 'versions' | 'currentVersion' | 'applied'> | null): { version: PlanDraftVersion; builder: PlanBuilderRecord } | null {
   if (plan?.status !== 'applied' || plan.applied === null) return null;
