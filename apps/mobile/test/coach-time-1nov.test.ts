@@ -180,7 +180,9 @@ describe('Ben’s live Push B chat (build 500)', () => {
     if (quick === undefined || plan === undefined) throw new Error('no request');
     const yourData = plan.input.find((i) => i.type === 'message' && i.content.startsWith('YOUR DATA'));
     expect(yourData?.type === 'message' && yourData.content.includes('"build":')).toBe(false);
-    // Measured on this fixture (1 Nov): about 97,000 characters (24k tokens) before the trim. Now at most 60,000.
-    expect(requestChars(plan)).toBeLessThan(60_000);
+    // Measured on this fixture (1 Nov): about 97,000 characters (24k tokens) before the trim, then under 60,000.
+    // (2 Nov) The playbook grew by the rules Ben approved (FQ/VC/ST, LW, WU1–12 and his amendments, run rules):
+    // about 67,000 here. The cap is 70,000 so later growth is still caught.
+    expect(requestChars(plan)).toBeLessThan(70_000);
   });
 });
