@@ -212,23 +212,44 @@ describe('lift trends for the lifts Ben chose (§6.2): est. 1RM labelled, target
   });
 
   it('assisted: less assistance is stronger (stall check inverted); bodyweight plots reps', () => {
-    const sessions = [...history(PULLUP, [['2026-09-22', kg(30, 'assistance'), 8], ['2026-09-29', kg(25, 'assistance'), 8], ['2026-10-06', kg(25, 'assistance'), 8], ['2026-10-13', kg(27.5, 'assistance'), 8], ['2026-10-14', kg(25, 'assistance'), 8]]), ...history(PUSHUP, [['2026-10-13', kg(0, 'bodyweight'), 20]])];
+    const sessions = [...history(PULLUP, [['2026-09-15', kg(30, 'assistance'), 8], ['2026-09-22', kg(25, 'assistance'), 8], ['2026-09-29', kg(25, 'assistance'), 8], ['2026-10-06', kg(27.5, 'assistance'), 8], ['2026-10-14', kg(25, 'assistance'), 8]]), ...history(PUSHUP, [['2026-10-13', kg(0, 'bodyweight'), 20]])];
     const f = weeklyFacts(input({ sessions, lifts: [PULLUP, PUSHUP] }));
     expect(f.lifts[0]).toMatchObject({ metric: 'best_set', lowerIsBetter: true, now: 25 });
     expect(f.lifts[1]).toMatchObject({ metric: 'reps', unit: null, now: 20 });
     expect(f.stalled.map((x) => x.exerciseId)).toEqual([PULLUP]);
   });
 
-  it('stalled: no new best over 3 sessions against everything before; needs 4 sessions', () => {
-    expect(isStalled([100, 100, 100, 100], false)).toBe(true);
-    expect(isStalled([100, 97.5, 100, 102.5], false)).toBe(false);
-    expect(isStalled([100, 100, 100], false)).toBe(false);
-    expect(isStalled([25, 25, 27.5, 25], true)).toBe(true);
-    expect(isStalled([30, 27.5, 27.5, 25], true)).toBe(false);
+  // ST2 (Ben, 2 Nov) replaced "no new best over the last 3 sessions": a stall now also needs ≥ 3 weeks without a best,
+  // so a lift trained twice a week isn't called stalled after ~10 days of normal noise.
+  it('stalled (ST2): no new best for ≥ 3 sessions and ≥ 3 weeks; deload workouts skipped', () => {
+    const p = (date: string, value: number, reps = 5) => ({ date, value, reps });
+    expect(isStalled([p('2026-09-22', 100), p('2026-09-29', 100), p('2026-10-06', 100), p('2026-10-13', 100)], false)).toBe(true);
+    expect(isStalled([p('2026-09-22', 100), p('2026-09-29', 97.5), p('2026-10-06', 100), p('2026-10-13', 102.5)], false)).toBe(false);
+    // Three sessions, but only two weeks after the best: too early.
+    expect(isStalled([p('2026-09-22', 100), p('2026-09-29', 100), p('2026-10-02', 100), p('2026-10-06', 100)], false)).toBe(false);
+    // Three weeks, but only two sessions after the best: too early.
+    expect(isStalled([p('2026-09-15', 100), p('2026-09-29', 100), p('2026-10-13', 100)], false)).toBe(false);
+    expect(isStalled([p('2026-09-22', 25), p('2026-09-29', 25), p('2026-10-06', 27.5), p('2026-10-13', 25)], true)).toBe(true);
+    expect(isStalled([p('2026-09-22', 30), p('2026-09-29', 27.5), p('2026-10-06', 27.5), p('2026-10-13', 25)], true)).toBe(false);
+    // More reps at the same load is a new best.
+    expect(isStalled([p('2026-09-22', 100), p('2026-09-29', 100), p('2026-10-06', 100), p('2026-10-13', 100, 6)], false)).toBe(false);
+    // A deload week neither counts nor breaks the run.
+    expect(isStalled([p('2026-09-15', 100), p('2026-09-22', 100), { ...p('2026-09-29', 80), skip: true }, p('2026-10-06', 100)], false)).toBe(false);
+    expect(isStalled([p('2026-09-15', 100), p('2026-09-22', 100), { ...p('2026-09-29', 80), skip: true }, p('2026-10-06', 100), p('2026-10-13', 100)], false)).toBe(true);
     const sessions = history(SQUAT, [['2026-09-22', kg(120), 5], ['2026-09-29', kg(120), 5], ['2026-10-06', kg(117.5), 5], ['2026-10-13', kg(120), 5]]);
-    expect(weeklyFacts(input({ sessions })).stalled).toEqual([{ exerciseId: SQUAT, name: 'Ex 02', sessions: 3 }]);
+    expect(weeklyFacts(input({ sessions })).stalled).toEqual([{ exerciseId: SQUAT, name: 'Ex 02', sessions: 3, offer: 'rep_scheme' }]);
     // Not flagged when the lift wasn't done this week.
     expect(weeklyFacts(input({ sessions: sessions.slice(0, 3), monday: MONDAY })).stalled).toEqual([]);
+  });
+
+  it('ST3: one stalled lift is offered a rep-scheme change; two stalled together → the deload offer; pain → no offer', () => {
+    const squat = history(SQUAT, [['2026-09-22', kg(120), 5], ['2026-09-29', kg(120), 5], ['2026-10-06', kg(117.5), 5], ['2026-10-13', kg(120), 5]]);
+    const pullup = history(PULLUP, [['2026-09-22', kg(25, 'assistance'), 8], ['2026-09-29', kg(25, 'assistance'), 8], ['2026-10-06', kg(25, 'assistance'), 8], ['2026-10-13', kg(25, 'assistance'), 8]]);
+    const both = weeklyFacts(input({ sessions: [...squat, ...pullup] })).stalled;
+    expect(both.map((x) => x.offer)).toEqual(['deload', 'deload']);
+    const pain = weeklyFacts(input({ sessions: [...squat, ...pullup], painFlagged: new Set([PULLUP]) })).stalled;
+    expect(pain.find((x) => x.exerciseId === PULLUP)?.offer).toBeNull();
+    expect(pain.find((x) => x.exerciseId === SQUAT)?.offer).toBe('rep_scheme');
   });
 
   it('a marked set (Spotted, Pain…) is never a best', () => {

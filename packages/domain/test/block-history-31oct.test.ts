@@ -233,16 +233,22 @@ describe('the views', () => {
     expect(v.compare?.rows[0]).toMatchObject({ start: '90×5 kg', end: '97.5×5 kg' });
   });
 
-  it('a stall in the current block: Stalled 2 weeks and the running line', () => {
+  // ST2 (Ben, 2 Nov; was 2 weeks): no new best for ≥ 3 trained weeks and ≥ 3 sessions.
+  it('a stall in the current block: Stalled 3 weeks and the running line (ST2)', () => {
     const h = history();
-    const sessions = h.sessions.map((s) => (s.date === '2026-11-04' || s.date === '2026-11-10' ? session(s.date, h.bench, [[100, 6]]) : s));
-    const blocks = trainingBlocks(h.plans, h.refs, NOW_MS, TZ);
-    const b = blockOf(blocks, null) as NonNullable<ReturnType<typeof blockOf>>;
+    const flat = h.sessions.map((s) => (s.date === '2026-11-04' || s.date === '2026-11-10' ? session(s.date, h.bench, [[100, 6]]) : s));
+    // Two weeks with no best (weeks 2, 3): not stalled yet.
+    const early = blockOf(trainingBlocks(h.plans, h.refs, NOW_MS, TZ), null) as NonNullable<ReturnType<typeof blockOf>>;
+    expect(thisBlockView(early, flat, nameOf, TZ).rows.find((r) => r.exerciseId === h.bench)).toMatchObject({ stalled: false });
+    // A third week (week 4, 17 Nov) at the same best: stalled.
+    const later = ms('2026-11-19T00:00:00.000Z');
+    const sessions = [...flat, session('2026-11-17', h.bench, [[100, 6]])];
+    const b = blockOf(trainingBlocks(h.plans, h.refs, later, TZ), null) as NonNullable<ReturnType<typeof blockOf>>;
     const row = thisBlockView(b, sessions, nameOf, TZ).rows.find((r) => r.exerciseId === h.bench);
     expect(row).toMatchObject({ stalled: true, delta: null });
     const d = liftBlockDetailView(liftInBlock(b, h.bench, sessions, nameOf));
-    expect(d.pill).toEqual({ text: 'Stalled 2 weeks', tone: 'stalled' });
-    expect(d.line).toBe('Top set 100×6 kg, 3 weeks running.');
+    expect(d.pill).toEqual({ text: 'Stalled 3 weeks', tone: 'stalled' });
+    expect(d.line).toBe('Top set 100×6 kg, 4 weeks running.');
     expect(planBlockLine({ up: 0, stalled: 1 })).toBe('1 stalled');
   });
 

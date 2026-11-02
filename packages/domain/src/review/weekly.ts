@@ -16,7 +16,7 @@ import {
   type TrainingGoal,
   type WeightUnit,
 } from '@fizz/schemas';
-import { addDays, localDateOf, localHourUtcMs, localMidnightUtcMs, localWeekBounds } from '../calendar';
+import { addDays, localDateOf, weekdayIndexOfDate, localHourUtcMs, localMidnightUtcMs, localWeekBounds } from '../calendar';
 import { isSetCountable } from '../exclusions';
 import { e1rmConventionAllowed, estimateOneRepMax, roundEstimate } from '../progress/e1rm';
 import { planDaysDoneThisWeek, plannedRepsOf, planWeekOf, pausedInWeek, type PlanWeekDay } from '../progress/plan-tracker';
@@ -26,6 +26,7 @@ import { isInHistory } from '../session/deletion';
 import { toMs } from '../time';
 import type { HealthDailyValue } from '../health';
 import { activityGroupTotals, weekHealthFacts, type ActivityGroupTotal, type WeekHealthFacts } from '../health-uses';
+import { noProgressStall, stallOffer, STALL_RULES } from '../stall';
 import { convertMass } from '../units';
 
 /**
@@ -44,7 +45,9 @@ import { convertMass } from '../units';
  * - **Lifts Ben chose** (default: the plan's main lifts; up to 6): a trend of est. 1RM (labelled), best
  *   set, or reps for bodyweight work; an assisted lift is better with less assistance. The lift target,
  *   when one is set, is a level line with was → now → target (the stored facts; Progress v3's lift chart is `liftsView`).
- * - **Flags**: lifts with no progress over 3 sessions; RPE against the sessions' own targets; Ben's
+ * - **Flags**: stalled lifts (ST2, Ben 2 Nov: no new best for ≥ 3 sessions and ≥ 3 weeks, deload workouts skipped;
+ *   the shared `noProgressStall`), each with ST3's one offer (`stallOffer`: rep scheme first; 2+ stalled → deload;
+ *   none on a pain-flagged lift), shown only in the review Ben opens; RPE against the sessions' own targets; Ben's
  *   `How did it feel?`; and (§6.1 feedback loop) the same edit repeated on a plan-day template.
  */
 
@@ -55,8 +58,8 @@ export const WEEKLY_REVIEW = {
   liftPoints: 12,
   /** How far back a lift's trend (and the stall check) reads. */
   trendWeeks: 16,
-  /** No new best over this many sessions: a stalled lift (§6.1). */
-  stalledSessions: 3,
+  /** No new best over this many sessions (and `STALL_RULES.noBestWeeks` weeks): a stalled lift (ST2). */
+  stalledSessions: STALL_RULES.noBestSessions,
   /** The same edit in this many newest workouts from a template suggests updating it (§6.1). */
   repeatedEdit: 2,
   /** Lifts on Progress › Reviews (Ben, 21 Oct). */
@@ -139,6 +142,8 @@ export interface ReviewSession {
    * claims a `New best` itself (no ring, Summary line or record). Absent: logged in the app.
    */
   imported?: true;
+  /** (ST2, Ben 2 Nov) Done in the plan's deload week: never counts towards (or breaks) a stall. */
+  deload?: true;
 }
 
 /** A finished workout as the review reads it (corrections applied; null when it isn't in history). */
@@ -169,6 +174,7 @@ export function reviewSessionOf(a: HistoryLike, ownerTz: string, nowMs: number):
     plannedReps: reps.planned,
     doneReps: reps.done,
     ...(p.source === 'import' ? { imported: true as const } : {}),
+    ...(a.session.deload !== undefined ? { deload: true as const } : {}),
     exercises: p.exercises
       .filter((e) => !removed.has(e.sessionExerciseId))
       .map((e) => ({
@@ -336,7 +342,12 @@ export interface WeeklyFacts {
   /** (Ben, 27 Oct) The week's sleep average and resting heart rate start → end from Apple Health; null with none. */
   health: WeekHealthFacts | null;
   rpe: { sessions: number; mean: number; target: number | null } | null;
-  stalled: { exerciseId: string; name: string; sessions: number }[];
+  /**
+   * ST2's stalled lifts; `sessions`: sessions with no new best. `offer` (ST3): what Ben is offered if he asks from the
+   * review (rep scheme first; `deload` when 2+ lifts stalled); null on a pain-flagged lift; absent when read back from
+   * stored facts. Never applied here.
+   */
+  stalled: { exerciseId: string; name: string; sessions: number; offer?: 'rep_scheme' | 'deload' | null }[];
   feel: { easy: number; good: number; hard: number };
   edits: TemplateEdit[];
   /** Any finished workout up to the week's end. */
@@ -470,13 +481,24 @@ function sessionPoint(s: ReviewSession, exerciseId: string, terms: { convention:
 
 const EPS = 1e-6;
 
-/** No new best in the last `n` points against every point before them (needs at least `n + 1`). */
-export function isStalled(values: readonly number[], lowerIsBetter: boolean, n: number = W.stalledSessions): boolean {
-  if (values.length < n + 1) return false;
-  const before = values.slice(0, -n);
-  const last = values.slice(-n);
-  const best = lowerIsBetter ? Math.min(...before) : Math.max(...before);
-  return last.every((v) => (lowerIsBetter ? v >= best - EPS : v <= best + EPS));
+const mondayOf = (date: string): string => addDays(date, -weekdayIndexOfDate(date));
+
+/**
+ * ST2 (Ben, 2 Nov; the shared `noProgressStall`): no new best over the last ≥ 3 points and ≥ 3 weeks. `points`
+ * oldest first; a point with `skip` (deload) never counts or breaks the run. Better = a higher value (lower when
+ * `lowerIsBetter`), then more reps at the same value.
+ */
+export function liftStall(points: readonly { value: number; reps?: number; date: string; skip?: boolean }[], lowerIsBetter: boolean): ReturnType<typeof noProgressStall> {
+  const cmp = (a: { value: number; reps?: number }, b: { value: number; reps?: number }): number => {
+    const d = lowerIsBetter ? b.value - a.value : a.value - b.value;
+    if (Math.abs(d) > EPS) return d;
+    return (a.reps ?? 0) - (b.reps ?? 0);
+  };
+  return noProgressStall(points.map((p) => ({ value: p, week: mondayOf(p.date), ...(p.skip === true ? { skip: true } : {}) })), cmp);
+}
+
+export function isStalled(points: readonly { value: number; reps?: number; date: string; skip?: boolean }[], lowerIsBetter: boolean): boolean {
+  return liftStall(points, lowerIsBetter).state === 'stalled';
 }
 
 function liftSeries(input: WeeklyReviewInput, exerciseId: string, endDate: string, target: LiftTarget | null): { trend: Omit<LiftTrend, 'name'>; all: Candidate[] } | null {
@@ -611,16 +633,26 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
     lifts.push(r !== null ? { ...r.trend, name: nameIn(sessions, id) } : emptyTrend(id, nameIn(sessions, id), target, input.unit));
   }
 
-  // Stalled: any lift done this week (and the chosen ones) with no new best over its last 3 sessions, the last one this week.
-  const stalled: WeeklyFacts['stalled'] = [];
+  // Stalled (ST2): any lift done this week (and the chosen ones) with no new best for ≥ 3 sessions and ≥ 3 weeks, the
+  // last one this week; deload workouts skipped.
+  const deloads = new Set(sessions.filter((s) => s.deload === true).map((s) => s.sessionId));
+  const found: { exerciseId: string; name: string; sessions: number }[] = [];
   const doneIds = [...new Set([...thisWeek.flatMap((s) => s.exercises.map((e) => e.exerciseId)), ...input.lifts])];
   for (const id of doneIds) {
     const r = liftSeries(scoped, id, sunday, null);
     if (r === null) continue;
     const lastDate = r.all.at(-1)?.date ?? '';
     if (lastDate < monday) continue;
-    if (isStalled(r.all.map((c) => c.value), r.trend.lowerIsBetter)) stalled.push({ exerciseId: id, name: nameIn(sessions, id), sessions: W.stalledSessions });
+    const st = liftStall(r.all.map((c) => ({ ...c, ...(deloads.has(c.sessionId) ? { skip: true } : {}) })), r.trend.lowerIsBetter);
+    if (st.state === 'stalled') found.push({ exerciseId: id, name: nameIn(sessions, id), sessions: st.sessionsWithoutBest });
   }
+  // ST3: one offer each, never applied here. All found this week fall in the same fortnight.
+  // A pain-flagged lift gets no offer (rule 9) and doesn't count towards the deload offer.
+  const painHeld = input.painFlagged;
+  const stalled: WeeklyFacts['stalled'] = found.map((f) => {
+    const o = stallOffer({ pain: painHeld.has(f.exerciseId), repSchemeTried: false, otherStallsInFortnight: found.filter((x) => x.exerciseId !== f.exerciseId && !painHeld.has(x.exerciseId)).length, current: null, achievable: null, direction: 'resistance' });
+    return { ...f, offer: o === null ? null : o.kind === 'deload' ? 'deload' : 'rep_scheme' };
+  });
 
   // RPE against the sets' own targets: with any target, only the sets that had one are compared, so a set
   // with no target never reads as drift (review b3-wave3-truth B3); with none, the plain mean, no target.

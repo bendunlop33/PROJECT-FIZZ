@@ -96,7 +96,8 @@ describe('double progression', () => {
   });
 
   it('a repeated trend reduces load, rounded down to an achievable load, once Ben applied the reset (Ben, 23 Oct)', () => {
-    const history = [session(1, bar.id, working(kg(100), [5, 5, 4])), session(4, bar.id, working(kg(100), [5, 4, 4]))];
+    // ST1 (Ben, 2 Nov): the two misses are ≥ 7 days apart (was days 1 and 4).
+    const history = [session(1, bar.id, working(kg(100), [5, 5, 4])), session(8, bar.id, working(kg(100), [5, 4, 4]))];
     const t = calculateNextTargets(input(history, bar, doubleProgression(), { acceptReset: true }));
     expect(t.decision).toBe('reduce_load');
     expect(t.sets[0]?.load).toEqual(kg(90));
@@ -105,7 +106,7 @@ describe('double progression', () => {
   });
 
   it('Ben, 23 Oct (v5offers SP2): the rule’s own reset is an offer: it holds and offers the reset until Ben applies it', () => {
-    const history = [session(1, bar.id, working(kg(100), [5, 5, 4])), session(4, bar.id, working(kg(100), [5, 4, 4]))];
+    const history = [session(1, bar.id, working(kg(100), [5, 5, 4])), session(8, bar.id, working(kg(100), [5, 4, 4]))];
     const t = calculateNextTargets(input(history, bar));
     expect(t.decision).toBe('hold_after_miss');
     expect(t.sets.every((x) => x.load?.value === 100)).toBe(true);
@@ -117,19 +118,35 @@ describe('double progression', () => {
   });
 
   it('stalled is rule 8’s miss streak: set on a reduction and on a hold at the lightest load, never on one bad day (review v5offers 6)', () => {
-    expect(calculateNextTargets(input([session(1, bar.id, working(kg(100), [5, 5, 4])), session(4, bar.id, working(kg(100), [5, 4, 4]))], bar)).stalled).toBe(true);
+    expect(calculateNextTargets(input([session(1, bar.id, working(kg(100), [5, 5, 4])), session(8, bar.id, working(kg(100), [5, 4, 4]))], bar)).stalled).toBe(true);
     expect(calculateNextTargets(input([session(1, bar.id, working(kg(100), [8, 7, 7])), session(4, bar.id, working(kg(100), [6, 5, 4]))], bar)).stalled).toBeUndefined();
     const db = dumbbells();
     const light = (n: number) => session(n, db.id, working(kg(5, 'per_hand'), [5, 4, 4]));
-    const t = calculateNextTargets(input([light(1), light(4)], db));
+    const t = calculateNextTargets(input([light(1), light(8)], db));
     expect(t.decision).toBe('hold_after_miss');
     expect(t.sets[0]?.load).toEqual(kg(5, 'per_hand'));
     expect(t.explanation.facts.join(' ')).toMatch(/No easier load is available/);
     expect(t.stalled).toBe(true);
     expect(calculateNextTargets(input([light(4)], db)).stalled).toBeUndefined();
     // Stored with the planned sets' provenance, so the Summary's next-time basis can read it.
-    const planned = plannedSetsFromTargets(t, { history: [light(1), light(4)], equipment: db, at: { utc: '2026-10-20T08:00:00.000Z', tz: 'Europe/London' } });
+    const planned = plannedSetsFromTargets(t, { history: [light(1), light(8)], equipment: db, at: { utc: '2026-10-20T08:00:00.000Z', tz: 'Europe/London' } });
     expect(planned?.[0]?.planned.provenance?.rule).toMatchObject({ decision: 'hold_after_miss', stalled: true });
+  });
+
+  it('ST1 (Ben, 2 Nov): two misses inside 7 days wait for a third; ≥ 7 days apart is a stall', () => {
+    const miss = (day: number) => session(day, bar.id, working(kg(100), [5, 4, 4]));
+    const close = calculateNextTargets(input([miss(1), miss(4)], bar));
+    expect(close.stalled).toBeUndefined();
+    expect(close.resetOffer).toBeUndefined();
+    expect(close.decision).toBe('hold_after_miss');
+    expect(close.explanation.facts.join(' ')).toMatch(/one more miss/);
+    // Exactly 7 calendar days apart: a stall, offered (never applied unprompted).
+    const week = calculateNextTargets(input([miss(1), miss(8)], bar));
+    expect([week.stalled, week.decision, week.resetOffer]).toEqual([true, 'hold_after_miss', kg(90)]);
+    // 6 days: not yet.
+    expect(calculateNextTargets(input([miss(1), miss(7)], bar)).stalled).toBeUndefined();
+    // A third miss inside the week: a stall.
+    expect(calculateNextTargets(input([miss(1), miss(3), miss(5)], bar)).stalled).toBe(true);
   });
 
   it('misses at different loads are not a trend', () => {
@@ -272,7 +289,7 @@ describe('assisted machines (more assistance = easier)', () => {
   });
 
   it('a reduction after a trend means MORE assistance (offered: held at 20 until Ben applies 25)', () => {
-    const history = [session(1, m.id, working(a(20), [4, 4, 4])), session(3, m.id, working(a(20), [5, 4, 4]))];
+    const history = [session(1, m.id, working(a(20), [4, 4, 4])), session(8, m.id, working(a(20), [5, 4, 4]))];
     const held = calculateNextTargets(input(history, m));
     expect([held.decision, held.sets[0]?.load, held.resetOffer]).toEqual(['hold_after_miss', a(20), a(25)]);
     const t = calculateNextTargets(input(history, m, doubleProgression(), { acceptReset: true }));
@@ -316,7 +333,7 @@ describe('top set / back-off', () => {
   it('a missed top set holds once, then reduces on a trend', () => {
     const one = [session(1, bar.id, [top(140, 2)])];
     expect(calculateNextTargets(input(one, bar, topSetBackoff())).decision).toBe('hold_after_miss');
-    const two = [...one, session(4, bar.id, [top(140, 2)])];
+    const two = [...one, session(8, bar.id, [top(140, 2)])];
     // Ben, 23 Oct: 127.5 (−8.9%) is in rule 8's 5–10% band; 125 (−10.7%) is not.
     expect(calculateNextTargets(input(two, bar, topSetBackoff())).resetOffer).toEqual(kg(127.5));
     const t = calculateNextTargets(input(two, bar, topSetBackoff(), { acceptReset: true }));
@@ -515,8 +532,8 @@ describe('determinism', () => {
     const history = [
       session(1, bar.id, working(kg(100), [8, 8, 8], 8)),
       session(3, bar.id, working(kg(102.5), [6, 5, 5])),
-      session(5, bar.id, working(kg(102.5), [5, 5, 4])),
-      session(6, id(998), working(kg(120), [8, 8, 8])),
+      session(10, bar.id, working(kg(102.5), [5, 5, 4])),
+      session(11, id(998), working(kg(120), [8, 8, 8])),
     ];
     const outputs = permutations(history).map((h) => calculateNextTargets(input(h, bar, doubleProgression(), { acceptReset: true })));
     expect(outputs).toHaveLength(24);

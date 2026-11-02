@@ -19,8 +19,9 @@ import {
 
 /**
  * (Ben, 31 Oct; block-progress.md) Up / held / stalled per main lift across a block. Best set per week: heaviest load,
- * then reps at it. Up = more load or more reps at that load than the best so far; held = equal; stalled = no gain for
- * 2+ trained weeks in a row. Deload weeks and weeks with no session never count as a stall (nor break one).
+ * then reps at it. Up = more load or more reps at that load than the best so far; held = equal; stalled (ST2, Ben
+ * 2 Nov; was 2+ weeks) = no new best for ≥ 3 trained weeks and ≥ 3 sessions. Deload weeks and weeks with no session
+ * never count as a stall (nor break one).
  */
 
 const load = (value: number, convention: LoadConvention = 'total', unit: WeightUnit = 'kg'): Load => ({ value, unit, convention });
@@ -92,11 +93,15 @@ describe('liftBlockProgress: up, held, stalled', () => {
     expect(blockDeltaText(held.delta ?? { kind: 'pct', value: 99 })).toBe('0%');
   });
 
-  it('stalled: barbell row 95×8, 95×8, 95×7 → stalled 2 weeks; both no-gain weeks read stalled', () => {
-    const p = liftBlockProgress([week(1, best(95, 8)), week(2, best(95, 8)), week(3, best(95, 7))]);
-    expect(p.weeks.map((w) => w.state)).toEqual(['base', 'stalled', 'stalled']);
+  // ST2 (Ben, 2 Nov) replaced the old 2-week window: two weeks without a best is normal noise for a trained lifter.
+  it('stalled (ST2): barbell row 95×8, 95×8, 95×7, 95×8 → stalled 3 weeks; every no-gain week reads stalled', () => {
+    const two = liftBlockProgress([week(1, best(95, 8)), week(2, best(95, 8)), week(3, best(95, 7))]);
+    expect(two.weeks.map((w) => w.state)).toEqual(['base', 'held', 'dip']);
+    expect(two.status).toBe('held');
+    const p = liftBlockProgress([week(1, best(95, 8)), week(2, best(95, 8)), week(3, best(95, 7)), week(4, best(95, 8))]);
+    expect(p.weeks.map((w) => w.state)).toEqual(['base', 'stalled', 'stalled', 'stalled']);
     expect(p.status).toBe('stalled');
-    expect(p.noGainRun).toBe(2);
+    expect(p.noGainRun).toBe(3);
   });
 
   it('one week with no gain is not a stall yet', () => {
@@ -106,8 +111,8 @@ describe('liftBlockProgress: up, held, stalled', () => {
   });
 
   it('a gain after a stall ends it; the stalled weeks stay amber in the history', () => {
-    const p = liftBlockProgress([week(1, best(95, 8)), week(2, best(95, 8)), week(3, best(95, 8)), week(4, best(97.5, 8))]);
-    expect(p.weeks.map((w) => w.state)).toEqual(['base', 'stalled', 'stalled', 'up']);
+    const p = liftBlockProgress([week(1, best(95, 8)), week(2, best(95, 8)), week(3, best(95, 8)), week(4, best(95, 8)), week(5, best(97.5, 8))]);
+    expect(p.weeks.map((w) => w.state)).toEqual(['base', 'held', 'held', 'held', 'up']);
     expect(p.status).toBe('up');
   });
 
@@ -115,9 +120,26 @@ describe('liftBlockProgress: up, held, stalled', () => {
     const lighter = liftBlockProgress([week(1, best(100, 5)), week(2, best(102.5, 5)), week(3, best(92.5, 4), { deload: true })]);
     expect(lighter.weeks.map((w) => w.state)).toEqual(['base', 'up', 'deload']);
     expect(lighter.status).toBe('up');
-    // held, deload, held: still two trained no-gain weeks in a row.
-    const across = liftBlockProgress([week(1, best(100, 5)), week(2, best(100, 5)), week(3, best(90, 5), { deload: true }), week(4, best(100, 5))]);
-    expect(across.weeks.map((w) => w.state)).toEqual(['base', 'stalled', 'deload', 'stalled']);
+    // held, deload, held, held: still three trained no-gain weeks in a row.
+    const across = liftBlockProgress([week(1, best(100, 5)), week(2, best(100, 5)), week(3, best(90, 5), { deload: true }), week(4, best(100, 5)), week(5, best(100, 5))]);
+    expect(across.weeks.map((w) => w.state)).toEqual(['base', 'stalled', 'deload', 'stalled', 'stalled']);
+  });
+
+  it('ST2: pain-flag / return-ramp weeks (skip) neither count nor break; a machine-max hold is a ceiling, never stalled', () => {
+    const skipped = liftBlockProgress([week(1, best(100, 5)), week(2, best(100, 5)), week(3, best(80, 5), { skip: true }), week(4, best(100, 5))]);
+    expect(skipped.status).toBe('held');
+    const after = liftBlockProgress([week(1, best(100, 5)), week(2, best(100, 5)), week(3, best(80, 5), { skip: true }), week(4, best(100, 5)), week(5, best(100, 5))]);
+    expect(after.status).toBe('stalled');
+    const ceiling = liftBlockProgress([week(1, best(100, 12)), week(2, best(100, 12)), week(3, best(100, 12)), week(4, best(100, 12), { ceiling: true })]);
+    expect(ceiling.status).toBe('held');
+    expect(ceiling.weeks.some((w) => w.state === 'stalled')).toBe(false);
+  });
+
+  it('ST2 under Maintain: holding is fine; only a drop for ≥ 3 weeks counts', () => {
+    const held = [week(1, best(100, 5)), week(2, best(100, 5)), week(3, best(100, 5)), week(4, best(100, 5))];
+    expect(liftBlockProgress(held, { maintain: true }).status).toBe('held');
+    const drop = [week(1, best(100, 5)), week(2, best(97.5, 5)), week(3, best(97.5, 5)), week(4, best(95, 5))];
+    expect(liftBlockProgress(drop, { maintain: true }).status).toBe('stalled');
   });
 
   it('weeks with no session of the lift are skipped (grey), never a stall', () => {

@@ -119,7 +119,7 @@ describe('targets from FitNotes back-offs and pyramids (B1, B2)', () => {
 
 describe('two FitNotes sessions of a top single then back-offs (r2 B1)', () => {
   const DAY1 = '2026-09-10T12:00:00.000Z';
-  const DAY2 = '2026-09-13T12:00:00.000Z';
+  const DAY2 = '2026-09-17T12:00:00.000Z'; // ST1: misses ≥ 7 days apart (was 13 Sep)
 
   it('in-range back-offs twice in a row: never reduce, and no miss is claimed at the back-off load', () => {
     const shape: [number, number][] = [[10, 10], [15, 5], [22.5, 3], [20, 10], [20, 10], [20, 10]];
@@ -268,7 +268,7 @@ describe('the working load of a FitNotes session (r3 B1: the load with the most 
 
 describe('targets from FitNotes working sets with a lighter finisher (r3 B1)', () => {
   const DAY1 = '2026-09-10T12:00:00.000Z';
-  const DAY2 = '2026-09-13T12:00:00.000Z';
+  const DAY2 = '2026-09-17T12:00:00.000Z'; // ST1: misses ≥ 7 days apart (was 13 Sep)
 
   it('3 sets at the top of the range at 20, then a 12 kg finisher: increase from 20, and the finisher is said to be not judged', () => {
     const t = next([fitnotes([[20, 10], [20, 10], [20, 10], [12, 15]])]);
@@ -360,7 +360,7 @@ describe('only judged sets make up the rule (r3 S1)', () => {
 
 describe('r4 B1: equal-count finishers, burnouts, drop sets and pyramids are never planned below the working load', () => {
   const DAY1 = '2026-09-10T12:00:00.000Z';
-  const DAY2 = '2026-09-13T12:00:00.000Z';
+  const DAY2 = '2026-09-17T12:00:00.000Z'; // ST1: misses ≥ 7 days apart (was 13 Sep)
   const facts = (t: ReturnType<typeof next>) => t.explanation.facts.join(' ');
 
   it('2 working sets at the top plus 2 finisher sets: never below 20, 2 sets planned (not 4)', () => {
@@ -444,7 +444,7 @@ describe('r4 B1: equal-count finishers, burnouts, drop sets and pyramids are nev
 
 describe('r4 S1: working sets followed by one heavier set are working sets, not a ramp', () => {
   const DAY1 = '2026-09-10T12:00:00.000Z';
-  const DAY2 = '2026-09-13T12:00:00.000Z';
+  const DAY2 = '2026-09-17T12:00:00.000Z'; // ST1: misses ≥ 7 days apart (was 13 Sep)
   const facts = (t: ReturnType<typeof next>) => t.explanation.facts.join(' ');
 
   it('20x10 x3 then 22.5x6: all 4 kept; 20 is the working load and 22.5 is context', () => {

@@ -2,6 +2,7 @@ import type { EquipmentKind, Load, LoadConvention, SetExclusion, SetType, Weight
 
 import { formatNumber } from '../display';
 import { isPlatesAddedKind } from '../plates-added';
+import { noProgressStall, type StallPoint } from '../stall';
 import { KG_PER_LB, toScaled } from '../units';
 import { estimateOneRepMax } from './e1rm';
 
@@ -12,9 +13,11 @@ import { estimateOneRepMax } from './e1rm';
  *   Warm-ups and sets Ben marked as not counting (`Spotted`, `Pain`, `Form broke`, `Other equipment`) are left out.
  *   On an assisted machine less assistance is heavier; on a bodyweight-plus lift the added load is what is compared
  *   (bodyweight alone is added 0).
- * - **Up**: more load, or more reps at the same load, than the best so far. **Held**: equal. **Stalled**: no gain for
- *   2 or more trained weeks in a row. A deload week and a week with no session of the lift never count as a stall and
- *   never break one; they are skipped. The lead-in (week 0) is shown but never compared.
+ * - **Up**: more load, or more reps at the same load, than the best so far. **Held**: equal. **Stalled** (ST2, Ben
+ *   2 Nov; the shared `noProgressStall`): no new best for ≥ 3 trained weeks and ≥ 3 sessions. A deload week, a
+ *   pain-flag or return-ramp week (`skip`) and a week with no session of the lift never count as a stall and never
+ *   break one; they are skipped. A lift held at a machine max or rep cap (`ceiling`) is never stalled. Under a Maintain
+ *   plan only a drop counts. The lead-in (week 0) is shown but never compared.
  * - **Δ** from week 1's best to the block's best: Est. 1RM % on loaded lifts (`+5%`), the added load on bodyweight-plus
  *   lifts (`+5 kg`), the assistance on assisted ones (`Assist −5 kg`). kg/lb and `ea` (per hand) stay explicit.
  */
@@ -119,11 +122,17 @@ export interface LiftWeekInput {
   best: BlockBestSet | null;
   /** Working sets of the lift that week. */
   sets: number;
+  /** Sessions of the lift that week (ST2 counts sessions); absent: 1 when trained. */
+  sessions?: number;
+  /** A pain-flag, return-ramp or planned light week: skipped like a deload (ST2). */
+  skip?: boolean;
+  /** Held at a machine max or rep cap that week: a ceiling, not a stall (ST2). */
+  ceiling?: boolean;
 }
 
 /**
  * - `base`: the first trained week (week 1's best, or the first after it); `up`, `held`; `dip`: below the best so far,
- *   not (yet) a stall; `stalled`: in a run of 2+ trained weeks with no gain;
+ *   not (yet) a stall; `stalled`: in a run with no new best that reached ST2 (≥ 3 weeks and ≥ 3 sessions);
  * - `deload` (never a stall), `none` (no session of the lift), `todo` (not reached), `lead_in` (week 0, not compared).
  */
 export type LiftWeekState = 'base' | 'up' | 'held' | 'dip' | 'stalled' | 'deload' | 'none' | 'todo' | 'lead_in';
@@ -146,7 +155,7 @@ export interface LiftBlockProgress {
   best: BlockBestSet | null;
   /** The week `first` came from. */
   firstWeek: number | null;
-  /** Trained weeks in a row, up to the latest, with no gain (2+: stalled). */
+  /** Trained weeks in a row, up to the latest, with no gain (stalled once ST2 holds: ≥ 3 weeks, ≥ 3 sessions). */
   noGainRun: number;
   status: LiftBlockStatus;
   delta: BlockDelta | null;
@@ -173,13 +182,14 @@ export function blockDelta(a: BlockBestSet, b: BlockBestSet): BlockDelta | null 
 
 const TRAINED: ReadonlySet<LiftWeekState> = new Set(['base', 'up', 'held', 'dip', 'stalled']);
 
-export function liftBlockProgress(input: readonly LiftWeekInput[]): LiftBlockProgress {
+export function liftBlockProgress(input: readonly LiftWeekInput[], opts: { maintain?: boolean } = {}): LiftBlockProgress {
   const sorted = [...input].sort((a, b) => a.week - b.week);
   const states: LiftWeekState[] = [];
   let bestSoFar: BlockBestSet | null = null;
   let first: BlockBestSet | null = null;
   let firstWeek: number | null = null;
-  let run: number[] = [];
+  // ST2's points: the trained, compared weeks (index into `sorted`).
+  const points: (StallPoint<BlockBestSet> & { i: number })[] = [];
   for (const [i, w] of sorted.entries()) {
     if (w.week === 0) {
       states[i] = 'lead_in';
@@ -198,6 +208,12 @@ export function liftBlockProgress(input: readonly LiftWeekInput[]): LiftBlockPro
       states[i] = 'none';
       continue;
     }
+    if (w.skip === true) {
+      // Skipped by ST2: shown as trained, never compared and never a best.
+      states[i] = bestSoFar === null ? 'base' : compareBest(w.best, bestSoFar) === 0 ? 'held' : 'dip';
+      continue;
+    }
+    points.push({ i, value: w.best, week: w.week, sessions: Math.max(1, w.sessions ?? 1), ...(w.ceiling === true ? { ceiling: true } : {}) });
     if (bestSoFar === null) {
       states[i] = 'base';
       bestSoFar = w.best;
@@ -209,14 +225,14 @@ export function liftBlockProgress(input: readonly LiftWeekInput[]): LiftBlockPro
     if (c > 0) {
       states[i] = 'up';
       bestSoFar = w.best;
-      run = [];
       continue;
     }
     states[i] = c === 0 ? 'held' : 'dip';
-    run.push(i);
-    // A run of 2+ weeks with no gain is a stall: every week of it reads stalled.
-    if (run.length >= 2) for (const j of run) states[j] = 'stalled';
   }
+  const st = noProgressStall(points, compareBest, opts);
+  const run = st.run.map((k) => points[k]?.i).filter((x): x is number => x !== undefined);
+  // ST2 reached: every week of the run reads stalled.
+  if (st.state === 'stalled') for (const j of run) states[j] = 'stalled';
   const trained = sorted.filter((_w, i) => TRAINED.has(states[i] ?? 'none'));
   // Bar heights: Est. 1RM when every trained week has one (so fewer reps at a load reads lower), else the load.
   const byEstimate = trained.every((w) => w.best?.e1rm != null);
@@ -233,7 +249,7 @@ export function liftBlockProgress(input: readonly LiftWeekInput[]): LiftBlockPro
   const noGainRun = run.length;
   const lastTrained = [...weeks].reverse().find((w) => TRAINED.has(w.state));
   const status: LiftBlockStatus =
-    first === null ? 'none' : noGainRun >= 2 ? 'stalled' : lastTrained?.state === 'base' ? 'started' : lastTrained?.state === 'up' ? 'up' : bestSoFar !== null && compareBest(bestSoFar, first) > 0 ? 'up' : 'held';
+    first === null ? 'none' : st.state === 'stalled' ? 'stalled' : lastTrained?.state === 'base' ? 'started' : lastTrained?.state === 'up' ? 'up' : bestSoFar !== null && compareBest(bestSoFar, first) > 0 ? 'up' : 'held';
   const delta = first === null || bestSoFar === null || firstWeek === null || lastTrained?.week === firstWeek ? null : blockDelta(first, bestSoFar);
   return { weeks, first, best: bestSoFar, firstWeek, noGainRun, status, delta };
 }
