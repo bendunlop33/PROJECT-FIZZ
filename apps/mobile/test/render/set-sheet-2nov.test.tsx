@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { act } from 'react';
+import { ActionSheetIOS } from 'react-native';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionAggregate } from '@fizz/schemas';
@@ -8,7 +9,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 import { EditSetScreen } from '../../src/screens/workout/EditSetScreen';
 import { WorkoutScreen } from '../../src/screens/workout/WorkoutScreen';
 import type { AppServices } from '../../src/services/app-services';
-import { setSheetKind, setSheetMenuLabel, setSheetSections, setSheetTitle } from '../../src/workout/set-edit';
+import { dontCountMenu, setSheetKind, setSheetMenuLabel, setSheetSections, setSheetTitle } from '../../src/workout/set-edit';
 import { logWorkout, type Harness } from '../harness';
 import { expectHealthy, renderScreen, type Rendered } from './render-screen';
 import { benWithHistory, harness } from './seed';
@@ -178,5 +179,64 @@ describe('delete stays reachable in a live workout', () => {
     const edits = readFileSync(join(import.meta.dirname, '../../src/screens/workout/WorkoutEdits.tsx'), 'utf8');
     const menu = edits.slice(edits.indexOf('function setMenu('), edits.indexOf('// ---- The round menu'));
     expect(menu).toContain("{ name: 'delete_set', label: POPUP_COPY.deleteSet }");
+  });
+});
+
+describe('Don’t count on a done set, live (Ben, 2 Nov)', () => {
+  it('the picker: the four reasons in order, the set ones ticked; a pick toggles one', () => {
+    const m = dontCountMenu(['pain']);
+    expect(m.options).toEqual(['Spotted', 'Pain ✓', 'Form broke', 'Other equipment', 'Cancel']);
+    expect(m.cancelButtonIndex).toBe(4);
+    expect(m.next(0)).toEqual(['spotted', 'pain']);
+    expect(m.next(1)).toEqual([]);
+    expect(m.next(4)).toBeNull();
+    expect(dontCountMenu(undefined).options[0]).toBe('Spotted');
+  });
+
+  it('a done row’s VoiceOver Don’t count saves the exclusion as one versioned correction with Undo; rows have no separate Change type', async () => {
+    const ben = await benWithHistory(h);
+    const { sessionId, done } = await liveBench(ben.s, ben.gymId);
+    const r = await renderScreen(h, ben.launched, WorkoutScreen, { name: 'Workout' }, (t) => t.includes('Bench press') && t.includes('＋ Set'));
+    const rows = r.all((x) => Array.isArray(x.props.accessibilityActions) && (x.props.accessibilityActions as { name: string }[]).some((a) => a.name === 'edit') && typeof x.props.onAccessibilityAction === 'function');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect((row.props.accessibilityActions as { name: string }[]).map((a) => a.name)).not.toContain('type');
+    const doneRow = rows.find((x) => (x.props.accessibilityActions as { name: string }[]).some((a) => a.name === 'dont_count'));
+    if (doneRow === undefined) throw new Error('no done row with Don’t count');
+    // Only the done set offers it.
+    expect(rows.filter((x) => (x.props.accessibilityActions as { name: string }[]).some((a) => a.name === 'dont_count'))).toHaveLength(1);
+
+    const before = (await aggregateOf(ben.s, sessionId)).sets.find((x) => x.id === done);
+    let shown: string[] = [];
+    vi.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((o: { options: string[] }, cb: (i: number) => void) => {
+      shown = o.options;
+      cb(o.options.indexOf('Spotted'));
+    });
+    await act(async () => {
+      (doneRow.props.onAccessibilityAction as (e: unknown) => void)({ nativeEvent: { actionName: 'dont_count' } });
+      await Promise.resolve();
+    });
+    expect(shown).toEqual(['Spotted', 'Pain', 'Form broke', 'Other equipment', 'Cancel']);
+    await r.waitFor((t) => t.includes('not counted for records') && t.includes('Undo'), 'the exclusion toast with Undo');
+    const after = (await aggregateOf(ben.s, sessionId)).sets.find((x) => x.id === done);
+    expect(after?.exclusions).toEqual(['spotted']);
+    expect(after?.actual).toEqual(before?.actual);
+    expect(after?.version).toBe((before?.version ?? 0) + 1);
+
+    await r.press('Undo');
+    for (let i = 0; i < 50 && ((await aggregateOf(ben.s, sessionId)).sets.find((x) => x.id === done)?.exclusions ?? []).length > 0; i += 1) {
+      await act(async () => {
+        await new Promise((res) => setTimeout(res, 10));
+      });
+    }
+    expect((await aggregateOf(ben.s, sessionId)).sets.find((x) => x.id === done)?.exclusions ?? []).toEqual([]);
+    expect(r.errors).toEqual([]);
+    await r.unmount();
+
+    // The hold menu: Don't count for done sets; no separate Change type beside the set sheet's item.
+    const screen = readFileSync(join(import.meta.dirname, '../../src/screens/workout/WorkoutScreen.tsx'), 'utf8');
+    expect(screen).toContain('...targetRirItem(setId), ...dontCountItem(setId), { label: setSheetMenuLabel(');
+    const edits = readFileSync(join(import.meta.dirname, '../../src/screens/workout/WorkoutEdits.tsx'), 'utf8');
+    const menu = edits.slice(edits.indexOf('function setMenu('), edits.indexOf('// ---- The round menu'));
+    expect(menu).not.toContain('POPUP_COPY.changeType');
   });
 });

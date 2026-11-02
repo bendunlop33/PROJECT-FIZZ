@@ -12,7 +12,7 @@ import { cellInputA11y, editsInPlace, loadCellA11y, runRowTap, valueCellA11y, ty
 import { REVEAL_CONTEXT, REVEAL_MARGIN, revealOffset, revealSetId, type Round, type RoundExercise, type RoundRow } from '../../workout/rounds';
 import { setColumns, widestText, type SetColumns } from '../../workout/set-columns';
 import { claimsDrag, swipeIntent } from '../../workout/set-pager';
-import { setSheetMenuLabel } from '../../workout/set-edit';
+import { DONT_COUNT_LABEL, setSheetMenuLabel } from '../../workout/set-edit';
 import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { ROUND_TABLE_KEYBOARD } from '../../workout/keyboard';
@@ -103,7 +103,6 @@ export interface RoundPageProps {
     onDrop: (setId: string, to: number) => void;
     onMenu: (setId: string) => void;
     onMove: (setId: string, dir: 'up' | 'down') => void;
-    onChangeType: (setId: string) => void;
   };
   /** (Ben, 2 Nov) The exercise header's VoiceOver actions beyond next / previous: its menu's items, in order. */
   exerciseActions?: (sessionExerciseId: string) => { name: string; label: string }[];
@@ -114,6 +113,8 @@ export interface RoundPageProps {
   onCopyLast?: (setId: string) => void;
   /** (Ben, 26 Oct) A tap on a row's RIR cell (or its menu / VoiceOver action): enter reps in reserve for that set. */
   onRir?: (setId: string) => void;
+  /** (Ben, 2 Nov) A done set's `Don't count` (its VoiceOver action; the hold menu has it too). */
+  onDontCount?: (setId: string) => void;
   /** (Ben, 26 Oct) Done sets that are a new best (Summary's `New best` definition): a small `PB` on the row. */
   pbSetIds?: ReadonlySet<string>;
 }
@@ -127,8 +128,8 @@ interface RowActions {
   del: (r: RoundRow) => void;
   copyLast: (setId: string) => void;
   rir: (setId: string) => void;
+  dontCount: (setId: string) => void;
   move: (setId: string, dir: 'up' | 'down') => void;
-  changeType: (setId: string) => void;
   menu: (setId: string) => void;
 }
 
@@ -272,11 +273,11 @@ export function RoundPage(props: RoundPageProps) {
       rir: (setId) => {
         latest.current.onRir?.(setId);
       },
+      dontCount: (setId) => {
+        latest.current.onDontCount?.(setId);
+      },
       move: (setId, dir) => {
         latest.current.setEdit?.onMove(setId, dir);
-      },
-      changeType: (setId) => {
-        latest.current.setEdit?.onChangeType(setId);
       },
       menu: (setId) => {
         latest.current.setEdit?.onMenu(setId);
@@ -471,6 +472,7 @@ function ExerciseBlock({
                 pb={p.pbSetIds?.has(r.setId) === true}
                 canCopy={p.onCopyLast !== undefined && !r.done}
                 canRir={p.onRir !== undefined}
+                canDontCount={p.onDontCount !== undefined}
                 highlight={p.highlightSetId === r.setId}
                 reduceMotion={p.reduceMotion}
                 moves={edit === undefined ? null : edit.moves(r.setId)}
@@ -498,6 +500,7 @@ interface ShellProps {
   pb: boolean;
   canCopy: boolean;
   canRir: boolean;
+  canDontCount: boolean;
   highlight: boolean;
   reduceMotion: boolean;
   moves: { up: boolean; down: boolean } | null;
@@ -510,7 +513,7 @@ interface ShellProps {
  * Whether a set row needs drawing again (Ben, 26 Oct: smoother scrolling): only when what it shows changed
  * (its `renderKey`, columns, editor, marks). Callbacks are stable (`RowActions`), so a timer tick redraws none.
  */
-export function sameShell(a: Pick<ShellProps, 'r' | 'cols' | 'hasLoad' | 'blockRows' | 'draggable' | 'editing' | 'rowEditor' | 'pb' | 'canCopy' | 'canRir' | 'highlight' | 'reduceMotion' | 'moves'>, b: typeof a): boolean {
+export function sameShell(a: Pick<ShellProps, 'r' | 'cols' | 'hasLoad' | 'blockRows' | 'draggable' | 'editing' | 'rowEditor' | 'pb' | 'canCopy' | 'canRir' | 'canDontCount' | 'highlight' | 'reduceMotion' | 'moves'>, b: typeof a): boolean {
   return (
     a.r.renderKey === b.r.renderKey &&
     a.cols === b.cols &&
@@ -523,6 +526,7 @@ export function sameShell(a: Pick<ShellProps, 'r' | 'cols' | 'hasLoad' | 'blockR
     a.pb === b.pb &&
     a.canCopy === b.canCopy &&
     a.canRir === b.canRir &&
+    a.canDontCount === b.canDontCount &&
     a.highlight === b.highlight &&
     a.reduceMotion === b.reduceMotion &&
     a.moves?.up === b.moves?.up &&
@@ -560,6 +564,7 @@ const SetRowShell = memo(function SetRowShell(s: ShellProps) {
               pb={s.pb}
               {...(s.canCopy ? { onCopyLast: () => { actions.copyLast(r.setId); } } : {})}
               {...(s.canRir && !r.warmup && !r.skipped && r.row.columns.valueLabel === 'REPS' ? { onRir: () => { actions.rir(r.setId); } } : {})}
+              {...(s.canDontCount && r.done && !r.skipped ? { onDontCount: () => { actions.dontCount(r.setId); } } : {})}
               cellEditor={inCell ? (s.rowEditor?.node ?? null) : null}
               onDelete={() => {
                 actions.del(r);
@@ -570,9 +575,6 @@ const SetRowShell = memo(function SetRowShell(s: ShellProps) {
                     moves: s.moves,
                     onMoveSet: (dir: 'up' | 'down') => {
                       actions.move(r.setId, dir);
-                    },
-                    onChangeType: () => {
-                      actions.changeType(r.setId);
                     },
                   })}
               onPress={(part) => {
@@ -970,10 +972,10 @@ export function TableSetRow({
   onDelete,
   moves,
   onMoveSet,
-  onChangeType,
   pb = false,
   onCopyLast,
   onRir,
+  onDontCount,
 }: {
   row: RoundRow;
   cols: SetColumns;
@@ -984,16 +986,17 @@ export function TableSetRow({
   cellEditor?: ReactNode;
   onPress: (part: RowPart) => void;
   onDelete: () => void;
-  /** v3 §7: VoiceOver Move up / Move down (sets not done yet) and Change type. */
+  /** v3 §7: VoiceOver Move up / Move down (sets not done yet). The type is in the set sheet (`edit`; Ben, 2 Nov). */
   moves?: { up: boolean; down: boolean };
   onMoveSet?: (dir: 'up' | 'down') => void;
-  onChangeType?: () => void;
   /** (Ben, 26 Oct) A new best by Summary's definition: `PB` beside the set number. */
   pb?: boolean;
   /** (Ben, 26 Oct) Copies last time's set into this row (sets not done yet only). */
   onCopyLast?: () => void;
   /** (Ben, 26 Oct) Enters reps in reserve for this set (rows with an RIR cell only). */
   onRir?: () => void;
+  /** (Ben, 2 Nov) A done set's `Don't count` picker. */
+  onDontCount?: () => void;
 }) {
   const theme = useTheme();
   // §7: a hold arms the row's drag (inside the round's `DragList`); elsewhere it opens Edit set, as before.
@@ -1013,7 +1016,7 @@ export function TableSetRow({
     ...(row.columns.loadLabel !== null ? [{ name: 'load', label: 'Edit load here' }] : []),
     { name: 'value', label: `Edit ${valueName} here` },
     ...(onRir !== undefined ? [{ name: 'rir', label: 'Reps in reserve' }] : []),
-    ...(onChangeType !== undefined ? [{ name: 'type', label: 'Change type' }] : []),
+    ...(onDontCount !== undefined ? [{ name: 'dont_count', label: DONT_COUNT_LABEL }] : []),
     ...(moves?.up === true ? [{ name: 'move_up', label: 'Move up' }] : []),
     ...(moves?.down === true ? [{ name: 'move_down', label: 'Move down' }] : []),
     ...(onCopyLast !== undefined && row.last !== null ? [{ name: 'copy_last', label: 'Copy previous' }] : []),
@@ -1023,7 +1026,7 @@ export function TableSetRow({
     if (a === 'copy_last') onCopyLast?.();
     else if (a === 'rir') onRir?.();
     else if (a === 'delete') onDelete();
-    else if (a === 'type') onChangeType?.();
+    else if (a === 'dont_count') onDontCount?.();
     else if (a === 'move_up' || a === 'move_down') onMoveSet?.(a === 'move_up' ? 'up' : 'down');
     else onPress(a === 'select' || a === 'untick' ? 'marker' : a === 'load' ? 'load' : a === 'value' ? 'value' : 'row');
   };

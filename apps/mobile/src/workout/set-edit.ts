@@ -1,3 +1,6 @@
+import { EXCLUSION_LABEL, EXCLUSION_ORDER, normaliseExclusions } from '@fizz/domain';
+import type { SetExclusion } from '@fizz/schemas';
+
 /**
  * Edit set's save for a set not done yet (14 Oct, "edit anything on the
  * sets"), pure so it's tested: the target as one `edit_planned_set`, then
@@ -95,4 +98,25 @@ export function setSheetTitle(kind: SetSheetKind, stepName: string, exerciseName
 /** The menu item that opens the live sheet: what it holds, nothing more. */
 export function setSheetMenuLabel(done: boolean): string {
   return done ? 'Type, note' : 'Type, rest, note';
+}
+
+/** (Ben, 2 Nov) The hold menu's item on a done set in a live workout: the exclusions, without the full sheet. */
+export const DONT_COUNT_LABEL = 'Don’t count';
+
+/**
+ * `Don't count`'s picker: one row per reason in the usual order (`Spotted`, `Pain`, `Form broke`, `Other
+ * equipment`), the ones set marked `✓` as the RIR picker does, then Cancel. A pick toggles that reason;
+ * `next(i)` is the set's whole new list (what `correct_set`'s `exclusions` replaces), null for Cancel.
+ */
+export function dontCountMenu(current: readonly SetExclusion[] | undefined): { options: string[]; cancelButtonIndex: number; next: (index: number) => SetExclusion[] | null } {
+  const now = normaliseExclusions(current);
+  return {
+    options: [...EXCLUSION_ORDER.map((x) => (now.includes(x) ? `${EXCLUSION_LABEL[x]} ✓` : EXCLUSION_LABEL[x])), 'Cancel'],
+    cancelButtonIndex: EXCLUSION_ORDER.length,
+    next: (index) => {
+      const x = EXCLUSION_ORDER[index];
+      if (x === undefined) return null;
+      return normaliseExclusions(now.includes(x) ? now.filter((y) => y !== x) : [...now, x]);
+    },
+  };
 }
