@@ -1,7 +1,8 @@
-import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundMoves, roundSteps, sessionRounds, setMoveSteps, supersetNextCommand, typeRestCommand, typedLoadPlan, shownPlannedIn, type GymLearn, type RestKind, type TargetExplanation } from '@fizz/domain';
+import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, supersetNextCommand, typeRestCommand, typedLoadPlan, shownPlannedIn, type GymLearn, type RestKind, type TargetExplanation } from '@fizz/domain';
 import { BUILD_LIMITS, type CommandOf, type Load, type SessionAggregate, type SetType, type SetValues, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 
 import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
+import type { ContextMenuMore } from './exercise-menu';
 import type { RoundExercise } from './rounds';
 
 /**
@@ -97,21 +98,7 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
         spokenName,
       };
   });
-  const rounds = sessionRounds(a);
-  const round = rounds.find((r) => r.members.some((m) => m.id === ex.id));
-  const pendingOf = (id: string): WorkoutSet[] => a.sets.filter((s) => s.sessionExerciseId === id && s.status === 'pending').sort((x, y) => x.index - y.index);
-  const pending = pendingOf(ex.id);
-  let rests: PopupRestRow[];
-  if (round !== undefined && round.members.length > 1) {
-    const last = round.members.at(-1);
-    const first = last === undefined ? undefined : pendingOf(last.id)[0];
-    rests = first === undefined ? [] : [restRow('round', 'round', 'After each round', first.rest.seconds)];
-  } else {
-    rests = REST_ROWS.flatMap((x) => {
-      const first = pending.find((s) => s.setType === x.type);
-      return first === undefined ? [] : [restRow(x.type, x.kind, x.label, first.rest.seconds)];
-    });
-  }
+  const rests = exerciseRestRows(a, ex.id);
   const moves = roundSteps(a, ex.id);
   const working = a.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted' && s.setType !== 'warmup').length;
   const probe = { opId: 'probe', at: a.session.startedAt };
@@ -132,6 +119,48 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
     canSwap: midSwapSlot(a, ex.id) !== null,
     deleteLabel: POPUP_COPY.remove,
     canDeleteExercise: canRemoveExercise(a, ex.id),
+  };
+}
+
+/**
+ * Rest by set type for an exercise's sets not done yet (the builder's order); a superset has one row, `After each
+ * round`. The pop-up's rows and (Ben, 2 Nov) the round menu's `Rest` sheet.
+ */
+export function exerciseRestRows(a: SessionAggregate, sessionExerciseId: string): PopupRestRow[] {
+  const round = sessionRounds(a).find((r) => r.members.some((m) => m.id === sessionExerciseId));
+  const pendingOf = (id: string): WorkoutSet[] => a.sets.filter((s) => s.sessionExerciseId === id && s.status === 'pending').sort((x, y) => x.index - y.index);
+  if (round !== undefined && round.members.length > 1) {
+    const last = round.members.at(-1);
+    const first = last === undefined ? undefined : pendingOf(last.id)[0];
+    return first === undefined ? [] : [restRow('round', 'round', 'After each round', first.rest.seconds)];
+  }
+  const pending = pendingOf(sessionExerciseId);
+  return REST_ROWS.flatMap((x) => {
+    const first = pending.find((s) => s.setType === x.type);
+    return first === undefined ? [] : [restRow(x.type, x.kind, x.label, first.rest.seconds)];
+  });
+}
+
+/**
+ * (Ben, 2 Nov: "Yes move to menu.") What the name's former pop-up offered that the round menu didn't, for one
+ * exercise: each only when it applies, on the same rules the pop-up used (`canAddWarmupNow`, `supersetNextCommand`,
+ * `canRemoveExercise`). Its Move up / Move down are the menu's own Up / Down (the same write).
+ */
+export function exerciseMenuMore(a: SessionAggregate, sessionExerciseId: string, hasHowTo: boolean): { more: ContextMenuMore; canRemove: boolean } {
+  const ex = a.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
+  if (ex === undefined) return { more: { howTo: false, warmup: false, rest: null, supersetNext: false, unlink: false, why: false }, canRemove: false };
+  const rests = exerciseRestRows(a, ex.id);
+  const rest = rests.find((x) => x.kind === 'working') ?? rests[0];
+  return {
+    more: {
+      howTo: hasHowTo,
+      warmup: canAddWarmupNow(a, ex.id),
+      rest: rest === undefined ? null : rest.text,
+      supersetNext: supersetNextCommand(a, ex.id, { opId: 'probe', at: a.session.startedAt }) !== null,
+      unlink: ex.supersetGroup !== null,
+      why: a.sets.some((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted'),
+    },
+    canRemove: canRemoveExercise(a, ex.id),
   };
 }
 
@@ -238,29 +267,4 @@ export function removePrompt(a: SessionAggregate, sessionExerciseId: string, op:
   const { command, loggedSets } = removeExerciseCommand(a, ex.id, op);
   if (loggedSets === 0) return { kind: 'now', command, name: ex.exerciseName };
   return { kind: 'ask', command, name: ex.exerciseName, title: `Remove ${ex.exerciseName}?`, message: `Keeps ${String(loggedSets)} logged ${loggedSets === 1 ? 'set' : 'sets'}` };
-}
-
-export type ExerciseAction = 'swap' | 'move_up' | 'move_down' | 'do_first' | 'move_to_end' | 'superset_next' | 'unlink' | 'remove';
-
-/**
- * An exercise header's VoiceOver actions on the round page (v3 §6–§7), the same as its `⋯` and the
- * pop-up: Swap (while it has sets to do), Move up / Move down (rounds not started), Superset with
- * next, Unlink, Remove.
- */
-export function exerciseActions(a: SessionAggregate, sessionExerciseId: string): { name: ExerciseAction; label: string }[] {
-  const ex = a.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
-  if (ex === undefined) return [];
-  const moves = roundMoves(a, ex.id);
-  const probe = { opId: 'probe', at: a.session.startedAt };
-  return [
-    ...(midSwapSlot(a, ex.id) !== null ? [{ name: 'swap' as const, label: POPUP_COPY.swapExercise }] : []),
-    ...(moves.up ? [{ name: 'move_up' as const, label: POPUP_COPY.moveUp }] : []),
-    ...(moves.down ? [{ name: 'move_down' as const, label: POPUP_COPY.moveDown }] : []),
-    // (Ben, 1 Nov) The menu's Now and Later, as VoiceOver actions too.
-    ...(moves.first ? [{ name: 'do_first' as const, label: 'Do first' }] : []),
-    ...(moves.toEnd ? [{ name: 'move_to_end' as const, label: 'Move to end' }] : []),
-    ...(supersetNextCommand(a, ex.id, probe) !== null ? [{ name: 'superset_next' as const, label: POPUP_COPY.supersetNext }] : []),
-    ...(ex.supersetGroup !== null ? [{ name: 'unlink' as const, label: POPUP_COPY.unlink }] : []),
-    ...(canRemoveExercise(a, ex.id) ? [{ name: 'remove' as const, label: removeExerciseCommand(a, ex.id, probe).loggedSets > 0 ? 'Remove (keeps logged sets)' : POPUP_COPY.remove }] : []),
-  ];
 }

@@ -19,9 +19,10 @@ Only the header long-presses for this menu: a set row's hold stays its own (drag
 5. History
 6. Notes, then Plates (bar or plate-loaded only)
 7. Adjust (current exercise only)
-8. Separator, then **Skip exercise** in red (while it has a set to do).
+8. (Revision 2 Nov, Ben: "Yes move to menu.") Separator, then what the name's pop-up had, each only when it applies: How to (has a guide), Add warm-up (not in a superset, something left to warm up for, under 4), Rest with its value (`Rest  3:00`: opens a sheet with rest per set type, or `After each round` for a superset), Superset with next, Unlink (in a superset), Why this weight? (an alert with the stored target's reasons; `Not recorded` when there are none).
+9. Separator, then **Skip exercise** (while it has a set to do) and **Remove exercise** (the pop-up's rule: nothing logged, or sets still to do; with logged sets it asks first and keeps them) in red.
 
-The name's pop-up keeps How to, Superset, Unlink and Remove, and its own Move up / Move down (same rule, same write).
+The pop-up's Move up / Move down are the icon row's Up / Down (same write). A tap on the exercise name opens nothing (revision 2 Nov); the menu is `⋯` or a long press, and the header's VoiceOver actions are the menu's items in order, plus `Exercise options`. The pop-up stays on Your workout before Start and in the workout editor.
 
 **Moves.** Any exercise with nothing logged moves, the current one included. Nothing moves above an exercise with a set logged, and a started or done exercise never moves. A superset moves as one. `Now` takes it to the first place it can go. When the current exercise moves, or one is put above it, the exercise now in its place becomes current (its first set to do), unless a work timer is running on the current set. The rest timer and every logged set are untouched. Toasts: `<name> moved`, `<name> first`, `<name> moved to end`, each with Undo; Undo also hands the current set back.
 

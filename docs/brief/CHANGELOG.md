@@ -1098,7 +1098,7 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **C, swipes in the Workout list:** left reveals Later · Swap · Skip (a full swipe skips, with Undo); right reveals Add set. A done exercise only has Add set. The round page keeps its swipes (round change; set rows' Delete). Each is also a VoiceOver action on the row.
 - **Add set's toast** now has Undo.
 - **Exercise sheet's Kg cell (Ben, 1 Nov, 20:15: Bench showed `10`):** display clipping only; the stored loads were 105 / 100 / 100. The field's 16 pt padding left 24 pt for the digits in a 56 pt column. Cells now pad 6 pt and the Kg column fits every load shown or typed, never less than `102.5` and `1,000`, growing with text size. The workout table's cells already fit (a 1,000 lb case added to their tests); the Lock Screen and Live Activity lines are single short lines (`102.5 kg × 5`) and unchanged.
-- **Not done, Ben to decide:** making a tap on the exercise name a no-op. That tap opens the exercise pop-up, the only place on the round page with How to, Superset with next, Unlink, Remove, + Warm-up, Why this weight?, per-type rest and its Move up / down.
+- **Decided 2 Nov (below):** the name tap is a no-op and the pop-up's actions moved into the menu.
 - **Open:** not run on Ben's iPhone (lift, placement at large text, swipe feel). No migration.
 ## 2026-11-01: Spoken rest cues while GymSmarter is in another app (Ben, 1 Nov)
 
@@ -1149,6 +1149,18 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Warm-up Log:** a warm-up with a load of its own logs it (`Log warm-up 40 kg × 8`); one whose load the planner derives gets the app's warm-up lookup (catalogue facts, main lifts, warm-up settings) with the workout, so the Lock Screen shows and logs exactly the step the workout shows. Same set-version check as working sets (stale taps ignored). With no rest between warm-ups the Ready card with Log shows straight after the previous log; with a short rest the Ready drawn for the rest's end has it.
 - **Layout:** line 1 `⏱ Rest · DB shoulder press` full width with a smaller timer top right; `Next  32 kg ea × 6–8` (`Next  warm-up 40 kg × 8`; Ben's draft keeps `your edit`, the coach's `coach target`); `Last  35 kg ea × 7`; −15 s / +15 s / Skip or Log. `Until 19:53` dropped (still read by VoiceOver). `ea`, not `each` (VoiceOver says `each`). Every line one line, shrinking to fit. Ready uses the same lines (`Ready · DB shoulder press`, set number top right); the Dynamic Island's expanded view follows.
 - **Open:** the widget layout isn't render-tested here; needs a check on Ben's iPhone.
+
+## 2026-11-02: The name's pop-up moves into the exercise menu; a tap on the name opens nothing (Ben, 2 Nov)
+
+- **Ben's words:** "Yes move to menu. Assume swap / remove etc all there."
+- **Menu (round page):** after Adjust, a separator and a short second section, each row only when it applies: How to · Add warm-up · Rest `3:00` · Superset with next · Unlink · Why this weight?. Then Skip exercise and **Remove exercise** together in red at the bottom (Remove sits with Skip rather than in the new section, so the destructive rows stay together under the thumb). Same rules and writes as the pop-up: `canAddWarmupNow`, `supersetNextCommand`, `canRemoveExercise` (with logged sets it asks first and keeps them), `set_rest_after` per set type, `explainTarget` for Why. Every write versioned with an op ID and an Undo toast, as before (rest steps have no Undo toast, as before).
+- **Rest:** opens a sheet with the pop-up's rest rows (per set type, or `After each round` in a superset), 15 s steps, today only. The single-set `Rest after` editor (Why sheet, Focus view) is unchanged.
+- **Why this weight?:** an alert with the stored reasons (`Not recorded` when none), as Plates does.
+- **Dropped:** the pop-up's Move up / Move down (the icon row's Up / Down are the same write).
+- **Name tap:** opens nothing. The menu is `⋯` or a long press on the header. VoiceOver: the header's actions are exactly the menu's items, plus `Exercise options`.
+- **Pop-up elsewhere:** kept on Your workout (before Start) and in the workout editor (plan days, saved workouts). Mid-workout it is no longer used; its UI wiring was removed.
+- **No longer reachable mid-workout:** the pop-up's inline History glance (last 3 sessions and a chart). The menu's History opens the exercise's full history. Ben to say if he wants the glance back (e.g. at the top of the Rest sheet or as a Why line).
+- **Open:** not run on Ben's iPhone (menu height at large text with every row; it scrolls). No migration.
 
 ## 2026-11-02: Plate-friendly warm-ups and fewer plate changes on working sets (Ben, 2 Nov)
 

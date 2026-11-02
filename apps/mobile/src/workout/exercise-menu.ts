@@ -32,7 +32,13 @@ export type ExerciseMenuAction =
   | 'add_exercise'
   | 'delete_set'
   | 'skip_exercise'
-  | 'remove_exercise';
+  | 'remove_exercise'
+  /** (Ben, 2 Nov) The round page's menu, from the name's former pop-up. */
+  | 'superset_next'
+  | 'unlink'
+  | 'add_warmup'
+  | 'rest'
+  | 'why_weight';
 
 interface MenuItem {
   action: ExerciseMenuAction | 'cancel';
@@ -138,14 +144,31 @@ export interface ContextMenuItem {
 
 /**
  * The round page's context menu (Ben, 1 Nov, A): Undo rows first (only while something can be undone), a row of
- * icon buttons for the moves that would change the order, the actions, then Skip on its own after a separator.
- * No Cancel: a tap outside dismisses it.
+ * icon buttons for the moves that would change the order, the actions, a short second section (Ben, 2 Nov: what
+ * the name's pop-up had), then Skip and Remove in red after a separator. No Cancel: a tap outside dismisses it.
  */
 export interface ContextMenuModel {
   undo: ContextMenuItem[];
   moves: ContextMenuItem[];
   rows: ContextMenuItem[];
+  more: ContextMenuItem[];
   danger: ContextMenuItem[];
+}
+
+/** (Ben, 2 Nov) The second section's facts: each row only when it applies. */
+export interface ContextMenuMore {
+  /** The exercise has a guide. */
+  howTo: boolean;
+  /** `canAddWarmupNow`. */
+  warmup: boolean;
+  /** Per-set-type rest rows exist (sets not done yet); the text shown is the first row's (`2:00`). Null: no row. */
+  rest: string | null;
+  /** `supersetNextCommand` would pair it with the next exercise. */
+  supersetNext: boolean;
+  /** It's in a superset. */
+  unlink: boolean;
+  /** It has a set whose target can be explained. */
+  why: boolean;
 }
 
 export interface RoundContextMenuOptions {
@@ -165,13 +188,18 @@ export interface RoundContextMenuOptions {
   canSkip?: boolean;
   /** (Ben, 1 Nov) `Make main lift` (`mainLiftOffer`): a plan workout's compound that isn't today's main lift. */
   makeMain?: boolean;
+  /** (Ben, 2 Nov) The second section; absent: none. */
+  more?: ContextMenuMore;
+  /** (Ben, 2 Nov) `Remove exercise` (`canRemoveExercise`; with logged sets it asks first and keeps them). */
+  canRemove?: boolean;
 }
 
 /**
  * (Ben, 1 Nov, approved A) Undo… · Later / Now / Up / Down · Swap exercise · Make main lift (1 Nov) · Add set · History · Notes · Plates
- * (bar or plate-loaded only) · Adjust (current only) · Skip exercise. Elsewhere: Edit set, Target RIR and Delete on
- * the set's own hold menu and swipe; Add exercise at the end of the list; Not at this gym in the Swap sheet; How
- * to, Superset, Unlink and Remove in the name's pop-up.
+ * (bar or plate-loaded only) · Adjust (current only); (Ben, 2 Nov) How to · Add warm-up · Rest · Superset with next
+ * or Unlink · Why this weight?; then Skip exercise and Remove exercise in red. Elsewhere: Edit set, Target RIR and
+ * Delete on the set's own hold menu and swipe; Add exercise at the end of the list; Not at this gym in the Swap
+ * sheet. The name itself opens nothing (Ben, 2 Nov).
  */
 export function roundContextMenu(o: RoundContextMenuOptions): ContextMenuModel {
   const c = o.coachChange ?? false;
@@ -194,13 +222,28 @@ export function roundContextMenu(o: RoundContextMenuOptions): ContextMenuModel {
     ...(o.plates ? [{ action: 'plates' as const, label: 'Plates', icon: 'circle.circle' as const }] : []),
     ...(o.adjust === true ? [{ action: 'adjust' as const, label: 'Adjust', icon: 'slider.horizontal.3' as const }] : []),
   ];
-  const danger: ContextMenuItem[] = o.canSkip === false ? [] : [{ action: 'skip_exercise', label: 'Skip exercise', icon: 'forward.end', destructive: true }];
-  return { undo, moves, rows, danger };
+  const x = o.more;
+  const more: ContextMenuItem[] =
+    x === undefined
+      ? []
+      : [
+          ...(x.howTo ? [{ action: 'how_to' as const, label: 'How to', icon: 'play.circle' as const }] : []),
+          ...(x.warmup ? [{ action: 'add_warmup' as const, label: 'Add warm-up', icon: 'flame' as const }] : []),
+          ...(x.rest !== null ? [{ action: 'rest' as const, label: 'Rest', detail: x.rest, accessibilityLabel: `Rest, ${x.rest}`, icon: 'timer' as const }] : []),
+          ...(x.supersetNext ? [{ action: 'superset_next' as const, label: 'Superset with next', icon: 'link' as const }] : []),
+          ...(x.unlink ? [{ action: 'unlink' as const, label: 'Unlink', icon: 'scissors' as const }] : []),
+          ...(x.why ? [{ action: 'why_weight' as const, label: 'Why this weight?', icon: 'questionmark.circle' as const }] : []),
+        ];
+  const danger: ContextMenuItem[] = [
+    ...(o.canSkip === false ? [] : [{ action: 'skip_exercise' as const, label: 'Skip exercise', icon: 'forward.end' as const, destructive: true }]),
+    ...(o.canRemove === true ? [{ action: 'remove_exercise' as const, label: 'Remove exercise', icon: 'trash' as const, destructive: true }] : []),
+  ];
+  return { undo, moves, rows, more, danger };
 }
 
 /** Every item in menu order (VoiceOver's actions, tests). */
 export function contextMenuItems(m: ContextMenuModel): ContextMenuItem[] {
-  return [...m.undo, ...m.moves, ...m.rows, ...m.danger];
+  return [...m.undo, ...m.moves, ...m.rows, ...m.more, ...m.danger];
 }
 
 /** A rectangle in window points (`measureInWindow`). */
@@ -215,8 +258,8 @@ export const CONTEXT_MENU = { width: 250, rowH: 44, movesH: 58, sepH: 6, gap: 8,
 
 /** The menu's height: rows of 44 pt, the icon row, and a 6 pt separator before each later section. */
 export function contextMenuHeight(m: ContextMenuModel): number {
-  const sections = [m.undo.length > 0, m.moves.length > 0, m.rows.length > 0, m.danger.length > 0].filter(Boolean).length;
-  return (m.undo.length + m.rows.length + m.danger.length) * CONTEXT_MENU.rowH + (m.moves.length > 0 ? CONTEXT_MENU.movesH : 0) + Math.max(0, sections - 1) * CONTEXT_MENU.sepH;
+  const sections = [m.undo.length > 0, m.moves.length > 0, m.rows.length > 0, m.more.length > 0, m.danger.length > 0].filter(Boolean).length;
+  return (m.undo.length + m.rows.length + m.more.length + m.danger.length) * CONTEXT_MENU.rowH + (m.moves.length > 0 ? CONTEXT_MENU.movesH : 0) + Math.max(0, sections - 1) * CONTEXT_MENU.sepH;
 }
 
 /**

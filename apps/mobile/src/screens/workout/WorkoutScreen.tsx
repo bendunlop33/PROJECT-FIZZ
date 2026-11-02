@@ -62,11 +62,11 @@ import { noteWrites } from '../../workout/notes';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
-import { exerciseMenu, rirMenu, roundContextMenu, targetRpeMenu, targetRpeScopeMenu, type ContextMenuModel, type ExerciseMenuAction, type MenuAnchor } from '../../workout/exercise-menu';
+import { contextMenuItems, exerciseMenu, rirMenu, roundContextMenu, targetRpeMenu, targetRpeScopeMenu, type ContextMenuModel, type ExerciseMenuAction, type MenuAnchor } from '../../workout/exercise-menu';
 import { ExerciseContextMenu } from '../../ui/context-menu';
 import { exerciseSwipeActions, type ExerciseSwipeAction, type ExerciseSwipeActions } from '../../workout/exercise-swipe';
 import { canMakeMain, makeMainLiftNow, type MainLiftActionPorts } from '../../workout/main-lift-action';
-import { exerciseActions } from '../../workout/exercise-popup';
+import { exerciseMenuMore } from '../../workout/exercise-popup';
 import { cuesWorkEnd, shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
@@ -784,7 +784,7 @@ export function WorkoutScreen() {
     if (!restRunning) clearOffer();
   }, [restRunning, clearOffer]);
 
-  // v3 §7: the builder's pop-up, Swap / Add sheet, drag and advice on today's session. Its writes go through
+  // v3 §7: the round menu's Rest sheet and Add warm-up, Swap / Add sheet, drag and advice on today's session. Its writes go through
   // this screen's `run` and toasts (set below, once the workout is loaded); the hook itself is called every render.
   const toastNode = toast ? (
     <Toast
@@ -796,7 +796,7 @@ export function WorkoutScreen() {
       {...(toast.secondary && toast.onSecondary ? { secondary: toast.secondary, onSecondary: toast.onSecondary } : {})}
     />
   ) : null;
-  const editDeps = useRef<(Pick<WorkoutEditsInput, 'run' | 'adopt' | 'undoToast' | 'refusalText' | 'addSet' | 'beforeEdit' | 'learnTyped'> & Required<Pick<WorkoutEditsInput, 'howTo' | 'notHere'>>) | null>(null);
+  const editDeps = useRef<(Pick<WorkoutEditsInput, 'run' | 'adopt' | 'undoToast' | 'refusalText' | 'addSet' | 'beforeEdit' | 'learnTyped'> & Required<Pick<WorkoutEditsInput, 'notHere'>>) | null>(null);
   const workoutEdits = useWorkoutEdits({
     services,
     sessionId: data === 'loading' || data === null ? '' : data.aggregate.session.id,
@@ -813,7 +813,6 @@ export function WorkoutScreen() {
     refusalText: (code, message) => editDeps.current?.refusalText(code, message) ?? message,
     addSet: (id) => editDeps.current?.addSet(id),
     beforeEdit: () => editDeps.current?.beforeEdit(),
-    howTo: (id) => editDeps.current?.howTo(id) ?? null,
     notHere: { can: (id) => editDeps.current?.notHere.can(id) ?? false, mark: (id) => editDeps.current?.notHere.mark(id) },
     toast: toastNode,
   });
@@ -909,15 +908,6 @@ export function WorkoutScreen() {
     beforeEdit: closeCellEditors,
     learnTyped: (learn, ops) => {
       learnTyped(learn, ops);
-    },
-    howTo: (id) => {
-      const ex = loaded.aggregate.exercises.find((e) => e.id === id);
-      const route = ex === undefined ? null : howToRouteFor(ex, bundledHowToSources());
-      return route === null
-        ? null
-        : () => {
-            navigation.navigate('HowTo', route);
-          };
     },
     notHere: {
       can: usesGymItem,
@@ -1191,12 +1181,14 @@ export function WorkoutScreen() {
 
   /**
    * (Ben, 1 Nov, A) The round page's menu: Undo…, Later / Now / Up / Down (only those that move it), Swap, Add set,
-   * History, Notes, Plates (bar or plate-loaded only), Adjust (current only), Skip (`roundContextMenu`). Null off
-   * the round page: Focus view keeps its action sheet.
+   * History, Notes, Plates (bar or plate-loaded only), Adjust (current only); (Ben, 2 Nov) How to, Add warm-up,
+   * Rest, Superset with next / Unlink, Why this weight?; Skip and Remove (`roundContextMenu`). Null off the round
+   * page: Focus view keeps its action sheet.
    */
-  function roundMenu(sessionExerciseId: string, facts: { exerciseName: string; swappable: boolean; plates: readonly string[]; coachActionId: string | null; adjustedBy: 'rule' | 'coach' | null; swappedFrom: { name: string; opId: string } | null }, current: boolean): ContextMenuModel | null {
+  function roundMenu(sessionExerciseId: string, facts: { exerciseName: string; swappable: boolean; plates: readonly string[]; coachActionId: string | null; adjustedBy: 'rule' | 'coach' | null; swappedFrom: { name: string; opId: string } | null }, current: boolean, hasHowTo: boolean): ContextMenuModel | null {
     if (!tableModeNow()) return null;
     const a = loaded.aggregate;
+    const extra = exerciseMenuMore(a, sessionExerciseId, hasHowTo);
     return roundContextMenu({
       canSwap: facts.swappable,
       moves: roundMoves(a, sessionExerciseId),
@@ -1206,6 +1198,8 @@ export function WorkoutScreen() {
       adjust: current,
       canSkip: a.sets.some((x) => x.sessionExerciseId === sessionExerciseId && x.status === 'pending'),
       makeMain: canMakeMain(loaded, sessionExerciseId),
+      more: extra.more,
+      canRemove: extra.canRemove,
     });
   }
 
@@ -1247,7 +1241,7 @@ export function WorkoutScreen() {
         return true;
       case 'move_up':
       case 'move_down':
-        // The same move as the name pop-up's (Ben, 1 Nov).
+        // The same move the name pop-up had (Ben, 1 Nov; the pop-up left the workout 2 Nov).
         workoutEdits.moveRound(ex.sessionExerciseId, action === 'move_up' ? 'up' : 'down');
         return true;
       case 'do_first':
@@ -1277,6 +1271,28 @@ export function WorkoutScreen() {
         // (Ben, 26 Oct) `Adjust` moved off the header into `⋯`: its chips open under the header, as before.
         coach.toggleAdjust();
         return true;
+      // (Ben, 2 Nov) The name's former pop-up, now in the round menu: the same writes it used.
+      case 'superset_next':
+        workoutEdits.supersetNext(ex.sessionExerciseId);
+        return true;
+      case 'unlink':
+        workoutEdits.unlink(ex.sessionExerciseId);
+        return true;
+      case 'add_warmup':
+        workoutEdits.addWarmup(ex.sessionExerciseId);
+        return true;
+      case 'rest':
+        workoutEdits.openRest(ex.sessionExerciseId);
+        return true;
+      case 'why_weight':
+        // Where the next set's target came from, as stored with it (`Not recorded` when nothing was; rule 6).
+        void services.workoutEdit
+          .why(session.id, ex.sessionExerciseId)
+          .catch(() => [])
+          .then((lines) => {
+            Alert.alert('Why this weight?', lines.length > 0 ? lines.join('\n') : 'Not recorded');
+          });
+        return true;
       case 'notes':
       case 'how_to':
       case 'edit_set':
@@ -1292,39 +1308,21 @@ export function WorkoutScreen() {
     }
   }
 
-  /** v3 §6: an exercise header's VoiceOver actions, as its `⋯` and the pop-up. */
-  function exerciseA11yActions(a: typeof loaded.aggregate, sessionExerciseId: string): { name: string; label: string }[] {
-    return exerciseActions(a, sessionExerciseId);
+  /** (Ben, 2 Nov) An exercise header's VoiceOver actions: exactly its round menu's items, in order. */
+  function exerciseA11yActions(sessionExerciseId: string): { name: string; label: string }[] {
+    const m = cardMenu(sessionExerciseId);
+    return m === null || m.model === null ? [] : contextMenuItems(m.model).map((i) => ({ name: i.action, label: i.accessibilityLabel ?? i.label }));
   }
 
+  /** A header's VoiceOver action: the menu's own pick (only an item the menu has now). */
   function runExerciseAction(sessionExerciseId: string, name: string) {
-    switch (name) {
-      case 'swap':
-        workoutEdits.openSwap(sessionExerciseId);
-        break;
-      case 'move_up':
-      case 'move_down':
-        workoutEdits.moveRound(sessionExerciseId, name === 'move_up' ? 'up' : 'down');
-        break;
-      case 'do_first':
-      case 'move_to_end':
-        workoutEdits.jumpRound(sessionExerciseId, name === 'do_first' ? 'do_first' : 'to_end');
-        break;
-      case 'superset_next':
-        workoutEdits.supersetNext(sessionExerciseId);
-        break;
-      case 'unlink':
-        workoutEdits.unlink(sessionExerciseId);
-        break;
-      case 'remove':
-        workoutEdits.remove(sessionExerciseId);
-        break;
-      default:
-        break;
-    }
+    const m = cardMenu(sessionExerciseId);
+    const item = m === null || m.model === null ? undefined : contextMenuItems(m.model).find((i) => i.action === name);
+    if (m !== null && item !== undefined) m.pick(item.action);
   }
 
-  function openExerciseMenu(f: FocusView, anchor?: MenuAnchor) {
+  /** The open row's exercise: its menu model (null off the round page) and what a pick does. */
+  function focusMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
     const plates = services.workout.cardFacts(loaded, f.sessionExerciseId)?.plates ?? [];
     const pick = (action: ExerciseMenuAction | null) => {
@@ -1347,7 +1345,11 @@ export function WorkoutScreen() {
       }
       if (action === 'skip_exercise') skipExercise(f.sessionExerciseId, f.exerciseName);
     };
-    const model = roundMenu(f.sessionExerciseId, { ...f, plates }, true);
+    return { title: f.exerciseName, howTo, pick, model: roundMenu(f.sessionExerciseId, { ...f, plates }, true, howTo !== null) };
+  }
+
+  function openExerciseMenu(f: FocusView, anchor?: MenuAnchor) {
+    const { howTo, pick, model } = focusMenu(f);
     if (model !== null) {
       showContextMenu(f.exerciseName, f.sessionExerciseId, model, anchor, pick);
       return;
@@ -1387,8 +1389,27 @@ export function WorkoutScreen() {
       openExerciseMenu(focus, anchor);
       return;
     }
+    const m = cardMenu(sessionExerciseId);
+    if (m === null || m.facts === null) return;
+    const { facts, next, howTo, pick, model } = m;
+    if (model !== null) {
+      showContextMenu(facts.exerciseName, sessionExerciseId, model, anchor, pick);
+      return;
+    }
+    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId) });
+    ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
+      pick(menu.actionAt(picked));
+    });
+  }
+
+  /**
+   * Any exercise's menu: the open row's (`focusMenu`), or a card's acting on its next pending set. `facts` is null
+   * for the open row (its own menu decides the fallback sheet).
+   */
+  function cardMenu(sessionExerciseId: string) {
+    if (focus !== null && sessionExerciseId === focus.sessionExerciseId) return { ...focusMenu(focus), facts: null, next: null };
     const facts = services.workout.cardFacts(loaded, sessionExerciseId);
-    if (facts === null) return;
+    if (facts === null) return null;
     const ex = { sessionExerciseId, exerciseId: facts.exerciseId, exerciseName: facts.exerciseName };
     const next = facts.nextSet;
     const howTo = howToRouteFor(ex, bundledHowToSources());
@@ -1415,15 +1436,7 @@ export function WorkoutScreen() {
       }
       if (action === 'skip_exercise') skipExercise(sessionExerciseId, facts.exerciseName);
     };
-    const model = roundMenu(sessionExerciseId, facts, false);
-    if (model !== null) {
-      showContextMenu(facts.exerciseName, sessionExerciseId, model, anchor, pick);
-      return;
-    }
-    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId) });
-    ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
-      pick(menu.actionAt(picked));
-    });
+    return { title: facts.exerciseName, howTo, pick, model: roundMenu(sessionExerciseId, facts, false, howTo !== null), facts, next };
   }
 
   /** `⚠ Pain` on a Table header opens that movement's flag (§2.14.4). */
@@ -3279,10 +3292,6 @@ export function WorkoutScreen() {
                   if (target !== null) openWhy(target.setId);
                 }}
                 onMenu={openCardMenu}
-                onName={(card) => {
-                  // v3 §7: the name opens the builder's exercise pop-up for today.
-                  workoutEdits.open(card.sessionExerciseId);
-                }}
                 setEdit={{
                   movable: (id) => movableSetIds(loaded.aggregate, id),
                   moves: (setId) => setMoveSteps(loaded.aggregate, setId),
@@ -3301,7 +3310,7 @@ export function WorkoutScreen() {
                     workoutEdits.pickType(setId);
                   },
                 }}
-                exerciseActions={(id) => exerciseA11yActions(loaded.aggregate, id)}
+                exerciseActions={exerciseA11yActions}
                 onExerciseAction={(id, name) => {
                   runExerciseAction(id, name);
                 }}
@@ -3551,7 +3560,7 @@ export function WorkoutScreen() {
           return null;
         }}
       />
-      {/* v3 §7: the builder's exercise pop-up and Swap / Add sheet, today only (also Swap from Focus view's ⋯). */}
+      {/* v3 §7: the Rest sheet and the builder's Swap / Add sheet, today only (also Swap from Focus view's ⋯). */}
       {workoutEdits.node}
       <FinishSheet
         aggregate={loaded.aggregate}

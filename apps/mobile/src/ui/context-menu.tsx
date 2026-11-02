@@ -94,6 +94,7 @@ export function ExerciseContextMenu(p: ExerciseContextMenuProps) {
       </View>
     ) : null,
     p.model.rows.length > 0 ? <View key="rows">{p.model.rows.map(row)}</View> : null,
+    p.model.more.length > 0 ? <View key="more">{p.model.more.map(row)}</View> : null,
     p.model.danger.length > 0 ? <View key="danger">{p.model.danger.map(row)}</View> : null,
   ].filter((x) => x !== null);
   return (

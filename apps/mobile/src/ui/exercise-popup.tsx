@@ -301,32 +301,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
     </View>
   );
 
-  const rests =
-    view.rests.length > 0 ? (
-      <Table>
-        {view.rests.map((x, i) => (
-          <View key={x.kind}>
-            {i > 0 ? <Divider /> : null}
-            <View style={{ minHeight: 54, flexDirection: 'row', alignItems: 'center', paddingLeft: theme.space['4'], paddingRight: theme.space['2'] }}>
-              <AppText variant="body" style={{ flex: 1 }}>
-                {x.label}
-              </AppText>
-              {x.own === true && p.onRestDefault !== undefined ? <TextButton label={POPUP_COPY.restDefault} tone="secondary" accessibilityLabel={`${x.label}, ${POPUP_COPY.restDefault}`} onPress={() => { p.onRestDefault?.(x); }} /> : null}
-              <Stepper
-                label={x.label}
-                valueText={x.text}
-                canMinus={x.canMinus}
-                canPlus={x.canPlus}
-                repeat
-                onStep={(d) => {
-                  p.onRestStep(x, d > 0 ? 1 : -1);
-                }}
-              />
-            </View>
-          </View>
-        ))}
-      </Table>
-    ) : null;
+  const rests = <RestRows rests={view.rests} onStep={p.onRestStep} {...(p.onRestDefault !== undefined ? { onDefault: p.onRestDefault } : {})} />;
 
   const moveButtons = (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
@@ -496,6 +471,64 @@ export function ExercisePopup(p: ExercisePopupProps) {
       {links}
       {why}
       {keyBar}
+    </BottomCard>
+  );
+}
+
+/**
+ * Rest by set type with a 15 s stepper each (`Default` on Ben's own when the page offers it). The pop-up's rows
+ * and (Ben, 2 Nov) the round menu's `Rest` sheet. Nothing when there are no rows.
+ */
+export function RestRows({ rests, onStep, onDefault }: { rests: readonly PopupRestRow[]; onStep: (rest: PopupRestRow, dir: 1 | -1) => void; onDefault?: (rest: PopupRestRow) => void }) {
+  const theme = useTheme();
+  if (rests.length === 0) return null;
+  return (
+    <Table>
+      {rests.map((x, i) => (
+        <View key={x.kind}>
+          {i > 0 ? <Divider /> : null}
+          <View style={{ minHeight: 54, flexDirection: 'row', alignItems: 'center', paddingLeft: theme.space['4'], paddingRight: theme.space['2'] }}>
+            <AppText variant="body" style={{ flex: 1 }}>
+              {x.label}
+            </AppText>
+            {x.own === true && onDefault !== undefined ? <TextButton label={POPUP_COPY.restDefault} tone="secondary" accessibilityLabel={`${x.label}, ${POPUP_COPY.restDefault}`} onPress={() => { onDefault(x); }} /> : null}
+            <Stepper
+              label={x.label}
+              valueText={x.text}
+              canMinus={x.canMinus}
+              canPlus={x.canPlus}
+              repeat
+              onStep={(d) => {
+                onStep(x, d > 0 ? 1 : -1);
+              }}
+            />
+          </View>
+        </View>
+      ))}
+    </Table>
+  );
+}
+
+/** (Ben, 2 Nov) The round menu's `Rest`: the exercise's rest by set type, in a sheet. */
+export function RestSheet({ name, rests, onStep, onClose, onDismissed, toast }: { name: string | null; rests: readonly PopupRestRow[]; onStep: (rest: PopupRestRow, dir: 1 | -1) => void; onClose: () => void; onDismissed?: () => void; toast?: ReactNode }) {
+  const theme = useTheme();
+  return (
+    <BottomCard
+      visible={name !== null}
+      onClose={onClose}
+      {...(onDismissed !== undefined ? { onDismissed } : {})}
+      footer={
+        <View style={{ gap: theme.space['2'] }}>
+          {toast}
+          <PrimaryButton label={POPUP_COPY.done} onPress={onClose} />
+        </View>
+      }
+    >
+      <Eyebrow>{name ?? ''}</Eyebrow>
+      <AppText variant="title2" accessibilityRole="header">
+        {POPUP_COPY.rest}
+      </AppText>
+      <RestRows rests={rests} onStep={onStep} />
     </BottomCard>
   );
 }
