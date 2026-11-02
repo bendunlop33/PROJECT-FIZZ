@@ -29,7 +29,7 @@ export interface WorkoutFixDeps {
 export const WORKOUT_FIX_LINE = [
   'Fixing past workouts: propose_workout_fix moves a workout’s date or times, deletes a duplicate or wrong workout, or pairs/unpairs a Health (Garmin, watch) workout, always as a card Ben applies, with Undo. Never say it changed before he taps Apply.',
   'Find the workout first: get_recent_sessions with date (YYYY-MM-DD) for the day he named; it lists that day’s workouts (sessionId, title, time, source) and its Health workouts (healthId, link). Use those IDs exactly; when two could match, ask which.',
-  '"That Tuesday pull was actually Monday": op move, workoutId, date the new day (time kept unless he gave one). "Delete the duplicate": op delete on the copy (the later one, or the one with fewer sets). A Health workout: op pair with healthId and the app workoutId; with the planned run that day, workoutId null. "These two are the same workout": a Health workout and an app workout → pair; two app workouts can’t be merged, so propose deleting the duplicate.',
+  '"That Tuesday pull was actually Monday": op move, workoutId, date the new day (time kept unless he gave one). "Delete the duplicate": op delete on the copy (the later one, or the one with fewer sets). A Health workout: op pair with healthId and the app workoutId; with Ben’s planned run that day (it then counts as done with the run’s recorded time and distance), workoutId null; with two runs that day, ask which. op unpair with healthId takes it off again. "These two are the same workout": a Health workout and an app workout → pair; two app workouts can’t be merged, so propose deleting the duplicate.',
 ].join('\n');
 
 /** Ben's words ask to fix a past workout: its day or time, a duplicate or wrong one, or a Health pairing. */

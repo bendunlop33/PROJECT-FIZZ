@@ -1,7 +1,9 @@
 import type { ActionRecord, HealthLink, SessionAggregate } from '@fizz/schemas';
-import { changeLinkAlso, linkHealthActivity, moveCommand, planDeleteWorkouts, planRestoreWorkouts, reduceSession, timingUndoCommand, unlinkHealthActivity, type HealthLinkChange, type WorkoutFixDetail } from '@fizz/domain';
+import { changeLinkAlso, linkActivityHealth, linkHealthActivity, unlinkActivityHealth, moveCommand, planDeleteWorkouts, planRestoreWorkouts, reduceSession, timingUndoCommand, unlinkHealthActivity, type HealthLinkChange, type WorkoutFixDetail } from '@fizz/domain';
 
 import type { SqlExecutor } from './driver';
+import { ACTIVITY_SPEC, saveActivityChangeIn } from './activities';
+import { decodeDocument } from './documents';
 import { changeLinkIn } from './health';
 import { readAggregate, writeAggregate } from './sessions';
 
@@ -13,7 +15,9 @@ import { readAggregate, writeAggregate } from './sessions';
  * - delete: History's delete plan (`planDeleteWorkouts`: a soft delete, in Recently deleted for 30 days); Undo is its
  *   Restore (`planRestoreWorkouts`) on the deleted version;
  * - pair / unpair: the day sheet's link changes (`linkHealthActivity`, `changeLinkAlso`, `unlinkHealthActivity`) through
- *   `changeLinkIn`, on the link version read; Undo is the opposite change on the version the apply left.
+ *   `changeLinkIn`, on the link version read; Undo is the opposite change on the version the apply left;
+ * - (Ben, 2 Nov) a Health run linked to or unlinked from Ben's planned run (`runLink`): the day sheet's `Link` / `Unlink`
+ *   on that activity (`linkActivityHealth`, `unlinkActivityHealth`), on its version as read; Undo the opposite.
  * Completed sets are never edited (rule 2): a move shifts their times with the workout, values untouched.
  */
 
@@ -26,6 +30,19 @@ async function own(tx: SqlExecutor, ownerId: string, sessionId: string | null): 
   if (sessionId === null) return null;
   const a = await readAggregate(tx, sessionId);
   return a === null || a.session.ownerId !== ownerId ? null : a;
+}
+
+/** The planned run's `Link` / `Unlink` (`runLink`), or its Undo on the version the apply left. */
+async function runLink(tx: SqlExecutor, ownerId: string, d: WorkoutFixDetail, opId: string, at: ActionRecord['createdAt'], undo: boolean): Promise<WorkoutFixOutcome> {
+  const l = d.runLink;
+  if (l === undefined) return 'stale';
+  const row = await tx.getFirst('SELECT * FROM activities WHERE id = ?', [l.activityId]);
+  const cur = row === null ? null : decodeDocument(ACTIVITY_SPEC, row);
+  if (cur === null || cur.ownerId !== ownerId) return 'stale';
+  const mode = undo ? (l.mode === 'link' ? 'unlink' : 'link') : l.mode;
+  const input = { opId, at, expectedVersion: undo ? l.activityVersion + 1 : l.activityVersion, healthUuid: l.healthUuid };
+  const r = await saveActivityChangeIn(tx, ownerId, mode === 'link' ? linkActivityHealth(cur, input) : unlinkActivityHealth(cur, input));
+  return r.status === 'written' || r.status === 'replayed' ? 'ok' : 'stale';
 }
 
 async function link(tx: SqlExecutor, ownerId: string, d: WorkoutFixDetail, opId: string, atUtc: string, undo: boolean): Promise<WorkoutFixOutcome> {
@@ -76,6 +93,7 @@ export async function applyWorkoutFixIn(tx: SqlExecutor, ownerId: string, applie
     }
     case 'pair':
     case 'unpair':
+      if (d.runLink !== undefined) return runLink(tx, ownerId, d, applied.opId, at, false);
       return link(tx, ownerId, d, applied.opId, at.utc, false);
   }
 }
@@ -107,6 +125,7 @@ export async function revertWorkoutFixIn(tx: SqlExecutor, ownerId: string, targe
     }
     case 'pair':
     case 'unpair':
+      if (d.runLink !== undefined) return (await runLink(tx, ownerId, d, opId, at, true)) === 'ok' ? 'ok' : 'changed_since';
       return (await link(tx, ownerId, d, opId, atUtc, true)) === 'ok' ? 'ok' : 'changed_since';
   }
 }
