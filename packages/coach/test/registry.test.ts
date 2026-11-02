@@ -441,6 +441,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Change your warm-up settings when you ask, with Undo",
               "Change your workout before you start it, as a change you apply or skip",
               "Set up today’s workout from what you say (day, length, main lift), with Undo on Set up",
+              "Fix a past workout (its date, a duplicate, a Health pairing), as a proposal you apply or undo",
               "Add a general training rule to your playbook to review",
             ],
             "section": "when_you_ask",
@@ -464,7 +465,8 @@ describe('listCoachCapabilities (check 11)', () => {
           },
           {
             "rows": [
-              "Delete or rewrite a workout, a set, an import or a check-in",
+              "Delete or change a past workout without your Apply",
+              "Delete or rewrite a set, an import or a check-in",
               "Clear a pain flag",
               "Change settings, your AI connection, backups or playbook approvals",
             ],

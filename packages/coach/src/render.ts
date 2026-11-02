@@ -611,6 +611,16 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Warm-ups not changed: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
+    case 'fix_workout': {
+      // (Ben, 2 Nov) A past workout fixed: `Pull A · Tue 28 Oct · 18:04–19:02 → Mon 27 Oct · 18:04–19:02`; Apply / Undo on the card.
+      if (st === 'proposed' || st === 'committed') {
+        const text = `${d.title} · ${d.before} → ${d.after}`;
+        return make(status, text, speakable(`${d.title}. ${d.after}.`));
+      }
+      if (st === 'stale') return make(status, 'Not changed: the workout changed since.', 'Not changed. The workout changed since.');
+      const text = `Not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
     case 'build_question': {
       // workout-builder v2 §4.2: the card shows the checked question and its answers; nothing else was written.
       const text = d.question;

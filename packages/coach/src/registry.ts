@@ -114,7 +114,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ALL,
     plainLabel: null,
     capabilitySection: 'read',
-    description: 'Ben’s last finished workouts (count, newest first): date, title, gym, minutes and every exercise’s sets as logged. FitNotes imports are his own history. For one day’s full log give `date` (YYYY-MM-DD) or `daysAgo` (1 = yesterday); null otherwise.',
+    description: 'Ben’s last finished workouts (count, newest first): date, title, gym, minutes and every exercise’s sets as logged. FitNotes imports are his own history. For one day’s full log give `date` (YYYY-MM-DD) or `daysAgo` (1 = yesterday); null otherwise. A day’s read also gives each workout’s sessionId and times, and that day’s Health workouts (healthId, source, type, time, link: paired, same_workout, not_paired, counts_as_planned, counts_as_logged, on_its_own).',
   },
   {
     // Coach v3 (Ben 18 Oct): a mid-workout turn starts light; this buys one deeper step when it's needed.
@@ -515,6 +515,21 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Fill today’s Set up from Ben’s own words this turn when he names today’s workout by a day, a length or a main lift ("legs, 45 min", "push day, bench first"). He opens Set up to build it. Use propose_workout instead when he asks you to write the whole workout yourself.',
   },
   {
+    // (Ben, 2 Nov) Fixing past workouts: a date or time moved, a duplicate deleted, a Health workout paired or unpaired.
+    // Every chat, only on Ben's own words about it (`pastWorkoutWords`). Always a proposal with before/after, Apply and
+    // Undo (rule 2); Apply is on the versions proposed (rule 5).
+    name: 'propose_workout_fix',
+    effect: 'propose',
+    writes: ['proposal'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Fix a past workout (its date, a duplicate, a Health pairing), as a proposal you apply or undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Fix a past workout when Ben asks, as a card he applies (never say it changed). op move: workoutId and the new local date (YYYY-MM-DD), start/end HH:MM only when he gave times (null keeps them). op delete: workoutId of the duplicate or wrong workout (it goes to Recently deleted; Undo brings it back). op pair: healthId (a Health workout from get_recent_sessions) and the app workoutId, or workoutId null for the planned run that day. op unpair: healthId. IDs from get_recent_sessions with date. Two app workouts can’t be merged: propose deleting the duplicate. Unused fields null. reason: one short line.',
+  },
+  {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
     // spec (the stricter one) wins until Ben decides.
     name: 'add_playbook_candidate',
@@ -538,7 +553,9 @@ export const RETIRED_COACH_TOOLS: readonly CoachToolName[] = ['adjust_pending_se
 
 /** The fixed `Never` section (§2.5): things that are not tools at all. */
 export const COACH_NEVER: readonly string[] = [
-  'Delete or rewrite a workout, a set, an import or a check-in',
+  // (Ben, 2 Nov) A past workout's date, a duplicate or a pairing is fixed only as a proposal he applies, with Undo.
+  'Delete or change a past workout without your Apply',
+  'Delete or rewrite a set, an import or a check-in',
   'Clear a pain flag',
   'Change settings, your AI connection, backups or playbook approvals',
 ];
@@ -640,6 +657,8 @@ export interface TurnGate {
   setupOpen?: boolean;
   /** ADR 0039: the turn starts light (low effort, Ben's lighter mid-workout model): `think_harder` buys one deeper step. */
   lightTurn?: boolean;
+  /** (Ben, 2 Nov) Ben's words are about fixing a past workout (`asksPastWorkoutFix`): `propose_workout_fix`. */
+  pastWorkoutWords?: boolean;
 }
 
 /**
@@ -746,6 +765,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'ben_request':
       if (t.name === 'ask_build_question') return requestOpens(t, g.benRequest) && g.buildQuestionOpen === true ? null : 'needs_request';
       if (t.name === 'update_gym') return g.gymWords === true ? null : 'needs_request';
+      if (t.name === 'propose_workout_fix') return g.pastWorkoutWords === true ? null : 'needs_request';
       if (requestOpens(t, g.benRequest)) return null;
       if (t.name === 'propose_workout' && g.kind !== 'summary' && g.buildOpen === true) return null;
       // ADR 0038: from any entry point while today's workout is live (the workout's sheet, Today, Progress, Plan).
