@@ -18,6 +18,7 @@ import type {
 import { clockText } from '../calendar';
 import { cardioValuesText, dayMonthText, formatDuration, formatNumber, NBSP, repRangeText, rirOfRpe } from '../display';
 import { buildPlateSetup, isBarLoaded, loadDirection } from '../equipment';
+import { platesInChain, type PlateChainContext } from '../plate-path';
 import { isSetCountable } from '../exclusions';
 import { painFlagCovering, PAIN_AREA_WORD } from '../pain-flags';
 import { deriveId, stableStringify } from '../stable';
@@ -980,12 +981,14 @@ export function roundedText(fit: Extract<SetFit, { kind: 'rounded' }>, eq: Equip
 }
 
 /** `25 · 10 · 5 a side · 20 kg bar`, or null when the plates can't make it (or it isn't a bar). */
-export function platesText(load: Load, eq: EquipmentInstance): string | null {
+export function platesText(load: Load, eq: EquipmentInstance, chain: PlateChainContext | null = null): string | null {
   if (!isBarLoaded(eq) || eq.plates.length === 0 || load.convention !== 'total') return null;
   const setup = buildPlateSetup(load, eq);
   if (!setup.ok) return null;
   const bar = `${formatNumber(setup.base.value)}${NBSP}${setup.base.unit} bar`;
-  const plates = setup.perSide.flatMap((p) => Array.from({ length: p.count }, () => formatNumber(p.mass)));
+  // (Ben, 2 Nov) As the warm-ups build it up and the back-offs take it down (`platesInChain`), else the fewest plates.
+  const stack = load.unit === eq.unit ? platesInChain(load.value, eq, chain) : null;
+  const plates = (stack ?? setup.perSide.flatMap((p) => Array.from({ length: p.count }, () => p.mass))).map(formatNumber);
   return plates.length === 0 ? `Bar only · ${bar}` : `${plates.join(' · ')} a side · ${bar}`;
 }
 
@@ -1099,7 +1102,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     if (barbellEx?.id === ex.id) {
       const w = warmupText(warm);
       if (w !== null) panel.push({ key: 'warmup', label: 'Warm-up', value: w, tone: 'normal' });
-      const plates = planned.load !== null && eq !== null ? platesText(planned.load, eq) : null;
+      const plates = planned.load !== null && eq !== null && first !== null ? platesText(planned.load, eq, { loads: own.map((s) => s.planned.load), at: own.indexOf(first) }) : null;
       if (plates !== null) panel.push({ key: 'plates', label: 'Plates', value: plates, tone: 'normal' });
       const best = bestSet(key, pasts);
       if (best !== null) panel.push({ key: 'best', label: 'Best', value: `${loadWord(best.load)}${NBSP}×${NBSP}${String(best.reps)} · ${dayMonthText(best.at.utc, best.at.tz)}`, tone: 'normal' });
