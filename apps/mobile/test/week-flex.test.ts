@@ -349,7 +349,8 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     if (!add.ok) throw new Error('add');
     const row = (await s.activities.recent()).find((r) => r.activityId === add.activity.id);
     expect(row).toMatchObject({ when: 'Yesterday', planned: true });
-    expect(sp(row?.detail)).toBe('Planned · 18 km · long');
+    // (Ben, 2 Nov) Its day has passed with no run linked or matched: `Missed` (still counted below, never done).
+    expect(sp(row?.detail)).toBe('Missed · 18 km · long');
     const lines = async () => (await s.week.contextView())?.activities ?? [];
     expect((await lines()).map(sp)).toEqual(['Run · Thu 2026-10-22 · planned (counts) · 18 km · long']);
     expect((await s.week.state())?.facts.runs.map((r) => r.id)).toEqual([add.activity.id]);
