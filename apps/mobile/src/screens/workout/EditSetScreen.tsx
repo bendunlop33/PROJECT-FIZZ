@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 
-import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, setStepName, toMs, effortRir, rpeOfRir } from '@fizz/domain';
+import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs, effortRir, rpeOfRir } from '@fizz/domain';
 import type { SetExclusion, SetType, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -15,9 +15,10 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
-import { ActionBar, AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NUMBER_ACCESSORY_ID, NumberAccessory, NumberStepper, SecondaryButton, KeyboardScrollView, SheetKeyboardAvoidingView, StatusLine, StepperTileRow, TextButton, TextField, useKeyboardVisible } from '../../ui';
+import { ActionBar, AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NUMBER_ACCESSORY_ID, NumberAccessory, NumberStepper, KeyboardScrollView, SheetKeyboardAvoidingView, StatusLine, StepperTileRow, TextButton, TextField, useKeyboardVisible } from '../../ui';
 import { PlannedSetEdit } from './PlannedSetEdit';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
+import { setSheetKind, setSheetSections, setSheetTitle } from '../../workout/set-edit';
 import { stepperRowTiles } from '../../workout/tile-fit';
 
 /**
@@ -31,6 +32,9 @@ import { stepperRowTiles } from '../../workout/tile-fit';
  * the same `correct_set` (CHANGELOG 2026-10-11 (b) "Edit set"); the offer
  * check runs on it again (F4). A set not done yet opens `PlannedSetEdit`
  * instead (14 Oct): its plan, never a result.
+ * (Ben, 2 Nov) Live, the sheet is Set type and Note only (`setSheetSections`):
+ * the table edits values inline and the hold menu has RIR, + Weight and
+ * Delete. A workout that isn't live keeps the full sheet.
  */
 export function EditSetScreen() {
   const theme = useTheme();
@@ -52,7 +56,6 @@ export function EditSetScreen() {
   const [saveOp] = useState(newUuid);
   const [deleteOp] = useState(newUuid);
   const [noteOp] = useState(newUuid);
-  const [insertOp] = useState(newUuid);
   const [modeOp] = useState(newUuid);
   /** The note field as typed; null = untouched (shows the stored note). */
   const [noteText, setNoteText] = useState<string | null>(null);
@@ -81,10 +84,6 @@ export function EditSetScreen() {
           setError(message);
           void load();
         }}
-        onReload={() => {
-          setError(null);
-          void load();
-        }}
       />
     );
   }
@@ -99,6 +98,8 @@ export function EditSetScreen() {
   const ex = aggregate.exercises.find((e) => aggregate.sets.find((s) => s.id === setId)?.sessionExerciseId === e.id);
   const tz = aggregate.session.startedAt.tz;
   const current = view.values;
+  const kind = setSheetKind(aggregate.session.status, aggregate.sets.find((s) => s.id === setId)?.status);
+  const shows = setSheetSections(kind);
 
   const storedNote = aggregate.sets.find((s) => s.id === setId)?.note ?? null;
   const noteEdited = noteText !== null && noteChanged(storedNote, noteText);
@@ -194,20 +195,6 @@ export function EditSetScreen() {
     navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.deletedNamed(view.stepName), targetOpId: deleteOp } }));
   }
 
-  /** `Insert set after` (14 Oct): a new set straight after this one, copying it, with Undo. The logged set is never touched. */
-  async function insertAfter() {
-    if (!view || !ex || aggregate?.session.status !== 'active') return;
-    const newSetId = newUuid();
-    const r = await services.workout.addSet({ sessionId, sessionExerciseId: ex.id, opId: insertOp, newSetId, afterSetId: setId });
-    if (!r.ok) {
-      setError(r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : r.error.message);
-      void load();
-      return;
-    }
-    changed();
-    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.addedNamed(setStepName(r.aggregate, newSetId) ?? 'Set'), targetOpId: insertOp } }));
-  }
-
   return (
     // 2.1: the sheet avoids the keyboard; Save sits in a fixed bar on it, so a change saves without scrolling.
     // Review S1: the avoiding view alone lifts it (no automaticallyAdjustKeyboardInsets, or the inset counts twice).
@@ -215,10 +202,11 @@ export function EditSetScreen() {
       <NumberAccessory />
       <KeyboardScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <AppText variant="title2" accessibilityRole="header">{`Edit ${view.stepName.toLowerCase()} · ${view.exerciseName}`}</AppText>
+          <AppText variant="title2" accessibilityRole="header">{setSheetTitle(kind, view.stepName, view.exerciseName)}</AppText>
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
         </View>
-        {view.completedAtUtc ? <AppText variant="callout" color="text.secondary" numeric>{`Done at ${formatTime(toMs(view.completedAtUtc), tz)}`}</AppText> : null}
+        {shows.has('done_at') && view.completedAtUtc ? <AppText variant="callout" color="text.secondary" numeric>{`Done at ${formatTime(toMs(view.completedAtUtc), tz)}`}</AppText> : null}
+        {shows.has('values') ? (
         <StepperTileRow
           tiles={stepperRowTiles({ loadFlex: 1, load: view.loadField && ex ? { ...view.loadField, unit: view.loadField.unitText } : null, time: view.duration, distance: view.distance, reps: view.reps })}
           estimate={windowWidth - 2 * theme.space['4']}
@@ -314,7 +302,8 @@ export function EditSetScreen() {
           </>
           )}
         </StepperTileRow>
-        {view.addWeight && ex ? (
+        ) : null}
+        {shows.has('add_weight') && view.addWeight && ex ? (
           <View style={{ alignItems: 'flex-start' }}>
             <TextButton
               label={view.addWeight.on ? 'Bodyweight' : '+ Weight'}
@@ -325,7 +314,7 @@ export function EditSetScreen() {
             />
           </View>
         ) : null}
-        {effortScale !== 'off' ? (
+        {shows.has('rir') && effortScale !== 'off' ? (
           // (Ben, 26 Oct: RIR replaces RPE in the UI) The chips read RIR; stored in his scale (RPE = 10 − RIR by default).
           <View style={{ gap: theme.space['1'] }}>
             <EffortHeading scale="rir">
@@ -351,7 +340,7 @@ export function EditSetScreen() {
             </ChipRow>
           </View>
         ) : null}
-        {view.targetRpe ? (
+        {shows.has('target_rir') && view.targetRpe ? (
           <View style={{ gap: theme.space['1'] }}>
             <AppText variant="label" color="text.secondary">
               Target RIR
@@ -387,6 +376,7 @@ export function EditSetScreen() {
             ))}
           </ChipRow>
         </View>
+        {shows.has('exclusions') ? (
         <View style={{ gap: theme.space['2'] }}>
           <AppText variant="label" color="text.secondary" accessibilityRole="header">
             {EXCLUSION_HEADING}
@@ -398,6 +388,7 @@ export function EditSetScreen() {
           </ChipRow>
           {view.painLine ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={view.painLine} /> : null}
         </View>
+        ) : null}
         <View style={{ gap: theme.space['2'] }}>
           <AppText variant="label" color="text.secondary">
             Note
@@ -411,15 +402,14 @@ export function EditSetScreen() {
             inputAccessoryViewID={NUMBER_ACCESSORY_ID}
           />
         </View>
-        <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText>
+        {shows.has('saved_as') ? <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText> : null}
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
-        {aggregate.session.status === 'active' ? (
-          <View style={{ flexDirection: 'row' }}>
-            <SecondaryButton label="Insert set after" onPress={() => void insertAfter()} />
-          </View>
+        {shows.has('delete') ? (
+          <>
+            <View style={{ height: theme.space['8'] }} />
+            <DangerTextButton label="Delete set" onPress={() => void remove()} />
+          </>
         ) : null}
-        <View style={{ height: theme.space['8'] }} />
-        <DangerTextButton label="Delete set" onPress={() => void remove()} />
       </KeyboardScrollView>
       <ActionBar surface keypadOpen={keyboard} primary={{ label: 'Save changes', disabled: !view.changed && !noteEdited, onPress: () => void save() }} />
     </SheetKeyboardAvoidingView>

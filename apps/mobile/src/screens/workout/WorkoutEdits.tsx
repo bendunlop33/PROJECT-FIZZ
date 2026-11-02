@@ -418,7 +418,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
     const downs = stepSetCommand(a, setId, 'down', { opId: 'probe', at: at() }) !== null;
     const actions = [
       ...extra.map((x, i) => ({ name: `extra:${String(i)}`, label: x.label })),
-      { name: 'type', label: POPUP_COPY.changeType },
+      // (Ben, 2 Nov) No `Change type`: the set sheet item every caller passes (`Type, rest, note` / `Type, note`) has it.
       ...(moves ? [{ name: 'move_up', label: POPUP_COPY.moveUp }] : []),
       ...(downs ? [{ name: 'move_down', label: POPUP_COPY.moveDown }] : []),
       { name: 'delete_set', label: POPUP_COPY.deleteSet },
@@ -428,7 +428,6 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
       const name = m.actionAt(i);
       if (name === null) return;
       if (name.startsWith('extra:')) extra[Number(name.slice(6))]?.run();
-      else if (name === 'type') pickType(setId);
       else if (name === 'move_up' || name === 'move_down') void stepSet(setId, name === 'move_up' ? 'up' : 'down');
       else deleteSet(setId);
     });

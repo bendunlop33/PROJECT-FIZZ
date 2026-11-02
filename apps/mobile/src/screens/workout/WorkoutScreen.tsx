@@ -19,6 +19,7 @@ import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
 import { pastLogWhen } from '../../workout/past-log-view';
+import { DONT_COUNT_LABEL, dontCountMenu, setSheetMenuLabel } from '../../workout/set-edit';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
@@ -1465,12 +1466,40 @@ export function WorkoutScreen() {
     return [{ label: 'Target RIR', run: () => { pickTargetRpe({ targetRpe: target, setId, sessionExerciseId: set.sessionExerciseId }); } }];
   }
 
+  /**
+   * (Ben, 2 Nov) `Don't count` on a done set (it left the live set sheet): Spotted, Pain, Form broke or Other
+   * equipment, toggled one at a time. One versioned `correct_set` of its exclusions with its own op ID; the
+   * exclusion toast with Undo (a pain flag the same save set is retracted with it).
+   */
+  function dontCountItem(setId: string): { label: string; run: () => void }[] {
+    const set = loaded.aggregate.sets.find((x) => x.id === setId);
+    if (set?.status !== 'completed') return [];
+    return [{ label: DONT_COUNT_LABEL, run: () => { pickDontCount(setId); } }];
+  }
+
+  function pickDontCount(setId: string) {
+    const set = loaded.aggregate.sets.find((x) => x.id === setId);
+    if (set?.status !== 'completed') return;
+    const m = dontCountMenu(set.exclusions);
+    ActionSheetIOS.showActionSheetWithOptions({ title: DONT_COUNT_LABEL, options: m.options, cancelButtonIndex: m.cancelButtonIndex }, (i) => {
+      const next = m.next(i);
+      if (next === null) return;
+      const opId = newUuid();
+      void services.workout.correctSet({ sessionId: session.id, setId, expectedSetVersion: set.version, patch: { exclusions: next }, opId }).then((r) => {
+        changed();
+        void reload();
+        if (!r.ok) showToast({ icon: 'info.circle', text: r.message });
+        else if (r.toast !== null && r.undo !== null) showHanded({ kind: 'exclusion', key: opId, text: r.toast, undo: { sessionId: session.id, ...r.undo } });
+      });
+    });
+  }
+
   function setMoreItems(f: FocusView): { label: string; run: () => void }[] {
     return [
       ...(f.previous !== null ? [{ label: `Copy last · ${f.previous.text.replaceAll('\u00a0', ' ')}`, run: () => { copyLast(f); } }] : []),
       ...rirItem(f.setId),
       ...(tableModeNow() ? targetRirItem(f.setId) : []),
-      { label: 'Edit set', run: () => { editSet(f.setId); } },
+      { label: setSheetMenuLabel(false), run: () => { editSet(f.setId); } },
       ...(f.addWeight ? [{ label: f.addWeight.on ? 'Bodyweight' : '+ Weight', run: () => { toggleWeight(f); } }] : []),
       { label: 'Focus view', run: () => { updatePrefs({ workoutView: 'focus' }); } },
     ];
@@ -3301,13 +3330,10 @@ export function WorkoutScreen() {
                   onMenu: (setId) => {
                     // A hold without a drag (§7's fallback): the current set keeps its own items (copy last, Edit set…).
                     if (focus !== null && setId === focus.setId) workoutEdits.setMenu(setId, setMoreItems(focus));
-                    else workoutEdits.setMenu(setId, [...rirItem(setId), ...targetRirItem(setId), { label: 'Edit set', run: () => { editSet(setId); } }]);
+                    else workoutEdits.setMenu(setId, [...rirItem(setId), ...targetRirItem(setId), ...dontCountItem(setId), { label: setSheetMenuLabel(loaded.aggregate.sets.find((x) => x.id === setId)?.status === 'completed'), run: () => { editSet(setId); } }]);
                   },
                   onMove: (setId, dir) => {
                     workoutEdits.stepSet(setId, dir);
-                  },
-                  onChangeType: (setId) => {
-                    workoutEdits.pickType(setId);
                   },
                 }}
                 exerciseActions={exerciseA11yActions}
@@ -3317,6 +3343,7 @@ export function WorkoutScreen() {
                 onAddExercise={shown === rounds.length - 1 ? () => { workoutEdits.openAdd(); } : null}
                 onCopyLast={(setId) => void copyRowLast(setId)}
                 onRir={enterRir}
+                onDontCount={pickDontCount}
                 pbSetIds={pbSetIds}
                 onNote={(sessionExerciseId, exerciseName, note, pinnedOpen) => {
                   setNoteFor({ sessionExerciseId, exerciseName, note, ...(pinnedOpen === true ? { pinnedOpen } : {}) });
@@ -3357,6 +3384,9 @@ export function WorkoutScreen() {
             }}
             onMakeCurrent={() => {
               makeCurrent(shownGlance.setId);
+            }}
+            onDontCount={() => {
+              pickDontCount(shownGlance.setId);
             }}
           />
           </Swipeable>

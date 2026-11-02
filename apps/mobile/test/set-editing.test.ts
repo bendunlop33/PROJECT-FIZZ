@@ -141,11 +141,8 @@ describe('screens wire it (source checks; the feel needs a real iPhone)', () => 
     expect(edit).toContain('<PlannedSetEdit');
     const planned = readFileSync(join(SRC, 'PlannedSetEdit.tsx'), 'utf8');
     expect(planned).toContain('services.workout.plannedEditView(');
-    // (Ben, 27 Oct) A typed load is kept as typed (no snapping here); the domain says what the gym learns.
-    expect(planned).not.toContain('services.workout.snapPlannedLoad(');
-    expect(planned).toContain('typedLoadPlan(aggregate, setId, typedLoad, data.bodyweightExercises)');
-    expect(planned).not.toMatch(/roundToAvailableLoad|getAchievableLoads|stepLoad/);
-    expect(planned).toContain('if (loadNeedsFit(typedLoad, snapped))');
+    expect(planned).not.toMatch(/roundToAvailableLoad|getAchievableLoads|stepLoad|snapPlannedLoad/);
+    // (Ben, 2 Nov) The live sheet has no load: the table edits it inline (typed loads kept as typed there).
   });
   it('a refusal survives the reload’s remount: the error lives in EditSetScreen (review S4)', () => {
     const edit = readFileSync(join(SRC, 'EditSetScreen.tsx'), 'utf8');

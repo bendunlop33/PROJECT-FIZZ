@@ -7,6 +7,7 @@ import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Eyebrow, Icon, SecondaryButton, TEXT_PRESSED_OPACITY, TextButton } from '../../ui';
 import { claimsDrag, swipeIntent, type PagerView } from '../../workout/set-pager';
+import { DONT_COUNT_LABEL } from '../../workout/set-edit';
 
 /**
  * F7, F8 (Ben, build 151): the set pager and the rest screen's `Last set` /
@@ -88,7 +89,7 @@ export function SetPager({ pager, onMove, onNow, onTable }: { pager: PagerView; 
 }
 
 /** A set Ben is viewing (not the current one): its value and what he can do with it. Log still logs the current set. */
-export function ViewedSetCard({ glance, pager, onEdit, onMakeCurrent }: { glance: SetGlance; pager: PagerView; onEdit: () => void; onMakeCurrent: () => void }) {
+export function ViewedSetCard({ glance, pager, onEdit, onMakeCurrent, onDontCount }: { glance: SetGlance; pager: PagerView; onEdit: () => void; onMakeCurrent: () => void; /** (Ben, 2 Nov) A done set's `Don't count` picker (Focus has no per-set menu for a done set). */ onDontCount?: () => void }) {
   const theme = useTheme();
   return (
     <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['3'] }}>
@@ -104,6 +105,7 @@ export function ViewedSetCard({ glance, pager, onEdit, onMakeCurrent }: { glance
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
         {pager.canEdit ? <SecondaryButton workout label="Edit" accessibilityLabel={`Edit set ${String(glance.setNumber)}`} onPress={onEdit} /> : null}
         {pager.canMakeCurrent ? <SecondaryButton workout label="Make current" onPress={onMakeCurrent} /> : null}
+        {glance.status === 'done' && onDontCount !== undefined ? <SecondaryButton workout label={DONT_COUNT_LABEL} onPress={onDontCount} /> : null}
       </View>
     </View>
   );

@@ -1,3 +1,6 @@
+import { EXCLUSION_LABEL, EXCLUSION_ORDER, normaliseExclusions } from '@fizz/domain';
+import type { SetExclusion } from '@fizz/schemas';
+
 /**
  * Edit set's save for a set not done yet (14 Oct, "edit anything on the
  * sets"), pure so it's tested: the target as one `edit_planned_set`, then
@@ -59,4 +62,61 @@ export function committedLoad(typed: number | null | undefined, snapped: number 
 /** Save shows the fitted load first when it differs from what's typed, rather than saving a number that isn't on screen. */
 export function loadNeedsFit(typed: number | null | undefined, snapped: number | null | undefined): boolean {
   return typed !== undefined && typed !== snapped;
+}
+
+/**
+ * (Ben, 2 Nov: "Maybe we only need set type, rest and notes?") What the set sheet shows. In a live workout the table
+ * edits load, reps, time and distance inline and the set's hold menu has RIR, Target RIR, + Weight and Delete, so the
+ * sheet keeps only what has nowhere else to live: `planned` (a set not done yet) Set type, Rest after, Note;
+ * `logged` (a done set, live) Set type and Note (its rest has run; `correct_set` carries no rest). `past` (any
+ * workout that isn't live) keeps the full correction sheet, unchanged.
+ */
+export type SetSheetKind = 'planned' | 'logged' | 'past';
+
+export type SetSheetSection = 'done_at' | 'values' | 'add_weight' | 'rir' | 'range' | 'target_line' | 'target_rir' | 'set_type' | 'rest' | 'exclusions' | 'note' | 'saved_as' | 'do_next' | 'insert_after' | 'delete';
+
+const SHEET_SECTIONS: Readonly<Record<SetSheetKind, readonly SetSheetSection[]>> = {
+  planned: ['set_type', 'rest', 'note'],
+  logged: ['set_type', 'note'],
+  past: ['done_at', 'values', 'add_weight', 'rir', 'target_rir', 'set_type', 'exclusions', 'note', 'saved_as', 'delete'],
+};
+
+export function setSheetKind(sessionStatus: string, setStatus: string | undefined): SetSheetKind {
+  if (sessionStatus !== 'active') return 'past';
+  return setStatus === 'pending' ? 'planned' : 'logged';
+}
+
+export function setSheetSections(kind: SetSheetKind): ReadonlySet<SetSheetSection> {
+  return new Set(SHEET_SECTIONS[kind]);
+}
+
+/** `Set 2 · Back squat` live; the past sheet keeps `Edit set 2 · Back squat`. */
+export function setSheetTitle(kind: SetSheetKind, stepName: string, exerciseName: string): string {
+  return kind === 'past' ? `Edit ${stepName.toLowerCase()} · ${exerciseName}` : `${stepName} · ${exerciseName}`;
+}
+
+/** The menu item that opens the live sheet: what it holds, nothing more. */
+export function setSheetMenuLabel(done: boolean): string {
+  return done ? 'Type, note' : 'Type, rest, note';
+}
+
+/** (Ben, 2 Nov) The hold menu's item on a done set in a live workout: the exclusions, without the full sheet. */
+export const DONT_COUNT_LABEL = 'Don’t count';
+
+/**
+ * `Don't count`'s picker: one row per reason in the usual order (`Spotted`, `Pain`, `Form broke`, `Other
+ * equipment`), the ones set marked `✓` as the RIR picker does, then Cancel. A pick toggles that reason;
+ * `next(i)` is the set's whole new list (what `correct_set`'s `exclusions` replaces), null for Cancel.
+ */
+export function dontCountMenu(current: readonly SetExclusion[] | undefined): { options: string[]; cancelButtonIndex: number; next: (index: number) => SetExclusion[] | null } {
+  const now = normaliseExclusions(current);
+  return {
+    options: [...EXCLUSION_ORDER.map((x) => (now.includes(x) ? `${EXCLUSION_LABEL[x]} ✓` : EXCLUSION_LABEL[x])), 'Cancel'],
+    cancelButtonIndex: EXCLUSION_ORDER.length,
+    next: (index) => {
+      const x = EXCLUSION_ORDER[index];
+      if (x === undefined) return null;
+      return normaliseExclusions(now.includes(x) ? now.filter((y) => y !== x) : [...now, x]);
+    },
+  };
 }
