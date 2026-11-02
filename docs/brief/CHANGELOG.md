@@ -1222,3 +1222,11 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Coach honesty:** the instructions tell the coach to check its tools cover the whole ask, say in one line in its first reply what they can't do, make the part they can once, and name the missing part (`notIncluded`), which the card shows as `Partial · not included: …`.
 - **Records:** ADR 0039 amendment (2 Nov). **No migration:** the setting is an optional field in the training profile's JSON; `update_warmup_prefs` records already store the profile's `warmups` as JSON; plan-add fields are optional JSON on the existing record.
 - **Open:** not run on Ben's iPhone (the `Cardio first` screen isn't render-tested). WU12's "skip after cardio or a run in the last 30 min" isn't applied to his setting. The plan builder's own day estimate (`pbDayWarmups`) still uses WU12's 3-minute suggestion, not his minutes, when it sizes a new plan's days.
+
+## 2026-11-02: Choice chips have no tick; Plan setup's chips and tables fit on one line (Ben, 2 Nov)
+
+- **Ben's words** (screenshot of Plan setup › Gym goals): "This page formatting is broken. I don't think we need ticks either." Four chips across a 390 pt phone left about 60 pt per label, so `Strength`, `Balanced` and `4 weeks` wrapped mid-word, the ✦ stacked above the label and the chips had uneven heights; `Week 6 (est.)` wrapped and clipped.
+- **No ticks:** the shared `Chip` no longer shows a ✓ when selected, everywhere in the app; selection is the fill (or the accent edge in the bordered theme) and VoiceOver's `selected`.
+- **Answer grids** (Plan setup's goal, priority, preference and weekday chips): a group drops to fewer columns (4 → 2 × 2 → 1, 7 weekdays → 4 + 3 → 1) until its widest label fits on one line at the row's width and Dynamic Type size; labels stay as they were (no `4 wk`). A row's chips are one height; a label shrinks to 85% only as a last resort. The ✦ is a small inline glyph before the label (VoiceOver: `…, suggested`).
+- **Tables** (What to expect, Check your lifts): value columns are sized to their widest cell, header included, so `Week 6 (est.)` and `1RM est. (kg)` are one line; the lift name takes the rest.
+- **Open:** widths are estimated from SF Pro character widths (checked against Ben's screenshot), not measured on device; not yet seen on Ben's iPhone.

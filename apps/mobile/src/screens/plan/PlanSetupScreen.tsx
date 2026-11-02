@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Pressable, View, type DimensionValue } from 'react-native';
+import { Pressable, View, useWindowDimensions, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toMs, fmt, PB_EDIT_COPY, pbDaysReady, pbToggleDay, pbTapSport, pbTogglePriority, pbToggleSportDay, pbWarmUpText, pbWithSessions,  PB_EXTRA_LIFTS, PB_PREF_DAYS, type PbEditScope, type PbExercise, type PlanKit } from '@fizz/domain';
@@ -49,6 +49,7 @@ import type { PlanBuilderSession } from '../../services/plan-builder-service';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Card, Chip, Group, PrimaryButton, Row, Screen, SecondaryButton, StatusLine, TextButton, Toast } from '../../ui';
+import { chipGrid, tableValueWidths } from '../../ui/chip-fit';
 
 type Page = 'check' | 'goals' | 'week' | 'plan' | 'prefs';
 type Sheet =
@@ -343,13 +344,13 @@ export function PlanSetupScreen() {
         {title(C.goals)}
         {continueRow}
         <Question label={C.length}>
-          <Boxes items={PB_WEEKS.map((w) => ({ key: String(w), label: `${w === 6 ? '✦ ' : ''}${String(w)} weeks`, selected: answers.weeks === w }))} onPick={(k) => { set({ ...answers, weeks: Number(k) as PlanBuilderAnswers['weeks'] }); }} />
+          <Boxes items={PB_WEEKS.map((w) => ({ key: String(w), label: `${String(w)} weeks`, rec: w === 6, selected: answers.weeks === w }))} onPick={(k) => { set({ ...answers, weeks: Number(k) as PlanBuilderAnswers['weeks'] }); }} />
         </Question>
         <Question label={C.effort} onInfo={() => { setSheet({ kind: 'info', title: C.effort, lines: PB_INFO.effort }); }}>
-          <Boxes items={PB_EFFORTS.map((e) => ({ key: e.key, label: `${e.key === 'standard' ? '✦ ' : ''}${e.label}`, selected: answers.effort === e.key }))} onPick={(k) => { set({ ...answers, effort: k as PlanBuilderAnswers['effort'] }); }} />
+          <Boxes items={PB_EFFORTS.map((e) => ({ key: e.key, label: e.label, rec: e.key === 'standard', selected: answers.effort === e.key }))} onPick={(k) => { set({ ...answers, effort: k as PlanBuilderAnswers['effort'] }); }} />
         </Question>
         <Question label={C.focus} onInfo={() => { setSheet({ kind: 'info', title: C.focus, lines: PB_INFO.focus }); }}>
-          <Boxes items={PB_FOCUSES.map((f) => ({ key: f.key, label: `${f.key === 'balanced' ? '✦ ' : ''}${f.label}`, selected: answers.focus === f.key }))} onPick={(k) => { set({ ...answers, focus: k as PlanBuilderAnswers['focus'] }); }} />
+          <Boxes items={PB_FOCUSES.map((f) => ({ key: f.key, label: f.label, rec: f.key === 'balanced', selected: answers.focus === f.key }))} onPick={(k) => { set({ ...answers, focus: k as PlanBuilderAnswers['focus'] }); }} />
         </Question>
         <Question label={C.priorities} onInfo={() => { setSheet({ kind: 'info', title: C.priorities, lines: PB_INFO.priority }); }}>
           <Boxes
@@ -388,10 +389,16 @@ export function PlanSetupScreen() {
         {expect.rows.length > 0 ? (
           <Question label={C.expect(answers.weeks)}>
             <Card>
-              <TableRow cells={expectView.head} head />
-              {expectView.rows.map((r) => (
-                <TableRow key={r.key} cells={r.cells} />
-              ))}
+              <FitTable cells={[expectView.head, ...expectView.rows.map((r) => r.cells)]}>
+                {(widths) => (
+                  <>
+                    <TableRow cells={expectView.head} widths={widths} head />
+                    {expectView.rows.map((r) => (
+                      <TableRow key={r.key} cells={r.cells} widths={widths} />
+                    ))}
+                  </>
+                )}
+              </FitTable>
             </Card>
           </Question>
         ) : null}
@@ -408,8 +415,11 @@ export function PlanSetupScreen() {
         {title(C.check)}
         {continueRow}
         <Card>
-          <TableRow cells={checkHeader(headUnit)} head />
-          {rows.map((r) => (
+          <FitTable cells={[checkHeader(headUnit), ...rows.map((r) => [r.name, r.six, r.oneRm])]}>
+            {(widths) => (
+              <>
+                <TableRow cells={checkHeader(headUnit)} widths={widths} head />
+                {rows.map((r) => (
             <Pressable
               key={r.key}
               accessibilityRole="button"
@@ -422,9 +432,12 @@ export function PlanSetupScreen() {
                 setSheet({ kind: 'lift', key: r.key, value, reps });
               }}
             >
-              <TableRow cells={[r.name, r.six, r.oneRm]} dim={r.est} dot={r.open} />
+              <TableRow cells={[r.name, r.six, r.oneRm]} widths={widths} dim={r.est} dot={r.open} />
             </Pressable>
-          ))}
+                ))}
+              </>
+            )}
+          </FitTable>
           {left.length > 0 ? <TextButton label={C.addLift} onPress={() => { setSheet({ kind: 'addLift' }); }} /> : null}
         </Card>
         {bal.length > 0 ? (
@@ -537,8 +550,8 @@ export function PlanSetupScreen() {
                   <Boxes
                     columns={2}
                     items={[
-                      { key: '0', label: `${sug === 0 && a === undefined ? '✦ ' : ''}${q.labels[0]}`, selected: a === 0 },
-                      { key: '1', label: `${sug === 1 && a === undefined ? '✦ ' : ''}${q.labels[1]}`, selected: a === 1 },
+                      { key: '0', label: q.labels[0], rec: sug === 0 && a === undefined, selected: a === 0 },
+                      { key: '1', label: q.labels[1], rec: sug === 1 && a === undefined, selected: a === 1 },
                       { key: 'other', label: other === null ? C.otherPick : s.nameOf(other), selected: other !== null },
                       { key: 'either', label: C.noPreference, selected: a === 'either' },
                     ]}
@@ -884,18 +897,41 @@ function Question({ label, onInfo, note, children }: { label: string; onInfo?: (
   );
 }
 
-/** One row (or grid) of equal answer boxes. */
-function Boxes({ items, onPick, columns }: { items: readonly { key: string; label: string; selected: boolean }[]; onPick: (key: string) => void; columns?: number }) {
+/**
+ * One row (or grid) of equal answer boxes. (Ben, 2 Nov) Labels never wrap mid-word: the grid drops to fewer columns
+ * (`chipGrid`: 4 → 2 → 1, 7 → 4 → 1) until the widest label fits on one line at the row's width and Dynamic Type size;
+ * `rec` is the inline ✦. A row's chips are one height. `tight`: 4 pt chip padding (the weekdays).
+ */
+function Boxes({ items, onPick, columns, gap: gapProp, tight = false }: { items: readonly { key: string; label: string; selected: boolean; rec?: boolean }[]; onPick: (key: string) => void; columns?: number; gap?: number; tight?: boolean }) {
   const theme = useTheme();
-  const per = columns ?? items.length;
+  const { width: windowWidth, fontScale } = useWindowDimensions();
+  const [measured, setMeasured] = useState<number | null>(null);
+  const gap = gapProp ?? theme.space['2'];
+  const grid = chipGrid({
+    labels: items.map((x) => x.label),
+    marked: items.map((x) => x.rec === true),
+    width: measured ?? windowWidth - 2 * theme.components.screenMargin,
+    columns: columns ?? items.length,
+    fontScale,
+    gap,
+    inset: (tight ? theme.space['1'] : theme.space['3']) + 1,
+    fontSize: theme.type.label.fontSize,
+    maxScale: theme.type.label.maxFontSizeMultiplier,
+  });
+  const per = grid.columns;
   const rows: (typeof items)[] = [];
   for (let i = 0; i < items.length; i += per) rows.push(items.slice(i, i + per));
   return (
-    <View style={{ gap: theme.space['2'] }}>
+    <View
+      style={{ gap }}
+      onLayout={(e) => {
+        setMeasured(e.nativeEvent.layout.width);
+      }}
+    >
       {rows.map((r) => (
-        <View key={r.map((x) => x.key).join('|')} style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+        <View key={r.map((x) => x.key).join('|')} style={{ flexDirection: 'row', alignItems: 'stretch', gap }}>
           {r.map((x) => (
-            <Chip key={x.key} grow size="min" label={x.label} selected={x.selected} onPress={() => { onPick(x.key); }} />
+            <Chip key={x.key} grow tight={tight} oneLine={grid.oneLine} recommended={x.rec === true} size="min" label={x.label} selected={x.selected} onPress={() => { onPick(x.key); }} />
           ))}
           {r.length < per ? Array.from({ length: per - r.length }, (_, i) => <View key={`pad${String(i)}`} style={{ flex: 1 }} />) : null}
         </View>
@@ -906,27 +942,58 @@ function Boxes({ items, onPick, columns }: { items: readonly { key: string; labe
 
 function DayRow({ on, onTap }: { on: (d: number) => boolean; onTap: (d: number) => void }) {
   const theme = useTheme();
+  return <Boxes tight gap={theme.space['1']} items={PB_WEEKDAYS.map((w, d) => ({ key: String(d), label: w, selected: on(d) }))} onPick={(k) => { onTap(Number(k)); }} />;
+}
+
+/** A table's rows, given the value columns' widths (`tableValueWidths`) at its measured width and Dynamic Type size. */
+function FitTable({ cells, children }: { cells: readonly (readonly string[])[]; children: (widths: readonly number[]) => ReactNode }) {
+  const theme = useTheme();
+  const { width: windowWidth, fontScale } = useWindowDimensions();
+  const [measured, setMeasured] = useState<number | null>(null);
+  const widths = tableValueWidths({
+    rows: cells,
+    width: measured ?? windowWidth - 2 * theme.components.screenMargin - 2 * theme.space['4'],
+    fontScale,
+    gap: theme.space['2'],
+    fontSize: theme.type.callout.fontSize,
+    maxScale: theme.type.callout.maxFontSizeMultiplier,
+  });
   return (
-    <View style={{ flexDirection: 'row', gap: theme.space['1'] }}>
-      {PB_WEEKDAYS.map((w, d) => (
-        <Chip key={w} grow size="min" label={w} selected={on(d)} onPress={() => { onTap(d); }} />
-      ))}
+    <View
+      onLayout={(e) => {
+        setMeasured(e.nativeEvent.layout.width);
+      }}
+    >
+      {children(widths)}
     </View>
   );
 }
 
-function TableRow({ cells, head = false, dim = false, dot = false, warn = false }: { cells: readonly string[]; head?: boolean; dim?: boolean; dot?: boolean; warn?: boolean }) {
+/**
+ * One table row. `widths`: the value columns' widths (`FitTable`), so `Week 6 (est.)` and `1RM est. (kg)` stay on one
+ * line; the name column takes the rest and wraps at word boundaries.
+ */
+function TableRow({ cells, widths, head = false, dim = false, dot = false, warn = false }: { cells: readonly string[]; widths?: readonly number[]; head?: boolean; dim?: boolean; dot?: boolean; warn?: boolean }) {
   const theme = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: head ? 28 : 44, gap: theme.space['2'] }}>
-      {cells.map((c, i) => (
-        <View key={i} style={{ flex: i === 0 ? 2 : 1, flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: i === 0 ? 'flex-start' : 'center' }}>
-          <AppText variant={head ? 'label' : 'callout'} numeric color={head ? 'text.tertiary' : warn && i === cells.length - 1 ? 'status.warning' : dim && i > 0 ? 'text.secondary' : 'text.primary'}>
-            {c}
-          </AppText>
-          {dot && i === 0 ? <View accessibilityLabel="Check" style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: theme.colors['status.warning'] }} /> : null}
-        </View>
-      ))}
+      {cells.map((c, i) => {
+        const w = i === 0 ? undefined : widths?.[i - 1];
+        return (
+          <View key={i} style={{ ...(w === undefined ? { flex: i === 0 && widths === undefined ? 2 : 1 } : { width: w }), flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: i === 0 ? 'flex-start' : 'center' }}>
+            <AppText
+              variant={head ? 'label' : 'callout'}
+              numeric
+              color={head ? 'text.tertiary' : warn && i === cells.length - 1 ? 'status.warning' : dim && i > 0 ? 'text.secondary' : 'text.primary'}
+              style={i === 0 ? { flexShrink: 1 } : undefined}
+              {...(i === 0 ? {} : { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.7 })}
+            >
+              {c}
+            </AppText>
+            {dot && i === 0 ? <View accessibilityLabel="Check" style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: theme.colors['status.warning'] }} /> : null}
+          </View>
+        );
+      })}
     </View>
   );
 }
