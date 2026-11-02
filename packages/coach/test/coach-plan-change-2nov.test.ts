@@ -45,6 +45,8 @@ describe('plan-level changes and rest settings in the registry', () => {
     expect(mentionsRestSettings('next week a rest week')).toBe(false);
     expect(asksForRestChange('How long should I rest between sets?')).toBe(false);
     expect(asksForRestChange('my rests feel long')).toBe(false);
+    // Short on time today is Time's fit, not his `Rest when short on time` setting.
+    expect(mentionsRestSettings('I’m short on time today, can you shorten it?')).toBe(false);
   });
 
   it('the model’s weekdays become the builder’s (Mon = 0)', () => {

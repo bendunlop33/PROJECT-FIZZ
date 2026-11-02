@@ -964,7 +964,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // (Ben, 2 Nov) "Go to 4 days a week", "make the plan 8 weeks", "make next week lighter", "end this plan" on a builder plan:
   // the plan builder makes the change (`propose_plan_change`), so the turn is a targeted plan turn, not a whole-plan rewrite.
   const settingAsk = (ws: string | null, tools: readonly { name: string }[]): boolean =>
-    chatTurn && req.planInUse === true && req.builderPlan === true && ws !== null && req.draftInContext !== true && tools.some((t) => t.name === 'propose_plan_change') && !requestHas(classifyBenRequest(ws, 'general'), 'build') && asksPlanSettingChange(ws);
+    chatTurn && req.planInUse === true && req.builderPlan === true && ws !== null && req.draftInContext !== true && tools.some((t) => t.name === 'propose_plan_change') && !requestHas(classifyBenRequest(ws, 'general'), 'build') && !asksToPausePlan(ws) && asksPlanSettingChange(ws);
   const targetedPlanWork =
     (settingAsk(sayWords, fullRegistry.tools) && followUp === null) ||
     (chatTurn && req.planInUse === true && planToolsAll && sayWords !== null && req.draftInContext !== true && followUp === null && !asksPlanRebuild(sayWords) && !requestHas(classifyBenRequest(sayWords, 'general'), 'build') && (asksPlanFix(sayWords) || planLevelAsk(sayWords)));

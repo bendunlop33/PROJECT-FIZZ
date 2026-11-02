@@ -36,8 +36,9 @@ export const REST_SETTINGS_TOOL_LINE =
 /** Fed back when Ben didn't ask: nothing changed (rule 3). */
 export const REST_SETTINGS_NOT_ASKED_LINE = 'Not changed: Ben did not ask for this rest change. In reply, ask briefly if he wants it ("Want me to change your rest times?").';
 
-const REST_WORD = /\brest(?:s|ing)?\b|\bshorten main lift\b|\bshort on time\b/i;
-const CHANGE_WORD = /\b(?:\d+|one|two|three|four|five|six|half|minute|minutes|min|mins|sec|secs|seconds|s|shorter|longer|less|more|turn|switch|on|off|set|make|use|change|reset|default|standard|medium|minimum|please|want|shorten|keep)\b/i;
+/** Rest times, the `Shorten main lift too` switch, or `Rest when short on time` (not "I'm short on time today"). */
+const REST_WORD = /\brest(?:s|ing)?\b|\bshorten (?:the )?main lift\b|\bwhen (?:i'?m |i am )?short (?:on|of) time\b/i;
+const CHANGE_WORD = /\b(?:\d+|one|two|three|four|five|six|half|minute|minutes|min|mins|sec|secs|seconds|shorter|longer|less|more|turn|switch|on|off|set|make|use|change|reset|default|standard|medium|minimum|please|want|shorten|keep)\b/i;
 const QUESTION_ONLY = /^\s*(?:what|why|how long|how much|should i|do you think|is it|are)\b[^.!]*\?\s*$/i;
 
 /** "Rest day", "rest week": about the week, not rest times. */
