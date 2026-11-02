@@ -261,7 +261,7 @@ describe('Health workouts as activities', () => {
     if (a === null) throw new Error('none');
     expect(isLongActivity(a.fields)).toBe(true);
     // The run rule sees it: a long run yesterday keeps legs off today.
-    expect(legRunNear([a], '2026-10-26')?.why).toBe('Long run yesterday');
+    expect(legRunNear([a], '2026-10-26', '2026-10-26')?.why).toBe('Long run yesterday');
   });
 
   it('the row says where it came from', () => {
@@ -285,7 +285,7 @@ describe('Health workouts as activities', () => {
     const a = healthActivityOf(sample({ distanceM: 6000, durationS: 1800, endUtc: '2026-10-25T08:30:00.000Z', avgHeartRate: 185 }), OWNER);
     expect(a?.fields.effort).toBeNull();
     if (a === null) throw new Error('none');
-    expect(legRunNear([a], '2026-10-26')).toBeNull();
+    expect(legRunNear([a], '2026-10-26', '2026-10-26')).toBeNull();
   });
 
   it('a workout under a minute with no distance is not an activity', () => {

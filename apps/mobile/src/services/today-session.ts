@@ -963,7 +963,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
             catalogueKeyOf: (id) => exercises.get(id)?.catalogueKey ?? null,
             defaultMinutes: training?.sessionMinutes ?? 60,
           });
-    const near = legRunNear(await repos().activities.listBetween(p.id, addDays(today, -1), addDays(today, 2)).catch(() => [] as Activity[]), today);
+    const near = legRunNear(await repos().activities.listBetween(p.id, addDays(today, -1), addDays(today, 2)).catch(() => [] as Activity[]), today, today);
     // The resolver's pick by its title, else by the muscles of the workout it plans from (a split day's Up next is
     // planned from his newest workout of that day, which keeps its own name).
     const upNextSource = fallbackNext?.sourceSessionId == null ? null : (splitWorkouts.find((w) => w.sessionId === fallbackNext.sourceSessionId) ?? null);

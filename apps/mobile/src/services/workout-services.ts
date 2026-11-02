@@ -2317,7 +2317,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const weeks = await repos()
       .weekPlans.listForWeek(p.id, monday)
       .catch(() => [] as WeekPlan[]);
-    return { near: legRunNear(acts, today), week: activeWeekPlan(weeks, nowMs, p.timezone) };
+    return { near: legRunNear(acts, today, today), week: activeWeekPlan(weeks, nowMs, p.timezone) };
   }
 
   /** An exercise lookup for routines' rows (the run rule's body parts). */
@@ -4881,9 +4881,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const from = all[0];
         const to = all.at(-1);
         const acts = from === undefined || to === undefined ? [] : await repos().activities.listBetween(p.id, addDays(from, -1), addDays(to, 2)).catch(() => []);
+        // (Ben, 2 Nov) A planned run whose date is before real today is missed and no longer counts.
+        const today = localDateOf(nowMs, p.timezone);
         const nearOn = (i: number) => {
           const d = dates[i];
-          return d === undefined ? null : legRunNear(acts, d);
+          return d === undefined ? null : legRunNear(acts, d, today);
         };
         const row = (d: (typeof days)[number], pinned: boolean): PlanAheadRow => ({ routineId: d.routineId, name: d.name, dayN: planDays.findIndex((r) => r.id === d.routineId) + 1, of: planDays.length, legs: isLegDay(d.bodyParts), pinned });
         // (Ben, 31 Oct) The first reminder on a later date names Up next as the one order plans that date (its weekday the
@@ -4892,7 +4894,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         function firstPickOn(date: string) {
           const ordered = upNextOrdered(input, date);
           const pinned = ordered.filter((d) => d.pinned);
-          const rest = input.setDays !== null ? ordered.filter((d) => !d.pinned) : avoidLegDays(ordered.filter((d) => !d.pinned), (d) => d.day.bodyParts, legRunNear(acts, date)).order;
+          const rest = input.setDays !== null ? ordered.filter((d) => !d.pinned) : avoidLegDays(ordered.filter((d) => !d.pinned), (d) => d.day.bodyParts, legRunNear(acts, date, today)).order;
           return [...pinned, ...rest].find((d) => canStart(d.day));
         }
         const startId = pick?.day.routineId ?? firstRoutineId;

@@ -203,7 +203,7 @@ export function placeReminderSessions(forecast: Pick<UpNextForecast, 'next' | 'p
   // The run rule as Up next applies it to a rotation: from `start`, the first that isn't a leg day while a run is near.
   const pickFrom = (start: number, date: string): number => {
     const s0 = sessions[start % n] as ReminderSession;
-    if (s0.pinned === true || s0.legs !== true || legRunNear(acts, date) === null) return start % n;
+    if (s0.pinned === true || s0.legs !== true || legRunNear(acts, date, today) === null) return start % n;
     for (let k = 1; k < n; k += 1) if ((sessions[(start + k) % n] as ReminderSession).legs !== true) return (start + k) % n;
     return start % n;
   };

@@ -223,7 +223,7 @@ export interface WeekContextView {
   remaining: { id: string; name: string; bodyParts: string[] }[];
   /** ADR 0039: this week's days already done (names), so the coach sees the whole week's status. Absent: none. */
   done?: string[];
-  /** `Run · Sat 24 Oct · planned · long`. */
+  /** `Run · Sat 24 Oct · planned · long`; a past one never linked or matched reads `missed` (not training; Ben, 2 Nov). */
   activities: string[];
   /**
    * (Ben, 27 Oct) This week's done activities grouped (`2 runs 14 km`, `3 walks 2 h`): Ben's and Apple Health's, a

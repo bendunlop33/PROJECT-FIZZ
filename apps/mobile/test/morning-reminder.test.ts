@@ -338,12 +338,15 @@ describe('morning reminder with a coach plan', () => {
     expect(byDate(pending).get('2026-10-24')).toBe('Legs');
   });
 
-  it('a planned long run yesterday, never marked done, counts: today’s Up next and its reminder aren’t Legs', async () => {
+  it('a planned long run yesterday, never done, is missed and doesn’t count (Ben, 2 Nov); done, today’s Up next and its reminder aren’t Legs', async () => {
     const { s, gymId } = await benWithRotation();
     await applyPlan(s);
     expect((await s.next.preview(gymId))?.title).toBe('Legs');
     const run = await s.activities.add({ id: h.ids(), opId: 'mon-run', fields: { kind: 'run', status: 'planned', date: '2026-10-19', durationS: null, distanceM: null, effort: 'long' } });
-    expect(run.ok).toBe(true);
+    if (!run.ok) throw new Error('run');
+    expect((await s.next.preview(gymId))?.title).toBe('Legs');
+    const done = await s.activities.edit({ activityId: run.activity.id, expectedVersion: run.activity.version, fields: { ...run.activity.fields, status: 'done' }, opId: 'mon-run-done' });
+    expect(done.ok).toBe(true);
     const up = await s.next.preview(gymId);
     expect(up?.title).not.toBe('Legs');
     const { port, pending } = fakePort();

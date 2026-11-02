@@ -94,11 +94,14 @@ describe('the week’s facts', () => {
     expect(f.today).toBe(TODAY);
     expect(f.openDates).toEqual(['2026-10-23', '2026-10-24', '2026-10-25']);
     expect(f.gymDaysLeft).toBe(2);
-    // A planned run already past (never marked done) is in the week's runs; it doesn't take a day left.
+    // (Ben, 2 Nov) A planned run already past, never done, is missed: not in the week's runs, no day taken.
     const pastPlanned = activity(7, { date: '2026-10-20' });
     const g = facts({ activities: [pastPlanned] });
-    expect(g.runs.map((r) => r.id)).toEqual([pastPlanned.id]);
+    expect(g.runs.map((r) => r.id)).toEqual([]);
     expect(g.gymDaysLeft).toBe(3);
+    // Done (marked, linked or matched), it counts again.
+    const pastDone = activity(8, { date: '2026-10-20', status: 'done' });
+    expect(facts({ activities: [pastDone] }).runs.map((r) => r.id)).toEqual([pastDone.id]);
   });
 
   it('the facts key changes with a workout, an activity or the plan version', () => {

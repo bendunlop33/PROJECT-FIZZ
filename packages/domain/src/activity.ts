@@ -16,9 +16,9 @@ import { shortRelativeDay } from './session/recent';
  *   least 90 min or 15 km, is long; a `hard` effort is hard.
  * - `legRunNear`: the long or hard run that keeps legs off today: one
  *   yesterday, or one tomorrow (local dates in Ben's zone). A planned
- *   activity counts on its date unless Ben cancels it (Ben, 20 Oct): no need
- *   to mark it done. Counting is not relabelling: rows keep `Planned` and the
- *   coach reads `planned` (review ben-runs-20oct B1, rule 6).
+ *   activity counts up to and on its date unless Ben cancels it (Ben, 20 Oct).
+ *   From the day after, one still not done (nothing linked or matched, not
+ *   marked done) is missed and stops counting (`isMissedActivity`, Ben 2 Nov).
  * - `avoidLegDays`: Up next's filter. Days whose body parts include legs go
  *   after every other day while a run is near; if every day is legs, the
  *   first stays and `legsAnyway` says why.
@@ -62,15 +62,25 @@ export interface LegRunNear {
 }
 
 /**
- * The long or hard run that keeps legs off `today` (local `YYYY-MM-DD` in
- * Ben's zone): one yesterday, else one tomorrow. Deleted (cancelled)
- * activities don't count; a planned run counts on its date without being
- * marked done (Ben, 20 Oct).
+ * (Ben, 2 Nov: "otherwise its just missed") A planned activity whose date is before `today` and that is still not
+ * done (no Health run linked or matched, not marked done; `activitiesWithHealth` gives a linked or matched one as
+ * done) is missed: it no longer counts for the run rule or the week. Linking a run later makes it done again.
  */
-export function legRunNear(activities: readonly Activity[], today: string): LegRunNear | null {
-  const yesterday = addDays(today, -1);
-  const tomorrow = addDays(today, 1);
-  const runs = activities.filter((a) => live(a) && isLegRun(a.fields));
+export function isMissedActivity(a: Pick<Activity, 'fields'>, today: string): boolean {
+  return a.fields.status === 'planned' && a.fields.date < today;
+}
+
+/**
+ * The long or hard run that keeps legs off `day` (local `YYYY-MM-DD` in
+ * Ben's zone): one the day before, else one the day after. Deleted
+ * (cancelled) activities don't count; a planned run counts up to and on its
+ * date without being marked done (Ben, 20 Oct), and stops counting once it is
+ * missed as of `today` (real local today, which `day` may be after; Ben, 2 Nov).
+ */
+export function legRunNear(activities: readonly Activity[], day: string, today: string): LegRunNear | null {
+  const yesterday = addDays(day, -1);
+  const tomorrow = addDays(day, 1);
+  const runs = activities.filter((a) => live(a) && isLegRun(a.fields) && !isMissedActivity(a, today));
   const done = runs.find((a) => a.fields.date === yesterday);
   if (done !== undefined) return { when: 'after', activity: done, why: `${isLongActivity(done.fields) ? 'Long' : 'Hard'} run yesterday` };
   const planned = runs.find((a) => a.fields.date === tomorrow);
@@ -191,10 +201,10 @@ export interface ActivityRow {
 
 /**
  * One activity as Today's Recent, the calendar and Your plan list it. A
- * planned one keeps `Planned` until Ben marks it done, on and after its date
- * too: it counts for the run rule and the week, but it is never shown as done
- * before he says so (review ben-runs-20oct B1, rule 6); its sheet offers
- * `Cancel run`, so row and sheet agree (N3).
+ * planned one reads `Planned` up to and on its date and `Missed` after it
+ * (`plannedWord`); it is never shown as done before a run is linked or
+ * matched or he marks it done (review ben-runs-20oct B1, rule 6); its sheet
+ * offers `Cancel run`, so row and sheet agree (N3).
  */
 export function activityRow(a: Activity, today: string): ActivityRow {
   const title = activityTitle(a);
@@ -216,8 +226,8 @@ export function activityRow(a: Activity, today: string): ActivityRow {
 
 /**
  * (Ben, 2 Nov: "otherwise its just missed") `Planned` on and before its day; `Missed` once the day has passed with no
- * run linked or matched (a linked or matched one is listed done, never planned). The word only: it still counts for
- * the run rule and the week as before (`activityStatusOn`).
+ * run linked or matched (a linked or matched one is listed done, never planned). A missed one no longer counts for
+ * the run rule or the week (`isMissedActivity`); the coach reads `missed` (`activityStatusOn`).
  */
 export function plannedWord(date: string, today: string): string {
   return date < today ? ACTIVITY_COPY.missed : ACTIVITY_COPY.planned;
@@ -245,13 +255,13 @@ export function activityRemovedText(f: Pick<ActivityFields, 'kind' | 'status'>):
 
 /**
  * The status the coach reads (review ben-runs-20oct B1): as logged. A planned
- * one whose date has passed reads `planned (counts)`: never confirmed, still
- * counted for the run rule and the week (Ben, 20 Oct). Today's reads
- * `planned`: it may not have happened yet.
+ * one whose date has passed with nothing linked or matched reads `missed`: not
+ * training, and it no longer counts for the run rule or the week (Ben, 2 Nov).
+ * Today's reads `planned`: it may not have happened yet.
  */
-export function activityStatusOn(a: Pick<Activity, 'fields'>, today: string): 'done' | 'planned' | 'planned (counts)' {
+export function activityStatusOn(a: Pick<Activity, 'fields'>, today: string): 'done' | 'planned' | 'missed' {
   if (a.fields.status === 'done') return 'done';
-  return a.fields.date < today ? 'planned (counts)' : 'planned';
+  return isMissedActivity(a, today) ? 'missed' : 'planned';
 }
 
 /** `Run · Sat · long`: one line in Your plan's week. */

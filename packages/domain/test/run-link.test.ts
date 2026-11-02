@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ActivitySchema, type Activity, type HealthWorkoutSample } from '@fizz/schemas';
 
-import { activitiesWithHealth, activityRow, editActivity, linkActivityHealth, plannedLinkChoices, plannedWord, unlinkActivityHealth } from '../src';
+import { activitiesWithHealth, activityRow, activityStatusOn, editActivity, legRunNear, linkActivityHealth, plannedLinkChoices, plannedWord, unlinkActivityHealth } from '../src';
 
 /**
  * (Ben, 2 Nov: "should be able to link a planned run which then updates it to an actual run (on the same day) otherwise
@@ -130,5 +130,28 @@ describe('Link / Unlink writes (rule 5)', () => {
     expect(plannedWord(THU, '2026-10-30')).toBe('Missed');
     expect(activityRow(planned(), '2026-11-02').detail.replaceAll(' ', ' ')).toBe('Missed · 8 km · easy');
     expect(activityRow(show([linked(PM)], [pm])[0] as Activity, '2026-11-02').detail.replaceAll(' ', ' ')).toBe('10 km · 50 min · easy · Garmin');
+  });
+});
+
+describe('a missed run stops counting (Ben, 2 Nov)', () => {
+  const FRI = '2026-10-30';
+  const longPlan = (p: Partial<Activity> = {}) => planned({ fields: { kind: 'run', status: 'planned', date: THU, durationS: null, distanceM: 18_000, effort: 'long' }, ...p });
+
+  it('the day after, an unlinked planned long run no longer holds back legs and the coach reads missed', () => {
+    const out = show([longPlan()], []);
+    expect(legRunNear(out, FRI, FRI)).toBeNull();
+    expect(activityStatusOn(out[0] as Activity, FRI)).toBe('missed');
+    // On its own date it is still planned and counts for the day after.
+    expect(activityStatusOn(out[0] as Activity, THU)).toBe('planned');
+    expect(legRunNear(out, FRI, THU)?.why).toBe('Long run yesterday');
+  });
+
+  it('linked later (or matched) it is done and counts again', () => {
+    const out = show([longPlan({ version: 2, healthLink: { healthUuid: PM, linkedAtUtc: at.utc } })], [am, pm]);
+    const mine = out.find((a) => a.id === PLAN) as Activity;
+    expect(activityStatusOn(mine, FRI)).toBe('done');
+    expect(legRunNear(out, FRI, FRI)?.why).toBe('Long run yesterday');
+    // The only run that day matches on its own.
+    expect(legRunNear(show([longPlan()], [pm]), FRI, FRI)?.why).toBe('Long run yesterday');
   });
 });

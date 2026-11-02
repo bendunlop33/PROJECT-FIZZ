@@ -340,7 +340,7 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     });
   });
 
-  it('a planned run counts on its date unless cancelled (Ben, 20 Oct), never shown or told as done (review B1); Cancel run with Undo', async () => {
+  it('a planned run counts on its date unless cancelled (Ben, 20 Oct), is missed after it (Ben, 2 Nov), never shown or told as done (review B1); Cancel run with Undo', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
     // Fri 23 Oct; a long run was planned for Thursday and never marked done.
@@ -349,11 +349,11 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     if (!add.ok) throw new Error('add');
     const row = (await s.activities.recent()).find((r) => r.activityId === add.activity.id);
     expect(row).toMatchObject({ when: 'Yesterday', planned: true });
-    // (Ben, 2 Nov) Its day has passed with no run linked or matched: `Missed` (still counted below, never done).
+    // (Ben, 2 Nov) Its day has passed with no run linked or matched: `Missed`, and it no longer counts for the week.
     expect(sp(row?.detail)).toBe('Missed · 18 km · long');
     const lines = async () => (await s.week.contextView())?.activities ?? [];
-    expect((await lines()).map(sp)).toEqual(['Run · Thu 2026-10-22 · planned (counts) · 18 km · long']);
-    expect((await s.week.state())?.facts.runs.map((r) => r.id)).toEqual([add.activity.id]);
+    expect((await lines()).map(sp)).toEqual(['Run · Thu 2026-10-22 · missed · 18 km · long']);
+    expect((await s.week.state())?.facts.runs.map((r) => r.id)).toEqual([]);
 
     // One planned for 18:00 today (Fri) at 09:00: it counts (the week blocks Fri) but hasn't happened.
     const fri = await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-23', durationS: null, distanceM: null, effort: 'hard' }, opId: 'fri-run' });

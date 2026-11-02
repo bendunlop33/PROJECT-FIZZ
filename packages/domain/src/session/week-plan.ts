@@ -1,6 +1,6 @@
 import type { Activity, Exercise, ProposeWeekArgs, RoutineExercise, Routine, SplitBodyPart, UserProfile, WeekBasis, WeekMerge, WeekPlan, WeekRow, WeekSkip, ZonedTimestamp } from '@fizz/schemas';
 
-import { activitiesBetween, isLegDay, isLegRun, dateWeekdayShort } from '../activity';
+import { activitiesBetween, isLegDay, isLegRun, isMissedActivity, dateWeekdayShort } from '../activity';
 import { addDays, localWeekBounds } from '../calendar';
 import { deriveId } from '../stable';
 import { estimateRemainingDuration, roundEstimateMinutes, type ResolvedPace } from './duration';
@@ -14,7 +14,7 @@ import { planRoutineStart } from './routines';
  * - `weekFacts`: the gym days left this week (Ben's aim less the days done
  *   and the days a long or hard run from today on takes, never more than
  *   the days left that aren't one; a planned run counts on its date unless
- *   Ben cancels it, Ben 20 Oct)
+ *   Ben cancels it, Ben 20 Oct; a missed one stops counting, Ben 2 Nov)
  *   against the plan (or split) days not done yet. Runs never count as gym
  *   days. Only logged facts: no fatigue or readiness numbers (rule 6).
  * - `suggestWeek`: code's own idea of a merge (two upper days of the same
@@ -52,7 +52,7 @@ export interface WeekFacts {
   gymDaysDone: number;
   /** `min(aim − done − long/hard run days from today on, open dates)`; open dates with no aim set. */
   gymDaysLeft: number;
-  /** Long or hard runs this week, planned or done (oldest first). */
+  /** Long or hard runs this week, planned or done, not missed (oldest first). */
   runs: Activity[];
   /** More days left than gym days: the coach may offer to reshape the week (rule 3, `schedule_changed`). */
   needsReshape: boolean;
@@ -74,8 +74,9 @@ export interface WeekFactsInput {
 export function weekFacts(input: WeekFactsInput): WeekFacts {
   const { mondayLocalDate: monday } = localWeekBounds(input.nowMs, input.tz);
   const sunday = addDays(monday, 6);
-  const runs = activitiesBetween(input.activities, monday, addDays(monday, 7)).filter((a) => isLegRun(a.fields));
-  // (Ben, 20 Oct) A run takes its date whether it is planned or done: a planned one counts unless cancelled (deleted).
+  const runs = activitiesBetween(input.activities, monday, addDays(monday, 7)).filter((a) => isLegRun(a.fields) && !isMissedActivity(a, input.today));
+  // (Ben, 20 Oct) A run takes its date whether it is planned or done: a planned one counts unless cancelled (deleted)
+  // or, from the day after its date, missed (Ben, 2 Nov).
   const runDays = new Set(runs.map((a) => a.fields.date));
   const openDates: string[] = [];
   const start = input.gymDates.has(input.today) ? addDays(input.today, 1) : input.today;
