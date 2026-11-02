@@ -1364,7 +1364,7 @@ export function followsUpChange(text: string): boolean {
 
 /** Review B1: words that put a change on a later session or the plan, not today. */
 const FUTURE_SCOPE_WORDS =
-  /\b(?:next (?:time|session|week|workout|one)|from now on|going forward|in (?:the )?future|future (?:sessions?|workouts?)|permanently|for good|routines?|templates?|programmes?|programs?|every (?:[a-z]+ )?(?:day|session|time|week|workout)|each (?:time|session|week|workout))\b/;
+  /\b(?:next (?:time|session|week|workout|one)|from now on|going forward|in (?:the )?future|future (?:sessions?|workouts?)|permanently|for good|routines?|templates?|programmes?|programs?|every (?:[a-z]+ )?(?:day|session|time|week|workout)|each (?:time|session|week|workout)|(?:leg|legs|push|pull|upper|lower|arm|chest|back|shoulder|other|all|non[- ]?leg|training|gym) days)\b/;
 /** Today's scope said outright: "today and next time", "for the rest of this workout". */
 const TODAY_SCOPE_WORDS = /\b(?:today|tonight|this (?:session|workout)|right now|for the rest|rest of (?:the|this|today'?s) (?:session|workout|sets)|remaining sets?)\b/;
 

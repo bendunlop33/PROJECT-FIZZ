@@ -1,5 +1,5 @@
-import { activityDetail, ACTIVITY_WORD, cardioValuesText, customExerciseLine, formatDuration, formatNumber, liftTargetValueText, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs, rirOfRpe } from '@fizz/domain';
-import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
+import { activityDetail, ACTIVITY_WORD, cardioDistanceText, cardioValuesText, customExerciseLine, formatDuration, formatNumber, liftTargetValueText, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs, rirOfRpe } from '@fizz/domain';
+import type { ActionDetail, ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
  * `renderActionResult` (coach-contract CC1, §5.1): every line that says
@@ -563,8 +563,13 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
           const text = `Every week: ${d.days.map((x) => x.routineName).join(', ')}: ${(d.dayEdit?.lines ?? []).join('; ')}.`;
           return make(status, text, speakable(text));
         }
-        const what = d.op === 'add' ? `+ ${d.addName}${d.afterName == null ? '' : ` after ${d.afterName}`}` : `${d.removeName ?? 'Exercise'} → ${d.addName}`;
-        const text = `Every week: ${what} (${d.days.map((x) => x.routineName).join(', ')}).`;
+        // (Ben, 2 Nov) An add's place (first, before, after) and a cardio or timed target (`8 min`, `2,000 m`).
+        const target = d.op === 'add' ? planAddTargetText(d) : '';
+        const place = d.position === 'first' ? ' first' : d.position === 'before' && d.beforeName !== undefined ? ` before ${d.beforeName}` : d.afterName == null ? '' : ` after ${d.afterName}`;
+        const what = d.op === 'add' ? `+ ${d.addName}${target}${place}` : `${d.removeName ?? 'Exercise'} → ${d.addName}`;
+        // (Ben, 2 Nov) A proposal that does only part of his ask says so.
+        const partial = d.notIncluded === undefined ? '' : ` Partial: not included ${d.notIncluded}.`;
+        const text = `Every week: ${what} (${d.days.map((x) => x.routineName).join(', ')}).${partial}`;
         return make(status, text, speakable(text));
       }
       if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
@@ -681,4 +686,10 @@ export function renderActionResult(record: ActionRecord, surface: RenderSurface,
   }
   if (record.undoneBy !== null) text += ` · undone ${clock(record.undoneBy.atUtc, tz)}`;
   return { ...core, text };
+}
+
+/** (Ben, 2 Nov) A plan add's cardio or timed target on its card: ` 8 min`, ` 2,000 m`, ` 8 min · 2,000 m`; '' for none. */
+function planAddTargetText(d: Extract<ActionDetail, { kind: 'propose_plan_swap' }>): string {
+  const parts = [...(d.durationS === undefined ? [] : [d.durationS % 60 === 0 ? `${String(d.durationS / 60)} min` : `${String(Math.floor(d.durationS / 60))}:${String(d.durationS % 60).padStart(2, '0')}`]), ...(d.distanceM === undefined ? [] : [cardioDistanceText(d.distanceM)])];
+  return parts.length === 0 ? '' : ` ${parts.join(' · ')}`;
 }

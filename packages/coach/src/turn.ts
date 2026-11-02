@@ -40,7 +40,7 @@ import { mentionsGymSetup } from './gym-update';
 import { editOfferIn } from './edit-today';
 import { addedContinuationOf } from './find-exercises';
 import { collectFacts, type FactText, type NumberFacts, EFFORT_WORDS_LINE } from './numbers';
-import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PLAN_ADD_LINE, PLAN_DAY_EDIT_LINE, PLAN_SWAP_LINE, threadPlanScope } from './plan-swap';
+import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PARTIAL_ASK_LINE, PLAN_ADD_LINE, PLAN_DAY_EDIT_LINE, PLAN_SWAP_LINE, threadPlanScope } from './plan-swap';
 import { splitSentences } from './sentences';
 import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
 import { asksForWarmupChange, WARMUP_PREFS_NOT_ASKED_LINE, WARMUP_PREFS_TOOL_LINE } from './warmup-prefs';
@@ -579,6 +579,8 @@ export const COACH_INSTRUCTIONS = [
   // 21 Oct (Ben's Build B report): the coach said "The adjustment didn't go through" with no tool result.
   'Never say a change failed, was rejected, didn’t go through or that the app is blocking it unless a tool result in this turn says so. If an earlier request was not answered, act on it now.',
   SOLUTION_FIRST_LINE,
+  // (Ben, 2 Nov) Say what the tools can't do once, up front; a partial proposal says it is partial.
+  PARTIAL_ASK_LINE,
 ].join('\n');
 
 /** ADR 0039 (Ben, 29 Oct): sent when `propose_week` is offered (every chat with a week). */

@@ -80,7 +80,7 @@ export function semanticArgs(call: CoachToolCall): unknown {
       return { action: call.args.action, until: call.args.until };
     case 'update_warmup_prefs':
       // (Ben, 1 Nov) The ask claim is explanation; the setting and the exercises (by name) are the change.
-      return { simpleLoads: call.args.simpleLoads, exercises: call.args.exercises.map((e) => ({ exercise: e.exercise.trim().toLowerCase(), warmups: e.warmups })) };
+      return { simpleLoads: call.args.simpleLoads, exercises: call.args.exercises.map((e) => ({ exercise: e.exercise.trim().toLowerCase(), warmups: e.warmups })), general: (call.args.general ?? null)?.map((g) => ({ days: g.days, exercise: g.exercise.trim().toLowerCase(), minutes: g.minutes })) ?? null };
     case 'set_lift_target':
       // The ask claim is explanation; the exercise (by name), kind, load, reps and date are the target.
       return { exercise: call.args.exercise.trim().toLowerCase(), kind: call.args.kind, load: call.args.load, unit: call.args.unit, reps: call.args.reps, byDate: call.args.byDate };
@@ -99,7 +99,7 @@ export function semanticArgs(call: CoachToolCall): unknown {
       return { day: call.args.day.trim().toLowerCase(), order: call.args.order, changes: call.args.changes };
     case 'propose_plan_add':
       // (Ben, 31 Oct) The reason is explanation; what goes in, where, and its sets are the change.
-      return { add: call.args.add, days: [...call.args.days].map((d) => d.trim().toLowerCase()).sort(), after: call.args.after, workingSets: call.args.workingSets, reps: call.args.reps, load: call.args.load };
+      return { add: call.args.add, days: [...call.args.days].map((d) => d.trim().toLowerCase()).sort(), after: call.args.after, workingSets: call.args.workingSets, reps: call.args.reps, load: call.args.load, position: call.args.position ?? null, before: call.args.before ?? null, minutes: call.args.minutes ?? null, distanceM: call.args.distanceM ?? null, dayType: call.args.dayType ?? null };
     case 'propose_week':
       // The message is explanation; the merges and skips are the change.
       return { merges: call.args.merges.map((m) => ({ dayIds: m.dayIds, name: m.name.trim().toLowerCase() })), skips: [...call.args.skips].sort() };
