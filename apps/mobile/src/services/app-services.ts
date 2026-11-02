@@ -1167,7 +1167,25 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   /** (Plan builder, 23 Oct) Gym goals → Your week → Your plan, offline: the deterministic engine, Apply / Undo through `plans`. */
-  const planBuilder = createPlanBuilderService({
+  /**
+   * (Ben, 2 Nov: one plan time) After a write that changes the plan in use (Plan setup's Apply, Change plan's Apply
+   * and its Undo, a plan put back in use), Profile's session length follows a builder plan's own minutes, so the two
+   * never disagree once the plan ends. One versioned training write on the version read now, its op ID derived from
+   * the plan write's (a replay writes once, rule 5); nothing when they already agree or on a coach plan (no minutes).
+   * Best effort: with a builder plan in use every plan screen reads the plan's minutes anyway.
+   */
+  async function planMinutesToProfile(opId: string): Promise<void> {
+    try {
+      const minutes = (await plans.inUseTime())?.time?.minutes ?? null;
+      if (minutes === null) return;
+      const snap = await training.snapshot();
+      if (snap === null || snap.profile.sessionMinutes === minutes) return;
+      await training.change({ kind: 'session_minutes', minutes }, snap.profile.version, `${opId}:session-minutes`);
+    } catch {
+      // Left as it was; the plan's own minutes still show on every plan screen and on Profile.
+    }
+  }
+  const planBuilderBase = createPlanBuilderService({
     store: () => deps.manager.store,
     profile: getProfile,
     now: deps.now,
@@ -1178,6 +1196,24 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     plans,
   });
+  const planBuilder: typeof planBuilderBase = {
+    ...planBuilderBase,
+    async apply(req) {
+      const r = await planBuilderBase.apply(req);
+      if (r.ok) await planMinutesToProfile(req.opId);
+      return r;
+    },
+    async applyEdit(s, answers, rejected, scope, opId) {
+      const r = await planBuilderBase.applyEdit(s, answers, rejected, scope, opId);
+      if (r.ok) await planMinutesToProfile(opId);
+      return r;
+    },
+    async undoEdit(req) {
+      const r = await planBuilderBase.undoEdit(req);
+      if (r.ok) await planMinutesToProfile(req.opId);
+      return r;
+    },
+  };
 
   /**
    * (Ben, 2 Nov) The coach's plan-level changes (a lighter week, days a week, length, Set/Any days, End): previewed and
@@ -1348,6 +1384,17 @@ export function createAppServices(deps: AppServicesDeps) {
   }
   const plansWithDrafts: typeof plans = {
     ...plans,
+    // (Ben, 2 Nov: one plan time) A builder plan put (back) in use: Profile's session length follows its minutes.
+    async apply(req) {
+      const r = await plans.apply(req);
+      if (r.ok) await planMinutesToProfile(req.opId);
+      return r;
+    },
+    async resume(req) {
+      const r = await plans.resume(req);
+      if (r.ok) await planMinutesToProfile(req.opId);
+      return r;
+    },
     async weekChange(req) {
       const r = await plans.weekChange(req);
       if (!r.ok || r.duplicate || req.change.kind !== 'exercise') return r;
