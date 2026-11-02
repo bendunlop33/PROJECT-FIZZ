@@ -53,7 +53,8 @@ import {
   type VolumeGoal,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { Exercise, MuscleGroup, PainFlag, PlanDayDraft, PlanDraft, PlanWeekExerciseEdit, Routine, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { ActionDetail, Exercise, MuscleGroup, PainFlag, PlanDayDraft, PlanDraft, PlanWeekExerciseEdit, Routine, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { RebalancePrepared } from '@fizz/coach';
 
 import { editBlockOf, readPlanBlock } from './plan-edit-read';
 import { editOutcome, type PlanEditOutcome } from './plan-builder-service';
@@ -124,7 +125,17 @@ export interface RebalanceCardData {
   empty: boolean;
 }
 
+/** (Ben, 2 Nov) The coach's Rebalance card: where it stands (from the plan's own op IDs, so it survives a restart). */
+export type RebalanceCoachState = { kind: 'open'; card: RebalanceCardData } | { kind: 'applied' | 'undone' | 'stale' | 'gone' };
+
+type RebalanceDetail = Extract<ActionDetail, { kind: 'propose_rebalance' }>;
+/** The plan edit's op IDs for a coach Rebalance card: a double tap or a restart writes once (rule 5). */
+export const rebalanceApplyOpId = (actionId: string): string => `rebalance-coach:${actionId}`;
+export const rebalanceUndoOpId = (actionId: string): string => `rebalance-coach-undo:${actionId}`;
+
 export const PLAN_MUSCLES_SERVICE_COPY = {
+  allInRange: 'Every muscle group is in range: nothing to rebalance.',
+  noRoom: 'Nothing fits within the days’ time.',
   noPlan: 'No plan in use.',
   notBuilder: 'Rebalance works on plans from the plan builder.',
   stale: 'Out of date. Check it again.',
@@ -360,7 +371,7 @@ export function createPlanMusclesService(deps: PlanMusclesDeps) {
     };
   }
 
-  return {
+  const api = {
     /** Plan › Muscles for the chip asked for (null: this week). Null: no plan in use. */
     async muscles(selected: string | null = null): Promise<PlanMusclesData | null> {
       const r = await read();
@@ -495,6 +506,59 @@ export function createPlanMusclesService(deps: PlanMusclesDeps) {
       return editOutcome(written);
     },
 
+    /**
+     * (Ben, 2 Nov) The coach's `propose_rebalance`: this screen's card for the plan in use, the same engine and the same
+     * lines (`rebalance()`), as the record keeps it. Refused with one line when there's nothing to propose.
+     */
+    async coachProposal(): Promise<RebalancePrepared> {
+      const r = await read();
+      if (r === null) return { kind: 'refused', line: PLAN_MUSCLES_SERVICE_COPY.noPlan };
+      if (pbAppliedBuilder(r.plan) === null || editBlockOf(r.block) === null) return { kind: 'refused', line: PLAN_MUSCLES_SERVICE_COPY.notBuilder };
+      const res = await plan(r);
+      const c = card(r, res.ops, new Set());
+      if (c.empty) return { kind: 'refused', line: res.flagsBefore.length === 0 ? PLAN_MUSCLES_SERVICE_COPY.allInRange : PLAN_MUSCLES_SERVICE_COPY.noRoom };
+      return {
+        kind: 'ok',
+        detail: {
+          kind: 'propose_rebalance',
+          planId: c.planId,
+          planVersion: c.planVersion,
+          lines: c.lines.slice(0, 40).map((l) => ({ id: l.id.slice(0, 40), dayIndex: l.dayIndex, text: l.text.slice(0, 200) })),
+          bars: c.bars.slice(0, 20).map((b) => ({ group: b.group, text: b.text.slice(0, 120), inRange: b.statusAfter === 'in' })),
+          minutes: c.minutes.slice(0, 14).map((m) => ({ dayIndex: m.dayIndex, text: m.text.slice(0, 120), over: m.over })),
+          why: c.why.slice(0, 2).map((w) => w.slice(0, 400)),
+          resolved: c.resolved,
+        },
+      };
+    },
+
+    /** The coach card's state: open (with the live card for these skipped lines), applied, undone, or out of date. */
+    async coachCard(d: RebalanceDetail, actionId: string, rejected: ReadonlySet<string> = new Set()): Promise<RebalanceCoachState> {
+      const p = await deps.profile().catch(() => null);
+      const doc = p === null ? null : await repos().planDrafts.get(d.planId).catch(() => null);
+      if (doc === null || doc.ownerId !== p?.id) return { kind: 'gone' };
+      if (doc.opIds.includes(rebalanceUndoOpId(actionId))) return { kind: 'undone' };
+      if (doc.opIds.includes(rebalanceApplyOpId(actionId))) return { kind: 'applied' };
+      if (doc.status !== 'applied' || doc.version !== d.planVersion) return { kind: 'stale' };
+      const r = await read();
+      if (r === null || r.plan.id !== d.planId) return { kind: 'stale' };
+      const res = await plan(r);
+      return { kind: 'open', card: card(r, res.ops, rejected) };
+    },
+
+    /** Apply on the coach's card: the screen's Apply on the version the coach read (stale: refused, rule 5). */
+    applyCoach(d: RebalanceDetail, actionId: string, rejected: readonly string[]): Promise<PlanEditOutcome> {
+      return api.apply({ planId: d.planId, expectedVersion: d.planVersion, rejected, opId: rebalanceApplyOpId(actionId) });
+    },
+
+    /** Undo on the coach's card: only while that Apply is the plan's last edit (the screen's Undo). */
+    async undoCoach(d: RebalanceDetail, actionId: string): Promise<PlanEditOutcome> {
+      const p = await deps.profile().catch(() => null);
+      const doc = p === null ? null : await repos().planDrafts.get(d.planId).catch(() => null);
+      if (doc === null || doc.lastEdit?.opId !== rebalanceApplyOpId(actionId)) return { ok: false, reason: 'stale', message: PLAN_MUSCLES_SERVICE_COPY.stale };
+      return api.undo({ planId: d.planId, expectedVersion: doc.version, opId: rebalanceUndoOpId(actionId) });
+    },
+
     /** Undo of that Apply: the plan and its workouts exactly as before, only from the version it left (rule 5). */
     async undo(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanEditOutcome> {
       const p = await deps.profile().catch(() => null);
@@ -506,6 +570,7 @@ export function createPlanMusclesService(deps: PlanMusclesDeps) {
       return editOutcome(r);
     },
   };
+  return api;
 }
 
 export type PlanMusclesService = ReturnType<typeof createPlanMusclesService>;

@@ -234,6 +234,10 @@ export interface CardView {
   setupFill?: ActionRecord;
   /** (Ben, 30 Oct) One exercise swapped in every plan day: each day's change, Apply / Skip, Undo, `Today too`. */
   planSwap?: ActionRecord;
+  /** (Ben, 2 Nov) An exercise's preference saved with its plan swap proposal: one card, the line and Undo, the swap under it. */
+  prefSwap?: { swapActionId: string };
+  /** (Ben, 2 Nov) Plan › Muscles' Rebalance from the coach: the screen's card (per-line skip, Apply, Undo). */
+  rebalance?: ActionRecord;
 }
 
 const GYM_STATUS: Record<GymProposalState['state'], CardView['status']> = {
@@ -382,7 +386,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym', 'set_lift_target', 'log_activity', 'update_warmup_prefs']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym', 'set_lift_target', 'log_activity', 'update_warmup_prefs', 'set_exercise_preference']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
@@ -420,6 +424,8 @@ export function cardView(r: ActionRecord): CardView {
     ...(r.detail.kind === 'propose_workout_edit' && r.status === 'proposed' ? { draftEdit: r } : {}),
     ...(r.detail.kind === 'fill_setup' && r.status === 'committed' ? { setupFill: r } : {}),
     ...(r.detail.kind === 'propose_plan_swap' && r.status === 'proposed' ? { planSwap: r } : {}),
+    ...(r.detail.kind === 'set_exercise_preference' && r.status === 'committed' && r.detail.swapActionId !== null ? { prefSwap: { swapActionId: r.detail.swapActionId } } : {}),
+    ...(r.detail.kind === 'propose_rebalance' && r.status === 'proposed' ? { rebalance: r } : {}),
   };
 }
 
