@@ -192,6 +192,8 @@ describe('every Add exercise opens the one shared picker with search at the top'
     ['screens/workout/WorkoutEdits.tsx', /const openAdd = \(\) => openSheet\(\{ mode: 'add' \}/],
     // (Ben, 29 Oct) The day sheet's Edit: Swap and Add exercise.
     ['screens/today/DaySheet.tsx', /onPress=\{\(\) => void openSwap\(null, null\)\}/],
+    // (Ben, 2 Nov) Profile › Likes & dislikes: Add under Liked and Not preferred.
+    ['screens/profile/ExercisePrefsScreen.tsx', /openAdd\(kind\);/],
   ];
   for (const [path, entry] of HOSTS) {
     it(path, () => {
