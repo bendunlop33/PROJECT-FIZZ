@@ -108,6 +108,9 @@ describe('Cardio first (Ben, 2 Nov)', () => {
     expect(slotsOf(after.workout.blocks).map((x) => x.exerciseId)).toEqual(slotsOf(before.workout.blocks).map((x) => x.exerciseId));
     expect(after.minutes - before.minutes).toBeGreaterThanOrEqual(8);
     expect(after.minutes - before.minutes).toBeLessThanOrEqual(10);
+    // Your workout names it (the minutes include it).
+    expect(before.cardioFirst ?? null).toBeNull();
+    expect(after.cardioFirst).toBe('Exercise bike · 8 min');
 
     const legs = await buildAndStart(s, gymId, 'legs', 'legs');
     const first = ordered(legs.a)[0];
