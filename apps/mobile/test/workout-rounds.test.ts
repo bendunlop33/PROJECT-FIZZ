@@ -93,6 +93,7 @@ function card(name: string, rows: TableRow[], over: Partial<TableCard> = {}): Ta
     progressText: '',
     progressAccessibility: '',
     painBadge: false,
+    warmupRow: false,
     columns: { kind: 'load_reps' as const, loadLabel: 'KG', valueLabel: 'REPS' as const },
     loadHeader: 'KG',
     repTarget: `6–8${NBSP}reps`,
@@ -123,6 +124,7 @@ function superset(members: { name: string; rows: TableRow[]; loadHeader?: string
       name: m.name,
       unitCaption: '',
       painBadge: false,
+      warmupRow: false,
       columns: { kind: 'load_reps', loadLabel: 'KG', valueLabel: 'REPS' },
       note: null,
       isCurrent: (withTags[i] ?? []).some((r) => r.state === 'open'),
@@ -247,6 +249,11 @@ describe('rounds from the table view (§1.3)', () => {
     expect(rounds[1]?.exercises[0]?.subline).toBeNull();
     expect(rounds[2]?.exercises[0]?.subline).toBe('Rear delts');
     expect(rounds[2]?.exercises[0]?.loadHeader).toBe('KG EACH');
+  });
+
+  it('(Ben, 2 Nov) a warm-up cardio row Ben asked for: `Warm-up` after its works line, or on its own', () => {
+    const rounds = buildRounds(view([card('Exercise bike', [row({})], { warmupRow: true }), card('Rower', [row({})], { warmupRow: true }), card('Bench', [row({})])]), (id) => (id === 'ex-Exercise bike' ? 'Cardio' : null));
+    expect(rounds.map((r) => r.exercises[0]?.subline)).toEqual(['Cardio · Warm-up', 'Warm-up', null]);
   });
 
   it('in a superset the member up next is bright and the other dimmed, a → b → a', () => {

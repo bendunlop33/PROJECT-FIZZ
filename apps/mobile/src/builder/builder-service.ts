@@ -701,7 +701,11 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   const specsOf = (r: Routine): TemplateSlotSpec[] =>
     [...r.exercises]
       .sort((a, b) => a.order - b.order)
-      .map((e) => ({ exerciseId: e.exerciseId, main: e.main === true || r.planDay?.mainLiftExerciseId === e.exerciseId, workingSets: Math.max(1, e.setTemplates.filter((t) => t.setType !== 'warmup').length), group: e.supersetGroup ?? null }));
+      .map((e) => {
+        // (Ben, 2 Nov) A cardio or timed row's work time and a warm-up mark, so the slot opens as Start plans it.
+        const workS = e.setTemplates.find((t) => t.setType !== 'warmup' && t.targetDurationS !== null)?.targetDurationS ?? null;
+        return { exerciseId: e.exerciseId, main: e.main === true || r.planDay?.mainLiftExerciseId === e.exerciseId, workingSets: Math.max(1, e.setTemplates.filter((t) => t.setType !== 'warmup').length), group: e.supersetGroup ?? null, ...(workS === null ? {} : { workS }), ...(e.warmup === true ? { warmup: true } : {}) };
+      });
 
   /** A template (and variation) as the builder opens it: no rebuild (§2.3 `From template`). */
   function openTemplate(r: Routine, variation: PlanDayVariation | null, env: BuilderEnv): { workout: BuilderWorkout; skipped: SkippedOp[] } {

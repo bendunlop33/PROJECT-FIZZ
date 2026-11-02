@@ -198,8 +198,12 @@ function anchorOf(rows: readonly RoundRow[]): number {
   return todo >= 0 ? todo : Math.max(0, rows.length - 1);
 }
 
-function sublineOf(works: string | null): string | null {
-  return works === null || works === '' ? null : works;
+/** (Ben, 2 Nov) The meta line under the name: the works line, then `Warm-up` on a warm-up cardio row Ben asked for. */
+export const WARMUP_ROW_LABEL = 'Warm-up';
+
+function sublineOf(works: string | null, warmupRow = false): string | null {
+  const parts = [works === null || works === '' ? null : works, warmupRow ? WARMUP_ROW_LABEL : null].filter((x): x is string => x !== null);
+  return parts.length === 0 ? null : parts.join(' · ');
 }
 
 const MEMBER_LETTERS = 'abcdefghij';
@@ -223,7 +227,7 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
           exerciseId: c.exerciseId,
           name: c.name,
           label: String(n),
-          subline: sublineOf(worksLineOf(c.exerciseId)),
+          subline: sublineOf(worksLineOf(c.exerciseId), c.warmupRow),
           progress,
           progressText: `${String(progress.done)}/${String(progress.total)}`,
           loadHeader: c.loadHeader,
@@ -254,7 +258,7 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
           exerciseId: m.exerciseId,
           name: m.name,
           label: `${String(n)}${MEMBER_LETTERS[k] ?? String(k + 1)}`,
-          subline: sublineOf(worksLineOf(m.exerciseId)),
+          subline: sublineOf(worksLineOf(m.exerciseId), m.warmupRow),
           progress,
           progressText: `${String(progress.done)}/${String(progress.total)}`,
           loadHeader: m.loadHeader,
