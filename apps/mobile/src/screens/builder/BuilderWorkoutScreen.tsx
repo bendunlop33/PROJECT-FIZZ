@@ -333,7 +333,9 @@ export function BuilderWorkoutScreen() {
       if (to === null) return;
       // (Ben, 28 Oct) `+` makes the workout itself longer (today only); `−` and Undo fit as before.
       const grow = !('to' in step) && step.dir > 0;
-      const r = await services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version, ...(grow ? { grow: true } : {}) });
+      // (Ben, 2 Nov) A tap lands near its 5-minute step and always moves something (`step`); Undo goes back as it was.
+      const tap = 'to' in step ? {} : { step: step.dir };
+      const r = await services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version, ...(grow ? { grow: true } : {}), ...tap });
       if (r.snapshot !== null) setSnap(r.snapshot);
       if (r.status === 'written') changed();
       else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });

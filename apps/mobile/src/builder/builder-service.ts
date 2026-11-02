@@ -131,6 +131,7 @@ import {
   type CarryItem,
   MAIN_LIFT_COPY,
   noteTemplateVersion,
+  TIME_STEP_RULES,
 } from '@fizz/domain';
 import { builderFocusCounts, builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SetTemplate, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
@@ -979,7 +980,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       minutes,
       planDayChanged,
       gymChanged,
-      over: minutes > setup.minutes,
+      // (Ben, 2 Nov) Time's own taps land within `nearMin` of the length: only past that is it over.
+      over: minutes > setup.minutes + TIME_STEP_RULES.nearMin,
       cardioFirst: first === null ? null : `${env.nameOf(first.exerciseId)} · ${String(first.minutes)} min`,
       ...(stored === null ? {} : { fullMinutes: fit?.fromMinutes ?? setupMinutesOf(stored) }),
       name: d.name,
@@ -2023,7 +2025,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
      * more. One versioned write under `opId` (rule 5), undoable like any edit; the detail's `Undo` is
      * `setTime(fromMinutes)`, which puts the original back with Ben's later edits kept.
      */
-    async setTime(draftId: string, minutes: number, w: { opId: string; expectedVersion: number; grow?: boolean }): Promise<BuilderWriteResult> {
+    async setTime(draftId: string, minutes: number, w: { opId: string; expectedVersion: number; grow?: boolean; step?: -1 | 1 }): Promise<BuilderWriteResult> {
       const p = await owner();
       return writeDraft(p, draftId, async (current) => {
         const v = currentDraftVersion(current);
@@ -2053,9 +2055,11 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         }
         const mainGroup = mainGroupOf(workout, stored, env);
         // (Ben, 28 Oct) What `+` may add: the day's main group, then the secondary group (arms on Chest, Back, Shoulders).
-        const growEnv = w.grow === true ? await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(workout), ...exerciseIdsOf(fit?.base ?? null)], groups: [...(mainGroup === null ? [] : [mainGroup]), 'Arms'], keySeed: `${current.id}:${w.opId}` }) : env;
-        const addCandidates = w.grow === true ? growCandidates(mainGroup, growEnv) : undefined;
-        const r = fitWorkoutToTime({ current: workout, fit, minutes: from, to: minutes, ctx: growEnv.ctx, mainGroup, supersets: stored.supersets, ...(w.grow === true ? { grow: true } : {}), ...(addCandidates === undefined ? {} : { addCandidates }) });
+        // (Ben, 2 Nov) A shorter Time on a fill `+` made regrows it from the original: the same exercises may come back.
+        const growing = w.grow === true || fit?.filledTo !== undefined;
+        const growEnv = growing ? await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(workout), ...exerciseIdsOf(fit?.base ?? null)], groups: [...(mainGroup === null ? [] : [mainGroup]), 'Arms'], keySeed: `${current.id}:${w.opId}` }) : env;
+        const addCandidates = growing ? growCandidates(mainGroup, growEnv) : undefined;
+        const r = fitWorkoutToTime({ current: workout, fit, minutes: from, to: minutes, ctx: growEnv.ctx, mainGroup, supersets: stored.supersets, ...(w.grow === true ? { grow: true } : {}), ...(addCandidates === undefined ? {} : { addCandidates }), ...(w.step === undefined ? {} : { step: w.step }) });
         if (r.full === true) return { refused: 'nothing_more', env };
         const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, growEnv.codec)).plan;
         const setup = withTimeFields(stored, from, r, env);
