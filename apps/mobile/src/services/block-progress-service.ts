@@ -7,6 +7,7 @@ import {
   planBlockLine,
   planRoutines,
   thisBlockView,
+  hasFinishedBlock as anyBlockFinished,
   trainingBlocks,
   toMs,
   type BlockSession,
@@ -114,7 +115,14 @@ export function createBlockProgressService(deps: BlockProgressDeps) {
       const r = await read();
       if (r === null) return null;
       const b = blockOf(r.blocks, key);
-      return b === null ? null : thisBlockView(b, r.sessions, r.nameOf, r.p.timezone);
+      return b === null ? null : thisBlockView(b, r.sessions, r.nameOf, r.p.timezone, r.blocks);
+    },
+
+    /** (Ben, 2 Nov) At least one block has finished (`All blocks ›`); the plan documents only, no workout read. */
+    async hasFinishedBlock(): Promise<boolean> {
+      const p = await deps.profile();
+      if (p === null) return false;
+      return anyBlockFinished(await repos().planDrafts.listByOwner(p.id));
     },
 
     /** Library › Plan's line under the week circles: `5 lifts up · 1 stalled`; null: nothing to say yet. */

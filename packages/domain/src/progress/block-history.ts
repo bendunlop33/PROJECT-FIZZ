@@ -38,8 +38,9 @@ import {
 
 export const BLOCKS_COPY = {
   thisBlock: 'This block',
-  blocks: 'Blocks',
-  blocksLink: 'Blocks',
+  /** (Ben, 2 Nov) The every-block screen's title and its link (`All blocks ›`), shown only once a block has finished. */
+  blocks: 'All blocks',
+  blocksLink: 'All blocks',
   week: (w: number, n: number) => `Week ${String(w)} of ${String(n)}`,
   weekOnly: (w: number) => `Week ${String(w)}`,
   leadIn: 'Lead-in',
@@ -110,8 +111,8 @@ export function planMainLiftIds(p: Pick<BlockPlanDoc, 'versions' | 'currentVersi
 /** A coach plan has no length: its weeks run on until it ends (a bound only; never shown). */
 const OPEN_LENGTH = 520 as unknown as PlanWeeks;
 
-/** The plan documents' blocks, oldest first. `refs` are Ben's finished workouts as the plan reads them (`linkRefs`). */
-export function trainingBlocks(plans: readonly BlockPlanDoc[], refs: readonly PbFinishedRef[], nowMs: number, tz: string, mainLiftsNow: readonly string[] | null = null, allWorkouts: readonly { startedAtUtc: string }[] = []): TrainingBlock[] {
+/** The plan documents grouped into blocks, oldest first (a block is current while one of its documents is applied). */
+function blockGroups(plans: readonly BlockPlanDoc[]): { key: string; members: BlockPlanDoc[]; startUtc: string }[] {
   const docs = plans.filter((p) => p.applied !== null).sort((a, b) => toMs(a.applied?.atUtc ?? '') - toMs(b.applied?.atUtc ?? ''));
   const groups = new Map<string, BlockPlanDoc[]>();
   const keyOf = new Map<string, string>();
@@ -124,7 +125,20 @@ export function trainingBlocks(plans: readonly BlockPlanDoc[], refs: readonly Pb
     keyOf.set(d.id, key);
     groups.set(key, [...(groups.get(key) ?? []), d]);
   }
-  const ordered = [...groups.entries()].map(([key, members]) => ({ key, members, startUtc: members[0]?.applied?.block?.startedAtUtc ?? members[0]?.applied?.atUtc ?? '' })).sort((a, b) => toMs(a.startUtc) - toMs(b.startUtc));
+  return [...groups.entries()].map(([key, members]) => ({ key, members, startUtc: members[0]?.applied?.block?.startedAtUtc ?? members[0]?.applied?.atUtc ?? '' })).sort((a, b) => toMs(a.startUtc) - toMs(b.startUtc));
+}
+
+/**
+ * (Ben, 2 Nov) At least one block has finished (`All blocks ›` shows only then; a first block has nothing to list
+ * beside itself). From the plan documents alone (no workout read).
+ */
+export function hasFinishedBlock(plans: readonly BlockPlanDoc[]): boolean {
+  return blockGroups(plans).some((g) => !g.members.some((m) => m.status === 'applied'));
+}
+
+/** The plan documents' blocks, oldest first. `refs` are Ben's finished workouts as the plan reads them (`linkRefs`). */
+export function trainingBlocks(plans: readonly BlockPlanDoc[], refs: readonly PbFinishedRef[], nowMs: number, tz: string, mainLiftsNow: readonly string[] | null = null, allWorkouts: readonly { startedAtUtc: string }[] = []): TrainingBlock[] {
+  const ordered = blockGroups(plans);
   return ordered.map((g, i): TrainingBlock => {
     const latest = g.members[g.members.length - 1] as BlockPlanDoc;
     const current = g.members.some((m) => m.status === 'applied');
@@ -306,6 +320,8 @@ export interface ThisBlockView {
   legend: { up: string; stalled: string; deload: string };
   up: number;
   stalled: number;
+  /** (Ben, 2 Nov) At least one block has finished: `All blocks ›` shows. */
+  allBlocks: boolean;
 }
 
 /** `Week 3 of 6` · `Lead-in` · `Block done` (a coach plan: `Week 3`). */
@@ -340,7 +356,7 @@ export function blockDates(b: Pick<TrainingBlock, 'startedAtUtc' | 'endedAtUtc' 
   return plainSpaces(`${localDateText(start)} – ${localDateText(end)}`);
 }
 
-export function thisBlockView(b: TrainingBlock, sessions: readonly BlockSession[], nameOf: (id: string) => string, tz: string): ThisBlockView {
+export function thisBlockView(b: TrainingBlock, sessions: readonly BlockSession[], nameOf: (id: string) => string, tz: string, blocks: readonly Pick<TrainingBlock, 'current'>[] = [b]): ThisBlockView {
   const lifts = b.mainLiftIds.map((id) => liftInBlock(b, id, sessions, nameOf));
   const rows = lifts.map(rowOf);
   return {
@@ -352,6 +368,7 @@ export function thisBlockView(b: TrainingBlock, sessions: readonly BlockSession[
     legend: { up: BLOCKS_COPY.legendUp, stalled: BLOCKS_COPY.legendStalled, deload: BLOCKS_COPY.legendDeload },
     up: lifts.filter((l) => l.progress.status === 'up').length,
     stalled: lifts.filter((l) => l.progress.status === 'stalled').length,
+    allBlocks: blocks.some((x) => !x.current),
   };
 }
 

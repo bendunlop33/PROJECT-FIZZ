@@ -6,6 +6,7 @@ import {
   applyPlan,
   blockOf,
   blocksView,
+  hasFinishedBlock,
   blockWeekSlots,
   buildPlanFromAnswers,
   liftBlockDetailView,
@@ -255,5 +256,21 @@ describe('the views', () => {
   it('nothing up or stalled yet: no Library line', () => {
     expect(planBlockLine({ up: 0, stalled: 0 })).toBeNull();
     expect(planBlockLine(null)).toBeNull();
+  });
+});
+
+describe('All blocks › only once a block has finished (Ben, 2 Nov)', () => {
+  it('a first block (and its continuing re-apply): no finished block; once a block is superseded: one', () => {
+    const first = apply(draft(11, noonNz('2026-10-21'), { weeks: 6 }), 12, noonNz('2026-10-21'));
+    expect(hasFinishedBlock([first.plan])).toBe(false);
+    expect(hasFinishedBlock([])).toBe(false);
+    const blocks = trainingBlocks([first.plan], [], NOW_MS, TZ);
+    expect(thisBlockView(blockOf(blocks, null) as NonNullable<ReturnType<typeof blockOf>>, [], nameOf, TZ, blocks).allBlocks).toBe(false);
+    const h = history();
+    expect(hasFinishedBlock(h.plans)).toBe(true);
+    // Block 3's re-apply superseded its first document, yet that document is in the current block: only blocks 1–2 count.
+    expect(hasFinishedBlock(h.plans.slice(2))).toBe(false);
+    const all = trainingBlocks(h.plans, h.refs, NOW_MS, TZ);
+    expect(thisBlockView(blockOf(all, null) as NonNullable<ReturnType<typeof blockOf>>, h.sessions, nameOf, TZ, all).allBlocks).toBe(true);
   });
 });
