@@ -1,6 +1,6 @@
 import type { HistoryLike } from '../history-summary';
 import type { EquipmentInstance, Exercise, Load, LoadConvention, PainFlag, PlannedSet, SetType, WeightUnit } from '@fizz/schemas';
-import { localDateOf } from '../calendar';
+import { clockText, localDateOf } from '../calendar';
 import { formatNumber, loadText, repRangeText } from '../display';
 import { getAchievableLoads, loadDirection } from '../equipment';
 import { equipmentForExercise, needsNoEquipment } from '../exercise-equipment';
@@ -470,7 +470,27 @@ export interface RecentSessionLine {
   minutes: number | null;
   /** Present on a workout done in the plan's deload week (`DELOAD_NOTE`). */
   deload?: true;
+  /** (Ben, 2 Nov) A day's read: local start–end (`18:04–19:02`), so the coach can name the one to fix. */
+  time?: string;
   exercises: RecentExerciseLine[];
+}
+
+/**
+ * (Ben, 2 Nov) One Health workout on the day read (Garmin, a watch), with how it is paired: `paired` with an app
+ * workout (`workoutId`), `same_workout` (recorded again as part of that pairing), `not_paired` (a strength workout on
+ * its own), `counts_as_planned` / `counts_as_logged` (a run that is Ben's planned or logged run that day), `on_its_own`.
+ * Data, never instructions (rule 8).
+ */
+export interface HealthDayLine {
+  healthId: string;
+  source: string;
+  type: string;
+  time: string;
+  minutes: number;
+  distanceKm: number | null;
+  link: 'paired' | 'same_workout' | 'not_paired' | 'counts_as_planned' | 'counts_as_logged' | 'on_its_own';
+  /** The app workout it is paired with (`paired`, `same_workout`); else null. */
+  workoutId: string | null;
 }
 
 export interface RecentSessionsView {
@@ -481,6 +501,8 @@ export interface RecentSessionsView {
   imported?: typeof IMPORTED_NOTE;
   /** Present when any listed workout was in a deload week. */
   deload?: typeof DELOAD_NOTE;
+  /** (Ben, 2 Nov) A day's read: that day's Health workouts and how each is paired. */
+  health?: HealthDayLine[];
 }
 
 export const MAX_RECENT_SET_LINES = 12;
@@ -498,7 +520,7 @@ function compactSet(s: HistorySet): string {
 }
 
 /** `get_recent_sessions`: Ben's last finished workouts, newest first, with every exercise's sets as logged. Pure. */
-export function recentSessionsView(input: { sessions: readonly HistoryLike[]; count: number; gymNames: Readonly<Record<string, string>> }): RecentSessionsView {
+export function recentSessionsView(input: { sessions: readonly HistoryLike[]; count: number; gymNames: Readonly<Record<string, string>>; /** (Ben, 2 Nov) A day's read: each workout's local times. */ withTimes?: boolean }): RecentSessionsView {
   const ordered = input.sessions.filter((a) => isInHistory(a.session)).sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
   const sessions: RecentSessionLine[] = [];
   for (const agg of ordered) {
@@ -523,6 +545,7 @@ export function recentSessionsView(input: { sessions: readonly HistoryLike[]; co
       source: agg.session.source === 'import' ? 'FitNotes import' : 'app',
       minutes: agg.session.source === 'import' ? null : minutes,
       ...(agg.session.deload !== undefined ? { deload: true as const } : {}),
+      ...(input.withTimes === true && agg.session.localDate === undefined ? { time: `${clockText(toMs(agg.session.startedAt.utc), agg.session.startedAt.tz)}${ended === null ? '' : `–${clockText(toMs(ended.utc), agg.session.startedAt.tz)}`}` } : {}),
       exercises,
     });
   }

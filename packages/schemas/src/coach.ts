@@ -451,6 +451,25 @@ export const UpdateWarmupPrefsArgsSchema = z.strictObject({
 });
 export type UpdateWarmupPrefsArgs = z.infer<typeof UpdateWarmupPrefsArgsSchema>;
 
+/**
+ * (Ben, 2 Nov) Fix a past workout, always as a proposal with before/after, Apply and Undo (rule 2): `move` its date or
+ * times ("that Tuesday pull was actually Monday": `date` the new local day, `start`/`end` local `HH:MM`, null keeps the
+ * time of day / the length), `delete` a duplicate or wrong workout (a soft delete, restorable; Undo brings it back),
+ * `pair` a Health workout (`healthId`) with an app workout (`workoutId`), or with the planned run that day (`workoutId`
+ * null), `unpair` a Health workout. IDs come from get_recent_sessions (a day's read lists its Health workouts too).
+ * Two app workouts are never merged: the app can't; delete the duplicate instead.
+ */
+export const ProposeWorkoutFixArgsSchema = z.strictObject({
+  op: z.enum(['move', 'delete', 'pair', 'unpair']),
+  workoutId: z.string().min(1).max(64).nullable(),
+  healthId: z.string().min(1).max(64).nullable(),
+  date: LocalDateSchema.nullable(),
+  start: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  end: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  reason,
+});
+export type ProposeWorkoutFixArgs = z.infer<typeof ProposeWorkoutFixArgsSchema>;
+
 export const RenameWorkoutArgsSchema = z.strictObject({
   /** The session version the coach read (rule 5). */
   baseVersion: z.int().min(1),
@@ -711,6 +730,8 @@ export const CoachToolNameSchema = z.enum([
   'update_warmup_prefs',
   /** (Ben, 1 Nov) One plan day's order and sets/reps/RPE/main every week: a proposal he applies, with Undo. */
   'propose_plan_day_edit',
+  /** (Ben, 2 Nov) A past workout's date moved, a duplicate deleted, a Health workout paired or unpaired: a proposal he applies, with Undo. */
+  'propose_workout_fix',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -755,6 +776,7 @@ export const COACH_TOOL_ARGS = {
   propose_plan_add: ProposePlanAddArgsSchema,
   update_warmup_prefs: UpdateWarmupPrefsArgsSchema,
   propose_plan_day_edit: ProposePlanDayEditArgsSchema,
+  propose_workout_fix: ProposeWorkoutFixArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -1201,6 +1223,34 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     sessionId: IdSchema.nullable(),
     changedSetIds: z.array(IdSchema).max(60),
     removedSetIds: z.array(IdSchema).max(60),
+  }),
+  /**
+   * (Ben, 2 Nov) A past workout fixed (`propose_workout_fix`). The coach's record is `proposed` (before/after, Apply,
+   * Undo); Ben's Apply writes a second `committed` record with `proposalId` and the change in one transaction (rule 5:
+   * on `sessionVersion` / `link.version` as proposed, else stale), and Undo reverts that one. `before`/`after`: app
+   * text for the card (`Tue 28 Oct · 18:04–19:02` → `Mon 27 Oct · 18:04–19:02`; `Deleted`; `Paired with Push A`).
+   * `move`: the new start and end. `link`: the Health write the day sheet's Pair, Same workout or Unpair makes.
+   */
+  z.object({
+    kind: z.literal('fix_workout'),
+    op: z.enum(['move', 'delete', 'pair', 'unpair']),
+    proposalId: IdSchema.optional(),
+    sessionId: IdSchema.nullable(),
+    sessionVersion: z.int().min(1).nullable(),
+    title: z.string().min(1).max(120),
+    before: z.string().min(1).max(200),
+    after: z.string().min(1).max(200),
+    move: z.object({ startedAt: ZonedTimestampSchema, endedAt: ZonedTimestampSchema.nullable() }).optional(),
+    link: z
+      .object({
+        mode: z.enum(['link', 'same', 'unlink', 'not_same']),
+        healthUuid: z.string().min(1).max(64),
+        /** The link record written to: the Health workout's own (`link`, `unlink`) or the paired one's (`same`, `not_same`). */
+        linkUuid: z.string().min(1).max(64),
+        /** That link's version as read; null: no record yet (`link` only). */
+        linkVersion: z.int().min(1).nullable(),
+      })
+      .optional(),
   }),
   /**
    * (Ben, 20 Oct) An activity the coach logged (committed: `activityId` names it) or offered (proposed:
@@ -1724,7 +1774,13 @@ export type CoachWrite =
    */
   | { kind: 'warmup_prefs'; action: ActionRecord; change: TrainingChange; expectedVersion: number; session: { sessionId: string; command: SessionCommand } | null }
   /** (Ben, 20 Oct) An activity the coach logged and its record, in one write (`expectedVersion` null: new). */
-  | { kind: 'activity'; action: ActionRecord; activity: Activity; expectedVersion: number | null };
+  | { kind: 'activity'; action: ActionRecord; activity: Activity; expectedVersion: number | null }
+  /**
+   * (Ben, 2 Nov) Ben's Apply on a past-workout fix: the `committed` `fix_workout` record (with `proposalId`) and its
+   * change in one transaction, through the same writes as Summary's Edit times, History's Delete and the day sheet's
+   * Pair / Same workout / Unpair. The proposal must still be `proposed`; a workout or link changed since is stale.
+   */
+  | { kind: 'workout_fix'; action: ActionRecord };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }
