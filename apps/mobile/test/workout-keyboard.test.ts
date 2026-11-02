@@ -113,8 +113,8 @@ describe('the table stays a table (18 Oct; review B1, S3, S4, S6)', () => {
     expect(table).toContain('disabled={!p.canLog}');
     expect(table).toContain('accessibilityLabel={`${stepName}, ${plainSpaces(p.timedLogLabel ?? f.logLabel ?? \'Log\')}`}');
   });
-  it('⋯ keeps copy last, the full set editor and Focus', () => {
+  it('⋯ keeps copy last, the set sheet (type, rest, note; Ben, 2 Nov) and Focus', () => {
     const more = fn('function setMoreItems(');
-    for (const label of ['Copy last', "'Edit set'", "'Focus view'"]) expect(more).toContain(label);
+    for (const label of ['Copy last', 'setSheetMenuLabel(false)', "'Focus view'"]) expect(more).toContain(label);
   });
 });

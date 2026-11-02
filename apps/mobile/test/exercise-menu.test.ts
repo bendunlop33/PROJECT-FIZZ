@@ -82,9 +82,9 @@ describe('exercise ⋯ menu', () => {
 describe('Edit set', () => {
   it('sits above Target RPE and Add set when the exercise has a set not done yet; the rows below keep their actions', () => {
     const m = exerciseMenu(true, false, { canEditSet: true, hasTargetRpe: true });
-    expect(m.options).toEqual(['How to', 'Edit set', 'Target RIR', 'Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options).toEqual(['How to', 'Type, rest, note', 'Target RIR', 'Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
     expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'edit_set', 'target_rpe', 'add_set', 'notes', 'add_exercise', 'delete_set', 'skip_exercise', null]);
-    expect(exerciseMenu(false).options).not.toContain('Edit set');
+    expect(exerciseMenu(false).options).not.toContain('Type, rest, note');
   });
 });
 

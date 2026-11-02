@@ -60,3 +60,39 @@ export function committedLoad(typed: number | null | undefined, snapped: number 
 export function loadNeedsFit(typed: number | null | undefined, snapped: number | null | undefined): boolean {
   return typed !== undefined && typed !== snapped;
 }
+
+/**
+ * (Ben, 2 Nov: "Maybe we only need set type, rest and notes?") What the set sheet shows. In a live workout the table
+ * edits load, reps, time and distance inline and the set's hold menu has RIR, Target RIR, + Weight and Delete, so the
+ * sheet keeps only what has nowhere else to live: `planned` (a set not done yet) Set type, Rest after, Note;
+ * `logged` (a done set, live) Set type and Note (its rest has run; `correct_set` carries no rest). `past` (any
+ * workout that isn't live) keeps the full correction sheet, unchanged.
+ */
+export type SetSheetKind = 'planned' | 'logged' | 'past';
+
+export type SetSheetSection = 'done_at' | 'values' | 'add_weight' | 'rir' | 'range' | 'target_line' | 'target_rir' | 'set_type' | 'rest' | 'exclusions' | 'note' | 'saved_as' | 'do_next' | 'insert_after' | 'delete';
+
+const SHEET_SECTIONS: Readonly<Record<SetSheetKind, readonly SetSheetSection[]>> = {
+  planned: ['set_type', 'rest', 'note'],
+  logged: ['set_type', 'note'],
+  past: ['done_at', 'values', 'add_weight', 'rir', 'target_rir', 'set_type', 'exclusions', 'note', 'saved_as', 'delete'],
+};
+
+export function setSheetKind(sessionStatus: string, setStatus: string | undefined): SetSheetKind {
+  if (sessionStatus !== 'active') return 'past';
+  return setStatus === 'pending' ? 'planned' : 'logged';
+}
+
+export function setSheetSections(kind: SetSheetKind): ReadonlySet<SetSheetSection> {
+  return new Set(SHEET_SECTIONS[kind]);
+}
+
+/** `Set 2 · Back squat` live; the past sheet keeps `Edit set 2 · Back squat`. */
+export function setSheetTitle(kind: SetSheetKind, stepName: string, exerciseName: string): string {
+  return kind === 'past' ? `Edit ${stepName.toLowerCase()} · ${exerciseName}` : `${stepName} · ${exerciseName}`;
+}
+
+/** The menu item that opens the live sheet: what it holds, nothing more. */
+export function setSheetMenuLabel(done: boolean): string {
+  return done ? 'Type, note' : 'Type, rest, note';
+}

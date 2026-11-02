@@ -25,11 +25,20 @@ describe('Edit set and planned-set edit (2.1)', () => {
       expect(src).toContain('<SheetKeyboardAvoidingView');
       expect(src).not.toContain('automaticallyAdjustKeyboardInsets>');
     });
-    it(`${f}: the note has the Done bar; Insert and Delete stay at the end`, () => {
+    it(`${f}: the note has the Done bar`, () => {
       expect(flat(src)).toMatch(/maxLength=\{NOTE_MAX\} inputAccessoryViewID=\{NUMBER_ACCESSORY_ID\}/);
-      expect(src).toContain('<DangerTextButton label="Delete set"');
     });
   }
+});
+
+describe('the past sheet keeps Delete set at the end; the live sheets have none (Ben, 2 Nov)', () => {
+  it('EditSetScreen: Delete set last, behind the past sheet’s sections; PlannedSetEdit: no Delete, Insert or Do next', () => {
+    const edit = read('EditSetScreen.tsx');
+    expect(edit).toContain("{shows.has('delete') ? (");
+    expect(edit.indexOf('<DangerTextButton label="Delete set"')).toBeGreaterThan(edit.indexOf('label="Note"'));
+    const planned = read('PlannedSetEdit.tsx');
+    for (const gone of ['label="Delete set"', 'label="Insert set after"', 'label="Do next"', 'label="Range"', "'+ Weight'", 'targetRpeChips', 'NumberStepper']) expect(planned).not.toContain(gone);
+  });
 });
 
 describe('Finish sheet (2.2; redesign 27 Oct §E1)', () => {

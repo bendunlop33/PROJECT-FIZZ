@@ -53,8 +53,8 @@ const UNDO_COACH: MenuItem = { action: 'undo_coach', label: 'Undo coach change',
 const UNDO_RULE: MenuItem = { action: 'undo_coach', label: 'Undo change', destructive: false };
 /** While the exercise is today's mid-workout swap and its swap can be undone (EL4). */
 const UNDO_SWAP: MenuItem = { action: 'undo_swap', label: 'Undo swap', destructive: false };
-/** The set Log logs next, opened in Edit set (type, insert after, note…; review B1: "edit anything on the sets"). */
-const EDIT_SET: MenuItem = { action: 'edit_set', label: 'Edit set', destructive: false };
+/** The set Log logs next, opened in its sheet: type, rest, note (Ben, 2 Nov; values edit in place). */
+const EDIT_SET: MenuItem = { action: 'edit_set', label: 'Type, rest, note', destructive: false };
 /** Ben's own target RPE (CHANGELOG 2026-10-11): only on a set that carries one (not a warm-up or drop set). */
 const TARGET_RPE: MenuItem = { action: 'target_rpe', label: 'Target RIR', destructive: false };
 const ADD_SET: MenuItem = { action: 'add_set', label: 'Add set', destructive: false };

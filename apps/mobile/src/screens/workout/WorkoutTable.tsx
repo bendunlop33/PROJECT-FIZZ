@@ -12,6 +12,7 @@ import { cellInputA11y, editsInPlace, loadCellA11y, runRowTap, valueCellA11y, ty
 import { REVEAL_CONTEXT, REVEAL_MARGIN, revealOffset, revealSetId, type Round, type RoundExercise, type RoundRow } from '../../workout/rounds';
 import { setColumns, widestText, type SetColumns } from '../../workout/set-columns';
 import { claimsDrag, swipeIntent } from '../../workout/set-pager';
+import { setSheetMenuLabel } from '../../workout/set-edit';
 import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { ROUND_TABLE_KEYBOARD } from '../../workout/keyboard';
@@ -1006,7 +1007,7 @@ export function TableSetRow({
   const valueName = row.columns.valueLabel === 'REPS' ? 'reps' : row.columns.valueLabel === 'TIME' ? 'time' : row.columns.valueLabel === 'TIME · DIST' ? 'time and distance' : 'distance';
   const rowActions = [
     { name: 'activate' },
-    { name: 'edit', label: 'Edit set' },
+    { name: 'edit', label: setSheetMenuLabel(done) },
     // Only the latest log can be unticked; older done sets are corrected through their cells (spec S6).
     ...(done ? (r.canUntick ? [{ name: 'untick', label: 'Untick' }] : []) : [{ name: 'select', label: 'Make current' }]),
     ...(row.columns.loadLabel !== null ? [{ name: 'load', label: 'Edit load here' }] : []),

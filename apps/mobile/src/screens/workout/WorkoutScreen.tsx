@@ -19,6 +19,7 @@ import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
 import { pastLogWhen } from '../../workout/past-log-view';
+import { setSheetMenuLabel } from '../../workout/set-edit';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
@@ -1470,7 +1471,7 @@ export function WorkoutScreen() {
       ...(f.previous !== null ? [{ label: `Copy last · ${f.previous.text.replaceAll('\u00a0', ' ')}`, run: () => { copyLast(f); } }] : []),
       ...rirItem(f.setId),
       ...(tableModeNow() ? targetRirItem(f.setId) : []),
-      { label: 'Edit set', run: () => { editSet(f.setId); } },
+      { label: setSheetMenuLabel(false), run: () => { editSet(f.setId); } },
       ...(f.addWeight ? [{ label: f.addWeight.on ? 'Bodyweight' : '+ Weight', run: () => { toggleWeight(f); } }] : []),
       { label: 'Focus view', run: () => { updatePrefs({ workoutView: 'focus' }); } },
     ];
@@ -3301,7 +3302,7 @@ export function WorkoutScreen() {
                   onMenu: (setId) => {
                     // A hold without a drag (§7's fallback): the current set keeps its own items (copy last, Edit set…).
                     if (focus !== null && setId === focus.setId) workoutEdits.setMenu(setId, setMoreItems(focus));
-                    else workoutEdits.setMenu(setId, [...rirItem(setId), ...targetRirItem(setId), { label: 'Edit set', run: () => { editSet(setId); } }]);
+                    else workoutEdits.setMenu(setId, [...rirItem(setId), ...targetRirItem(setId), { label: setSheetMenuLabel(loaded.aggregate.sets.find((x) => x.id === setId)?.status === 'completed'), run: () => { editSet(setId); } }]);
                   },
                   onMove: (setId, dir) => {
                     workoutEdits.stepSet(setId, dir);
