@@ -79,7 +79,6 @@ import { createPlanServices } from './plan-services';
 import { createPlanSwapService } from './plan-swap-service';
 import { createPlanChangeService } from './plan-change-service';
 import { createRestSettingsService } from './rest-settings-service';
-import { createPlanSummaryService } from './plan-summary-service';
 import { createPlanMusclesService } from './plan-muscles-service';
 import { createExercisePrefsService } from './exercise-prefs-service';
 import { createPlanBuilderService } from './plan-builder-service';
@@ -1472,33 +1471,9 @@ export function createAppServices(deps: AppServicesDeps) {
     doneBetween: (from, to) => progress.muscleSetsBetween(from, to),
   });
 
-  /**
-   * (Ben, 2 Nov; plan-summary.md) The plan summary from Progress: the plan in use, Plan › Muscles' bars and the Gym
-   * goals table's `What to expect` for the plan's own answers, so every number agrees with where it comes from.
-   */
-  const planSummary = createPlanSummaryService({
-    overview: () => plansWithDrafts.overview(),
-    muscles: async () => (await planMuscles.muscles(null))?.view.bars ?? null,
-    expect: async (planId) => {
-      const s = await planBuilder.open({ editPlanId: planId });
-      // `opensOn: 'plan'` only when the session holds this plan's own answers (`Edit plan`), never the ✦ defaults.
-      if (s === null || s.opensOn !== 'plan') return null;
-      const e = s.expect(s.answers);
-      return {
-        reps: e.reps,
-        unit: s.unit,
-        rows: e.rows.map((r) => {
-          const kit = s.kitOf(r.key);
-          return { ...r, name: s.nameOf(r.key), unit: kit === null || kit === 'bodyweight' ? null : kit.unit };
-        }),
-      };
-    },
-  });
-
   return {
     ...loop,
     planMuscles,
-    planSummary,
     builder,
     builderCoach,
     reviews,

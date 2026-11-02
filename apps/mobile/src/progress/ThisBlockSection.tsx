@@ -6,6 +6,8 @@ import { BLOCKS_COPY, type BlockBarState, type BlockWeekBar, type ThisBlockRow, 
 import { useScreenData } from '../shell/context';
 import { useTheme, type ColorToken } from '../theme';
 import { AppText, Icon, TextButton } from '../ui';
+import { newUuid } from '../device/runtime';
+import { openYourPlan } from '../navigation/actions';
 import { useReloadOn } from './use-reload-on';
 
 /**
@@ -93,7 +95,7 @@ function Legend({ view }: { view: ThisBlockView }) {
 }
 
 /** The section itself, from a loaded view (render tests and the Block screen share it). */
-export function ThisBlockList({ view, blocksLink, onOpen, onBlocks, onPlan = null }: { view: ThisBlockView; blocksLink: boolean; onOpen: (row: ThisBlockRow) => void; onBlocks: () => void; /** (Ben, 2 Nov; plan-summary.md) The current block's `Week 3 of 6 ›`: the plan summary. */ onPlan?: (() => void) | null }) {
+export function ThisBlockList({ view, blocksLink, onOpen, onBlocks, onPlan = null }: { view: ThisBlockView; blocksLink: boolean; onOpen: (row: ThisBlockRow) => void; onBlocks: () => void; /** (Ben, 2 Nov) The current block's `Week 3 of 6 ›`: Library › Plan. */ onPlan?: (() => void) | null }) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space['3'] }}>
@@ -151,7 +153,7 @@ export function ThisBlockSection({ blockKey = null, active = true, blocksLink = 
       onPlan={
         view.current
           ? () => {
-              navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressPlan' } });
+              navigation.dispatch(openYourPlan(newUuid()));
             }
           : null
       }
