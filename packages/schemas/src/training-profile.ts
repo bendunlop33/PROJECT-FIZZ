@@ -133,21 +133,17 @@ export const WarmupExerciseSettingSchema = z.enum(['off', 'normal']);
 export type WarmupExerciseSetting = z.infer<typeof WarmupExerciseSettingSchema>;
 
 /**
- * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") Which workouts a
- * general (cardio) warm-up rule covers: `legs` leg days, `other` every other day, `all` every day (a `legs` or `other`
- * rule wins over `all` on its days). Leg days are decided by `workoutDayType` in the domain.
+ * Retired (Ben, 2 Nov: "no i am talking about the ability to add that with the coach for the plan"): the automatic
+ * `Cardio first` rules (`warmups.general`) are no longer read or written. Cardio first is now a normal exercise in the
+ * plan days (`propose_plan_add`). The schema stays so profiles stored with rules still parse; nothing uses them.
  */
 export const GENERAL_WARMUP_DAYS = ['legs', 'other', 'all'] as const;
 export const GeneralWarmupDaysSchema = z.enum(GENERAL_WARMUP_DAYS);
 export type GeneralWarmupDays = z.infer<typeof GeneralWarmupDaysSchema>;
 
-/** (Ben, 2 Nov) A general warm-up's minutes: 1–30 (WU12's 3–5 is the default suggestion, not a limit). */
 export const GENERAL_WARMUP_LIMITS = { minMinutes: 1, maxMinutes: 30, rulesMax: 3 } as const;
 
-/**
- * (Ben, 2 Nov) One general warm-up rule: on `days`, `exerciseId` (a cardio exercise: bike, rower…) for `minutes`, first
- * in every workout started. A normal timed cardio exercise in the workout; never a muscle set, a PB or volume.
- */
+/** Retired (see above): one stored rule. */
 export const GeneralWarmupRuleSchema = z.object({
   days: GeneralWarmupDaysSchema,
   exerciseId: z.string().min(1).max(64),
@@ -155,7 +151,7 @@ export const GeneralWarmupRuleSchema = z.object({
 });
 export type GeneralWarmupRule = z.infer<typeof GeneralWarmupRuleSchema>;
 
-/** At most one rule per `days` value. */
+/** Retired (see above): at most one rule per `days` value. */
 export const GeneralWarmupRulesSchema = z
   .array(GeneralWarmupRuleSchema)
   .min(1)
@@ -165,7 +161,7 @@ export const GeneralWarmupRulesSchema = z
 /**
  * (Ben, 1 Nov) Warm-up preferences (WU8 amendment). `simpleLoads`: `Simple warm-up weights` (absent = on);
  * `perExercise`: his per-exercise setting by exercise ID (absent = the planner's default for it).
- * (Ben, 2 Nov) `general`: his general (cardio) warm-up rules (absent = none; WU12 amendment).
+ * `general`: retired 2 Nov (stored rules parse; ignored).
  */
 export const WarmupPrefsSchema = z.object({
   simpleLoads: z.boolean().optional(),
@@ -299,7 +295,6 @@ export type TrainingChange =
   /** (Ben, 2 Nov) The coach's rest change: the whole rest snapshot (defaults, `Rest when short on time`, `Shorten main lift too`). */
   | { kind: 'rest_settings'; settings: RestSettings }
   /** (Ben, 1 Nov) `Simple warm-up weights`, and/or warm-ups per exercise (`null` = back to the default). */
-  /** (Ben, 2 Nov) `general`: his general warm-up rules, replacing the ones stored (null or []: none). Absent: unchanged. */
-  | { kind: 'warmup_prefs'; simpleLoads?: boolean; perExercise?: Readonly<Record<string, WarmupExerciseSetting | null>>; general?: readonly GeneralWarmupRule[] | null }
+  | { kind: 'warmup_prefs'; simpleLoads?: boolean; perExercise?: Readonly<Record<string, WarmupExerciseSetting | null>> }
   /** (Ben, 1 Nov) The coach's muscle-gap offer raised (once per plan state) or skipped. */
   | { kind: 'muscle_offer'; key: string; by: 'apply' | 'review'; weekMonday: string | null; status: 'raised' | 'skipped' };

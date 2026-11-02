@@ -56,8 +56,6 @@ import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { SplitScreen } from '../screens/profile/SplitScreen';
 import { CheckInSettingsScreen } from '../screens/profile/CheckInSettingsScreen';
 import { RestWhenShortScreen } from '../screens/profile/RestWhenShortScreen';
-import { CardioFirstScreen } from '../screens/profile/CardioFirstScreen';
-import { WARMUP_PREFS_COPY } from '../services/warmup-prefs-service';
 import { RestTimesScreen } from '../screens/profile/RestTimesScreen';
 import { TrainingDetailsScreen } from '../screens/profile/TrainingDetailsScreen';
 import { MemoryScreen } from '../screens/profile/MemoryScreen';
@@ -207,7 +205,6 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="CheckInSettings" component={CheckInSettingsScreen} options={{ title: 'Check-in' }} />
       <ProfileStack.Screen name="RestWhenShort" component={RestWhenShortScreen} options={{ title: REST_WHEN_SHORT_COPY.title }} />
       <ProfileStack.Screen name="RestTimes" component={RestTimesScreen} options={{ title: REST_TIMES_COPY.title }} />
-      <ProfileStack.Screen name="CardioFirst" component={CardioFirstScreen} options={{ title: WARMUP_PREFS_COPY.general }} />
       <ProfileStack.Screen name="Memory" component={MemoryScreen} options={{ title: 'Memory' }} />
       <ProfileStack.Screen name="Playbook" component={PlaybookScreen} options={{ title: 'Playbook' }} />
       <ProfileStack.Screen name="CoachConnection" component={CoachConnectionScreen} options={{ title: 'Coach connection' }} />

@@ -842,8 +842,6 @@ export function BuilderWorkoutScreen() {
           ) : null}
           {/* (Redesign D5) A saved workout's coach changes for next time, with Undo; the dot marks the changed number. */}
           {snap.from?.kind === 'routine' ? <NextTimeCard routineId={snap.from.id} onMarks={setMarked} /> : null}
-          {/* (Ben, 2 Nov) Cardio first: Start puts it before everything (counted in the minutes); skipped like any exercise once started. */}
-          {snap.cardioFirst != null ? <StatusLine icon="bicycle" tone="info" text={snap.cardioFirst} /> : null}
           {/* The table, shared with the one workout editor (Ben, 23 Oct): drops the builder takes only (the main lift, more than 4, a no-op spring back; review S5). */}
           <WorkoutTable
             rounds={v.rounds}
