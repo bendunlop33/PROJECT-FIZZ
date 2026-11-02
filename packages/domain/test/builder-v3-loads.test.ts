@@ -63,13 +63,11 @@ describe('builderLoad: source order (§9 Q12)', () => {
 });
 
 describe('setRowsFor: main lift (§3.1, §3.3)', () => {
-  it('bench 100 × 6 @ 8: warm-ups from the shared planner (WU4: bar × 5, 40 / 60 / 80 %), top set, back-offs 95 × 8 @ 8', () => {
+  it('bench 100 × 6 @ 8: warm-ups from the shared planner (Ben, 2 Nov: 60, 80, plates only going on), top set, back-offs 95 × 8 @ 8', () => {
     const r = setRowsFor(benchIn({ ruleTarget: { value: 100, reps: 6, rpe: 8 } }));
     expect(r.source).toBe('rule');
     expect(r.rows).toEqual([
-      { type: 'warmup', reps: 5, load: 20, rpe: null },
-      { type: 'warmup', reps: 5, load: 40, rpe: null },
-      { type: 'warmup', reps: 3, load: 60, rpe: null },
+      { type: 'warmup', reps: 5, load: 60, rpe: null },
       { type: 'warmup', reps: 2, load: 80, rpe: null },
       { type: 'top', reps: 6, load: 100, rpe: 8 },
       { type: 'backoff', reps: 8, load: 95, rpe: 8 },
@@ -84,17 +82,19 @@ describe('setRowsFor: main lift (§3.1, §3.3)', () => {
     const r = setRowsFor(benchIn({ equipment: coarseBar, coachTarget: { value: 102.5, reps: 6, rpe: 8 } }));
     // 102.5 isn't loadable here: down to 100, never up to 105.
     expect(r.rows.find((x) => x.type === 'top')?.load).toBe(100);
-    // WU4 from the 100 top: 40, 60, 80 (all loadable in 5 kg steps), after the bar.
-    expect(r.rows.filter((x) => x.type === 'warmup').map((x) => x.load)).toEqual([20, 40, 60, 80]);
+    // (Ben, 2 Nov) From the 100 top: 60, 80 (the bar + 20s, then a 10 a side).
+    expect(r.rows.filter((x) => x.type === 'warmup').map((x) => x.load)).toEqual([60, 80]);
+    // 100 is 25 + 10 + 5 a side here, so the back-offs are the 5s off (90: one 5 kg step below 95), not a swap.
+    expect(r.rows.filter((x) => x.type === 'backoff').map((x) => x.load)).toEqual([90, 90, 90]);
     const drop = addDropSet(slotOf(benchIn({ equipment: coarseBar, ruleTarget: { value: 100, reps: 6, rpe: 8 } })), loadInput({ equipment: coarseBar }));
     // 95 × 0.78 = 74.1 → 70 (5 kg steps).
     expect(drop.ok && drop.slot.rows[drop.slot.rows.length - 1]).toEqual({ type: 'drop', reps: 10, load: 70, rpe: 9 });
   });
 
-  it('a light top: steps that land on the same load merge (WU8 b); nothing below the bar; no bar step under 3 × bar', () => {
+  it('a light top (30 kg): the bar only, the one whole-5 kg load below it (Ben, 2 Nov); nothing below the bar', () => {
     const r = setRowsFor(benchIn({ ruleTarget: { value: 30, reps: 6, rpe: 8 } }));
-    // 30 < 3 × 20: no bar step. 40 % = 12 and 60 % = 18 → the bar (20), merged; 80 % = 24 → 22.5.
-    expect(r.rows.filter((x) => x.type === 'warmup').map((x) => [x.load, x.reps])).toEqual([[20, 5], [22.5, 2]]);
+    // (Ben, 2 Nov) Whole 5 kg plates only: the bar is the one simple load below 30 (was the bar, then 22.5).
+    expect(r.rows.filter((x) => x.type === 'warmup').map((x) => [x.load, x.reps])).toEqual([[20, 5]]);
   });
 
   it('a stack max of 100 never gives more than 100', () => {
@@ -169,7 +169,8 @@ describe('set edits (§2.4)', () => {
   const bench = () => slotOf(benchIn({ ruleTarget: { value: 100, reps: 6, rpe: 8 } }));
 
   it('one Top set: choosing Top set on a back-off turns the old one into a back-off; both recalculated', () => {
-    const r = changeSetType(bench(), 6, 'top', load);
+    // The second back-off (2 warm-ups, then the top: Ben, 2 Nov).
+    const r = changeSetType(bench(), 4, 'top', load);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const work = r.slot.rows.filter((x) => x.type !== 'warmup');
@@ -190,7 +191,7 @@ describe('set edits (§2.4)', () => {
   it('keeps at least one working set; a drop needs a set before it; max 3 drops', () => {
     const one = slotOf({ ...benchIn({ ruleTarget: { value: 100, reps: 6, rpe: 8 } }), workingSets: 1 });
     expect(changeSetType(one, one.rows.length - 1, 'warmup', load)).toEqual({ ok: false, reason: 'keep_one_set' });
-    expect(changeSetType(bench(), 4, 'drop', load)).toEqual({ ok: false, reason: 'drop_needs_set_before' });
+    expect(changeSetType(bench(), 2, 'drop', load)).toEqual({ ok: false, reason: 'drop_needs_set_before' });
     let s = bench();
     for (let i = 0; i < 3; i += 1) {
       const d = addDropSet(s, load);

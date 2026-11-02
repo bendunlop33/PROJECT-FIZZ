@@ -82,8 +82,9 @@ describe('D4: the coach lowers or raises today’s top', () => {
       if (!r.ok) throw new Error(r.reason);
       return r.slot;
     });
-    // From 102.5 at 110: × 100 / 110 = 93.2 → 92.5.
-    expect(backoffs(lower).every((b) => b === 92.5)).toBe(true);
+    // From 102.5 at 110: × 100 / 110 = 93.2 → 92.5. (Ben, 2 Nov, PC1) This bar has one pair of each small plate, so
+    // 100 → 92.5 would swap plates: 90, the outer 10s off, within 5 %.
+    expect(backoffs(lower).every((b) => b === 90)).toBe(true);
   });
 
   it('Ben, 23 Oct: the follow survives a force-close (codec), so the back-offs still follow the coach’s top after a relaunch', () => {
@@ -102,7 +103,9 @@ describe('D4: the coach lowers or raises today’s top', () => {
     const after = benchOf(o.workout);
     const t = after === undefined ? 0 : (topLoad(after) ?? 0);
     expect(t).toBe(102.5);
-    expect(backoffs(o.workout)).toEqual(backoffs(snap.workout));
+    // (Ben, 2 Nov, PC1) 95 after 102.5 swaps plates on this bar (one pair of each small plate): 92.5, the outer 5s off.
+    expect(backoffs(snap.workout)).toEqual([95, 95, 95]);
+    expect(backoffs(o.workout)).toEqual([92.5, 92.5, 92.5]);
     for (const b of backoffs(o.workout)) {
       expect(b ?? Infinity).toBeLessThanOrEqual(t * 0.96 + 1e-9);
       expect(b ?? 0).toBeGreaterThan(t * 0.9 - 2.5);

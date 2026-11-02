@@ -131,11 +131,13 @@ describe('B2: a top reps, RPE or type edit moves the back-offs with the top, nev
     ['top reps 6 → 8', { kind: 'reps', reps: 8 }, 95],
     ['top RPE 8 → 6', { kind: 'rpe', rpe: 6 }, 95],
   ];
-  // Below the new top as worked out from the anchor: Balanced 4 %, Strength 2 %, Muscle 8 %, rounded down.
+  // Below the new top as worked out from the anchor: Balanced 4 %, Strength 2 %, Muscle 8 %, rounded down. (Ben, 2 Nov)
+  // Then to a load the top reaches by taking plates off, within 5 %: this bar has one pair each of 2.5s and 1.25s, so
+  // 95 → 92.5 (Strength) and 90 → 82.5 (Muscle) would swap plates; 90 and 80 only take them off.
   const want: Record<MainFocus, Record<number, number>> = {
-    strength: { 90: 87.5, 95: 92.5 },
+    strength: { 90: 87.5, 95: 90 },
     balanced: { 90: 85, 95: 90 },
-    muscle: { 90: 82.5, 95: 85 },
+    muscle: { 90: 80, 95: 85 },
     fitness: { 90: 87.5, 95: 92.5 },
   };
   for (const focus of FOCI) {

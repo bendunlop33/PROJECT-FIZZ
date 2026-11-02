@@ -228,14 +228,19 @@ describe('review B1: back-offs derive from the reps the rule load is used at, ne
     const r = rowsOf(slotLoads([s1]).load);
     expect(r.source).toBe('rule');
     expect(topOf(r)?.load).toBe(102.5);
-    for (const b of backoffsOf(r)) expect(b.load).toBe(95);
+    // (Ben, 2 Nov, PC1) Worked out as 95 (not 87.5); this bar has one pair each of 5s, 2.5s and 1.25s, so 102.5 → 95
+    // would swap plates and 92.5 (the outer 5s off) is used. With two pairs of change plates, 95 comes off as is.
+    for (const b of backoffsOf(r)) expect(b.load).toBe(92.5);
+    const pairs = { ...bar, plates: bar.kind === 'barbell' ? bar.plates.map((p) => ({ ...p, count: Math.max(p.count, 4) })) : [] } as EquipmentInstance;
+    for (const b of backoffsOf(rowsOf({ ...slotLoads([s1]).load, equipment: pairs }))) expect(b.load).toBe(95);
   });
 
   it('F. the builder’s own format, top 100 × 6 @ 8 + 3 × 95 × 8 @ 8: back-offs stay at 95 (what he did), top 102.5', () => {
     const s1 = session(1002, 3, bar, [top(100, 6, 8), back(95, 8, 8), back(95, 8, 8), back(95, 8, 8)]);
     const r = rowsOf(slotLoads([s1]).load);
     expect(topOf(r)?.load).toBe(102.5);
-    for (const b of backoffsOf(r)) expect(b.load ?? 0).toBeGreaterThanOrEqual(95);
+    // (Ben, 2 Nov, PC1) 95 on this bar would swap plates after 102.5: the outer 5s off, 92.5 (as C).
+    for (const b of backoffsOf(r)) expect(b.load ?? 0).toBeGreaterThanOrEqual(92.5);
   });
 
   it('D. 3 × 100 × 5 @ 8 (hold): top 100, back-offs 95 (≥ the est. from history, 92.5)', () => {
