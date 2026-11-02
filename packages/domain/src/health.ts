@@ -19,7 +19,8 @@ import {
 
 import type { SessionAggregate } from '@fizz/schemas';
 
-import { addDays, localDateOf, localHourUtcMs, localMidnightUtcMs } from './calendar';
+import { activityDetail } from './activity';
+import { addDays, clockText, localDateOf, localHourUtcMs, localMidnightUtcMs } from './calendar';
 import { isInHistory } from './session/deletion';
 import { NBSP } from './display';
 import { deriveId } from './stable';
@@ -829,6 +830,8 @@ function closeEnough(mine: Activity['fields'], h: Activity['fields']): boolean {
  * - never one linked to an app workout (it shows on that workout instead), nor another source's recording of that
  *   same activity (a watch's twin of the linked Garmin workout: Ben, 31 Oct);
  * - two sources recording the same activity are one;
+ * - (Ben, 2 Nov) Ben's planned activity he linked by hand to a Health workout is one item with it, done, with Health's
+ *   recorded time and distance (never the planned ones), whatever else ran that day;
  * - Ben's planned activity and the one Health run (same kind, same day) are one item, done, with Health's time
  *   and distance and his effort word; his done one likewise when the numbers agree (within 15 %, or he gave
  *   none). His record is unchanged underneath (the item keeps his ID; `health` says what was paired). Anything
@@ -852,9 +855,26 @@ export function activitiesWithHealth(input: {
   const twins = linkedTwins(notOwn, input.links);
   const twinOfLinked = (s: HealthWorkoutSample) => twins.has(s.uuid) || linkedSamples.some((l) => l.sourceBundleId !== s.sourceBundleId && familyOf(l.activityType) === familyOf(s.activityType) && overlapShare(l, s) >= AUTO_LINK_MIN_OVERLAP);
   const fresh = notOwn.filter((s) => !linked.has(s.uuid) && !twinOfLinked(s));
-  const { kept } = dedupeHealthSources(fresh);
-  const health = kept.map((s) => healthActivityOf(s, input.ownerId)).filter((a): a is Activity => a !== null);
   const mine = input.own.filter((a) => a.deletedAtUtc === null && a.source !== 'health').map((a) => ({ a, out: a }));
+  // (Ben, 2 Nov) Ben's own `Link` first: his activity takes that Health workout (same kind, same local day in his
+  // activity's zone), whatever else ran that day; the workout and other sources' recordings of it show nowhere else.
+  // A link whose workout is gone (deleted in Health, outside the read) or no longer fits is left aside: the automatic
+  // match below decides as if there were none.
+  const byHand = new Map<string, { a: Activity; out: Activity }>();
+  for (const m of mine) if (m.a.healthLink !== undefined && !byHand.has(m.a.healthLink.healthUuid)) byHand.set(m.a.healthLink.healthUuid, m);
+  const handSamples: HealthWorkoutSample[] = [];
+  for (const s of fresh) {
+    const m = byHand.get(s.uuid);
+    if (m === undefined || m.out !== m.a || localDateOf(toMs(s.startUtc), m.a.tz) !== m.a.fields.date) continue;
+    const h = healthActivityOf(s, input.ownerId);
+    if (h?.health === undefined || h.fields.kind !== m.a.fields.kind) continue;
+    // As recorded (rule 6): Health's time and distance, never the planned numbers in their place.
+    m.out = { ...m.a, fields: { ...m.a.fields, status: 'done', durationS: h.fields.durationS, distanceM: h.fields.distanceM }, health: h.health };
+    handSamples.push(s);
+  }
+  const twinOfHand = (s: HealthWorkoutSample) => handSamples.some((l) => l.uuid === s.uuid || (l.sourceBundleId !== s.sourceBundleId && familyOf(l.activityType) === familyOf(s.activityType) && overlapShare(l, s) >= AUTO_LINK_MIN_OVERLAP));
+  const { kept } = dedupeHealthSources(fresh.filter((s) => !twinOfHand(s)));
+  const health = kept.map((s) => healthActivityOf(s, input.ownerId)).filter((a): a is Activity => a !== null);
   const shown: Activity[] = [];
   for (const h of health) {
     const sameDay = (m: { a: Activity; out: Activity }) => m.out === m.a && m.a.fields.kind === h.fields.kind && m.a.fields.date === h.fields.date;
@@ -871,6 +891,42 @@ export function activitiesWithHealth(input: {
     };
   }
   return [...mine.map((m) => m.out), ...shown].sort((x, y) => (x.fields.date < y.fields.date ? -1 : x.fields.date > y.fields.date ? 1 : x.createdAtUtc < y.createdAtUtc ? -1 : 1));
+}
+
+/** (Ben, 2 Nov) One Health workout a planned activity can be linked to: `Garmin · 07:14 · 5.2 km · 28 min`. */
+export interface PlannedLinkChoice {
+  healthUuid: string;
+  /** Source, start (in the planned activity's zone) and what it recorded. */
+  label: string;
+  startUtc: string;
+}
+
+/**
+ * (Ben, 2 Nov) What the day sheet offers on one of Ben's activities: `linked` (by his own Link: `Unlink`), `matched`
+ * (done: the automatic match, or he logged it done; nothing to offer), `open` (planned, nothing paired: `Link` with
+ * the day's Health workouts of its kind; none: nothing), or `none` (not his, or deleted).
+ */
+export type PlannedLinkState =
+  | { state: 'linked'; activityId: string; version: number; healthUuid: string }
+  | { state: 'matched' }
+  | { state: 'open'; activityId: string; version: number; choices: PlannedLinkChoice[] }
+  | { state: 'none' };
+
+/**
+ * One activity of Ben's (`own`, as stored) against every list's view of the days around it (`shown`,
+ * `activitiesWithHealth`'s output): Health workouts of the same kind that started on its local date in its own zone
+ * and show on their own (not matched, linked or paired to anything), earliest first. Never another day's. Pure.
+ */
+export function plannedLinkChoices(own: Activity, shown: readonly Activity[]): PlannedLinkState {
+  if (own.source === 'health' || own.deletedAtUtc !== null) return { state: 'none' };
+  const view = shown.find((x) => x.id === own.id && x.source !== 'health');
+  if (view?.health !== undefined && own.healthLink?.healthUuid === view.health.uuid.toLowerCase()) return { state: 'linked', activityId: own.id, version: own.version, healthUuid: own.healthLink.healthUuid };
+  if (own.fields.status !== 'planned' || view?.fields.status === 'done') return { state: 'matched' };
+  const choices = shown
+    .filter((x): x is Activity & { health: HealthActivityProvenance } => x.source === 'health' && x.health !== undefined && x.fields.kind === own.fields.kind && localDateOf(toMs(x.health.startUtc), own.tz) === own.fields.date)
+    .sort((x, y) => toMs(x.health.startUtc) - toMs(y.health.startUtc))
+    .map((x) => ({ healthUuid: x.health.uuid.toLowerCase(), label: [x.health.sourceName, clockText(toMs(x.health.startUtc), own.tz), activityDetail(x.fields)].filter((t) => t !== '').join(' · '), startUtc: x.health.startUtc }));
+  return { state: 'open', activityId: own.id, version: own.version, choices };
 }
 
 /** `Garmin · Strength · 54 min · avg 128 bpm`: a linked or Health activity's recorded facts, labelled with its source. */
