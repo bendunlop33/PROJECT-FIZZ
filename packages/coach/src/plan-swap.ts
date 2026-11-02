@@ -71,6 +71,8 @@ export interface PlanAddRequest {
   also?: PlanAddPart[];
   /** (Ben, 2 Nov) The part of Ben's ask this add leaves out (the card reads `Partial`). */
   notIncluded?: string | null;
+  /** (Ben, 2 Nov) Ben called this cardio a warm-up (`warmupAskedIn`): the row is marked `Warm-up`. Absent: not. */
+  warmup?: boolean;
 }
 
 /** (Ben, 2 Nov) One more add in a `propose_plan_add` proposal (`also`). */
@@ -84,6 +86,7 @@ export interface PlanAddPart {
   before?: string | null;
   minutes?: number | null;
   distanceM?: number | null;
+  warmup?: boolean;
 }
 
 export interface PlanAddDeps {
@@ -102,11 +105,23 @@ export function namedLoadIn(load: number | null, benWords: string | null): numbe
   return said.some((n) => Math.abs(n - load) < 1e-9) ? load : null;
 }
 
+/**
+ * (Ben, 2 Nov: "yes if i ask for it") Ben's words this turn call the added cardio a warm-up ("as a warm-up", "to warm
+ * up", "warmup"). The coach's `warmup` flag is kept only then; "add a 10 min row at the end" stays a normal exercise.
+ * Any cardio or timed exercise can be one (the app checks that, not the name). Pure.
+ */
+export function warmupAskedIn(benWords: string | null): boolean {
+  if (benWords === null) return false;
+  return /\bwarm(?:[\s-]*ups?|ing up|s? up)\b/i.test(benWords.replace(/[‐‑–—]/g, '-'));
+}
+
 export function createPlanAddExecutor(deps: PlanAddDeps): CoachExecutors {
   const propose: ToolExecutor = async (call, ctx): Promise<ToolResult> => {
     if (call.tool !== 'propose_plan_add') throw new TypeError(call.tool);
     const a = call.args;
     const reps = a.reps === null ? null : { min: Math.min(a.reps.min, a.reps.max), max: Math.max(a.reps.min, a.reps.max) };
+    // (Ben, 2 Nov) A warm-up mark only when his words this turn call it one; the coach's flag alone is not enough.
+    const warmupAsked = warmupAskedIn(ctx.benWords);
     const req: PlanAddRequest = {
       add: a.add.trim(),
       days: a.days.map((d) => d.trim()),
@@ -118,6 +133,7 @@ export function createPlanAddExecutor(deps: PlanAddDeps): CoachExecutors {
       ...(a.before == null ? {} : { before: a.before.trim() }),
       ...(a.minutes == null || a.minutes <= 0 ? {} : { minutes: a.minutes }),
       ...(a.distanceM == null || a.distanceM <= 0 ? {} : { distanceM: a.distanceM }),
+      ...(a.warmup === true && warmupAsked ? { warmup: true } : {}),
       ...(a.also == null || a.also.length === 0
         ? {}
         : {
@@ -131,6 +147,7 @@ export function createPlanAddExecutor(deps: PlanAddDeps): CoachExecutors {
               ...(x.before === null ? {} : { before: x.before.trim() }),
               ...(x.minutes === null || x.minutes <= 0 ? {} : { minutes: x.minutes }),
               ...(x.distanceM === null || x.distanceM <= 0 ? {} : { distanceM: x.distanceM }),
+              ...(x.warmup === true && warmupAsked ? { warmup: true } : {}),
             })),
           }),
       ...(a.notIncluded == null || a.notIncluded.trim() === '' ? {} : { notIncluded: a.notIncluded.trim() }),
@@ -196,7 +213,8 @@ export const PLAN_DAY_EDIT_LINE =
 /** Sent when `propose_plan_add` is offered (a plan in use). */
 export const PLAN_ADD_LINE =
   'To add an exercise to days of Ben’s plan from now on ("add curls to my pull days", "fix the plan too" after you found a gap), call propose_plan_add: the days by their names in YOUR DATA plan.inUse.days; position first, last, before (with `before`) or after (with `after`; null: at the end); your sets and reps, or minutes (and distanceM) for cardio and timed work. It is one proposal for all those days, which Ben applies with Undo: never say it changed.\n' +
-  'Cardio first on kinds of day ("bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") is propose_plan_add too, in one call: you decide which plan days are leg days from their exercises in plan.inUse.days and name them; the first add (the bike, position first, minutes 8, workingSets 1, reps null) goes in those days, and `also` carries the other add (the rower, first, 4 min) into every other day. Never update_warmup_prefs for this, and never ask Ben which days are leg days.';
+  'Cardio first on kinds of day ("bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") is propose_plan_add too, in one call: you decide which plan days are leg days from their exercises in plan.inUse.days and name them; the first add (the bike, position first, minutes 8, workingSets 1, reps null) goes in those days, and `also` carries the other add (the rower, first, 4 min) into every other day. Never update_warmup_prefs for this, and never ask Ben which days are leg days.\n' +
+  'warmup true on an add only when Ben calls that cardio a warm-up ("as a warm-up"); any cardio or timed exercise can be one (bike, rower, treadmill, ski erg, cross trainer, stair climber, his own). Otherwise null.';
 
 /**
  * (Ben, 2 Nov: the coach offered incomplete plan adds again and again before saying it couldn't encode his rule) Before
