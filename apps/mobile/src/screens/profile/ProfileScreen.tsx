@@ -186,17 +186,6 @@ export function ProfileScreen() {
             }
           />
         ) : null}
-        {/* (Ben, 2 Nov) Cardio first on leg days / other days (or every day): first in every workout he starts. */}
-        {data.state === 'ready' && data.value.warmups !== null ? (
-          <Row
-            title={WARMUP_PREFS_COPY.general}
-            icon="bicycle"
-            subtitle={data.value.warmups.generalLine}
-            onPress={() => {
-              navigation.navigate('CardioFirst');
-            }}
-          />
-        ) : null}
         {/* (Ben, 2 Nov) Exercise likes and dislikes: the plan in use's Any preferences (Plan setup and the coach edit the same). No builder plan in use: the row says so and doesn't open. */}
         <Row
           title={EXERCISE_PREF_COPY.title}

@@ -21,7 +21,7 @@ import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArg
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
 import { PLAN_BUILDER_LIMITS, PlanBuilderAnswersSchema, PlanPrefAnswerSchema } from './plan-builder';
-import { FitRestLevelSchema, GeneralWarmupDaysSchema, RestDefaultKeySchema, RestSettingsSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
+import { FitRestLevelSchema, RestDefaultKeySchema, RestSettingsSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
 import { ActivityEffortSchema, ActivityFieldsShapeSchema, ActivityKindSchema, ActivityStatusSchema, WeekBasisSchema, WeekMergeSchema, WeekRowSchema, WeekSkipSchema, type Activity } from './activity';
 import { LocalDateSchema } from './import';
 import { BuilderProposalSchema } from './builder-coach';
@@ -369,10 +369,27 @@ export const ProposePlanAddArgsSchema = z.strictObject({
   minutes: z.number().min(0).max(240).nullable().optional(),
   distanceM: z.int().min(0).max(100_000).nullable().optional(),
   /**
-   * (Ben, 2 Nov) Days chosen by kind instead of (or as well as) by name: `legs` every leg day of the plan, `other` every
-   * other day, `all` every day. Leg days are decided by code from each day's exercises. Null: only `days`.
+   * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") More adds in the same
+   * proposal, each into its own days (a day takes one add per proposal): one card, one Apply, one Undo. The coach picks
+   * the days by name (it reads each day's exercises); code never decides which days are leg days. Null: none.
    */
-  dayType: z.enum(['legs', 'other', 'all']).nullable().optional(),
+  also: z
+    .array(
+      z.strictObject({
+        add: z.string().min(1).max(80),
+        days: z.array(z.string().min(1).max(120)).min(1).max(7),
+        position: z.enum(['first', 'last', 'after', 'before']).nullable(),
+        before: z.string().min(1).max(80).nullable(),
+        after: z.string().min(1).max(80).nullable(),
+        workingSets: z.int().min(1).max(10),
+        reps: z.strictObject({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable(),
+        minutes: z.number().min(0).max(240).nullable(),
+        distanceM: z.int().min(0).max(100_000).nullable(),
+      }),
+    )
+    .max(3)
+    .nullable()
+    .optional(),
   /**
    * (Ben, 2 Nov) The part of Ben's ask this proposal can't express, in a few words ("only every other week"); null when
    * it does all of it. Shown on the card as partial (coach honesty).
@@ -509,17 +526,6 @@ export const UpdateWarmupPrefsArgsSchema = z.strictObject({
   exercises: z
     .array(z.strictObject({ exercise: z.string().min(1).max(120), warmups: z.enum(['off', 'normal', 'default']) }))
     .max(20),
-  /**
-   * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") General (cardio)
-   * warm-up rules, first in every workout started: per kind of day (`legs`, `other`, `all`), the cardio exercise (a name
-   * or catalogueId) and minutes; minutes 0 turns that day's rule off. Days not named keep their rule; `all` replaces the
-   * `legs` and `other` rules not named with it. Null: unchanged. Absent on calls made before it.
-   */
-  general: z
-    .array(z.strictObject({ days: GeneralWarmupDaysSchema, exercise: z.string().min(1).max(120), minutes: z.int().min(0).max(120) }))
-    .max(3)
-    .nullable()
-    .optional(),
   ...askClaim,
 });
 export type UpdateWarmupPrefsArgs = z.infer<typeof UpdateWarmupPrefsArgsSchema>;
@@ -1494,6 +1500,21 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
           /** (Ben, 1 Nov) `edit` (`day_edit`): one write of the whole day's change (`dayEdit`); `rowId` is its first row. */
           /** (Ben, 2 Nov) `add`: `first` before every row, or `beforeRowId` the row it goes straight before. */
           edits: z.array(z.object({ kind: z.enum(['swap', 'remove', 'add', 'edit']), rowId: IdSchema, afterRowId: IdSchema.nullable().optional(), afterName: z.string().max(120).nullable().optional(), first: z.boolean().optional(), beforeRowId: IdSchema.optional() })).min(1).max(6),
+          /**
+           * (Ben, 2 Nov) A proposal with more than one add (`propose_plan_add`'s `also`): what this day gets, in place of
+           * the top-level `addId`/`sets`/`reps`/`load`/`durationS`/`distanceM`/`beforeName`. Absent: the top-level add.
+           */
+          add: z
+            .object({
+              id: z.string().min(1).max(64),
+              name: z.string().min(1).max(120),
+              sets: z.int().min(1).max(10).optional(),
+              reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable().optional(),
+              durationS: z.int().min(1).max(14_400).optional(),
+              distanceM: z.int().min(1).max(100_000).optional(),
+              beforeName: z.string().min(1).max(120).optional(),
+            })
+            .optional(),
           /** The day's exercises before and after (names, in order): the card's before/after. */
           before: z.array(z.string().max(120)).max(30).optional(),
           after: z.array(z.string().max(120)).max(30).optional(),

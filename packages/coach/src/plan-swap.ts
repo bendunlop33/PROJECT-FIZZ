@@ -64,10 +64,26 @@ export interface PlanAddRequest {
   /** (Ben, 2 Nov) A cardio or timed add's minutes per set and a distance in metres (absent: the app's default). */
   minutes?: number | null;
   distanceM?: number | null;
-  /** (Ben, 2 Nov) Days by kind as well as by name: every leg day, every other day, or every day of the plan. */
-  dayType?: 'legs' | 'other' | 'all' | null;
+  /**
+   * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") More adds in the same
+   * proposal, each into its own named days (no load: only the first add takes a weight Ben named).
+   */
+  also?: PlanAddPart[];
   /** (Ben, 2 Nov) The part of Ben's ask this add leaves out (the card reads `Partial`). */
   notIncluded?: string | null;
+}
+
+/** (Ben, 2 Nov) One more add in a `propose_plan_add` proposal (`also`). */
+export interface PlanAddPart {
+  add: string;
+  days: string[];
+  after: string | null;
+  sets: number;
+  reps: { min: number; max: number } | null;
+  position?: 'first' | 'last' | 'after' | 'before';
+  before?: string | null;
+  minutes?: number | null;
+  distanceM?: number | null;
 }
 
 export interface PlanAddDeps {
@@ -102,7 +118,21 @@ export function createPlanAddExecutor(deps: PlanAddDeps): CoachExecutors {
       ...(a.before == null ? {} : { before: a.before.trim() }),
       ...(a.minutes == null || a.minutes <= 0 ? {} : { minutes: a.minutes }),
       ...(a.distanceM == null || a.distanceM <= 0 ? {} : { distanceM: a.distanceM }),
-      ...(a.dayType == null ? {} : { dayType: a.dayType }),
+      ...(a.also == null || a.also.length === 0
+        ? {}
+        : {
+            also: a.also.map((x): PlanAddPart => ({
+              add: x.add.trim(),
+              days: x.days.map((d) => d.trim()),
+              after: x.after === null ? null : x.after.trim(),
+              sets: x.workingSets,
+              reps: x.reps === null ? null : { min: Math.min(x.reps.min, x.reps.max), max: Math.max(x.reps.min, x.reps.max) },
+              ...(x.position === null ? {} : { position: x.position }),
+              ...(x.before === null ? {} : { before: x.before.trim() }),
+              ...(x.minutes === null || x.minutes <= 0 ? {} : { minutes: x.minutes }),
+              ...(x.distanceM === null || x.distanceM <= 0 ? {} : { distanceM: x.distanceM }),
+            })),
+          }),
       ...(a.notIncluded == null || a.notIncluded.trim() === '' ? {} : { notIncluded: a.notIncluded.trim() }),
     };
     const r = await deps.prepare(req).catch((): PlanSwapPrepared => ({ kind: 'refused', line: 'Not proposed: the plan couldn’t be read just now.' }));
@@ -165,7 +195,8 @@ export const PLAN_DAY_EDIT_LINE =
 
 /** Sent when `propose_plan_add` is offered (a plan in use). */
 export const PLAN_ADD_LINE =
-  'To add an exercise to days of Ben’s plan from now on ("add curls to my pull days", "fix the plan too" after you found a gap), call propose_plan_add: the days by their names in YOUR DATA plan.inUse.days, or dayType (legs, other, all) for every leg day, every other day or every day; position first, last, before (with `before`) or after (with `after`; null: at the end); your sets and reps, or minutes (and distanceM) for cardio and timed work. It is one proposal for all those days, which Ben applies with Undo: never say it changed. A standing cardio-first warm-up ("bike 8 min first on leg days") is update_warmup_prefs, not a plan add.';
+  'To add an exercise to days of Ben’s plan from now on ("add curls to my pull days", "fix the plan too" after you found a gap), call propose_plan_add: the days by their names in YOUR DATA plan.inUse.days; position first, last, before (with `before`) or after (with `after`; null: at the end); your sets and reps, or minutes (and distanceM) for cardio and timed work. It is one proposal for all those days, which Ben applies with Undo: never say it changed.\n' +
+  'Cardio first on kinds of day ("bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") is propose_plan_add too, in one call: you decide which plan days are leg days from their exercises in plan.inUse.days and name them; the first add (the bike, position first, minutes 8, workingSets 1, reps null) goes in those days, and `also` carries the other add (the rower, first, 4 min) into every other day. Never update_warmup_prefs for this, and never ask Ben which days are leg days.';
 
 /**
  * (Ben, 2 Nov: the coach offered incomplete plan adds again and again before saying it couldn't encode his rule) Before

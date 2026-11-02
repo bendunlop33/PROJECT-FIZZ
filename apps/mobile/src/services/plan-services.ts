@@ -1114,6 +1114,13 @@ export function createPlanServices(deps: PlanServicesDeps) {
         const row = current.exercises.find((x) => x.id === e.rowId);
         if (e.kind === 'add' ? row !== undefined : row?.exerciseId !== e.fromExerciseId) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
         const of = await exerciseOf();
+        // (Ben, 2 Nov) A catalogue exercise going in (the coach's bike first) is saved as Ben's row first, as `Add
+        // exercise` does, so every Start from the day finds it (a row Start can't read is left out).
+        if (e.toExerciseId !== null && (await repos.exercises.get(e.toExerciseId).catch(() => null)) === null) {
+          const row = deps.catalogueExercises?.().find((x) => x.id === e.toExerciseId) ?? null;
+          if (row === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+          await repos.exercises.save(row, null);
+        }
         const rowId = e.kind === 'add' ? deriveId(`plan-day-add:${req.opId}`) : e.rowId;
         const exercises = oneExerciseChange(current.exercises, { ...e, rowId }, (id) => of(id)?.measurement ?? 'reps').map((x) => (x.id === rowId ? { ...x, structureChangedAtUtc: deps.now().utc } : x));
         if (JSON.stringify(exercises) === JSON.stringify([...current.exercises].sort((a, b) => a.order - b.order))) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };

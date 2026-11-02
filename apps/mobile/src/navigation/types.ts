@@ -30,8 +30,6 @@ export type ProfileStackParams = {
   RestWhenShort: undefined;
   /** Profile › Training › Rest times (Ben, 28 Oct): Ben's default rests. */
   RestTimes: undefined;
-  /** Profile › Training › Cardio first (Ben, 2 Nov): his general (cardio) warm-up by kind of day. */
-  CardioFirst: undefined;
   /** Profile › Training › Likes & dislikes (Ben, 2 Nov): the plan in use's Any preferences, Liked and Not preferred. */
   ExercisePrefs: undefined;
   /** Profile → Coach → Memory (coach-memory §2.1). */

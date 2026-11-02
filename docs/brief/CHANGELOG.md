@@ -1223,6 +1223,18 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Records:** ADR 0039 amendment (2 Nov). **No migration:** the setting is an optional field in the training profile's JSON; `update_warmup_prefs` records already store the profile's `warmups` as JSON; plan-add fields are optional JSON on the existing record.
 - **Open:** not run on Ben's iPhone (the `Cardio first` screen isn't render-tested). WU12's "skip after cardio or a run in the last 30 min" isn't applied to his setting. The plan builder's own day estimate (`pbDayWarmups`) still uses WU12's 3-minute suggestion, not his minutes, when it sizes a new plan's days.
 
+## 2026-11-02: Cardio first is a plan change the coach proposes, not a setting (Ben, 2 Nov, correction)
+
+- **Ben's words:** "no i am talking about the ability to add that with the coach for the plan. the coach should know when there are leg days. it just needs the ability to add it" (about "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days"). Ben: "yes it is a warm up".
+- **Replaces** the `Cardio first` setting in the entry above. Removed: Profile › Training › `Cardio first` and its screen, the cardio Start added to every workout, the code's leg-day rule, Your workout's `Exercise bike · 8 min` line, and `update_warmup_prefs`' cardio rules. Kept: a profile saved with those rules still opens (they are ignored); cardio gets no muscle-set credit; plan adds at a place with minutes.
+- **Coach:** his message gives one plan card. The coach picks the leg days from the plan's days and their exercises (e.g. Legs A, Legs B) and proposes the bike 8 min first on those and the rower 4 min first on the others (Push A, Pull A, Upper B), in one `propose_plan_add` (its new `also` carries the second add). Card: `+ Exercise bike · 8 min, Rowing machine · 4 min`, then `Legs A: Exercise bike · 8 min, first` per day; Apply, Undo. Versioned per day: a day changed since refuses it (`Out of date. Ask again.`) and nothing stays written; a double tap or a restart writes once.
+- **Workouts:** the days hold the cardio as their first exercise, so every workout from them starts with it (one timed bout, no load or reps), logged with the cardio timer and skipped like any exercise. Never a PB, volume or muscle sets.
+- **Warm-up set type:** not used for it. A plan day's warm-up-only exercise is dropped at Start (accessories lose their warm-up sets, saves skip warm-up-only rows), so a warm-up-typed bike would disappear. It stays a timed working bout, which already earns no PB, volume or muscle sets and sits outside the 10-minute warm-up allowance. **Ben to decide** if he wants it labelled `Warm-up` in the workout (a row-level mark; more work).
+- **Time:** counted like any exercise. A time cut trims and drops accessories before it; only with nothing else left does it go.
+- **Fix:** a catalogue exercise added to a plan day by a plan proposal is saved as Ben's exercise on Apply; before, Start left it out.
+- **Records:** ADR 0039 amendment (2 Nov, correction). **No migration.**
+- **Open:** not run on Ben's iPhone. Leg-day choice is the coach's judgement (the model), so a real model may name different days; the card shows each day before Apply.
+
 ## 2026-11-02: Choice chips have no tick; Plan setup's chips and tables fit on one line (Ben, 2 Nov)
 
 - **Ben's words** (screenshot of Plan setup › Gym goals): "This page formatting is broken. I don't think we need ticks either." Four chips across a 390 pt phone left about 60 pt per label, so `Strength`, `Balanced` and `4 weeks` wrapped mid-word, the ✦ stacked above the label and the chips had uneven heights; `Week 6 (est.)` wrapped and clipped.

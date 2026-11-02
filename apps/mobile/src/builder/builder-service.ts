@@ -32,7 +32,6 @@ import {
   defaultRestS,
   deriveId,
   draftAsRoutine,
-  builderGeneralWarmup,
   estimateBuilderMinutes,
   estimateBuilderSeconds,
   fromDraftPlan,
@@ -318,11 +317,6 @@ export interface BuilderSnapshot {
   minutes: number;
   /** Even at the minimum the estimate is over the length (`⚠ Over 20 min`). */
   over: boolean;
-  /**
-   * (Ben, 2 Nov) The cardio Start will put first (Profile › Training › Cardio first), counted in `minutes`:
-   * `Exercise bike · 8 min`. Null: none for this workout.
-   */
-  cardioFirst?: string | null;
   /**
    * (Ben, 27 Oct) The length at or above which Time cuts nothing (the live fit's, else the set-up's before the first
    * Time change): Time's `−` steps below it (`liveTime`). Absent: the set-up's length.
@@ -928,8 +922,6 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const setup = pageSetup(d);
     const workout = fromDraftPlan(v.plan, stored?.restLevel ?? 'normal');
     const minutes = estimateBuilderMinutes(workout, env.ctx);
-    // (Ben, 2 Nov) Cardio first: what Start will put first, already in `minutes`.
-    const first = builderGeneralWarmup(workout, env.ctx);
     const variation = setup.variationId === null ? null : ((await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId)).find((x) => x.id === setup.variationId) ?? null);
     const facts: Record<string, ExerciseFacts> = {};
     for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, counts: builderFocusCounts(env.focusOf(s.exerciseId)), compound: env.info(s.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(s.exerciseId), notHere: env.gymId !== null && !env.doable(s.exerciseId), hasHistory: env.hasHistory(s.exerciseId) };
@@ -982,7 +974,6 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       gymChanged,
       // (Ben, 2 Nov) Time's own taps land within `nearMin` of the length: only past that is it over.
       over: minutes > setup.minutes + TIME_STEP_RULES.nearMin,
-      cardioFirst: first === null ? null : `${env.nameOf(first.exerciseId)} · ${String(first.minutes)} min`,
       ...(stored === null ? {} : { fullMinutes: fit?.fromMinutes ?? setupMinutesOf(stored) }),
       name: d.name,
       planDay,

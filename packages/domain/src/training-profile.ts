@@ -21,8 +21,6 @@ import {
   WarmupExerciseSettingSchema,
   type WarmupPrefs,
   type WeightEntry,
-  type GeneralWarmupRule,
-  GeneralWarmupRulesSchema,
 } from '@fizz/schemas';
 import { withLiftTarget, withoutLiftTarget } from './lift-targets';
 import { CHECK_IN_WEEKDAYS } from './checkin';
@@ -33,12 +31,9 @@ import { convertMass, KG_PER_LB } from './units';
 export interface ResolvedWarmupPrefs {
   simpleLoads: boolean;
   perExercise: Readonly<Record<string, WarmupExerciseSetting>>;
-  /** (Ben, 2 Nov) His general (cardio) warm-up rules (`warmups.general`); absent: none. */
-  general?: readonly GeneralWarmupRule[];
 }
 export function warmupPrefsOf(profile: { warmups?: WarmupPrefs | undefined } | null | undefined): ResolvedWarmupPrefs {
-  const general = profile?.warmups?.general;
-  return { simpleLoads: profile?.warmups?.simpleLoads ?? true, perExercise: profile?.warmups?.perExercise ?? {}, ...(general === undefined || general.length === 0 ? {} : { general }) };
+  return { simpleLoads: profile?.warmups?.simpleLoads ?? true, perExercise: profile?.warmups?.perExercise ?? {} };
 }
 /** Ben's setting for one exercise's warm-ups, or null (the planner's default). */
 export function warmupSettingOf(prefs: Pick<ResolvedWarmupPrefs, 'perExercise'> | null | undefined, exerciseId: string): WarmupExerciseSetting | null {
@@ -313,11 +308,8 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
         ...changes.flatMap(([id, v]) => (v === null ? [] : [[id, v] as const])),
       ]);
       if (Object.keys(per).length > TRAINING_LIMITS.warmupExercisesMax) return null;
-      // (Ben, 2 Nov) General warm-up rules: replaced as a whole when named (null or []: none), else kept.
-      const general = c.general === undefined ? prev.general : c.general === null || c.general.length === 0 ? undefined : [...c.general];
-      if (general !== undefined && !GeneralWarmupRulesSchema.safeParse(general).success) return null;
       const next = { ...p };
-      const prefs: WarmupPrefs = { ...(simpleLoads ? {} : { simpleLoads: false }), ...(Object.keys(per).length === 0 ? {} : { perExercise: per }), ...(general === undefined ? {} : { general }) };
+      const prefs: WarmupPrefs = { ...(simpleLoads ? {} : { simpleLoads: false }), ...(Object.keys(per).length === 0 ? {} : { perExercise: per }) };
       if (Object.keys(prefs).length === 0) delete next.warmups;
       else next.warmups = prefs;
       return next;

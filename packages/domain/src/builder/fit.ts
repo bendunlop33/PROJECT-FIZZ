@@ -1,5 +1,5 @@
 import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
-import { BUILDER_TIME, betweenSecondsOf, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds, generalWarmupSecondsFor } from './estimate';
+import { BUILDER_TIME, betweenSecondsOf, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { DEFAULT_FIT_REST_LEVEL } from './rest';
 import { makeSlot } from './slot';
 import { autoPickClash, BUILDER_SUB_ROLES, subRoleOf } from './similar';
@@ -336,6 +336,19 @@ export function subRoleGuards(w: BuilderWorkout, info: BuilderInfoLookup, mainGr
   return out;
 }
 
+/**
+ * (Ben, 2 Nov: "bike for 8 minutes first on leg days … yes it is a warm up") The cardio warm-up a plan day starts with:
+ * the workout's first slot when it is cardio (`ctx.extra` says so; without extras, a slot with no builder group whose
+ * working rows are all timed). The least-lost fit keeps it whole until nothing else can go. Null: none.
+ */
+export function cardioFirstKey(w: BuilderWorkout, ctx: Pick<BuilderContext, 'info' | 'extra'>): string | null {
+  const head = w.blocks.flatMap((b) => b.slots)[0];
+  if (head === undefined || head.main) return null;
+  const work = head.rows.filter((r) => r.type !== 'warmup');
+  const cardio = ctx.extra !== undefined ? ctx.extra(head.exerciseId)?.measurement === 'cardio' : ctx.info(head.exerciseId) === null && work.length > 0 && work.every((r) => r.durationS !== undefined);
+  return cardio ? head.key : null;
+}
+
 /** How the fit treats a guarded slot: `full` keeps every working set, `kept` keeps it at 2 or more. */
 type GuardMode = 'full' | 'kept';
 
@@ -346,11 +359,15 @@ type GuardMode = 'full' | 'kept';
  */
 function guardedFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, weigh: FitWeigh, mainGroup: BuilderGroupName | null, near?: LeastLostNear): ReturnType<typeof leastLostFit> {
   const guards = subRoleGuards(w, ctx.info, mainGroup);
+  // (Ben, 2 Nov: "yes it is a warm up") The cardio Ben put first is kept whole at every level: accessories go first.
+  const cardio = cardioFirstKey(w, ctx);
+  const withCardio = (m: Map<string, GuardMode>): Map<string, GuardMode> => (cardio === null ? m : new Map([...m, [cardio, 'full']]));
   const levels: Map<string, GuardMode>[] = [];
   if (guards.length > 0) {
-    levels.push(new Map(guards.map((g) => [g.slotKey, 'full'])));
-    for (let n = guards.length; n >= 1; n -= 1) levels.push(new Map(guards.slice(0, n).map((g) => [g.slotKey, 'kept'])));
+    levels.push(withCardio(new Map(guards.map((g) => [g.slotKey, 'full']))));
+    for (let n = guards.length; n >= 1; n -= 1) levels.push(withCardio(new Map(guards.slice(0, n).map((g) => [g.slotKey, 'kept']))));
   }
+  if (cardio !== null) levels.push(withCardio(new Map()));
   // (Ben, 2 Nov) Near the length: within each level; sub-role coverage still comes first (never given up to land nearer).
   for (const guard of levels) {
     const r = leastLostFit(w, ctx, limitS, weigh, guard, true, near);
@@ -482,8 +499,7 @@ const nearWindow = (): LeastLostNear => ({ belowS: TIME_STEP_RULES.nearMin * 60 
 function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, weigh: FitWeigh, guard: ReadonlyMap<string, GuardMode>, mayLeaveOut = true, near?: LeastLostNear): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
   const choices = w.blocks.map((b) => blockChoices(b, w, ctx, weigh, guard, mayLeaveOut));
   // The blocks' seconds (with a changeover each) against the limit: setup is once, and the first block has no changeover.
-  // (Ben, 2 Nov) His general warm-up's minutes come off the room first: the fit makes room for it, never cuts it.
-  const room = limitS - BUILDER_TIME.setupS + betweenSecondsOf(ctx) - generalWarmupSecondsFor(w, ctx);
+  const room = limitS - BUILDER_TIME.setupS + betweenSecondsOf(ctx);
   // (Ben, 2 Nov) Near: states up to the window past the length are kept too (the nearest may be just past it).
   const reach = room + (near?.pastS ?? 0);
   const minAfter: number[] = new Array<number>(choices.length + 1).fill(0);

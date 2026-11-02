@@ -1,5 +1,4 @@
 import type { ResolvedWarmupPrefs } from './training-profile';
-import { generalWarmupForSession, withGeneralWarmup } from './warmup/general';
 import {
   SessionCommandSchema,
   validate,
@@ -13,7 +12,6 @@ import {
   type WorkoutDraft,
   type ZonedTimestamp,
   type RoutineExercise,
-  type UserProfile,
 } from '@fizz/schemas';
 import type { AlongsideRefusal, FencedResult, Repositories, SaveResult, StartAlongside, WriteFence } from './ports';
 import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type SetFit, type StartWarning } from './session/create';
@@ -128,11 +126,6 @@ export interface SessionServiceOptions {
    * it later. A failed read starts the workout unmarked: logging never waits on it.
    */
   deloadAt?: (ownerId: string, at: ZonedTimestamp) => Promise<SessionDeload | null>;
-  /**
-   * (Ben, 2 Nov) The general warm-up's exercise by ID (a real start may first save a catalogue entry as Ben's row, as
-   * `Add exercise` does; a preview only reads). Absent: the stored exercise. Null or a failed read: no general warm-up.
-   */
-  generalWarmupExercise?: (exerciseId: string, opts: { preview: boolean }) => Promise<Exercise | null>;
 }
 
 /** A past log's start (Ben, 25 Oct): not after the tap, not before 2000. */
@@ -165,27 +158,6 @@ export function createSessionService(repos: Repositories, newId: () => string, o
   async function finalise(aggregate: SessionAggregate, req: Pick<StartRequest, 'ownerId' | 'at' | 'pastStart'>): Promise<SessionAggregate> {
     const past = req.pastStart === undefined ? aggregate : asPastLog(aggregate, req.pastStart, req.at);
     return stampDeload(past, { ownerId: req.ownerId, at: req.pastStart ?? req.at });
-  }
-
-  /**
-   * (Ben, 2 Nov) The general (cardio) warm-up first in a workout just planned (`generalWarmupForSession`): his rule for
-   * the day's type, unless it already starts with cardio or has that exercise. Past logs never get one (he logs what he
-   * did). A failed read leaves the workout as planned: Start never waits on it.
-   */
-  async function withGeneral(aggregate: SessionAggregate, prefs: ResolvedWarmupPrefs | undefined, owner: UserProfile, req: Pick<StartRequest, 'pastStart'> & { preview?: boolean | undefined }, known?: ReadonlyMap<string, Exercise>): Promise<SessionAggregate> {
-    const rules = prefs?.general;
-    if (rules === undefined || rules.length === 0 || req.pastStart !== undefined) return aggregate;
-    try {
-      const facts = new Map<string, Exercise | null>();
-      for (const ex of aggregate.exercises) if (!facts.has(ex.exerciseId)) facts.set(ex.exerciseId, known?.get(ex.exerciseId) ?? (await repos.exercises.get(ex.exerciseId)));
-      const rule = generalWarmupForSession(aggregate, rules, (id) => facts.get(id) ?? null);
-      if (rule === null) return aggregate;
-      const preview = req.preview === true;
-      const exercise = options.generalWarmupExercise !== undefined ? await options.generalWarmupExercise(rule.exerciseId, { preview }) : await repos.exercises.get(rule.exerciseId);
-      return exercise == null ? aggregate : withGeneralWarmup(aggregate, { rule, exercise, owner, newId });
-    } catch {
-      return aggregate;
-    }
   }
 
   async function start(req: StartRequest): Promise<StartOutcome> {
@@ -236,7 +208,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
       ...(warmupPrefs ? { warmupPrefs } : {}),
     });
-    const stamped = await finalise(await withGeneral(aggregate, warmupPrefs, owner, req, exercises), req);
+    const stamped = await finalise(aggregate, req);
     const saved = await trySave(() => repos.sessions.save(stamped, null));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
@@ -314,9 +286,8 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     } }, req.today ?? NO_EDITS);
     const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
-    const planned = await withGeneral(out.aggregate, warmupPrefs, owner, req, exercises);
-    if (req.preview) return { ok: true, aggregate: planned, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits, today };
-    const stamped = await finalise(planned, req);
+    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits, today };
+    const stamped = await finalise(out.aggregate, req);
     const saved = await trySave(() => repos.sessions.save(stamped, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
@@ -399,9 +370,8 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     } }, req.today ?? NO_EDITS);
     const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
-    const planned = await withGeneral(out.aggregate, warmupPrefs, owner, req, exercises);
-    if (req.preview) return { ok: true, aggregate: planned, notes: out.notes, duplicate: false, fits: out.fits, today };
-    const stamped = await finalise(planned, req);
+    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits, today };
+    const stamped = await finalise(out.aggregate, req);
     const saved = await trySave(() => repos.sessions.save(stamped, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
@@ -469,12 +439,11 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     });
     const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
-    const planned = await withGeneral(out.aggregate, warmupPrefs, owner, req, req.exercises);
-    if (req.preview) return { ok: true, aggregate: planned, duplicate: false, fits: out.fits, today, draftWhy: draftSlotWhy(out) };
+    if (req.preview) return { ok: true, aggregate: out.aggregate, duplicate: false, fits: out.fits, today, draftWhy: draftSlotWhy(out) };
     // The caller's plan day (Your workout's Start) keeps which sets Ben didn't set himself, which only the draft knows (review v5offers B1).
-    const notEdited = planned.session.planDay?.notEdited;
+    const notEdited = out.aggregate.session.planDay?.notEdited;
     const planDay = req.planDay === undefined ? undefined : { ...req.planDay, ...(notEdited === undefined ? {} : { notEdited }) };
-    const aggregate = await finalise(planDay === undefined ? planned : { ...planned, session: { ...planned.session, planDay } }, req);
+    const aggregate = await finalise(planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay } }, req);
     const saved = await trySave(() => repos.sessions.save(aggregate, null, req.fence, req.alongside));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' }, ...(saved.error === 'stale_inputs' && saved.alongside !== undefined ? { alongside: saved.alongside } : {}) };
