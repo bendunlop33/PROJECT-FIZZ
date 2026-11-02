@@ -44,6 +44,15 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
   {
+    // The chunked lint runner (2 Nov): plain Node ESM outside every TS project.
+    files: ['scripts/lint-chunks.mjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: { process: 'readonly', console: 'readonly' },
+    },
+  },
+  {
     // Metro loads this as CommonJS; Expo's tsconfig excludes it from the TS project.
     files: ['apps/mobile/metro.config.js'],
     ...tseslint.configs.disableTypeChecked,
