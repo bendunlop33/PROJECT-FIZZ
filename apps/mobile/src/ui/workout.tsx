@@ -626,7 +626,8 @@ export function StepperTileRow({
 }
 
 /**
- * `ParamChip` (§9.17): selected shows a check icon as well as the fill. A 52pt choice pill. `disabled` (design pass 4.5): dimmed to 0.45, a tertiary label, no press scale,
+ * `ParamChip` (§9.17): a 52pt choice pill; selected is the fill (or the accent edge), no tick (Ben, 2 Nov), and
+ * VoiceOver reads it as selected (`accessibilityState`). `disabled` (design pass 4.5): dimmed to 0.45, a tertiary label, no press scale,
  * and read as dimmed by VoiceOver; a tap runs `onDisabledPress` (say, to show `Needs the coach`) if given.
  * `onSurface`: on a card, so an unselected chip is `bg.raised` with a `border.control` edge and reads as tappable.
  */
@@ -640,6 +641,9 @@ export function Chip({
   onDisabledPress,
   onSurface = false,
   size = 'workout',
+  oneLine = false,
+  recommended = false,
+  tight = false,
 }: {
   label: string;
   selected: boolean;
@@ -651,6 +655,12 @@ export function Chip({
   onSurface?: boolean;
   /** `min`: 44pt, for filter rows away from the workout (design pass 6.6); default 52pt. */
   size?: 'workout' | 'min';
+  /** (Ben, 2 Nov) The label stays on one line (the grid has room for it, `chipGrid`); shrinks a little as a last resort. */
+  oneLine?: boolean;
+  /** The suggested answer: a small `✦` inline before the label, never stacked above it. */
+  recommended?: boolean;
+  /** 4 pt side padding (a row of seven weekdays), not 12. */
+  tight?: boolean;
 }) {
   const theme = useTheme();
   const press = usePressScale('pill');
@@ -663,17 +673,19 @@ export function Chip({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected, disabled }}
-      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityLabel={accessibilityLabel ?? (recommended ? `${label}, suggested` : label)}
       onPress={disabled ? onDisabledPress : onPress}
       {...(disabled ? {} : { onPressIn: press.onPressIn, onPressOut: press.onPressOut })}
       style={({ pressed }) => ({
         opacity: disabled ? 0.45 : 1,
+        // A grown chip fills its row's height, so a row of chips is one height.
+        ...(grow ? { flexGrow: 1 } : {}),
         ...(filled
           ? {
-              // D-Rest: selected is a full accent pill with a check; others sit on the surface. 52 pt (target.workout, D7).
+              // D-Rest: selected is a full accent pill (no tick, Ben 2 Nov); others sit on the surface. 52 pt (target.workout, D7).
               minHeight: height,
               minWidth: theme.target.min.width,
-              paddingHorizontal: theme.space['3'],
+              paddingHorizontal: tight ? theme.space['1'] : theme.space['3'],
               borderRadius: theme.radius.pill,
               borderWidth: selected ? 0 : 1,
               borderColor: edge,
@@ -686,7 +698,7 @@ export function Chip({
           : {
               minHeight: height,
               minWidth: theme.target.workout.width,
-              paddingHorizontal: theme.space['3'],
+              paddingHorizontal: tight ? theme.space['1'] : theme.space['3'],
               borderRadius: theme.radius.pill,
               borderWidth: selected ? theme.components.selectedBorderWidth : 1,
               borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
@@ -698,8 +710,18 @@ export function Chip({
             }),
       })}
     >
-      {selected ? <Icon name="checkmark" color={filled ? 'on.accent' : 'accent'} size={14} /> : null}
-      <AppText variant="label" numeric color={filled && selected ? 'on.accent' : disabled ? 'text.tertiary' : 'text.primary'} style={filled && selected ? { fontWeight: '600' } : undefined}>
+      {recommended ? (
+        <AppText variant="label" color={filled && selected ? 'on.accent' : 'text.secondary'} accessible={false} numberOfLines={1} style={{ fontSize: 11 }}>
+          ✦
+        </AppText>
+      ) : null}
+      <AppText
+        variant="label"
+        numeric
+        color={filled && selected ? 'on.accent' : disabled ? 'text.tertiary' : 'text.primary'}
+        style={[filled && selected ? { fontWeight: '600' } : null, oneLine ? { flexShrink: 1 } : null]}
+        {...(oneLine ? { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.85 } : {})}
+      >
         {label}
       </AppText>
     </Pressable>
