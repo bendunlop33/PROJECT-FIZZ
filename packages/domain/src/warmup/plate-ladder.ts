@@ -14,8 +14,8 @@ import { toScaled } from '../units';
  * `plateLadder` (WU4 for a bar, heavy band, not warmed, no WU11 short cut) replaces the 22 Oct table there:
  * - the first warm-up is the empty bar only when W ≤ 3 × the bar (60 kg on a 20 kg bar) and the lift isn't from the
  *   floor; otherwise the bar plus plates, at most the bar + 4 steps (60 kg; 125 lb) and at most ⅔ of W;
- * - then as few steps as WU4's gap rule allows (no jump over 25 % of W, between steps or to W): at least 2, 3 when
- *   R ≤ 3; a plate-friendly ladder may use one more, up to 3;
+ * - then as few steps as the gap rule allows (no jump over `BAR_GAP`, 30 % of W, between steps or to W: Ben's 105 →
+ *   60, 90): at least 2, 3 when R ≤ 3; a plate-friendly ladder may use one more, up to 3;
  * - the top step is within WU8 (c)–(d): 70–90 % of W, nearest 85 % (90 % when R ≤ 3), ties lighter;
  * - reps: the bar × 5, the first plates × 5, then × 3, the top × 2 (R ≤ 3: × 2 then a single).
  * `additivePass` moves a table's steps (WU4 warmed or short, WU5–WU7) to the nearest plate-friendly ones within one
@@ -79,8 +79,14 @@ interface Pick {
 }
 
 /**
+ * (Ben, 2 Nov) The largest jump on a bar's plate ladder, as a share of W: 30 %, from Ben's own "60 then 90 then 105"
+ * (60 → 90 is 29 % of 105). WU4's 25 % stays for every other ladder.
+ */
+export const BAR_GAP = 0.3;
+
+/**
  * How strict a pass is: `strict` is WU8 (c)–(d) and WU4's gap rule; `top` drops (d)'s 70 % floor; `grid` also lets a
- * jump be 25 % of W rounded up to whole grid steps (a light lift, where no 10 kg ladder meets 25 %: 55 kg → 30, 40).
+ * jump be 30 % of W rounded up to whole grid steps (a light lift, where no 10 kg ladder meets 25 %: 55 kg → 30, 40).
  */
 type Pass = 'strict' | 'top' | 'grid';
 
@@ -89,7 +95,7 @@ function limits(r: LadderRules, k: LadderKit, pass: Pass) {
   const W = r.W;
   const cap = 0.9 * W;
   const low = pass === 'strict' ? 0.7 * W : 0;
-  const gap = pass === 'grid' ? Math.ceil((0.25 * W) / k.step - EPS) * k.step : 0.25 * W;
+  const gap = pass === 'grid' ? Math.ceil((BAR_GAP * W) / k.step - EPS) * k.step : BAR_GAP * W;
   const startHi = Math.min(k.kit.base + 4 * k.step, (2 / 3) * W);
   const startTarget = r.barOk ? k.kit.base : Math.min(k.kit.base + 4 * k.step, 0.6 * W);
   const topTarget = Math.min(cap, (r.reps <= 3 ? 0.9 : 0.85) * W);
@@ -268,4 +274,28 @@ export function additivePass(loads: readonly number[], r: PassRules, k: LadderKi
     go(0, platePenalty(s, fewest, k));
   }
   return found.best === null ? [...loads] : found.best.loads;
+}
+
+/**
+ * `warmPlateStep` (WU2/WU4 warmed on a bar, Ben 2 Nov): an already-warm heavy lift gets one step, the load nearest
+ * 80 % of W within 70–90 %, plates only going on to W where a loading allows it (else a simple load alone), ties the
+ * lighter; null when none fits.
+ */
+export function warmPlateStep(W: number, k: LadderKit): number | null {
+  const ok = (p: number): boolean => p >= 0.7 * W - EPS && p <= 0.9 * W + EPS && p < W - EPS;
+  const nearest = (pts: readonly number[]): number | null => {
+    let best: number | null = null;
+    for (const p of pts) if (ok(p) && (best === null || Math.abs(p - 0.8 * W) < Math.abs(best - 0.8 * W) - EPS)) best = p;
+    return best;
+  };
+  const stacks = stacksFor(W, k.kit);
+  const fewest = stacks[0]?.length ?? 0;
+  let found: { load: number; cost: number } | null = null;
+  for (const s of stacks) {
+    const p = nearest(stackPoints(s, W, k, false));
+    if (p === null) continue;
+    const cost = Math.abs(p - 0.8 * W) + platePenalty(s, fewest, k);
+    if (found === null || cost < found.cost - EPS || (Math.abs(cost - found.cost) <= EPS && p < found.load)) found = { load: p, cost };
+  }
+  return found?.load ?? nearest(gridPoints(W, k, false));
 }

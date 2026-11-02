@@ -57,12 +57,12 @@ describe('B1: a kg slot on lb equipment works in lb and says so', () => {
     const warm = r.rows.filter((x) => x.type === 'warmup').map((x) => x.load ?? 0);
     // 220.46 → 220 lb; 95 kg = 209.4 → 205 lb. Warm-ups on simple loads (Ben, 1 Nov: the bar + 20 lb steps); (Ben,
     // 2 Nov) from at most the bar + 80 lb, as few as WU4's gap check allows (no jump over 55 lb). Was 45, 65, 105,
-    // 145, 185.
+    // 145, 185. Jumps up to 30 % of W on a bar (Ben's 105 → 60, 90).
     expect(warm).toHaveLength(2);
     for (const w of warm) expect((w - 45) % 20).toBe(0);
-    expect(r.rows.map((x) => x.load)).toEqual([125, 165, 220, 205, 205, 205]);
+    expect(r.rows.map((x) => x.load)).toEqual([125, 185, 220, 205, 205, 205]);
     const pts = [...warm, top];
-    for (let j = 1; j < pts.length; j += 1) expect((pts[j] ?? 0) - (pts[j - 1] ?? 0)).toBeLessThanOrEqual(0.25 * top + 1e-6);
+    for (let j = 1; j < pts.length; j += 1) expect((pts[j] ?? 0) - (pts[j - 1] ?? 0)).toBeLessThanOrEqual(0.3 * top + 1e-6);
     for (const w of warm) expect(w).toBeLessThanOrEqual(0.9 * top + 1e-6);
   });
 

@@ -47,8 +47,8 @@ describe('simple loads on a barbell (kg)', () => {
     expect(fmt(planWarmups(input(BAR, { load: 100, reps: 3, plain: true })))).toBe('20×5 40×5 60×3 75×2 87.5×1');
     expect(fmt(planWarmups(input(BAR, { load: 100, reps: 3 })))).toBe('60×5 80×2 90×1');
   });
-  it('100 kg bench × 5: 60, 80 (1 Nov: bar, 40, 60, 80)', () => {
-    expect(fmt(planWarmups(input(BAR, { load: 100, reps: 5 })))).toBe('60×5 80×2');
+  it('100 kg bench × 5 with one pair of 10s: 60, 90 (20 + 15 + 5 a side: plates only go on; 1 Nov: bar, 40, 60, 80)', () => {
+    expect(fmt(planWarmups(input(BAR, { load: 100, reps: 5 })))).toBe('60×5 90×2');
   });
   it('92.5 kg × 5: 60, 80 (1 Nov: bar, 40, 60, 70; 22 Oct: 35, 55, 72.5)', () => {
     expect(fmt(planWarmups(input(BAR, { load: 92.5, reps: 5, plain: true })))).toBe('20×5 35×5 55×3 72.5×2');
@@ -99,11 +99,11 @@ describe('simple loads on a barbell (kg)', () => {
 
 describe('simple loads on a barbell (lb)', () => {
   const LB_BAR = barbell({ unit: 'lb', barMass: 45, plates: [{ mass: 45, count: 6 }, { mass: 35, count: 2 }, { mass: 25, count: 2 }, { mass: 10, count: 4 }, { mass: 5, count: 2 }, { mass: 2.5, count: 2 }] });
-  it('225 lb × 5: the bar + multiples of 20 lb, from at most the bar + 80 lb (Ben, 2 Nov; 1 Nov: 45, 85, 125, 145, 185)', () => {
+  it('225 lb × 5: the bar + multiples of 20 lb, from at most the bar + 80 lb, jumps up to 30 % (Ben, 2 Nov; 1 Nov: 45, 85, 125, 145, 185)', () => {
     const steps = planWarmups(input(LB_BAR, { load: 225, reps: 5, barMass: 45 }));
     expect(steps[0]?.load).toBe(125);
     for (const s of steps) expect((s.load - 45) % 20).toBe(0);
-    expect(fmt(steps)).toBe('125×5 165×3 185×2');
+    expect(fmt(steps)).toBe('125×5 185×2');
     for (const s of steps) expect(s.load).toBeLessThanOrEqual(0.9 * 225);
   });
 });

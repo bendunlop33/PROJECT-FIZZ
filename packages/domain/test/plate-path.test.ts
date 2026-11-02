@@ -103,15 +103,17 @@ describe('warm-ups: whole 5 kg plates, only adding, towards the working set (kg)
     expect(fmt(s)).toBe('60×5 80×2');
     expect(planPlateChain([60, 80, 100], kitOf(GYM)).stacks).toEqual([[20], [20, 10], [20, 10, 10]]);
   });
-  it('105 kg × 5 → 60, 80: Ben’s 60 → 90 is a 30 kg jump, over WU4’s 25 % (26.25 kg), so 80 (plates still only go on)', () => {
+  it('105 kg × 5 → 60, 90: Ben’s own ladder (a 30 kg jump, 29 % of W: a bar allows 30 %); plates only go on', () => {
     const s = warm(GYM, 105, 5);
-    expect(fmt(s)).toBe('60×5 80×2');
+    expect(fmt(s)).toBe('60×5 90×2');
+    // 25 % would have forced 60, 80 (60 → 90 is over 26.25 kg).
+    expect(planPlateChain([60, 90, 105], kitOf(GYM)).stacks).toEqual([[20], [20, 15], [20, 15, 5, 2.5]]);
     expect(onlyAdds(GYM, s, 105)).toBe(true);
   });
-  it('107.5 kg × 5 → 3 warm-ups, not 5 (before: bar, 40, 60, 70, 90)', () => {
+  it('107.5 kg × 5 → 2 warm-ups, not 5 (before: bar, 40, 60, 70, 90)', () => {
     const s = warm(GYM, 107.5, 5);
     expect(s.length).toBeLessThanOrEqual(3);
-    expect(fmt(s)).toBe('60×5 80×3 90×2');
+    expect(fmt(s)).toBe('60×5 90×2');
     expect(onlyAdds(GYM, s, 107.5)).toBe(true);
   });
   it('92.5 kg × 5 → 60, 80', () => {
@@ -131,14 +133,14 @@ describe('warm-ups: whole 5 kg plates, only adding, towards the working set (kg)
   it('100 kg × 3 → 60, 80, then a single at 90', () => {
     expect(fmt(warm(GYM, 100, 3))).toBe('60×5 80×2 90×1');
   });
-  it('heavy lifts get 2–3 warm-ups up to 175 kg, every one the bar + whole 5 kg plates, under 90 % of W, no jump over 25 %', () => {
+  it('heavy lifts get 2–3 warm-ups up to 175 kg, every one the bar + whole 5 kg plates, under 90 % of W, no jump over 30 %', () => {
     for (let W = 62.5; W <= 175; W += 2.5) {
       for (const R of [3, 5]) {
         const s = warm(GYM, W, R);
         expect(s.length).toBeGreaterThanOrEqual(2);
         expect(s.length).toBeLessThanOrEqual(3);
         const pts = [...s.map((x) => x.load), W];
-        for (let j = 1; j < pts.length; j += 1) expect((pts[j] ?? 0) - (pts[j - 1] ?? 0)).toBeLessThanOrEqual(0.25 * W + 1e-9);
+        for (let j = 1; j < pts.length; j += 1) expect((pts[j] ?? 0) - (pts[j - 1] ?? 0)).toBeLessThanOrEqual(0.3 * W + 1e-9);
         for (const x of s) {
           expect((x.load - 20) % 10).toBe(0);
           expect(x.load).toBeLessThanOrEqual(0.9 * W + 1e-9);
@@ -147,10 +149,10 @@ describe('warm-ups: whole 5 kg plates, only adding, towards the working set (kg)
       }
     }
   });
-  it('from 80 to 175 kg the plates only ever go on, warm-up to warm-up and on to the working set', () => {
+  it('from 80 to 220 kg the plates only ever go on, warm-up to warm-up and on to the working set', () => {
     // Lighter lifts can need one swap: two pairs of 5s can't build 30 → 40 → 50 → 60 by adding alone.
     const bad: string[] = [];
-    for (let W = 80; W <= 175; W += 2.5) for (const R of [3, 5, 8]) if (!onlyAdds(GYM, warm(GYM, W, R), W)) bad.push(`${String(W)}×${String(R)}: ${fmt(warm(GYM, W, R))}`);
+    for (let W = 80; W <= 220; W += 2.5) for (const R of [3, 5, 8]) if (!onlyAdds(GYM, warm(GYM, W, R), W)) bad.push(`${String(W)}×${String(R)}: ${fmt(warm(GYM, W, R))}`);
     expect(bad).toEqual([]);
   });
   it('the warm-ups’ plates are never 2.5 or 1.25 kg', () => {
@@ -160,8 +162,8 @@ describe('warm-ups: whole 5 kg plates, only adding, towards the working set (kg)
       for (const st of c.stacks.slice(0, s.length)) for (const p of st ?? []) expect(p).toBeGreaterThanOrEqual(5);
     }
   });
-  it('a light lift where no 10 kg ladder meets 25 % (55 kg) still uses whole 5 kg plates: the bar, 40', () => {
-    expect(fmt(warm(GYM, 55, 5))).toBe('20×5 40×2');
+  it('a light lift (55 kg) still uses whole 5 kg plates: 30, 40', () => {
+    expect(fmt(warm(GYM, 55, 5))).toBe('30×5 40×2');
   });
   it('a home set (one pair of each) stays achievable and below W, 2–3 warm-ups', () => {
     for (let W = 62.5; W <= 120; W += 2.5) {
@@ -173,18 +175,38 @@ describe('warm-ups: whole 5 kg plates, only adding, towards the working set (kg)
       }
     }
   });
-  it('already warm, or not the first heavy lift of its muscles: WU4’s warmed rows (60 %, 80 %), plates only going on', () => {
+  it('already warm (WU2): one step at about 80 %, plates only going on; never as many as the same lift cold', () => {
     const s = warm(GYM, 100, 5, { warmed: true });
-    expect(fmt(s)).toBe('60×3 80×2');
+    expect(fmt(s)).toBe('80×2');
     expect(onlyAdds(GYM, s, 100)).toBe(true);
+    expect(fmt(warm(GYM, 140, 3, { warmed: true }))).toBe('110×2');
+    for (let W = 40; W <= 200; W += 2.5) {
+      for (const R of [1, 3, 5, 6]) {
+        const hot = warm(GYM, W, R, { warmed: true });
+        const cold = warm(GYM, W, R);
+        expect(hot.length).toBeLessThanOrEqual(1);
+        if (cold.length > 0) expect(hot.length).toBeLessThan(cold.length);
+        for (const x of hot) {
+          expect(x.load).toBeGreaterThanOrEqual(0.7 * W - 1e-9);
+          expect(x.load).toBeLessThanOrEqual(0.9 * W + 1e-9);
+          expect(isLoadAchievable({ value: x.load, unit: 'kg', convention: 'total' }, GYM)).toBe(true);
+        }
+      }
+    }
+  });
+  it('already warm in the rep band (WU5): its one 80 % step, as before', () => {
+    expect(warm(GYM, 100, 8, { warmed: true })).toHaveLength(1);
+  });
+  it('already warm with warm-ups off for time (WU11 none): none', () => {
+    expect(warm(GYM, 100, 5, { warmed: true, cut: 'none' })).toEqual([]);
   });
   it('rep band 100 × 8: 50 × 8, 80 × 4 (the bar + 15s, then another 15 a side)', () => {
     const s = warm(GYM, 100, 8);
     expect(fmt(s)).toBe('50×8 80×4');
     expect(onlyAdds(GYM, s, 100)).toBe(true);
   });
-  it('a deadlift from the floor never starts with the empty bar: 140 × 5 → 60, 90, 120', () => {
-    expect(fmt(warm(GYM, 140, 5, { floorStart: true }))).toBe('60×5 90×3 120×2');
+  it('a deadlift from the floor never starts with the empty bar: 140 × 5 → 60, 100', () => {
+    expect(fmt(warm(GYM, 140, 5, { floorStart: true }))).toBe('60×5 100×2');
   });
   it('Simple warm-up weights off: the 22 Oct table as before', () => {
     expect(fmt(warm(GYM, 100, 5, { simple: null }))).toBe('20×5 40×5 60×3 80×2');
@@ -192,13 +214,13 @@ describe('warm-ups: whole 5 kg plates, only adding, towards the working set (kg)
 });
 
 describe('warm-ups in lb: the bar + 20 lb steps, as Ben accepted', () => {
-  it('225 lb × 5 → 125, 165, 185 (before: 45, 85, 125, 145, 185)', () => {
+  it('225 lb × 5 → 125, 185 (before: 45, 85, 125, 145, 185)', () => {
     const s = warm(LB, 225, 5);
-    expect(fmt(s)).toBe('125×5 165×3 185×2');
+    expect(fmt(s)).toBe('125×5 185×2');
     for (const x of s) expect((x.load - 45) % 20).toBe(0);
   });
-  it('135 lb × 5 → 85, 105', () => {
-    expect(fmt(warm(LB, 135, 5))).toBe('85×5 105×2');
+  it('135 lb × 5 → 65, 105', () => {
+    expect(fmt(warm(LB, 135, 5))).toBe('65×5 105×2');
   });
 });
 

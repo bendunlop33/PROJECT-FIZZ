@@ -1,6 +1,6 @@
 import { muscleGroupOf, type LoadConvention, type PlanWarmups, type WarmupExerciseSetting } from '@fizz/schemas';
 import type { SimpleWarmupLoads } from './simple';
-import { additivePass, plateLadder, plateLadderReps, type LadderKit } from './plate-ladder';
+import { additivePass, plateLadder, plateLadderReps, warmPlateStep, type LadderKit } from './plate-ladder';
 import { catalogueExerciseId } from '../catalogue-id';
 
 /**
@@ -262,12 +262,22 @@ function ladderKitOf(i: WarmupPlanInput, simple: SimpleWarmupLoads): LadderKit |
   return { kit, step: simple.step, minPlate: simple.minPlate ?? 0, loads: i.loads };
 }
 
-/** (Ben, 2 Nov) WU4 on a bar, heavy band, not warmed (no WU11 short cut): `plateLadder`; null otherwise or when none fits. */
+/**
+ * (Ben, 2 Nov) WU4 on a bar, heavy band: not warmed (no WU11 short cut), `plateLadder`; warmed, one step
+ * (`warmPlateStep`). Null otherwise or when none fits (the table then applies).
+ */
 function plateWarmups(i: WarmupPlanInput, k: LadderKit): WarmupStep[] | null {
   const W = i.load;
   const R = Math.max(1, Math.round(i.reps));
   const cut = i.cut ?? 'full';
-  if (W === null || !(W > 0) || i.cls !== 'heavy' || !heavyBand(R) || i.warmed || (cut !== 'full' && cut !== 'no_bar') || !(k.kit.base > 0)) return null;
+  if (W === null || !(W > 0) || i.cls !== 'heavy' || !heavyBand(R) || !(k.kit.base > 0)) return null;
+  // (Ben, 2 Nov) Already warm (WU2): one step at about 80 %, so a warm lift never gets as many as a cold one.
+  if (i.warmed) {
+    if (cut === 'none') return [];
+    const one = warmPlateStep(W, k);
+    return one === null ? null : wu10([{ load: one, reps: 2 }], W, R, true);
+  }
+  if (cut !== 'full' && cut !== 'no_bar') return null;
   const barOk = !i.floorStart && cut === 'full' && W <= 3 * k.kit.base + EPS;
   const loads = plateLadder({ W, reps: R, barOk, firstAtLeast: i.floorStart ? (i.fullPlateStart ?? null) : null }, k);
   if (loads === null || loads.length === 0) return null;
