@@ -9,7 +9,7 @@
 
 > **Approved by Ben, 22 Oct 2026: WU1–WU12 as drafted** ("look good", after a plain-English walk-through of each). They are now playbook rules; defaults marked *default* stay editable.
 
-> **Approved as playbook rules, 2 Nov 2026 (Ben: his own warm-up choices count as approved rules):** the 1 Nov amendments (*WU8 amendment, 1 Nov*: simple warm-up weights, playbook **SW1**; *WU7 amendment, 1 Nov*: no prehab warm-ups, **PH1**) and the 2 Nov plate ladder (*WU8 amendment, 2 Nov*, **PL1**), in playbook-v1.md's "Playbook rules (approved 2 Nov 2026)" table. Only these amendments: the WU1–WU12 rows below keep their status.
+> **Approved as playbook rules, 2 Nov 2026 (Ben: his own warm-up choices count as approved rules):** the 1 Nov amendments (*WU8 amendment, 1 Nov*: simple warm-up weights, playbook **SW1**; *WU7 amendment, 1 Nov*: no prehab warm-ups, **PH1**) and the 2 Nov plate ladder (*WU8 amendment, 2 Nov*, **PL1**), in playbook-v1.md's "Playbook rules (approved 2 Nov 2026)" table. The coach's playbook also carries WU1–WU12 in short form (approved 22 Oct); these amendments win where they differ.
 
 > **Amended by Ben, 2 Nov 2026: plate-friendly warm-ups and fewer plate changes.** "Warm ups should ideally be in multiples of 5kg max but ideally starting with 60kg, then 80kg then 100kg or 60 then 90 then 105 … minimal unloading of weights is the goal." "Going from 100 kg to 97.5 on any set is a hassle unless built them up properly." On bars and plate-loaded machines with `Simple warm-up weights` on, WU8 gains the plate-path step and WU4's bar ladder becomes the plate ladder (row *WU8 amendment, 2 Nov*). Working sets gain the plate-change rule PC1 (below the table). Dumbbells and stacks keep the 1 Nov rules.
 

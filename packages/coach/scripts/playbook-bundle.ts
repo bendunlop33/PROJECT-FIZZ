@@ -1,7 +1,7 @@
 /**
  * Builds `packages/coach/data/playbook-v1.json`, the versioned bundle of the
  * approved playbook rules the coach is sent (ADR 0020 §6), from the rules
- * tables in `docs/training-guides/playbook-v1.md` (v1, then the rules approved 2 Nov). A unit test re-parses the
+ * tables in `docs/training-guides/playbook-v1.md` (v1, the warm-up rules approved 22 Oct, then the rules approved 2 Nov). A unit test re-parses the
  * Markdown and fails when the bundle drifts from it.
  *
  * Usage: node --import ./packages/catalogue/scripts/ts-hooks.ts packages/coach/scripts/playbook-bundle.ts [--write]
@@ -80,6 +80,12 @@ export function parsePlaybookRules(markdown: string): PlaybookRule[] {
     if (/^Removed\b/.test(short)) continue;
     const use: PlaybookUse = id === '7-F' ? 'code_only' : ON_ENDURANCE_SWITCH.has(id) ? 'endurance_switch' : 'in_use';
     rules.push({ id, short, appliesWhen: plain(cells[2] ?? ''), grade: plain(cells[3] ?? ''), use, note: id === '7-F' ? 'code: the built-in rule, never sent as advice' : null });
+  }
+  // (22 Oct) WU1–WU12, the warm-up rules Ben approved; his later amendments (SW1, PH1, PL1, CW1) are in the 2 Nov table.
+  for (const cells of sectionRows(markdown, '## Playbook rules (approved 22 Oct 2026)')) {
+    const id = cells[0] ?? '';
+    if (!/^WU\d{1,2}$/.test(id)) continue;
+    rules.push({ id, short: plain(cells[1] ?? ''), appliesWhen: plain(cells[2] ?? ''), grade: plain(cells[3] ?? ''), use: 'in_use', note: null });
   }
   for (const cells of sectionRows(markdown, '## Playbook rules (approved 2 Nov 2026)')) {
     const id = cells[0] ?? '';

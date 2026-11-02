@@ -36,6 +36,8 @@ function input(over: Partial<CoachContextInput> = {}): CoachContextInput {
 
 /** (Ben, 2 Nov) Approved after v1 and enforced by the app: the coach must be able to name them. */
 const APPROVED_2_NOV = ['FQ1', 'FQ2', 'FQ3', 'VC1', 'VC2', 'VC3', 'VC4', 'LW1', 'LW2', 'LW3', 'PC1', 'RUN1', 'RUN2', 'SW1', 'PH1', 'PL1', 'CW1'];
+/** (22 Oct) The warm-up rules Ben approved ("look good"), in short form. */
+const APPROVED_22_OCT = ['WU1', 'WU2', 'WU3', 'WU4', 'WU5', 'WU6', 'WU7', 'WU8', 'WU9', 'WU10', 'WU11', 'WU12'];
 /** (Ben, 2 Nov) His own warm-up choices (1 Nov simple weights and prehab, 2 Nov plate ladder): approved rules. */
 const BENS_WARMUP_RULES = ['SW1', 'PH1', 'PL1'];
 
@@ -43,13 +45,13 @@ describe('the playbook bundle (ADR 0020 §6)', () => {
   it('matches the approved playbook Markdown (regenerate with scripts/playbook-bundle.ts --write)', () => {
     const fromMd = buildPlaybookBundle(readFileSync(PLAYBOOK_MD, 'utf8'));
     expect(JSON.parse(readFileSync(PLAYBOOK_JSON, 'utf8'))).toEqual(fromMd);
-    expect(PLAYBOOK_V1.rules.map((r) => r.id)).toEqual(['1', '2', '3', '4', '5', '6', '7', '7-F', '8', '9', '10', '11', '12', '13', 'G', 'T', ...APPROVED_2_NOV]);
+    expect(PLAYBOOK_V1.rules.map((r) => r.id)).toEqual(['1', '2', '3', '4', '5', '6', '7', '7-F', '8', '9', '10', '11', '12', '13', 'G', 'T', ...APPROVED_22_OCT, ...APPROVED_2_NOV]);
   });
 
   it('(Ben, 2 Nov) every rule approved since v1 that the app enforces is in the coach context, in use, by its ID', () => {
     const ctx = buildCoachContext(input());
     const rules = ctx.coachingKnowledge.playbook.rules;
-    for (const id of APPROVED_2_NOV) {
+    for (const id of [...APPROVED_22_OCT, ...APPROVED_2_NOV]) {
       const r = rules.find((x) => x.id === id);
       expect(r, id).toBeDefined();
       expect(r?.status, id).toBe('in use');
@@ -67,9 +69,12 @@ describe('the playbook bundle (ADR 0020 §6)', () => {
     // VC2's "> 30 total" backstop was dropped by Ben; candidates awaiting him are not in force.
     expect(text).not.toMatch(/30 total|> 30/);
     for (const candidate of ['R1', 'HT1', 'SS1']) expect(rules.map((x) => x.id)).not.toContain(candidate);
-    // WU1–WU12 stay candidates: only Ben's own amendments (SW1, PH1, PL1) are in, under their own IDs.
-    expect(rules.filter((x) => /^WU/.test(x.id))).toEqual([]);
-    expect(rules.filter((x) => /warm-up/i.test(x.rule) && x.id !== 'CW1' && x.id !== '1' && x.id !== 'T').map((x) => x.id)).toEqual(BENS_WARMUP_RULES);
+    // (22 Oct) WU1–WU12 are approved and in; the R, HT and SS candidates stay out. Ben's amendments win where they differ.
+    expect(rules.filter((x) => /^WU/.test(x.id)).map((x) => x.id)).toEqual(APPROVED_22_OCT);
+    expect(rules.map((x) => x.id).filter((x) => /^(?:R|HT|SS)\d/.test(x))).toEqual([]);
+    expect(rules.find((x) => x.id === 'WU8')?.rule).toContain('SW1 rounds the loads and PL1 sets bar and plate-loaded ladders');
+    expect(rules.find((x) => x.id === 'WU4')?.rule).toContain('PL1 replaces this ladder');
+    expect(rules.find((x) => x.id === 'WU7')?.rule).toContain('Prehab work follows PH1');
     // Coaching knowledge, never Your data (rule 10).
     expect(JSON.stringify(ctx.yourData)).not.toContain('FQ1');
   });
@@ -263,7 +268,7 @@ describe('describeCoachContext (What the coach can see)', () => {
       { label: 'Memories', detail: '1 memory' },
     ]);
     expect(d.coachingKnowledge).toEqual([
-      { label: 'Playbook v1 (2026-10-09)', detail: '32 rules, 3 not in use' },
+      { label: 'Playbook v1 (2026-10-09)', detail: '44 rules, 3 not in use' },
       { label: 'Exercise cues', detail: 'Bench press' },
     ]);
     expect(d.notAvailable).toHaveLength(4);
