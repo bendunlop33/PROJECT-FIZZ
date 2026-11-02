@@ -57,7 +57,9 @@ export function warmupPrefsAfter(before: WarmupPrefs | null | undefined, change:
     ...Object.entries(before?.perExercise ?? {}).filter(([id]) => !cleared.has(id)),
     ...changes.flatMap(([id, v]) => (v === null ? [] : [[id, v] as const])),
   ]);
-  const out: WarmupPrefs = { ...(simpleLoads ? {} : { simpleLoads: false }), ...(Object.keys(per).length === 0 ? {} : { perExercise: per }) };
+  // (Ben, 2 Nov) General warm-up rules: replaced as a whole when named (null or []: none), else kept.
+  const general = change.general === undefined ? before?.general : change.general === null || change.general.length === 0 ? undefined : [...change.general];
+  const out: WarmupPrefs = { ...(simpleLoads ? {} : { simpleLoads: false }), ...(Object.keys(per).length === 0 ? {} : { perExercise: per }), ...(general === undefined ? {} : { general }) };
   return Object.keys(out).length === 0 ? null : out;
 }
 
@@ -66,7 +68,11 @@ export function warmupPrefsRevert(before: WarmupPrefs | null, after: WarmupPrefs
   const ids = new Set([...Object.keys(before?.perExercise ?? {}), ...Object.keys(after?.perExercise ?? {})]);
   const perExercise: Record<string, 'off' | 'normal' | null> = {};
   for (const id of ids) perExercise[id] = before?.perExercise?.[id] ?? null;
-  return { kind: 'warmup_prefs', simpleLoads: before?.simpleLoads ?? true, ...(ids.size === 0 ? {} : { perExercise }) };
+  const general = sameGeneral(before?.general, after?.general) ? {} : { general: before?.general ?? null };
+  return { kind: 'warmup_prefs', simpleLoads: before?.simpleLoads ?? true, ...(ids.size === 0 ? {} : { perExercise }), ...general };
 }
 
 export const sameWarmupPrefs = (a: WarmupPrefs | null | undefined, b: WarmupPrefs | null | undefined): boolean => stableStringify(a ?? null) === stableStringify(b ?? null);
+
+/** (Ben, 2 Nov) The same general warm-up rules (none and an empty list are the same). */
+const sameGeneral = (a: WarmupPrefs['general'], b: WarmupPrefs['general']): boolean => stableStringify(a ?? []) === stableStringify(b ?? []);

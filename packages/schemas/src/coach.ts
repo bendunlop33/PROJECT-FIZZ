@@ -20,7 +20,7 @@ import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SplitDayIdSchem
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
-import { WarmupPrefsSchema, type TrainingChange } from './training-profile';
+import { GeneralWarmupDaysSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
 import { ActivityEffortSchema, ActivityFieldsShapeSchema, ActivityKindSchema, ActivityStatusSchema, WeekBasisSchema, WeekMergeSchema, WeekRowSchema, WeekSkipSchema, type Activity } from './activity';
 import { LocalDateSchema } from './import';
 import { BuilderProposalSchema } from './builder-coach';
@@ -311,11 +311,31 @@ export type ProposePlanSwapArgs = z.infer<typeof ProposePlanSwapArgsSchema>;
  */
 export const ProposePlanAddArgsSchema = z.strictObject({
   add: z.string().min(1).max(80),
-  days: z.array(z.string().min(1).max(120)).min(1).max(7),
+  days: z.array(z.string().min(1).max(120)).max(7),
   after: z.string().min(1).max(80).nullable(),
   workingSets: z.int().min(1).max(10),
   reps: z.strictObject({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable(),
   load: z.number().min(0).max(1000).nullable(),
+  /**
+   * (Ben, 2 Nov: "bike for 8 minutes first on leg days") Where it goes in each day: `first` (before every exercise),
+   * `last`, `after` (straight after `after`; the default, null `after` = at the end) or `before` (straight before
+   * `before`). Null: `after`. Absent on calls made before them.
+   */
+  position: z.enum(['first', 'last', 'after', 'before']).nullable().optional(),
+  before: z.string().min(1).max(80).nullable().optional(),
+  /** (Ben, 2 Nov) A cardio or timed exercise's target: minutes per set and a distance (metres). Null: the app's default. */
+  minutes: z.number().min(0).max(240).nullable().optional(),
+  distanceM: z.int().min(0).max(100_000).nullable().optional(),
+  /**
+   * (Ben, 2 Nov) Days chosen by kind instead of (or as well as) by name: `legs` every leg day of the plan, `other` every
+   * other day, `all` every day. Leg days are decided by code from each day's exercises. Null: only `days`.
+   */
+  dayType: z.enum(['legs', 'other', 'all']).nullable().optional(),
+  /**
+   * (Ben, 2 Nov) The part of Ben's ask this proposal can't express, in a few words ("only every other week"); null when
+   * it does all of it. Shown on the card as partial (coach honesty).
+   */
+  notIncluded: z.string().max(160).nullable().optional(),
   reason,
 });
 export type ProposePlanAddArgs = z.infer<typeof ProposePlanAddArgsSchema>;
@@ -447,6 +467,17 @@ export const UpdateWarmupPrefsArgsSchema = z.strictObject({
   exercises: z
     .array(z.strictObject({ exercise: z.string().min(1).max(120), warmups: z.enum(['off', 'normal', 'default']) }))
     .max(20),
+  /**
+   * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") General (cardio)
+   * warm-up rules, first in every workout started: per kind of day (`legs`, `other`, `all`), the cardio exercise (a name
+   * or catalogueId) and minutes; minutes 0 turns that day's rule off. Days not named keep their rule; `all` replaces the
+   * `legs` and `other` rules not named with it. Null: unchanged. Absent on calls made before it.
+   */
+  general: z
+    .array(z.strictObject({ days: GeneralWarmupDaysSchema, exercise: z.string().min(1).max(120), minutes: z.int().min(0).max(120) }))
+    .max(3)
+    .nullable()
+    .optional(),
   ...askClaim,
 });
 export type UpdateWarmupPrefsArgs = z.infer<typeof UpdateWarmupPrefsArgsSchema>;
@@ -1275,6 +1306,15 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     sets: z.int().min(1).max(10).optional(),
     reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable().optional(),
     load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).nullable().optional(),
+    /** (Ben, 2 Nov) An add's place: `first` in each day, or straight `before` `beforeId`. Absent: after `afterId` (or at the end). */
+    position: z.enum(['first', 'before']).optional(),
+    beforeId: z.string().min(1).max(64).optional(),
+    beforeName: z.string().min(1).max(120).optional(),
+    /** (Ben, 2 Nov) A cardio or timed add's work time per set (seconds) and a distance (metres). Absent: the default. */
+    durationS: z.int().min(1).max(14_400).optional(),
+    distanceM: z.int().min(1).max(100_000).optional(),
+    /** (Ben, 2 Nov) The part of Ben's ask this proposal leaves out, as the coach said it: the card reads `Partial`. */
+    notIncluded: z.string().min(1).max(160).optional(),
     days: z
       .array(
         z.object({
@@ -1283,7 +1323,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
           versionBefore: z.int().min(1),
           /** `add`: `rowId` is the new row's ID, `afterRowId` the row it goes after (null: at the end), `afterName` that row's exercise. */
           /** (Ben, 1 Nov) `edit` (`day_edit`): one write of the whole day's change (`dayEdit`); `rowId` is its first row. */
-          edits: z.array(z.object({ kind: z.enum(['swap', 'remove', 'add', 'edit']), rowId: IdSchema, afterRowId: IdSchema.nullable().optional(), afterName: z.string().max(120).nullable().optional() })).min(1).max(6),
+          /** (Ben, 2 Nov) `add`: `first` before every row, or `beforeRowId` the row it goes straight before. */
+          edits: z.array(z.object({ kind: z.enum(['swap', 'remove', 'add', 'edit']), rowId: IdSchema, afterRowId: IdSchema.nullable().optional(), afterName: z.string().max(120).nullable().optional(), first: z.boolean().optional(), beforeRowId: IdSchema.optional() })).min(1).max(6),
           /** The day's exercises before and after (names, in order): the card's before/after. */
           before: z.array(z.string().max(120)).max(30).optional(),
           after: z.array(z.string().max(120)).max(30).optional(),

@@ -133,6 +133,10 @@ export interface PlanAddDay {
   rowId: string;
   /** The row it goes straight after (the day's `after` exercise, its last row of it); null: at the end. */
   afterRowId: string | null;
+  /** (Ben, 2 Nov) First in the day, before every row. */
+  first?: true;
+  /** (Ben, 2 Nov) The row it goes straight before (the day's `before` exercise, its first row of it). */
+  beforeRowId?: string;
 }
 
 export type PlanAddPreview =
@@ -148,7 +152,7 @@ const dayKey = (name: string): string => name.trim().toLowerCase().replace(/\s+/
  * day that already has it is left as it is (never a second copy). Day names match case-insensitively; a name that is
  * no plan day refuses the whole add (the coach is told the names). `rowIdOf`: the new row's ID for a day. Pure.
  */
-export function planAddPreview(days: readonly PlanSwapDayInput[], req: { add: string; dayNames: readonly string[]; after: string | null; rowIdOf: (routineId: string) => string }): PlanAddPreview {
+export function planAddPreview(days: readonly PlanSwapDayInput[], req: { add: string; dayNames: readonly string[]; after: string | null; rowIdOf: (routineId: string) => string; /** (Ben, 2 Nov) `first`, or straight `before` an exercise (a day without it: at the end). */ position?: 'first' | 'before' | 'after'; before?: string | null }): PlanAddPreview {
   const wanted = [...new Set(req.dayNames.map(dayKey))];
   const unknown = wanted.filter((w) => !days.some((d) => dayKey(d.name) === w));
   if (unknown.length > 0) return { kind: 'unknown_days', unknown: req.dayNames.filter((n) => unknown.includes(dayKey(n))) };
@@ -161,8 +165,20 @@ export function planAddPreview(days: readonly PlanSwapDayInput[], req: { add: st
       already.push(d.name);
       continue;
     }
-    const anchor = req.after === null ? undefined : rows.filter((r) => r.exerciseId === req.after).at(-1);
-    out.push({ routineId: d.routineId, routineName: d.name, versionBefore: d.version, rowId: req.rowIdOf(d.routineId), afterRowId: anchor?.id ?? null });
+    const base = { routineId: d.routineId, routineName: d.name, versionBefore: d.version, rowId: req.rowIdOf(d.routineId) };
+    if (req.position === 'first') {
+      out.push({ ...base, afterRowId: null, first: true });
+      continue;
+    }
+    const ahead = req.position === 'before' && req.before != null ? rows.find((r) => r.exerciseId === req.before) : undefined;
+    if (ahead !== undefined) {
+      const k = rows.indexOf(ahead);
+      // Straight before it: first when it leads the day.
+      out.push(k === 0 ? { ...base, afterRowId: null, first: true } : { ...base, afterRowId: rows[k - 1]?.id ?? null, beforeRowId: ahead.id });
+      continue;
+    }
+    const anchor = req.after === null || req.position === 'before' ? undefined : rows.filter((r) => r.exerciseId === req.after).at(-1);
+    out.push({ ...base, afterRowId: anchor?.id ?? null });
   }
   return out.length === 0 ? { kind: 'already', days: already } : { kind: 'ok', days: out, already };
 }
