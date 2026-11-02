@@ -183,6 +183,17 @@ export function ProfileScreen() {
             }
           />
         ) : null}
+        {/* (Ben, 2 Nov) Cardio first on leg days / other days (or every day): first in every workout he starts. */}
+        {data.state === 'ready' && data.value.warmups !== null ? (
+          <Row
+            title={WARMUP_PREFS_COPY.general}
+            icon="bicycle"
+            subtitle={data.value.warmups.generalLine}
+            onPress={() => {
+              navigation.navigate('CardioFirst');
+            }}
+          />
+        ) : null}
         {/* Ben, 20 Oct: `Targets hit 5 of last 6` on main lifts only, when on (this phone; default off). */}
         <Row
           title="Targets hit"

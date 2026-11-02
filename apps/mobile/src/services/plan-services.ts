@@ -1095,7 +1095,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
      * workouts never change (rule 2): they are their own records. One versioned write with an `update_routine` record
      * (rule 5); its Undo is the routine's `revert` (the version before, only while nothing changed since).
      */
-    async editDayEveryWeek(req: { routineId: string; expectedVersion: number; opId: string; edit: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load'> }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean; learned?: GymEdit | null } | { ok: false; reason: 'stale' | 'missing' | 'failed'; message: string }> {
+    async editDayEveryWeek(req: { routineId: string; expectedVersion: number; opId: string; edit: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load' | 'first' | 'beforeRowId' | 'durationS' | 'distanceM'> }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean; learned?: GymEdit | null } | { ok: false; reason: 'stale' | 'missing' | 'failed'; message: string }> {
       try {
         const p = await owner();
         if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };

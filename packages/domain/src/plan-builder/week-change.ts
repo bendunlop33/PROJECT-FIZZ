@@ -225,17 +225,21 @@ function withLoad(templates: readonly SetTemplate[], load: Load | null | undefin
 }
 
 /** A row the day sheet's `Add` makes: `sets` working sets of `reps`, nothing else (no superset, not a main lift). */
-export function pbAddedRow(e: Pick<PlanWeekExerciseEdit, 'rowId' | 'toExerciseId' | 'sets' | 'reps' | 'load'>, order: number, measurement: Measurement = 'reps'): RoutineExercise | null {
+export function pbAddedRow(e: Pick<PlanWeekExerciseEdit, 'rowId' | 'toExerciseId' | 'sets' | 'reps' | 'load' | 'durationS' | 'distanceM'>, order: number, measurement: Measurement = 'reps'): RoutineExercise | null {
   if (e.toExerciseId === null) return null;
   const n = e.sets ?? 3;
   const timed = measurement === 'duration' || measurement === 'cardio';
   const reps = e.reps ?? { min: 8, max: 12 };
+  // (Ben, 2 Nov: "bike for 8 minutes first") A timed or cardio add's own work time and a cardio distance, as asked.
+  const workS = timed ? (e.durationS ?? (e.distanceM !== undefined && measurement === 'cardio' ? null : 45)) : null;
+  const distance = measurement === 'cardio' && e.distanceM !== undefined ? { targetDistanceM: e.distanceM } : {};
   const setTemplates: SetTemplate[] = Array.from({ length: n }, (_, i) => ({
     id: deriveId(`week-add-set:${e.rowId}:${String(i)}`),
     setType: 'working',
     targetLoad: e.load == null ? null : { value: e.load.value, unit: e.load.unit, convention: e.load.convention },
     targetReps: timed ? null : { min: Math.min(reps.min, reps.max), max: Math.max(reps.min, reps.max) },
-    targetDurationS: timed ? 45 : null,
+    targetDurationS: workS,
+    ...distance,
     targetRpe: null,
     targetRir: null,
     restOverrideS: null,
@@ -244,7 +248,7 @@ export function pbAddedRow(e: Pick<PlanWeekExerciseEdit, 'rowId' | 'toExerciseId
 }
 
 /** One change on a list of rows (the template for `Every week`, or this week's copy). Unknown rows change nothing. */
-export function oneExerciseChange(rows: readonly RoutineExercise[], e: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load'>, measurementOf: (exerciseId: string) => Measurement = () => 'reps'): RoutineExercise[] {
+export function oneExerciseChange(rows: readonly RoutineExercise[], e: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load' | 'first' | 'beforeRowId' | 'durationS' | 'distanceM'>, measurementOf: (exerciseId: string) => Measurement = () => 'reps'): RoutineExercise[] {
   const sorted = [...rows].sort((a, b) => a.order - b.order);
   const at = (id: string) => sorted.findIndex((r) => r.id === id);
   switch (e.kind) {
@@ -264,8 +268,10 @@ export function oneExerciseChange(rows: readonly RoutineExercise[], e: Pick<Plan
     case 'add': {
       const made = pbAddedRow(e, 0, e.toExerciseId === null ? 'reps' : measurementOf(e.toExerciseId));
       if (made === null || at(e.rowId) >= 0) return sorted;
+      // (Ben, 2 Nov) First, else straight before `beforeRowId`, else after `afterRowId` (none: at the end).
+      const before = e.beforeRowId === undefined ? -1 : at(e.beforeRowId);
       const after = e.afterRowId == null ? -1 : at(e.afterRowId);
-      const k = after < 0 ? sorted.length : after + 1;
+      const k = e.first === true ? 0 : before >= 0 ? before : after < 0 ? sorted.length : after + 1;
       return [...sorted.slice(0, k), made, ...sorted.slice(k)].map((r, n) => ({ ...r, order: n }));
     }
   }

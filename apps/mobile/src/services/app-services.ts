@@ -614,6 +614,15 @@ export function createAppServices(deps: AppServicesDeps) {
       const ids = new Set(own.map((e) => e.id));
       return [...own, ...catalogueExercises().filter((e) => !ids.has(e.id))];
     },
+    // (Ben, 2 Nov) A general warm-up's catalogue exercise is saved as his row when he sets it, so every Start finds it.
+    ensureExercise: async (exerciseId) => {
+      const stored = await repos().exercises.get(exerciseId).catch(() => null);
+      if (stored !== null) return stored;
+      const row = catalogueExercises().find((e) => e.id === exerciseId) ?? null;
+      if (row === null) return null;
+      await repos().exercises.save(row, null).catch(() => null);
+      return (await repos().exercises.get(exerciseId).catch(() => null)) ?? null;
+    },
     now: deps.now,
   });
 
