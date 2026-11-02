@@ -376,7 +376,8 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 2, rpe: 10 }, { load: 60, reps: 2, rpe: 10 }] }]);
-    h.clockMs += 2 * 86_400_000;
+    // ST1 (Ben, 2 Nov): the second miss ≥ 7 days after the first (was 2 days).
+    h.clockMs += 7 * 86_400_000;
     const second = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 2, rpe: 10 }, { load: 60, reps: 2, rpe: 10 }] }]);
     model = new StepModel([
       (req) => {

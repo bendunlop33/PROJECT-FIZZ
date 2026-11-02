@@ -338,7 +338,8 @@ describe('Ben’s case: 62.5 kg × 3–6 planned, 2 reps logged', () => {
     const view = nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: [], availability: await s.coach.availability(), reviewing: false });
     expect(view?.rows.find((r) => r.exerciseName === 'Bench press')).toMatchObject({ tag: 'Rule' });
 
-    h.clockMs += 2 * 86_400_000;
+    // ST1 (Ben, 2 Nov): the second miss is ≥ 7 days after the first (was 2 days).
+    h.clockMs += 7 * 86_400_000;
     const third = await s.workout.start({ gymId, opId: 'start-3', checkIn: null, nextOf: sessionId });
     if (!third.ok) throw new Error(third.error.message);
     const work3 = third.aggregate.sets.filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);
@@ -411,7 +412,8 @@ describe('Ben’s case: 62.5 kg × 3–6 planned, 2 reps logged', () => {
     const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'fin-2', expectedVersion: d?.aggregate.session.version ?? 0, endedAt: null });
     if (!fin.ok) throw new Error(fin.error.message);
     await h.settle(s);
-    h.clockMs += 2 * 86_400_000;
+    // ST1 (Ben, 2 Nov): the second miss is ≥ 7 days after the first (was 2 days).
+    h.clockMs += 7 * 86_400_000;
     const third = await s.workout.start({ gymId, opId: 'start-3', checkIn: null, nextOf: sessionId });
     if (!third.ok) throw new Error(third.error.message);
     const work3 = third.aggregate.sets.filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);
@@ -954,7 +956,8 @@ describe('review ben-8-decisions: the rule’s reset answer and the coach’s re
     const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'fin-2', expectedVersion: d?.aggregate.session.version ?? 0, endedAt: null });
     if (!fin.ok) throw new Error(fin.error.message);
     await h.settle(s);
-    h.clockMs += 2 * 86_400_000;
+    // ST1 (Ben, 2 Nov): the second miss is ≥ 7 days after the first (was 2 days).
+    h.clockMs += 7 * 86_400_000;
     const third = await s.workout.start({ gymId, opId: 'start-3', checkIn: null, nextOf: sessionId });
     if (!third.ok) throw new Error(third.error.message);
     const work3 = third.aggregate.sets.filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);

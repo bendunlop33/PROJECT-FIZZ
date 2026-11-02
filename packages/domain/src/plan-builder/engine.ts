@@ -47,7 +47,10 @@ import {
  *    D4 back-offs.
  * 3. Weekly sets per muscle placed in tiers into days with room (priorities on 2 days → every muscle 2 sets →
  *    priorities and targets to their range → abs → the rest to their range → priorities to the top → the rest to
- *    their aim), at most 8 sets of a muscle a session, borrowing a compatible day for a priority; a top-up pass after.
+ *    their aim), at most 8 sets of a muscle a session (FQ2, also in the top-up), borrowing a compatible day for a
+ *    priority; a top-up pass after. Between otherwise equal days, the one that gives the muscle a new exposure (≥ 2
+ *    hard-set credits) wins (FQ1, Ben 2 Nov: a tie-breaker only, never a reason to add sets, days or change the split).
+ *    Main lifts stay on their split days (rule 2 / FQ3: 2×/week where the days allow).
  * 4. Sets become exercises of 2–4 sets, ranked by the preference score (default × 5 + his rate × his sessions) ÷
  *    (5 + his sessions), so A and B days differ; supersets pair accessories, never the main lift or heavy compounds.
  *
@@ -59,6 +62,9 @@ import {
  * Every load is one of the gym's achievable loads for that exercise (rule 4); an exercise held for pain or not usable
  * at the gym is never planned (rule 9).
  */
+
+/** FQ2 / VC3 (approved rule 1's per-session cap): at most this many direct sets of one muscle on a day. */
+export const PB_SESSION_GROUP_CAP = 8;
 
 export interface PlanEngineInput {
   answers: PlanBuilderAnswers;
@@ -525,6 +531,9 @@ function buildWithCaps(input: PlanEngineInput, caps: readonly number[]): Omit<Pb
   const muscles: PbMuscle[] = [...PB_MUSCLES.filter((m) => m !== 'Core'), ...PB_OWN.filter((m) => isSpec(a, m))];
   const D = new Map<PbMuscle, WorkDay[]>(muscles.map((m) => [m, daysFor(m, prioritised(m) || a.specific.some((t) => PB_TAG_OF[t] === m))]));
   D.set('Core', plan);
+  // FQ1 (Ben, 2 Nov): a tie-breaker only. A day where the muscle already gets ≥ 2 hard-set credits (its own sets plus
+  // the rough indirect share, PB_IND) is already an exposure; between otherwise equal days, a new exposure wins.
+  const exposed = (d: WorkDay, m: PbMuscle): number => (onDay(d, m) + (PB_IND[m] ?? []).reduce((s, [src, f]) => s + onDay(d, src) * f, 0) >= 2 ? 1 : 0);
   const mainOn = (d: WorkDay, m: PbMuscle): number => d.exercises.filter((e) => e.role === 'main' && e.muscle === m).reduce((s, e) => s + e.sets, 0);
 
   const place = (m: PbMuscle, t: string | null, upto: number, onlyDays?: readonly WorkDay[]): void => {
@@ -544,8 +553,8 @@ function buildWithCaps(input: PlanEngineInput, caps: readonly number[]): Omit<Pb
           const unit = has > 0 ? 1 : 2;
           return { d, unit, room: capOf(d) - d.load };
         })
-        .filter((o) => o.room >= o.unit && onDay(o.d, m) + o.unit <= 8)
-        .sort((x, y) => (m === 'Core' ? y.room - x.room || onDay(x.d, m) - onDay(y.d, m) : onDay(x.d, m) - onDay(y.d, m) || y.room - x.room));
+        .filter((o) => o.room >= o.unit && onDay(o.d, m) + o.unit <= PB_SESSION_GROUP_CAP)
+        .sort((x, y) => (m === 'Core' ? y.room - x.room || onDay(x.d, m) - onDay(y.d, m) : onDay(x.d, m) - onDay(y.d, m) || exposed(x.d, m) - exposed(y.d, m) || y.room - x.room));
       // A priority whose own days are full borrows the most compatible, then lightest, other day (up to 3 days).
       if (opts.length === 0 && prioritised(m) && days.length < Math.min(3, plan.length)) {
         const extra = plan
@@ -661,14 +670,16 @@ function buildWithCaps(input: PlanEngineInput, caps: readonly number[]): Omit<Pb
     const ws = weeklySetsOf(plan, chart);
     const m = chart.filter((x) => x !== 'Core' && (ws[x] ?? 0) < pbRange(a, x)[0]).sort((x, y) => (ws[x] ?? 0) - pbRange(a, x)[0] - ((ws[y] ?? 0) - pbRange(a, y)[0]))[0];
     if (m === undefined) break;
+    // FQ2 / VC3: never a day above 8 direct sets of one muscle.
+    const muscleOn = (d: WorkDay): number => d.exercises.filter((e) => e.muscle === m).reduce((s, e) => s + e.sets, 0);
     const hit = plan
-      .flatMap((d) => d.exercises.filter((e) => e.muscle === m && e.role !== 'main' && e.sets < 4 && daySets(d) < capOf(d)).map((e) => [d, e] as const))
+      .flatMap((d) => d.exercises.filter((e) => e.muscle === m && e.role !== 'main' && e.sets < 4 && daySets(d) < capOf(d) && muscleOn(d) + 1 <= PB_SESSION_GROUP_CAP).map((e) => [d, e] as const))
       .sort(([x], [y]) => daySets(x) - daySets(y))[0];
     if (hit !== undefined) {
       hit[1].sets += 1;
       continue;
     }
-    const d = (D.get(m) ?? []).filter((x) => capOf(x) - daySets(x) >= 2 && x.exercises.length < MAX_EX).sort((x, y) => daySets(x) - daySets(y))[0];
+    const d = (D.get(m) ?? []).filter((x) => capOf(x) - daySets(x) >= 2 && x.exercises.length < MAX_EX && muscleOn(x) + 2 <= PB_SESSION_GROUP_CAP).sort((x, y) => daySets(x) - daySets(y))[0];
     const def = d === undefined ? undefined : ranked(exOf(m)).find((x) => !(x.skip ?? []).includes(d.focus) && !d.exercises.some((e) => e.key === x.key) && !clashes(d, x, m));
     if (d === undefined || def === undefined) break;
     const e = mkAcc(def.key, m, def.role, 2, def.tags ?? []);

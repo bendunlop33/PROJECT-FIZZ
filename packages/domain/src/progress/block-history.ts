@@ -263,9 +263,10 @@ export function liftInBlock(b: TrainingBlock, exerciseId: string, sessions: read
     const ss = (byWeek.get(slot.week) ?? []).filter((s) => s.exercises.some((e) => e.exerciseId === exerciseId));
     sessionIds.push(ss.map((s) => s.sessionId));
     const sets = ss.flatMap((s) => s.exercises.filter((e) => e.exerciseId === exerciseId).flatMap((e) => e.sets));
-    return { week: slot.week, deload: slot.deload, reached: slot.reached, best: weekBestSet(sets, kind, equipmentKind, unit), sets: countingSets(sets, kind, equipmentKind).length };
+    return { week: slot.week, deload: slot.deload, reached: slot.reached, best: weekBestSet(sets, kind, equipmentKind, unit), sets: countingSets(sets, kind, equipmentKind).length, sessions: ss.length };
   });
-  return { exerciseId, name: nameOf(exerciseId) || logged, progress: liftBlockProgress(inputs), sessionIds };
+  // ST2 (Ben, 2 Nov): under a Maintain plan only a drop counts.
+  return { exerciseId, name: nameOf(exerciseId) || logged, progress: liftBlockProgress(inputs, { maintain: b.answers?.effort === 'maintain' }), sessionIds };
 }
 
 // ---------------------------------------------------------------------------

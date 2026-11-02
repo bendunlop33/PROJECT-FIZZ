@@ -244,21 +244,24 @@ describe('Rebalance (Ben, 1 Nov: holistic)', () => {
   it('a swap that covers the gap with no time added comes first', () => {
     // Swapping the cable row (½ Biceps) for a chin-up variant raises assisted Biceps and keeps Back the same; with a
     // hammer curl alternative for a back accessory refused (Back would leave its range), the swap is the chin-up.
-    const days = [day(0, 'Pull', [r('row', 3, true), r('cablerow', 3), r('pulldown', 3)], 60), day(1, 'Arms', [r('curl', 3), r('pushdown', 3)], 60)];
+    // (2 Nov) The pulldown sits on the Arms day so no day has more than 8 Back sets (VC3 would act first).
+    const days = [day(0, 'Pull', [r('row', 3, true), r('cablerow', 3)], 60), day(1, 'Arms', [r('pulldown', 3), r('curl', 3), r('pushdown', 3)], 60)];
     const res = rebalancePlan({ goal: 'muscle', priorities: new Set(), days, ports: { infoOf, isolationsFor: () => ['hammer'], alternativesOf: (id: string) => (id === 'cablerow' ? ['chinup'] : []) } });
     expect(res.ops[0]).toMatchObject({ kind: 'swap', fromExerciseId: 'cablerow', toExerciseId: 'chinup' });
   });
 
   it('a Back above 20 direct sets is trimmed to 20 (never a main lift, never below 2 a row); 11–20 is never trimmed', () => {
+    // (2 Nov) Three pull days of 7 Back each: no day above 8 (VC3), so only the weekly trim is at work.
     const days = [
-      day(0, 'Pull A', [r('row', 3, true), r('pulldown', 4), r('cablerow', 4)], 60),
-      day(1, 'Pull B', [r('chinup', 3, true), r('pulldown', 4), r('shrug', 3)], 60),
+      day(0, 'Pull A', [r('row', 3, true), r('pulldown', 4)], 60),
+      day(1, 'Pull B', [r('chinup', 3, true), r('pulldown', 4)], 60),
+      day(2, 'Pull C', [r('row', 3, true), r('cablerow', 4)], 60),
     ];
     const res = rebalancePlan({ ...MUSCLE, days, ports: { ...ports, isolationsFor: () => [] } });
     expect(res.before.get('Back')?.direct).toBe(21);
     expect(res.after.get('Back')?.direct).toBe(20);
     // 14 Back sets (above the 6–10 target) are neither flagged nor trimmed.
-    const fourteen = rebalancePlan({ ...MUSCLE, days: [day(0, 'Pull', [r('row', 3, true), r('pulldown', 4), r('cablerow', 4), r('shrug', 3)], 90)], ports: { ...ports, isolationsFor: () => [] } });
+    const fourteen = rebalancePlan({ ...MUSCLE, days: [day(0, 'Pull A', [r('row', 3, true), r('pulldown', 4)], 90), day(1, 'Pull B', [r('cablerow', 4), r('shrug', 3)], 90)], ports: { ...ports, isolationsFor: () => [] } });
     expect(fourteen.flagsBefore.some((f) => f.group === 'Back')).toBe(false);
     expect(fourteen.ops.filter((o) => o.kind === 'trim' && o.group === 'Back')).toEqual([]);
     expect(res.ops.every((o) => o.kind !== 'trim' || (!['row', 'chinup'].includes(o.exerciseId) && (o.to === 0 || o.to >= 2)))).toBe(true);
@@ -275,9 +278,11 @@ describe('Rebalance (Ben, 1 Nov: holistic)', () => {
   });
 
   it('a day with no room frees minutes on that day from a group above its target (never below it), then fits the fill', () => {
-    // Pull A at its cap with Back at 14 (above the 6–10 target): one pulldown set gives room for 1 curl set.
-    const pull = day(0, 'Pull A', [r('row', 3, true), r('pulldown', 4), r('cablerow', 4), r('shrug', 3)], null);
-    const days = [{ ...pull, minutes: rebalanceDayMinutes(pull) }];
+    // Two pull days at their cap with Back at 14 a week (above the 6–10 target; 8 and 6 a day, so VC3 isn't at work,
+    // 2 Nov): a Back set on each day gives room for a curl set.
+    const pullA = day(0, 'Pull A', [r('row', 3, true), r('pulldown', 3), r('cablerow', 2)], null);
+    const pullB = day(1, 'Pull B', [r('chinup', 3, true), r('shrug', 3)], null);
+    const days = [pullA, pullB].map((d) => ({ ...d, minutes: rebalanceDayMinutes(d) }));
     const res = rebalancePlan({ ...MUSCLE, days, ports: { ...ports, isolationsFor: () => ['curl'] } });
     const trims = res.ops.filter((o) => o.kind === 'trim');
     expect(trims.length).toBeGreaterThan(0);

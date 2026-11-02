@@ -6,6 +6,7 @@ export * from './added-weight';
 export * from './rest';
 export * from './progression';
 export * from './stall-reset';
+export * from './stall';
 export * from './history';
 export * from './history-summary';
 export * from './gym-presets';

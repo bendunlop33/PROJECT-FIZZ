@@ -44,7 +44,7 @@ export interface NextSessionBasis {
   /** The built-in rule's target for next time, for comparison; null when it plans nothing. */
   builtIn: { target: CoachTarget; sets: number } | null;
   /**
-   * The lift is stalled (playbook rule 8: 2–3 sessions failing the same target): the built-in rule found
+   * The lift is stalled (playbook rule 8 / ST1: 2 misses ≥ 7 days apart, else 3): the built-in rule found
    * repeated misses at the same load (`failuresBeforeReduce` sessions in a row): its `reduce_load` decision, or
    * its hold at the lightest load this equipment has (`rule.stalled`; review v5offers 6). A coach change that
    * eases the load or changes the rep target on it is then a stall reset.

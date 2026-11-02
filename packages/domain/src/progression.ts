@@ -20,6 +20,8 @@ import {
   type LoadDirection,
 } from './equipment';
 import { allLeftOutFact, isSetCountable } from './exclusions';
+import { localDateOf } from './calendar';
+import { missStall } from './stall';
 import { stallResetLoad } from './stall-reset';
 import { toMs } from './time';
 import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
@@ -375,7 +377,8 @@ export interface NextTargets {
   /** (Reps from history, 21 Oct) The reps the rule used and the one count to plan (`nextTargetsFor`). */
   reps?: RuleReps;
   /**
-   * (Review v5offers 6) Playbook rule 8's stall: the miss streak reached `failuresBeforeReduce` at the same load,
+   * (Review v5offers 6; ST1, Ben 2 Nov) Playbook rule 8's stall: the miss streak reached `failuresBeforeReduce` at the same
+   * load with ≥ 7 days from the first miss to the last (inside 7 days, one more miss; `missStall`),
    * whether the rule could reduce (`reduce_load`) or no easier load exists (`hold_after_miss` at the lightest load).
    * Absent otherwise.
    */
@@ -407,6 +410,8 @@ interface SessionEval {
   imported: boolean;
   sessionId: string;
   performedAtUtc: string;
+  /** Local calendar date of the session (its own zone, else UTC): ST1's 7-day span. */
+  date: string;
   /** Completed sets of the counted type (working, or top for top-set rules), as logged rows. */
   loggedSets: number;
   /**
@@ -713,6 +718,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       sessionId: s.sessionId,
       imported: s.imported,
       performedAtUtc: s.performedAtUtc,
+      date: localDateOf(toMs(s.performedAtUtc), s.tz ?? 'UTC'),
       loggedSets: counted.length,
       otherSets: (s.imported ? comparableSetsOf(s).length : s.sets.length) - typed.length,
       leftOut: typed.length - counted.length,
@@ -1075,14 +1081,17 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
   }
 
   if (latest.loggedSets > 0 && latest.anyBelowFloor) {
-    let streak = 0;
+    const misses: SessionEval[] = [];
     for (const s of sessions) {
       const sameLoad = (s.load === null && L === null) || (s.load !== null && L !== null && toScaled(s.load) === toScaled(L));
       if (s.loggedSets === 0 || !s.anyBelowFloor || !sameLoad) break;
-      streak += 1;
+      misses.push(s);
     }
+    const streak = misses.length;
     const needed = rule.failuresBeforeReduce;
-    const stalled = streak >= needed && L !== null;
+    // ST1 (Ben, 2 Nov): `needed` misses ≥ 7 days apart; inside 7 days, one more miss.
+    const miss = missStall(misses, needed);
+    const stalled = miss.stalled && L !== null;
     if (stalled) {
       const reduced = reducedLoad(ctx, L);
       if (reduced !== null) {
@@ -1111,7 +1120,9 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
     } else {
       pushFact(
         ctx,
-        `One session below ${criteria.repRange.min} reps is treated as a bad day, not a trend (${streak} of ${needed} needed to reduce).`,
+        miss.waitingForThird
+          ? `${streak} sessions below ${criteria.repRange.min} reps within ${String(miss.spanDays)} days; one more miss before a reset is offered.`
+          : `One session below ${criteria.repRange.min} reps is treated as a bad day, not a trend (${streak} of ${needed} needed to reduce).`,
       );
     }
     const held = feasibleHold(ctx, L);

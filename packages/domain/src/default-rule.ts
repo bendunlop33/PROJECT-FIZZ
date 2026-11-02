@@ -16,8 +16,8 @@ import { formatNumber, rirOfRpe } from './display';
  *
  * Loads always come from the equipment (rounded, never above its max). A
  * next load more than 10% heavier than the last is not taken: reps progress
- * to the cap instead, then hold (playbook 7-F). Every rule reduces 10 % only
- * after 2 missed sessions.
+ * to the cap instead, then hold (playbook 7-F). Every rule offers a 10 % reset only
+ * after 2 missed sessions ≥ 7 days apart (ST1, Ben 2 Nov; `missStall`), or 3 in a row inside 7 days.
  */
 export type RuleCategory = 'main_barbell' | 'compound' | 'isolation';
 

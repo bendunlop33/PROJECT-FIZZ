@@ -92,7 +92,7 @@ function input(eq: EquipmentInstance, load: Load, over: Partial<NextTargetsInput
   return {
     exerciseName: 'Lift',
     measurement: 'reps',
-    history: [session(1, eq.id, load, [5, 5, 4]), session(4, eq.id, load, [5, 4, 4])],
+    history: [session(1, eq.id, load, [5, 5, 4]), session(8, eq.id, load, [5, 4, 4])], // ST1: ≥ 7 days apart (was 1 and 4)
     rule: doubleProgression(),
     equipment: eq,
     unit: load.unit,
