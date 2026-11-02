@@ -21,6 +21,7 @@ import {
   planRoutines,
   plannedMuscleSets,
   pbAppliedBuilder,
+  pbWeeksCoachLine,
   pbDayAsWorkout,
   pbDaysAtOf,
   pbVersionOf,
@@ -394,6 +395,17 @@ export function createPlanMusclesService(deps: PlanMusclesDeps) {
       const r = await read();
       if (r === null) return null;
       return muscleVolumeLines(r.typical, r.goal, r.of);
+    },
+
+    /**
+     * (Ben, 2 Nov) The coach's line for the plan's weeks (YOUR DATA `plan.inUse.weeks`): the block week, its deloads,
+     * the lighter weeks Ben asked for and any deload LW1 dropped, so it can say why. Null: no builder plan in use.
+     */
+    async coachWeeks(): Promise<string | null> {
+      const r = await read();
+      const answers = r === null ? null : (pbAppliedBuilder(r.plan)?.builder.answers ?? null);
+      if (r === null || answers === null) return null;
+      return pbWeeksCoachLine(answers, r.block === null ? null : { week: r.block.week, done: r.block.done, leadIn: r.block.leadIn !== undefined });
     },
 
     /** The typical week's flags and the key the coach's offer is raised once for (Ben, 1 Nov). Null: no plan in use. */

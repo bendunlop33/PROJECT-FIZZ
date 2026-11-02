@@ -473,6 +473,8 @@ export interface CoachServiceDeps {
   muscleGoal?: () => Promise<MuscleGoalInput | null>;
   /** (Ben, 1 Nov) The plan in use's typical week, direct (assisted) sets per group vs range: YOUR DATA plan.inUse.muscles. */
   planMuscleLines?: () => Promise<string[] | null>;
+  /** (Ben, 2 Nov) The plan in use's weeks: block week, deloads, lighter weeks, deloads LW1 dropped: YOUR DATA plan.inUse.weeks. */
+  planWeeksLine?: () => Promise<string | null>;
   /** (Ben, 27 Oct, Q4; ADR 0035) The watch workout linked to a workout, as the coach sees it; absent or null: none. */
   healthLinked?: (sessionId: string) => Promise<LinkedActivityContext | null>;
   /** Check-in settings (check-in.md §2.8); absent, the defaults. */
@@ -1911,7 +1913,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       const running = activePause(inUse, nowMs, p.timezone);
       swapView = deps.planSwap === undefined ? null : await deps.planSwap.context().catch(() => null);
       const muscles = (await deps.planMuscleLines?.().catch(() => null)) ?? null;
-      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate }, ...(swapView === null ? {} : { days: swapView.days }), ...(muscles === null ? {} : { muscles }) } };
+      const weeks = (await deps.planWeeksLine?.().catch(() => null)) ?? null;
+      planPause = { today: localDateOf(nowMs, p.timezone), inUse: { name: inUse.name, paused: running === null ? null : { until: running.untilDate }, ...(swapView === null ? {} : { days: swapView.days }), ...(muscles === null ? {} : { muscles }), ...(weeks === null ? {} : { weeks }) } };
       Object.assign(executors, createPausePlanExecutor({ store: coachStore(), loadPlan: () => repos().planDrafts.applied(p.id), tz: p.timezone }));
       // (Ben, 30 Oct, build 486) One exercise swapped in every plan day, from every chat while a plan is in use.
       const swap = deps.planSwap;

@@ -47,7 +47,8 @@ export function createRebalanceExecutor(deps: RebalanceDeps): CoachExecutors {
       const saved = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord(ctx, r.detail, { status: 'proposed', reason: call.args.reason.slice(0, 240) }) });
       if (saved.status === 'conflict') throw new Error('Could not record the rebalance');
       // The model gets every line and bar (the card shows them); its reply needn't repeat them.
-      const line = `Shown as a card with Apply: ${r.detail.lines.map((l) => l.text).join('; ')}. After: ${r.detail.bars.map((b) => b.text).join('; ')}.`.slice(0, 1500);
+      // (Ben, 2 Nov) And why, so the coach can say which rule moved what (VC3's day flags are in plan.inUse.muscles).
+      const line = `Shown as a card with Apply: ${r.detail.lines.map((l) => l.text).join('; ')}. After: ${r.detail.bars.map((b) => b.text).join('; ')}.${r.detail.why.length > 0 ? ` Why: ${r.detail.why.join(' ')}` : ''}`.slice(0, 1500);
       return { kind: 'action', record: saved.action, replayed: saved.status === 'replayed', line };
     },
   };

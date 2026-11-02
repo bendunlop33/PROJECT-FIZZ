@@ -65,6 +65,28 @@ export function pbDeloadWeeks(a: PbDeloadAnswers): number[] {
   return Array.from({ length: a.weeks }, (_, i) => i + 1).filter((w) => pbIsDeload(a, w));
 }
 
+/**
+ * (Ben, 2 Nov: the coach must be able to say why) The plan's weeks as the coach reads them (YOUR DATA
+ * `plan.inUse.weeks`): where the block is, its deload weeks, the lighter weeks Ben asked for, and each planned deload
+ * a lighter week turned into a normal week (LW1), with its reason. `now`: the block now (null: not known).
+ * `Week 4 of 6 · no planned deload weeks · lighter week (asked for): 3 · week 6 deload dropped: lighter week 3 was 3
+ * weeks before (LW1)`.
+ */
+export function pbWeeksCoachLine(a: PbDeloadAnswers, now: { week: number; done: boolean; leadIn: boolean } | null): string {
+  const parts: string[] = [];
+  if (now !== null) parts.push(now.done ? `Plan finished (${String(a.weeks)} weeks)` : now.leadIn ? `Lead-in week, then week 1 of ${String(a.weeks)}` : `Week ${String(now.week)} of ${String(a.weeks)}`);
+  else parts.push(`${String(a.weeks)} weeks`);
+  const lighter = (a.lighterWeeks ?? []).filter((w) => w >= 1 && w <= a.weeks).sort((x, y) => x - y);
+  const deloads = pbDeloadWeeks(a).filter((w) => !lighter.includes(w));
+  parts.push(deloads.length === 0 ? 'no planned deload weeks' : `planned deload ${deloads.length === 1 ? 'week' : 'weeks'}: ${deloads.join(', ')}`);
+  if (lighter.length > 0) parts.push(`${lighter.length === 1 ? 'lighter week' : 'lighter weeks'} (asked for): ${lighter.join(', ')}`);
+  for (const d of [...(a.skippedDeloads ?? [])].sort((x, y) => x - y)) {
+    const l = [...lighter].reverse().find((x) => x < d && d - x <= PB_LIGHTER_SKIP_WITHIN);
+    parts.push(l === undefined ? `week ${String(d)} deload dropped (LW1)` : `week ${String(d)} deload dropped: lighter week ${String(l)} was ${String(d - l)} ${d - l === 1 ? 'week' : 'weeks'} before (LW1)`);
+  }
+  return parts.join(' · ');
+}
+
 /** Progression weeks before week `w` (deloads don't count). */
 export function pbProgWeeks(a: PbDeloadAnswers, w: number): number {
   let k = 0;

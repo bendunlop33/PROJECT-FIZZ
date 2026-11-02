@@ -365,17 +365,19 @@ export function planMusclesView(input: PlanMusclesInput): PlanMusclesView {
 /**
  * The coach's compact view of the plan (YOUR DATA `plan.inUse.muscles`): the typical week's direct sets per group with
  * the assisted ones and the range, so "does my plan train enough biceps" is answered from code's numbers.
- * `Biceps 0 direct (+9 assisted) · range 4–8 · below`.
+ * `Biceps 0 direct (+9 assisted) · range 4–8 · below`. Then (Ben, 2 Nov, VC3) each day above the per-session cap,
+ * `Chest 10 on Push A · above 8`, so the coach can say why Rebalance moves sets off that day.
  */
 export function muscleVolumeLines(typical: readonly PlanMuscleDay[], g: MuscleGoalInput, infoOf: InfoOf): string[] {
   const totals = plannedMuscleSets(typical, infoOf);
   const ranges = rangesOf(totals, g);
+  const perDay = dayMuscleFlags(typical, infoOf).map((f) => PLAN_MUSCLES_COPY.dayGap(f));
   return PLAN_MUSCLE_GROUPS.map((m) => {
     const t = totals.get(m) ?? { direct: 0, assisted: 0 };
     const r = ranges.get(m) ?? null;
     const st = r === null ? null : muscleStatus(t.direct, r);
-    return [`${m} ${setsText(t.direct)} direct${t.assisted > 0 ? ` (+${setsText(t.assisted)} assisted)` : ''}`, r === null ? 'no goal range' : `range ${String(r.min)}–${String(r.max)}`, st === null ? null : st === 'in' ? 'in range' : st].filter((x): x is string => x !== null).join(' · ');
-  });
+    return [`${m} ${setsText(t.direct)} direct${t.assisted > 0 ? ` (+${setsText(t.assisted)} assisted)` : ''}`, r === null ? 'no goal range' : `range ${String(r.min)}–${String(r.max)}`, st === null || r === null ? null : st !== 'in' ? st : overTarget(t.direct, r) ? `above range, not flagged up to ${String(MUSCLE_FLAG_CEILING)}` : 'in range'].filter((x): x is string => x !== null).join(' · ');
+  }).concat(perDay);
 }
 
 /** A stable key for "the plan's typical week as it is now": the offer is raised once per key (Ben, 1 Nov). */

@@ -151,5 +151,7 @@ describe('the coach’s muscle-gap offer: once per plan state (Ben, 1 Nov)', () 
     expect(again?.key).not.toBe(first?.key);
     // The coach's YOUR DATA lines: from the same count.
     expect((await s.planMuscles.coachLines())?.find((l) => l.startsWith('Biceps'))).toMatch(/^Biceps 0 direct .*· below$/);
+    // (Ben, 2 Nov) And the plan's weeks, read from the block now (YOUR DATA plan.inUse.weeks).
+    expect(await s.planMuscles.coachWeeks()).toMatch(/^(?:Week \d+ of \d+|Lead-in week, then week 1 of \d+) · /);
   });
 });

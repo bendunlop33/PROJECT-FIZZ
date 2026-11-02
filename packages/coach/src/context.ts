@@ -272,6 +272,11 @@ export interface PlanPauseView {
      * that applies, from code (`Biceps 0 direct (+6½ assisted) · range 4–8 · below`). Answer volume questions from it.
      */
     muscles?: string[];
+    /**
+     * (Ben, 2 Nov) The plan's weeks from code: `Week 4 of 6 · no planned deload weeks · lighter week (asked for): 3 ·
+     * week 6 deload dropped: lighter week 3 was 3 weeks before (LW1)`, so "why no deload?" is answered from it.
+     */
+    weeks?: string;
   } | null;
 }
 
@@ -655,7 +660,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
     ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),
-    ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until }, ...(input.plan.inUse.days === undefined ? {} : { days: input.plan.inUse.days.map((d) => ({ name: d.name, exercises: d.exercises.map((e) => ({ ...e })) })) }), ...(input.plan.inUse.muscles === undefined ? {} : { muscles: [...input.plan.inUse.muscles] }) } } }),
+    ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until }, ...(input.plan.inUse.days === undefined ? {} : { days: input.plan.inUse.days.map((d) => ({ name: d.name, exercises: d.exercises.map((e) => ({ ...e })) })) }), ...(input.plan.inUse.muscles === undefined ? {} : { muscles: [...input.plan.inUse.muscles] }), ...(input.plan.inUse.weeks === undefined ? {} : { weeks: input.plan.inUse.weeks }) } } }),
     ...(input.notPreferred === undefined || input.notPreferred.length === 0 ? {} : { notPreferred: input.notPreferred.map((e) => ({ catalogueId: e.catalogueId, name: e.name, use: 'never put this in his plan or a workout' as const })) }),
   };
 }

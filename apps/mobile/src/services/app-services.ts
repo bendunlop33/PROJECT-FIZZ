@@ -677,6 +677,7 @@ export function createAppServices(deps: AppServicesDeps) {
   const coach = createCoachService({
     muscleGoal: muscleGoalNow,
     planMuscleLines: () => planMuscles.coachLines(),
+    planWeeksLine: () => planMuscles.coachWeeks(),
     // (Ben, 27 Oct, Q4) The watch workout linked to the workout in context.
     healthLinked: (sessionId) => health.coachLinked(sessionId),
     ...(deps.checkInSettings === undefined ? {} : { checkInSettings: deps.checkInSettings }),
