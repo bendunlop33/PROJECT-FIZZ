@@ -8,6 +8,8 @@ The question it answers: is each main lift actually going up across the 6-week b
 
 At the top of Lifts, above the existing per-lift charts (unchanged).
 
+> **Superseded in part (Ben, 2 Nov; [prototypes/lifts-block-overall-2nov.html](prototypes/lifts-block-overall-2nov.html)):** with a block running, Lifts has a `Block | Overall` text strip and opens on Block (this view without the `This block` heading, no period bar); Overall is the period bar and charts alone. No block: no strip. `Blocks ›` is `All blocks ›`, shown only once a block has finished (everywhere it appears); the §4 screen's title is `All blocks`.
+
 ```
 THIS BLOCK                       Week 3 of 6   Blocks ›
 ┌──────────────────────────────────────────────────────┐
