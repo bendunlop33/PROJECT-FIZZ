@@ -184,6 +184,9 @@ import {
   type HealthDayLine,
   lastDaysView,
   LAST_DAYS,
+  enduranceSwitch,
+  ENDURANCE_SWITCH_DAYS,
+  type EnduranceSwitch,
   localMidnightUtcMs,
   type LastDaysView,
   toIso,
@@ -1212,6 +1215,20 @@ export function createCoachService(deps: CoachServiceDeps) {
     }
   }
 
+  /**
+   * (Ben, 2 Nov) The endurance switch for rules 11–13: his activities (Apple Health's runs included) from 7 days back to
+   * 7 ahead. Local reads only; a failed read is null, so the rules read "activities not read", never a guess.
+   */
+  async function enduranceSwitchFor(p: UserProfile): Promise<EnduranceSwitch | null> {
+    try {
+      const today = localDateOf(toMs(deps.now().utc), p.timezone);
+      const acts = await repos().activities.listBetween(p.id, addDays(today, -ENDURANCE_SWITCH_DAYS), addDays(today, ENDURANCE_SWITCH_DAYS + 1));
+      return enduranceSwitch(acts, today);
+    } catch {
+      return null;
+    }
+  }
+
   /** (21 Oct) The recent sessions of a live workout's exercises in play, as `get_recent_training` reads them. Local reads only. */
   async function recentLiftsFor(p: UserProfile, session: SessionAggregate, words: string): Promise<ExerciseHistoryView[]> {
     const reads = trainingReads(p, session);
@@ -1248,6 +1265,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const training = (await deps.training?.().catch(() => null)) ?? null;
     const linkedActivity = session === null || deps.healthLinked === undefined ? null : await deps.healthLinked(session.session.id).catch(() => null);
     const lastDays = await lastDaysFor(p);
+    const endurance = await enduranceSwitchFor(p);
     return {
       gymName,
       checkIn,
@@ -1268,6 +1286,7 @@ export function createCoachService(deps: CoachServiceDeps) {
         ...(training === null ? {} : { training }),
         ...(linkedActivity === null ? {} : { linkedActivity }),
         ...(lastDays === null ? {} : { lastDays }),
+        ...(endurance === null ? {} : { enduranceSwitch: endurance }),
         ...(builtIn === null || session === null
           ? {}
           : {

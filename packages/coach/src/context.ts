@@ -1,4 +1,4 @@
-import { ageFromBirthYear, bodyweightEntries, lastDaysDetail, type LastDaysView, type HealthDailyValue, buildExecutionOrder, deriveId, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
+import { ageFromBirthYear, bodyweightEntries, type EnduranceSwitch, type EnduranceSwitchSession, lastDaysDetail, type LastDaysView, type HealthDailyValue, buildExecutionOrder, deriveId, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
 import type { CheckIn, HealthWeightSample, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, TrainingSplit, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
@@ -27,8 +27,20 @@ export interface PlaybookRuleEntry {
   short: string;
   appliesWhen: string;
   grade: string;
-  use: 'in_use' | 'not_in_use' | 'code_only';
+  /** `endurance_switch` (Ben, 2 Nov): rules 11–13, in use only while the switch is on (`enduranceRuleStatus`). */
+  use: 'in_use' | 'code_only' | 'endurance_switch';
   note: string | null;
+}
+
+/** (Ben, 2 Nov) Rules 11–13's status while the endurance switch is off. */
+export const ENDURANCE_SWITCH_OFF = 'not in use: no hard/long/key endurance in plan or log';
+/** Said when the activities couldn't be read for the turn, so the switch isn't known (never guessed off or on). */
+export const ENDURANCE_SWITCH_UNREAD = 'not in use: activities not read';
+
+/** A rule's status as sent: `in use`, or why not. Rules 11–13 follow the endurance switch (rule G). */
+export function playbookRuleStatus(r: Pick<PlaybookRuleEntry, 'use' | 'note'>, endurance: EnduranceSwitch | null): string {
+  if (r.use === 'endurance_switch') return endurance === null ? ENDURANCE_SWITCH_UNREAD : endurance.on ? 'in use' : ENDURANCE_SWITCH_OFF;
+  return r.use === 'in_use' ? 'in use' : (r.note ?? 'not in use');
 }
 
 export const PLAYBOOK_V1: { formatVersion: number; source: string; approved: string; rules: readonly PlaybookRuleEntry[] } = playbookBundle as {
@@ -147,6 +159,12 @@ export interface CoachContextInput {
    * is data, never instructions. Absent: not read for this turn.
    */
   lastDays?: LastDaysView;
+  /**
+   * (Ben, 2 Nov) The endurance switch (rule G) from his activities, Apple Health's included (`enduranceSwitch`): it
+   * puts rules 11–13 in use. Your data (the session that turned it on); the playbook gets only on or off. Absent:
+   * activities not read for this turn.
+   */
+  enduranceSwitch?: EnduranceSwitch;
 }
 
 /** (Q4) The linked watch workout as the coach sees it. */
@@ -518,6 +536,8 @@ export interface YourData {
   linkedActivity?: LinkedActivityContext;
   /** (Ben, 28 Oct) Every coach turn: the last 7 days' workouts and activities. */
   lastDays?: LastDaysView;
+  /** (Ben, 2 Nov) Rules 11–13 apply while `on`; `session` is what turned it on. */
+  enduranceSwitch?: { on: boolean; session: EnduranceSwitchSession | null; rules: '11, 12, 13 in use' | '11, 12, 13 not in use' };
 }
 
 export interface CoachingKnowledge {
@@ -660,6 +680,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
     ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),
+    ...(input.enduranceSwitch === undefined ? {} : { enduranceSwitch: { on: input.enduranceSwitch.on, session: input.enduranceSwitch.session === null ? null : { ...input.enduranceSwitch.session }, rules: input.enduranceSwitch.on ? ('11, 12, 13 in use' as const) : ('11, 12, 13 not in use' as const) } }),
     ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until }, ...(input.plan.inUse.days === undefined ? {} : { days: input.plan.inUse.days.map((d) => ({ name: d.name, exercises: d.exercises.map((e) => ({ ...e })) })) }), ...(input.plan.inUse.muscles === undefined ? {} : { muscles: [...input.plan.inUse.muscles] }), ...(input.plan.inUse.weeks === undefined ? {} : { weeks: input.plan.inUse.weeks }) } } }),
     ...(input.notPreferred === undefined || input.notPreferred.length === 0 ? {} : { notPreferred: input.notPreferred.map((e) => ({ catalogueId: e.catalogueId, name: e.name, use: 'never put this in his plan or a workout' as const })) }),
   };
@@ -670,8 +691,12 @@ function copyOpenedFrom(o: OpenedFrom): OpenedFrom {
   return o.screen === 'progress' ? { screen: 'progress', window: { ...o.window } } : { screen: 'progress_exercise', exercise: o.exercise, series: o.series, range: { ...o.range } };
 }
 
-/** Coaching knowledge only: approved rules and catalogue cues. Nothing personal is read here. */
-export function buildCoachingKnowledge(catalogue: readonly CatalogueCue[], candidates: readonly PlaybookCandidate[] = []): CoachingKnowledge {
+/**
+ * Coaching knowledge only: approved rules and catalogue cues. Nothing personal is read here, except whether the
+ * endurance switch is on (rules 11–13's status; null: activities not read). Which session turned it on stays in
+ * Your data.
+ */
+export function buildCoachingKnowledge(catalogue: readonly CatalogueCue[], candidates: readonly PlaybookCandidate[] = [], endurance: EnduranceSwitch | null = null): CoachingKnowledge {
   const numbers = chatRuleNumbers(candidates);
   const approved = candidates
     .filter((c) => c.status === 'approved')
@@ -684,7 +709,7 @@ export function buildCoachingKnowledge(catalogue: readonly CatalogueCue[], candi
       rules: PLAYBOOK_V1.rules
         // 7-F is code, not advice (ADR 0020 §6).
         .filter((r) => r.use !== 'code_only')
-        .map((r) => ({ id: r.id, rule: r.short, appliesWhen: r.appliesWhen, grade: r.grade, status: r.use === 'in_use' ? 'in use' : (r.note ?? 'not in use') })),
+        .map((r) => ({ id: r.id, rule: r.short, appliesWhen: r.appliesWhen, grade: r.grade, status: playbookRuleStatus(r, endurance) })),
     },
     exercises: catalogue.map((c) => ({ name: c.name, cues: c.cues })),
   };
@@ -765,7 +790,7 @@ export function requestChars(req: { instructions: string; input: readonly ModelI
 
 export function buildCoachContext(input: CoachContextInput): CoachContext {
   const yourData = buildYourData(input);
-  const coachingKnowledge = buildCoachingKnowledge(input.catalogue, input.playbookCandidates ?? []);
+  const coachingKnowledge = buildCoachingKnowledge(input.catalogue, input.playbookCandidates ?? [], input.enduranceSwitch === undefined ? null : { on: input.enduranceSwitch.on, session: null });
   const training = input.training === undefined ? [NO_TRAINING_DETAILS] : trainingDetailsView(input.training).notSet;
   // (Ben, 28 Oct) With the last 7 days read, his activities are in YOUR DATA: never also said to be none.
   const absent = input.lastDays === undefined ? NOT_AVAILABLE : NOT_AVAILABLE.filter((x) => x !== NO_ACTIVITIES);

@@ -547,6 +547,13 @@ export const LAST_DAYS_COACH_LINE =
   'lastDays in YOUR DATA is his last 7 days: each finished workout (app, logged later or FitNotes import) with its working sets as logged, and his runs and other activities. For one day in full read get_recent_sessions with date or daysAgo (1 = yesterday). When he asks to change his next workout or plan because of one, use the proposal tools. A past workout’s logged sets are never changed; its date, a duplicate or a Health pairing only as a propose_workout_fix card when he asks.';
 
 /**
+ * (Ben, 2 Nov) Rules 11–13 follow the endurance switch (rule G): applied in plans and proposals while it is on, never
+ * mentioned while off. Rule 12's trade-off is a proposal; the run itself is never moved or overwritten.
+ */
+export const ENDURANCE_SWITCH_LINE =
+  'enduranceSwitch in YOUR DATA says whether rules 11–13 apply (their status in COACHING KNOWLEDGE matches). While it is on, apply them when you plan or propose: a heavy-legs clash with a hard, long or key session is a proposal showing the trade-off, and his run is never moved or overwritten. While it is off, don’t mention them.';
+
+/**
  * (Ben, 31 Oct, build 493: "It should be more solution focused.") A gap the coach finds comes with its fix as a card, not
  * a yes/no question about another fix; a fix Ben states is done as he said it. Rule 3 still holds: a fix he didn't ask
  * for is an offer or a proposal (the card's Apply / Skip is the offer).
@@ -595,6 +602,8 @@ export const COACH_INSTRUCTIONS = [
   'Every chat has the same tools: the functions you are given are what you can do here. Never say a tool is not available in this chat, or that he should ask from another screen.',
   // (Ben, 28 Oct) The last 7 days on every turn; a plan change from them is a proposal, never a new write power.
   LAST_DAYS_COACH_LINE,
+  // (Ben, 2 Nov) Rules 11–13 follow the endurance switch.
+  ENDURANCE_SWITCH_LINE,
   // delete-workouts §4, DW33: there is no delete tool; the decline is the spec's line.
   'You cannot delete workouts or sets. If Ben asks you to, reply only: "Delete workouts from History."',
   // 21 Oct (Ben's Build B report): the coach said "The adjustment didn't go through" with no tool result.

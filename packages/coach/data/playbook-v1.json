@@ -96,24 +96,24 @@
       "short": "Same day with strength as the priority: lift first and keep the endurance part easy. If the day's endurance session is a key one, do it first and cut leg volume.",
       "appliesWhen": "Daily plan, only when the endurance switch is on. The lift-first part only when lifting is the priority (see \"Endurance switch\")",
       "grade": "Moderate",
-      "use": "not_in_use",
-      "note": "not in use: no endurance training logged"
+      "use": "endurance_switch",
+      "note": null
     },
     {
       "id": "12",
       "short": "Keep heavy lower-body lifting and hard or long endurance ≥ 6 h apart (ideally ≥ 24 h). Keep heavy or high-volume leg work out of the 48 h before a key long run, ride or race. Show the trade-off as a proposal; never overwrite the run.",
       "appliesWhen": "Weekly scheduling, only when the endurance switch is on",
       "grade": "Moderate",
-      "use": "not_in_use",
-      "note": "not in use: no endurance training logged"
+      "use": "endurance_switch",
+      "note": null
     },
     {
       "id": "13",
       "short": "Keep ≥ 2 heavy strength exposures a week through endurance phases (fewer sets, same heavy loads).",
       "appliesWhen": "When the endurance switch is on and endurance is one of Ben's goals (was \"Endurance/HYROX blocks\")",
       "grade": "Moderate",
-      "use": "not_in_use",
-      "note": "not in use: no endurance training logged"
+      "use": "endurance_switch",
+      "note": null
     },
     {
       "id": "G",
@@ -232,6 +232,30 @@
       "short": "A planned run or other planned activity whose day has passed with nothing linked, matched or marked done is Missed and stops counting from the day after (run rule and the week). Linking or logging it later counts it again.",
       "appliesWhen": "The week, the run rule, the coach's week view",
       "grade": "Ben's rule (2 Nov)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "SW1",
+      "short": "Simple warm-up weights (default on; Profile › Training): each warm-up step rounds to an easy load the item can make: the bar, then the bar + 10 kg steps (20 lb in lb; 20 kg steps from a 100 kg working weight when that needs no more steps), dumbbells in 5 kg (10 lb), machines in 10 kg (20 lb) or the stack's own step. Always achievable and below the working weight. Reason: Ben wants easy-to-load warm-ups, not fiddly calculated jumps.",
+      "appliesWhen": "Every generated warm-up while the setting is on",
+      "grade": "Ben's preference + guardrail (rule 4)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "PH1",
+      "short": "Rotator cuff and prehab work (face pulls included) gets no warm-up sets, and the coach's increases on it go one load step (one dumbbell) at a time. Ben's per-exercise warm-up setting (off or normal) wins. Reason: this work stays light and easy.",
+      "appliesWhen": "Prehab exercises",
+      "grade": "Ben's preference",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "PL1",
+      "short": "Plate ladder: on bars and plate-loaded machines, warm-ups are the bar plus whole 5 kg plates a side, each step only adds plates to the one before, and the working set only adds to the last step. A cold heavy bar lift starts with plates on (at most 60 kg and ⅔ of the working weight; the empty bar only when the working weight is 60 kg or less and not from the floor) and gets 2–3 warm-ups with no jump over 30 % of the working weight (100 → 60, 80; 105 → 60, 90); already warm: one step near 80 % × 2. In lb: the bar + 20 lb steps. Reason: minimal unloading of plates.",
+      "appliesWhen": "Every generated warm-up on a bar or plate-loaded machine, with Simple warm-up weights on",
+      "grade": "Ben's preference + guardrail (rule 4)",
       "use": "in_use",
       "note": null
     },
