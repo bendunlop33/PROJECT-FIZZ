@@ -69,7 +69,7 @@
     },
     {
       "id": "8",
-      "short": "A stall (ST1: 2 comparable sessions failing the same target ≥ 7 days apart, else a third; ST2: no new best for ≥ 3 sessions and ≥ 3 weeks): propose a rep-scheme change, then a 5–10% reset; 2+ lifts stalled in a fortnight → rule 10's deload. One bad session gets a note only.",
+      "short": "A stall (ST1: 2 comparable sessions failing the same target ≥ 7 days apart, else a third; ST2: no new best for ≥ 3 sessions and ≥ 3 weeks, deload, lead-in, return and pain weeks skipped, a machine-max or rep-cap hold is a ceiling, not a stall). ST3: shown as `Stalled`; when Ben opens a review or asks, one offer: a rep-scheme change first, then a 5–10% reset; 2+ lifts stalled in a fortnight → rule 10's deload; a pain flag gets no offer. One bad session gets a note only.",
       "appliesWhen": "Next-session targets, block view, weekly review",
       "grade": "Practice",
       "use": "in_use",
@@ -128,6 +128,118 @@
       "short": "Mid-session offer triggers compare logged effort with each working set's target RPE (Ben's, else the coach's, else the plan's, else the built-in rule's): harder at ≥ target + 1.5 or reps below the range minimum (unless effort was ≤ target − 1), easier at ≤ target − 2. Warm-ups, drop sets and planned all-out/AMRAP sets never trigger. \"Too easy\" never fires above 12 reps.",
       "appliesWhen": "Every logged working set",
       "grade": "Moderate (rating error) + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "FQ1",
+      "short": "Prefer ≥ 2 exposures a week per muscle group where his days and split allow, as a tie-breaker only: never a reason to add sets, time or days. A group trained once a week is never flagged. Reason: weekly sets drive growth; frequency mostly spreads them.",
+      "appliesWhen": "Planning, Rebalance, plan checks",
+      "grade": "Strong (equal volume) / Practice (exposure threshold)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "FQ2",
+      "short": "A group with more than 8 direct sets a week is spread over ≥ 2 days so no day has more than 8 direct sets for it; the builder and Rebalance never make a day above 8. Reason: rule 1's per-session cap.",
+      "appliesWhen": "Any plan",
+      "grade": "Moderate (diminishing returns) / Weak (the 8)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "FQ3",
+      "short": "Strength focus: Rebalance and trims never take a main lift below 2 days a week when his days allow (rule 2).",
+      "appliesWhen": "Strength focus, or strength also matters",
+      "grade": "Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "VC1",
+      "short": "Between a group's range top and 20 direct sets a week nothing is flagged and Rebalance doesn't trim it for its own sake; it is the first donor (only down to its range top) when a gap fill needs time on that day. Reason: more sets still add growth up to about 20.",
+      "appliesWhen": "Muscle, General fitness, non-priority groups",
+      "grade": "Strong / Practice (donor first)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "VC2",
+      "short": "Flagged, and trimmed by Rebalance, only above 20 direct sets a week (priority groups Ben chose may go above, V4). Assisted sets never flag a group. Reason: little data above 20–25.",
+      "appliesWhen": "Plan › Muscles, plan checks, weekly review",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "VC3",
+      "short": "A day with more than 8 direct sets for one group is flagged (`Chest 10 on Push A · above 8`). Rebalance moves the excess to another of that group's days with time, else trims to 8: never a main lift, never a row below 2 sets. Reason: above about 8 in one session adds little.",
+      "appliesWhen": "Any plan or builder day",
+      "grade": "Moderate / Weak (the 8)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "VC4",
+      "short": "Strength focus: the weekly review's top for non-main groups stays 10 sets a week; spare capacity goes to main-lift recovery.",
+      "appliesWhen": "Strength focus",
+      "grade": "Weak",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "LW1",
+      "short": "After a lighter week (Ben asked, or accepted the early-deload offer) the plan keeps its length; the next planned deload becomes a normal week only if it falls ≤ 3 weeks after the lighter week; later deloads stay. Never ends, restarts or extends the plan. Reason: two lighter weeks that close together cost training for little gain.",
+      "appliesWhen": "Plans with planned deloads, when a lighter week is applied",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "LW2",
+      "short": "The dropped deload shows in the same lighter-week proposal (`Deload: week 6 → none`); one Apply and one Undo cover both.",
+      "appliesWhen": "The lighter-week proposal",
+      "grade": "Guardrail",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "LW3",
+      "short": "No catch-up: the planned path doesn't advance in the lighter week (the week after is the last build week plus one step), and a lighter week never counts as a stall or as behind. Reason: strength holds over a short lighter spell.",
+      "appliesWhen": "Planned path, block view",
+      "grade": "Practice / Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "PC1",
+      "short": "A back-off or drop the app plans is put at a load reached by taking plates off the set before: the worked-out load if it can be, else the heaviest within 5% (or one gym step) below it that can. Never heavier; a weight Ben types is kept. Reason: fewer plate changes.",
+      "appliesWhen": "Planned back-offs and drops on plate-loaded lifts",
+      "grade": "Practice (Ben's preference)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "RUN1",
+      "short": "The run rule: the day before a planned long or hard run and the day after a done one, leg days go after every other day in Up next (still suggested if every option is a leg day). A Set day isn't moved. Reason: rule 12, keep heavy legs away from hard or long runs.",
+      "appliesWhen": "Up next, when a long or hard run is planned or done",
+      "grade": "Moderate (rule 12)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "RUN2",
+      "short": "A planned run or other planned activity whose day has passed with nothing linked, matched or marked done is Missed and stops counting from the day after (run rule and the week). Linking or logging it later counts it again.",
+      "appliesWhen": "The week, the run rule, the coach's week view",
+      "grade": "Ben's rule (2 Nov)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "CW1",
+      "short": "Cardio Ben asks for as a warm-up is marked Warm-up on its row. It stays a timed working bout: no PB, volume or muscle-set credit, and it sits outside the 10-minute warm-up-set allowance.",
+      "appliesWhen": "Plan days, Your workout, the live workout",
+      "grade": "Ben's rule (2 Nov)",
       "use": "in_use",
       "note": null
     }

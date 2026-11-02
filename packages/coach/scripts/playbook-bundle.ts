@@ -1,7 +1,7 @@
 /**
  * Builds `packages/coach/data/playbook-v1.json`, the versioned bundle of the
  * approved playbook rules the coach is sent (ADR 0020 §6), from the rules
- * table in `docs/training-guides/playbook-v1.md`. A unit test re-parses the
+ * tables in `docs/training-guides/playbook-v1.md` (v1, then the rules approved 2 Nov). A unit test re-parses the
  * Markdown and fails when the bundle drifts from it.
  *
  * Usage: node --import ./packages/catalogue/scripts/ts-hooks.ts packages/coach/scripts/playbook-bundle.ts [--write]
@@ -45,21 +45,46 @@ const NOT_IN_USE: Record<string, string> = {
   '13': 'not in use: no endurance training logged',
 };
 
-export function parsePlaybookRules(markdown: string): PlaybookRule[] {
-  const start = markdown.indexOf('## Playbook rules (approved v1)');
-  if (start < 0) throw new Error('No "Playbook rules (approved v1)" section');
+/** One `## Playbook rules (approved …)` section's table rows, in order. */
+function sectionRows(markdown: string, heading: string): string[][] {
+  const start = markdown.indexOf(heading);
+  if (start < 0) throw new Error(`No "${heading.replace(/^## /, '')}" section`);
   const end = markdown.indexOf('\n## ', start + 5);
   const section = markdown.slice(start, end < 0 ? undefined : end);
+  return section
+    .split('\n')
+    .filter((line) => line.startsWith('| '))
+    .map((line) =>
+      line
+        .split('|')
+        .slice(1, -1)
+        .map((c) => c.trim()),
+    );
+}
+
+/** v1's IDs; the 2 Nov table's are letters and a number (FQ1, VC3, LW2, PC1, RUN2, CW1). */
+const V1_ID = /^(?:\d+|7-F|G|T)$/;
+const LATER_ID = /^[A-Z]{1,4}\d{1,2}$/;
+
+/**
+ * The approved rules: v1's table, then (Ben, 2 Nov: "a good coach … must be able to say why") the short forms of
+ * rules approved since that the app enforces, so the coach can name every rule it is held to. Candidates awaiting
+ * Ben are never here.
+ */
+export function parsePlaybookRules(markdown: string): PlaybookRule[] {
   const rules: PlaybookRule[] = [];
-  for (const line of section.split('\n')) {
-    if (!line.startsWith('| ')) continue;
-    const cells = line.split('|').slice(1, -1).map((c) => c.trim());
+  for (const cells of sectionRows(markdown, '## Playbook rules (approved v1)')) {
     const id = cells[0] ?? '';
-    if (!/^(?:\d+|7-F|G|T)$/.test(id)) continue;
+    if (!V1_ID.test(id)) continue;
     const short = plain(cells[1] ?? '');
     if (/^Removed\b/.test(short)) continue;
     const use: PlaybookUse = id === '7-F' ? 'code_only' : NOT_IN_USE[id] !== undefined ? 'not_in_use' : 'in_use';
     rules.push({ id, short, appliesWhen: plain(cells[2] ?? ''), grade: plain(cells[3] ?? ''), use, note: NOT_IN_USE[id] ?? (id === '7-F' ? 'code: the built-in rule, never sent as advice' : null) });
+  }
+  for (const cells of sectionRows(markdown, '## Playbook rules (approved 2 Nov 2026)')) {
+    const id = cells[0] ?? '';
+    if (!LATER_ID.test(id)) continue;
+    rules.push({ id, short: plain(cells[1] ?? ''), appliesWhen: plain(cells[2] ?? ''), grade: plain(cells[3] ?? ''), use: 'in_use', note: null });
   }
   return rules;
 }
