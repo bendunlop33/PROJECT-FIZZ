@@ -43,8 +43,10 @@ describe('Library › Plan', () => {
   it('the plan in use: this week’s days with the next one', async () => {
     const ben = await benWithHistory(h);
     await withPlan(h, ben);
-    const r = await renderScreen(h, ben.launched, LibraryScreen, { name: 'LibraryHome' }, (t) => t.includes('4-day plan') && t.includes('Next'));
+    // (Ben, 2 Nov: one plan screen) A builder plan's title is its focus and length.
+    const r = await renderScreen(h, ben.launched, LibraryScreen, { name: 'LibraryHome' }, (t) => t.includes(' · 6 weeks') && t.includes('Next'));
     expect(r.text()).toContain('Edit plan');
+    expect(r.text()).toContain('days / week');
     expectHealthy(r);
     await r.unmount();
   });

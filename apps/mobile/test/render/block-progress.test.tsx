@@ -24,9 +24,11 @@ describe('block progress screens', () => {
     const text = r.text();
     for (const w of ['This block', 'Week 4 of 6', 'Blocks ›', 'Stalled', 'Up / held', 'Deload']) expect(text).toContain(w);
     expect(text.indexOf('This block')).toBeLessThan(text.lastIndexOf('Bench press'));
-    // (Ben, 2 Nov; plan-summary.md) The current block's `Week 4 of 6 ›` opens the plan summary.
+    // (Ben, 2 Nov) The current block's `Week 4 of 6 ›` opens Library › Plan (one plan screen).
     await r.press('Week 4 of 6 ›');
-    expect(JSON.stringify(r.nav)).toContain('ProgressPlan');
+    const open = r.nav.find((c) => c.method === 'dispatch' && JSON.stringify(c.args).includes('"Library"'));
+    expect(JSON.stringify(open?.args)).toContain('"segment":"plan"');
+    expect(JSON.stringify(r.nav)).not.toContain('ProgressPlan');
     expectHealthy(r);
     await r.unmount();
   });

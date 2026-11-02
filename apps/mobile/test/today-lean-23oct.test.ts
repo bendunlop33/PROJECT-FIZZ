@@ -373,6 +373,13 @@ describe('D7: one split source — with a plan, Profile › Split and the duplic
       ['days', 'Set by your plan', true],
       ['length', 'Set by your plan', true],
     ]);
+    // (Ben, 2 Nov: one plan time) A builder plan's own numbers, still the plan's (the row opens the plan).
+    const builder = trainingDetailsView(t.profile, { nowYear: 2026, unit: 'kg', planInUse: true, planTime: { sessions: 3, minutes: 50 } });
+    expect(builder.training.map((r) => [r.key, r.value, r.byPlan ?? false])).toEqual([
+      ['goal', 'Not set', false],
+      ['days', '3', true],
+      ['length', '50 min', true],
+    ]);
     expect(profileSplitRow(t.profile, t.mainLifts, true)).toEqual({ subtitle: 'Set by your plan', opens: 'your_plan' });
     expect(profileSplitRow(t.profile, t.mainLifts, false)).toEqual({ subtitle: 'Push/Pull/Legs', opens: 'split' });
   });
@@ -382,15 +389,18 @@ describe('D7: one split source — with a plan, Profile › Split and the duplic
     expect(profile).toContain("s.plans.inUse().then((x) => x !== null, () => null)");
     expect(profile).toContain("data.value.training?.split?.opens === 'your_plan') rootNavigation.dispatch(openYourPlan(newUuid()));");
     const details = read('screens/profile/TrainingDetailsScreen.tsx');
-    expect(details).toContain('trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse, healthWeights: snap.healthWeights })');
-    expect(details).toContain('if (r.byPlan === true) navigation.dispatch(openYourPlan(newUuid())); else open(r.key);');
+    expect(details).toContain('trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse, planTime: plan?.time ?? null, healthWeights: snap.healthWeights })');
+    expect(details).toContain('if (r.byPlan === true) openPlan(); else open(r.key);');
+    // (Ben, 2 Nov: one plan time) A running builder plan's rows open Change plan › Days and time; else Your plan.
+    expect(details).toContain("if (plan?.time?.editable === true) navigation.dispatch(openPlanChange(plan.planId, 'week'));");
+    expect(details).toContain('else navigation.dispatch(openYourPlan(newUuid()));');
     const split = read('screens/profile/SplitScreen.tsx');
     expect(split).toContain('text={C.setByPlan}');
     // A failed plan read is never taken for no plan: neither editor opens on it (they'd change what the plan owns).
     expect(split).toContain('s.plans.inUse().then((x) => x !== null));');
     expect(split).toContain("planInUse.state === 'error'");
     expect(split).not.toContain('() => false');
-    expect(details).toContain('s.plans.inUse()]);');
-    expect(details).not.toContain('s.plans.inUse().catch');
+    expect(details).toContain('s.plans.inUseTime()]);');
+    expect(details).not.toContain('s.plans.inUseTime().catch');
   });
 });

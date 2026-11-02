@@ -139,7 +139,7 @@ export function pbBlockWeekOf(input: PbBlockInput): PbBlockWeek {
 }
 
 /**
- * (Ben, 2 Nov; plan-summary.md) The block's last day (a Sunday, local `YYYY-MM-DD`) if every week from now on is
+ * (Ben, 2 Nov; Library › Plan's `ends Sun 6 Dec`) The block's last day (a Sunday, local `YYYY-MM-DD`) if every week from now on is
  * trained: the lead-in's next Monday + N weeks − 1 day, else this week's Monday + the weeks left. Once done: the last
  * counted week's Sunday. A week only counts once trained (and not fully paused), so this moves with gaps. Pure.
  */

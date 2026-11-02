@@ -166,8 +166,15 @@ export interface PlanBlockOverview {
   answers: PlanBuilderAnswers;
   /** (Ben, 28 Oct) The lead-in week: the Monday week 1 starts (`Starts Mon 2 Nov`); null: not a lead-in. */
   startsOn: string | null;
-  /** (Ben, 2 Nov; plan-summary.md) The block's last Sunday if every week from now on is trained (`pbBlockEndsOn`). */
+  /** (Ben, 2 Nov; Library › Plan's `ends Sun 6 Dec`) The block's last Sunday if every week from now on is trained (`pbBlockEndsOn`). */
   endsOn?: string | null;
+}
+
+/** The plan in use (`plans.inUse()`); `time`: a builder plan's own days a week and minutes, null on a coach plan. */
+export interface PlanInUse {
+  planId: string;
+  name: string;
+  time: { sessions: number; minutes: number; editable: boolean } | null;
 }
 
 export interface PlanOverviewWithBlock extends PlanOverview {
@@ -556,6 +563,23 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const plan = await repo().applied(p.id);
       if (plan === null || plan.applied === null) return null;
       return planRoutines(plan, liveRoutines(await deps.store().repos.routines.listByOwner(p.id))).length === 0 ? null : { planId: plan.id, name: plan.name };
+    },
+
+    /**
+     * (Ben, 2 Nov: one plan time) The plan in use with, on a builder plan, its own days a week and minutes (what every
+     * plan screen and Profile › Training details show); `editable`: its block runs, so Change plan › Days and time can
+     * open on it. Null: no plan in use. A failed read throws (never taken for no plan).
+     */
+    async inUseTime(): Promise<PlanInUse | null> {
+      const inUse = await service.inUse();
+      if (inUse === null) return null;
+      const p = await owner();
+      const plan = p === null ? null : await repo().get(inUse.planId);
+      const b = pbAppliedBuilder(plan);
+      if (p === null || plan === null || b === null) return { ...inUse, time: null };
+      const at = deps.now();
+      const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, toMs(at.utc), p.timezone).catch(() => null));
+      return { ...inUse, time: { sessions: b.builder.answers.sessions, minutes: b.builder.answers.minutes, editable: eb !== null } };
     },
 
     /**

@@ -17,7 +17,7 @@ import {
   planTabEditAction,
   planTabMenu,
   planTabView,
-  planWeekCircles,
+  planWeekStrip,
   pbWeekdayName,
   toMs,
   type LibraryChangesView,
@@ -29,6 +29,7 @@ import type { Activity } from '@fizz/schemas';
 
 import { dateAt } from '../../clock';
 import { changePlanView, CHANGE_PLAN_COPY, type ChangePlanAction } from '../../library/change-plan-view';
+import { planHeaderView, type PlanHeaderFact } from '../../library/plan-header-view';
 import { WEEK_COPY } from '../../services/week-services';
 import type { PlanOverviewWithBlock } from '../../services/plan-services';
 import { openNextBlock, openPlanChange, todayWithDay } from '../../navigation/actions';
@@ -43,16 +44,17 @@ import { ActivitySheet } from '../activity/ActivitySheet';
 import { ChangePlanSheet, EditPlanButton } from './ChangePlanSheet';
 import { LiftTargetsBlock } from './LiftTargetsBlock';
 import { DaySheetFlow } from '../today/DaySheet';
-import { WeekCircles } from './WeekCircles';
+import { WeekStrip } from './WeekStrip';
 import { MovedByYou } from '../../today/MovedByYou';
 
 /** `why`: a line behind the toast's `Why?` (End plan's `N workouts not restored`). */
 export type PlanToast = { text: string; action?: string; onAction?: () => void; why?: string };
 
 /**
- * Library › Plan › the plan in use (redesign 27 Oct, section D; prototype `Library › Plan`). A header card: the plan's
- * name with `⋯` (Pause / Resume, Ask coach), `Goal: Muscle · 3 days a week · 45 min`, and the week circles spread
- * evenly (done ✓, this week filled, later outlined, `Deload` under a deload week; a tap shows that week). Under it,
+ * Library › Plan › the plan in use (redesign 27 Oct, section D; prototype `Library › Plan`). A header card: for a
+ * builder plan (Ben, 2 Nov: one plan screen) `Muscle · 6 weeks` with `⋯` (Pause / Resume, Ask coach), `Week 3 of 6 ·
+ * ends Sun 6 Dec`, the week strip (done green, this week accent, later neutral, deload dashed `↓`; a tap shows that
+ * week) and days / week · minutes · effort (the plan's own minutes); a coach plan keeps its name, goal and `Since …`. Under it,
  * when there are any, `✦ 3 changes · next week ›` (the Changes screen). Then `This week`: the selected week's days,
  * ✓ done with its date, Up next; a tap opens the day, a swipe (or `⋯`, long-press, VoiceOver actions) has `Do today`
  * and `Move day`. At the bottom the full-width `Edit plan` opens **Change plan** (Days and time, Goal, a day's
@@ -219,7 +221,7 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
   const blockKey = b === null ? '' : `${plan.planId}:${String(b.current)}:${String(b.done)}`;
   const view = planTabView({
     overview: plan,
-    block: b === null ? null : { views: b.views, current: b.current, done: b.done, editable: b.editable, actions: b.actions, startsOn: b.startsOn },
+    block: b === null ? null : { views: b.views, current: b.current, done: b.done, editable: b.editable, actions: b.actions, startsOn: b.startsOn, endsOn: b.endsOn ?? null },
     // A new block week (or another plan) opens on the current week again.
     selected: picked !== null && picked.key === blockKey ? picked.week : null,
   });
@@ -286,18 +288,20 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
     else if (kind === 'move') setMoving(row.dayIndex);
   }
 
-  const circles = view.chips === null ? null : planWeekCircles(view.chips);
+  const strip = view.chips === null ? null : planWeekStrip(view.chips);
+  // (Ben, 2 Nov) A builder plan's title and three numbers; null on a coach plan (its header stays as it was).
+  const header = strip === null || b === null ? null : planHeaderView(b.answers, view.title);
 
   return (
     <View style={{ gap: theme.space['4'] }}>
       <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['2'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
           <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
-            {view.title}
+            {header?.title ?? view.title}
           </AppText>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${PLAN_TAB_VIEW_COPY.more}, ${view.title}`}
+            accessibilityLabel={`${PLAN_TAB_VIEW_COPY.more}, ${header?.title ?? view.title}`}
             onPress={openMenu}
             hitSlop={4}
             style={({ pressed }) => ({ width: 44, height: 44, marginVertical: -theme.space['2'], marginRight: -theme.space['2'], alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
@@ -305,41 +309,48 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
             <Icon name="ellipsis" color="text.secondary" size={20} />
           </Pressable>
         </View>
-        {view.goal !== null ? (
-          <AppText variant="callout" color="text.secondary" numeric>
-            {view.goal}
-          </AppText>
-        ) : null}
-        {view.chips === null ? (
-          <AppText variant="callout" color="text.secondary" numeric>
-            {view.line}
-          </AppText>
-        ) : null}
-        {view.blockDone ? (
-          <AppText variant="callout" color="text.secondary">
-            {view.line}
-          </AppText>
-        ) : null}
-        {plan.paused !== null ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
-            <Icon name="pause.circle" color="text.secondary" size={16} />
+        {header === null ? (
+          <>
+            {view.goal !== null ? (
+              <AppText variant="callout" color="text.secondary" numeric>
+                {view.goal}
+              </AppText>
+            ) : null}
             <AppText variant="callout" color="text.secondary" numeric>
-              {`${plan.paused.text} ·`}
+              {view.line}
             </AppText>
-            <TextButton label={PLAN_OVERVIEW_COPY.resume} onPress={resume} />
+            {plan.paused !== null ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
+                <Icon name="pause.circle" color="text.secondary" size={16} />
+                <AppText variant="callout" color="text.secondary" numeric>
+                  {`${plan.paused.text} ·`}
+                </AppText>
+                <TextButton label={PLAN_OVERVIEW_COPY.resume} onPress={resume} />
+              </View>
+            ) : null}
+          </>
+        ) : (
+          // (Ben, 2 Nov) `Week 3 of 6 · ends Sun 6 Dec` (paused: `… · Paused · until 9 Nov` with Resume).
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
+            {plan.paused !== null ? <Icon name="pause.circle" color="text.secondary" size={16} /> : null}
+            <AppText variant="callout" color="text.secondary" numeric style={{ flexShrink: 1 }}>
+              {view.line}
+            </AppText>
+            {plan.paused !== null ? <TextButton label={PLAN_OVERVIEW_COPY.resume} onPress={resume} /> : null}
           </View>
-        ) : null}
-        {circles !== null ? (
-          <WeekCircles
-            circles={circles}
+        )}
+        {strip !== null ? (
+          <WeekStrip
+            weeks={strip}
             onSelect={(w) => {
               setPicked({ key: blockKey, week: w });
               setMoving(null);
             }}
           />
         ) : null}
+        {header !== null ? <Facts facts={header.facts} /> : null}
         {/* (Ben, 31 Oct; block-progress §3) `5 lifts up · 1 stalled ›`: this block's lifts in Progress. */}
-        {circles !== null ? <BlockLiftsLine /> : null}
+        {strip !== null ? <BlockLiftsLine /> : null}
         {/* (Ben, 1 Nov) `Muscles · Biceps low ›` / `Muscles · all in range ›`: Plan › Muscles. */}
         <PlanMusclesLine />
         {pausing !== null ? (
@@ -740,5 +751,24 @@ export function PlanMusclesLine() {
       </AppText>
       <Icon name="chevron.right" color="text.tertiary" size={14} />
     </Pressable>
+  );
+}
+
+/** (Ben, 2 Nov: one plan screen) A builder plan's three numbers under the strip: days / week, minutes, effort. */
+function Facts({ facts }: { facts: readonly PlanHeaderFact[] }) {
+  const theme = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', paddingTop: theme.space['1'] }}>
+      {facts.map((f, i) => (
+        <View key={f.key} testID={`plan-fact-${f.key}`} accessible accessibilityLabel={f.said} style={{ flex: 1, alignItems: 'center', paddingVertical: theme.space['1'], paddingHorizontal: theme.space['2'], borderLeftWidth: i === 0 ? 0 : theme.dividerWidth, borderLeftColor: theme.colors['border.divider'] }}>
+          <AppText variant="headline" numeric numberOfLines={1}>
+            {f.value}
+          </AppText>
+          <AppText variant="callout" color="text.secondary" numberOfLines={1}>
+            {f.label}
+          </AppText>
+        </View>
+      ))}
+    </View>
   );
 }

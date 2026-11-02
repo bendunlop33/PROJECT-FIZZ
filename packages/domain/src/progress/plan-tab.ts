@@ -1,5 +1,6 @@
 import { weekdayIndexOfDate } from '../calendar';
 import { localDateText } from '../display';
+import { weekdayDayMonth } from './text';
 import { PB_BLOCK_COPY, type PbBlockStripCell, type PbBlockView } from '../plan-builder/block';
 import { pbWeekdayName } from '../plan-builder/edit';
 import type { PlanOverview, PlanOverviewDay } from './plan-overview';
@@ -21,6 +22,8 @@ export const PLAN_TAB_VIEW_COPY = {
   thisWeek: 'This week',
   weekN: (w: number) => `Week ${String(w)}`,
   deloadChip: (w: number) => `${String(w)} · Deload`,
+  /** (Ben, 2 Nov) The header line's end: `ends Sun 6 Dec`. */
+  ends: (date: string) => `ends ${weekdayDayMonth(date)}`,
   days: (text: string) => `${text} days`,
   sets: (text: string) => `${text} sets`,
   next: 'Next',
@@ -102,7 +105,10 @@ export interface PlanTabRow {
 
 export interface PlanTabView {
   title: string;
-  /** `Week 3 of 6 · deload in week 6`, `Week 6 of 6 · Deload week`, `Block done`, `Since 13 Oct` (no length). */
+  /**
+   * (Ben, 2 Nov) `Week 3 of 6 · ends Sun 6 Dec`, `Starts Mon 9 Nov · ends Sun 20 Dec`, `Week 3 of 6 · Paused · until
+   * 9 Nov`, `Block done`; a coach plan (no length): `Since 13 Oct`.
+   */
   line: string;
   goal: string | null;
   goalAction: typeof PLAN_TAB_VIEW_COPY.editGoal | typeof PLAN_TAB_VIEW_COPY.setGoal;
@@ -133,25 +139,29 @@ export interface PlanTabBlock {
   actions: Readonly<Record<number, { todayKey: string; moveTo: number[] | null }>>;
   /** (Ben, 28 Oct) The lead-in week of a plan applied after its Monday: the Monday week 1 starts. Absent or null: none. */
   startsOn?: string | null | undefined;
+  /** (Ben, 2 Nov) The block's last Sunday if every week from now on is trained (`pbBlockEndsOn`); absent or null: not said. */
+  endsOn?: string | null | undefined;
 }
 
 export interface PlanTabInput {
-  overview: Pick<PlanOverview, 'name' | 'since' | 'goal' | 'days' | 'daysThisWeek' | 'setsDone'>;
+  overview: Pick<PlanOverview, 'name' | 'since' | 'goal' | 'days' | 'daysThisWeek' | 'setsDone'> & { paused?: Pick<NonNullable<PlanOverview['paused']>, 'text'> | null | undefined };
   /** Null on a coach plan (no weeks). */
   block: PlanTabBlock | null;
   /** The week picked on the chips; null: the current week. */
   selected: number | null;
 }
 
-/** The header's line from the block (`Week 3 of 6 · deload in week 6`). */
-export function planTabLine(block: Pick<PlanTabBlock, 'current' | 'done' | 'startsOn'> & { of: number; deloadWeeks: readonly number[] }): string {
+/**
+ * (Ben, 2 Nov: one plan screen) The header's line: `Week 3 of 6 · ends Sun 6 Dec`; the lead-in `Starts Mon 9 Nov · ends
+ * Sun 20 Dec`; paused `Week 3 of 6 · Paused · until 9 Nov` (no end date while paused: it moves); `Block done`. A deload
+ * week is on the strip (dashed, `↓`), not here.
+ */
+export function planTabLine(block: Pick<PlanTabBlock, 'current' | 'done' | 'startsOn' | 'endsOn'> & { of: number; paused?: string | null | undefined }): string {
   if (block.done) return PLAN_TAB_VIEW_COPY.blockDone;
-  // (Ben, 28 Oct) The lead-in: `Starts Mon 2 Nov`.
-  if (block.startsOn != null) return PB_BLOCK_COPY.starts(block.startsOn);
-  const week = PLAN_TAB_VIEW_COPY.week(block.current, block.of);
-  if (block.deloadWeeks.includes(block.current)) return `${week} · ${PLAN_TAB_VIEW_COPY.deloadWeek}`;
-  const next = block.deloadWeeks.find((w) => w > block.current);
-  return next === undefined ? week : `${week} · ${PLAN_TAB_VIEW_COPY.deloadIn(next)}`;
+  const paused = block.paused ?? null;
+  const head = block.startsOn != null ? PB_BLOCK_COPY.starts(block.startsOn) : PLAN_TAB_VIEW_COPY.week(Math.min(block.current, block.of), block.of);
+  const ends = paused === null && block.endsOn != null ? PLAN_TAB_VIEW_COPY.ends(block.endsOn) : null;
+  return [head, ...(paused === null ? [] : [paused]), ...(ends === null ? [] : [ends])].join(' · ');
 }
 
 function metaOf(o: PlanTabInput['overview']): string {
@@ -185,7 +195,6 @@ export function planTabView(input: PlanTabInput): PlanTabView {
   const current = Math.max(1, Math.min(n, b.current));
   const selected = Math.max(1, Math.min(n, input.selected ?? current));
   const view = b.views[selected - 1] ?? b.views[0];
-  const deloadWeeks = b.views[0]?.deloadWeeks ?? [];
   const isThisWeek = selected === current;
   // The running block's week now: Up next and this week's ticks (an off-plan workout that trained a day counts too).
   const live = isThisWeek && !b.done;
@@ -221,7 +230,7 @@ export function planTabView(input: PlanTabInput): PlanTabView {
   });
   return {
     title: o.name,
-    line: planTabLine({ current, done: b.done, of: n, deloadWeeks, startsOn: b.startsOn }),
+    line: planTabLine({ current, done: b.done, of: n, startsOn: b.startsOn, endsOn: b.endsOn, paused: o.paused?.text ?? null }),
     goal: o.goal.text,
     goalAction,
     chips: planTabChips(view?.strip ?? [], selected),
@@ -248,30 +257,31 @@ export function planTabMenu(_view: Pick<PlanTabView, 'goalAction'>, paused: bool
   return [paused ? { kind: 'resume' as const, label: C.resume } : { kind: 'pause' as const, label: C.pauseShort }, { kind: 'coach' as const, label: C.askCoachShort }];
 }
 
-export type PlanWeekCircleState = 'done' | 'current' | 'later';
+export type PlanWeekBarState = 'done' | 'current' | 'later';
 
-export interface PlanWeekCircle {
+export interface PlanWeekBar {
   week: number;
-  state: PlanWeekCircleState;
-  /** The number inside the circle; null on a done week (a ✓). */
-  text: string | null;
-  /** Picked (and not this week): a ring around it; the list shows that week. */
+  /** Drawn: done = filled green, this week = accent, later = neutral; a deload week dashed. */
+  state: PlanWeekBarState;
+  deload: boolean;
+  /** Under the bar: `3`, `6 ↓` (a deload week). */
+  label: string;
+  /** Picked (and not this week): an outline around it; the list shows that week. */
   selected: boolean;
-  /** `Deload` under a deload week; else null. */
-  caption: string | null;
   accessibilityLabel: string;
 }
 
 /**
- * (Redesign 27 Oct, D1) The plan's weeks as evenly spread circles: done = ✓ (green), this week = filled with its
- * number, later = outlined with its number, `Deload` under a deload week. Tapping one shows that week (`selected`).
- * Never colour alone: each says its state.
+ * (Ben, 2 Nov: one plan screen) The plan's weeks as a strip of bars, the week number under each: done = filled green
+ * (no tick), this week = accent, later = neutral, a deload week dashed with `↓`. Tapping one shows that week
+ * (`selected`: an outline). Never colour alone: fill, dash and outline differ in shape, and each says its state.
  */
-export function planWeekCircles(chips: readonly Pick<PlanTabChip, 'week' | 'done' | 'current' | 'selected' | 'deload'>[]): PlanWeekCircle[] {
+export function planWeekStrip(chips: readonly Pick<PlanTabChip, 'week' | 'done' | 'current' | 'selected' | 'deload'>[]): PlanWeekBar[] {
   return chips.map((c) => {
-    const state: PlanWeekCircleState = c.done ? 'done' : c.current ? 'current' : 'later';
-    const said = [`Week ${String(c.week)}`, ...(state === 'done' ? ['done'] : state === 'current' ? ['this week'] : []), ...(c.deload ? ['deload'] : [])];
-    return { week: c.week, state, text: state === 'done' ? null : String(c.week), selected: c.selected && !c.current, caption: c.deload ? PLAN_TAB_VIEW_COPY.deload : null, accessibilityLabel: said.join(', ') };
+    const state: PlanWeekBarState = c.done ? 'done' : c.current ? 'current' : 'later';
+    const selected = c.selected && !c.current;
+    const said = [`Week ${String(c.week)}`, ...(state === 'done' ? ['done'] : state === 'current' ? ['this week'] : []), ...(c.deload ? ['deload'] : []), ...(selected ? ['showing'] : [])];
+    return { week: c.week, state, deload: c.deload, label: c.deload ? `${String(c.week)} ↓` : String(c.week), selected, accessibilityLabel: said.join(', ') };
   });
 }
 

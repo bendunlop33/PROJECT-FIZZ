@@ -79,7 +79,10 @@ export interface TrainingRow {
   key: TrainingRowKey;
   title: string;
   value: string;
-  /** (D7) The plan in use owns it (`Set by your plan`): the row opens Library › Your plan, not an edit sheet. */
+  /**
+   * (D7) The plan in use owns it: the row opens the plan, not an edit sheet (Ben, 2 Nov: a running builder plan's
+   * Change plan › Days and time; else Library › Your plan).
+   */
   byPlan?: true;
 }
 
@@ -111,11 +114,14 @@ export function trainingDetailsView(
     nowYear: number;
     unit: WeightUnit;
     /** (D7) A plan is in use: its days a week and session length are the plan's. */ planInUse?: boolean;
+    /** (Ben, 2 Nov: one plan time) A builder plan's own days a week and minutes, shown here; null: a coach plan (`Set by your plan`). */
+    planTime?: { sessions: number; minutes: number } | null;
     /** (ADR 0035) Bodyweights read from Apple Health (`Bodyweight` on): listed with their source; Ben's entry wins on his days. */
     healthWeights?: readonly HealthWeightSample[];
   },
 ): TrainingDetailsView {
   const a = p.about;
+  const planTime = s.planTime ?? null;
   const entries = bodyweightEntries(p.weights, s.healthWeights ?? []);
   const latest = latestBodyweight(entries);
   const weights = [...entries].reverse().map((w): WeightRowView => {
@@ -140,8 +146,9 @@ export function trainingDetailsView(
     // (its Your week); the goal stays Ben's here (a change offers to update the plan).
     training: [
       { key: 'goal', title: TRAINING_COPY.goal, value: labelOf(GOAL_CHOICES, p.goal) },
-      s.planInUse === true ? { key: 'days', title: TRAINING_COPY.days, value: TRAINING_COPY.setByPlan, byPlan: true } : { key: 'days', title: TRAINING_COPY.days, value: p.daysPerWeek === undefined ? TRAINING_COPY.notSet : String(p.daysPerWeek) },
-      s.planInUse === true ? { key: 'length', title: TRAINING_COPY.length, value: TRAINING_COPY.setByPlan, byPlan: true } : { key: 'length', title: TRAINING_COPY.length, value: `${String(p.sessionMinutes)} min` },
+      // (Ben, 2 Nov: one plan time) A builder plan's own numbers, never Profile's stored ones while it is in use.
+      s.planInUse === true ? { key: 'days', title: TRAINING_COPY.days, value: planTime === null ? TRAINING_COPY.setByPlan : String(planTime.sessions), byPlan: true } : { key: 'days', title: TRAINING_COPY.days, value: p.daysPerWeek === undefined ? TRAINING_COPY.notSet : String(p.daysPerWeek) },
+      s.planInUse === true ? { key: 'length', title: TRAINING_COPY.length, value: planTime === null ? TRAINING_COPY.setByPlan : `${String(planTime.minutes)} min`, byPlan: true } : { key: 'length', title: TRAINING_COPY.length, value: `${String(p.sessionMinutes)} min` },
     ],
     summary: summaryParts.length === 0 ? TRAINING_COPY.notSet : summaryParts.join(' · '),
   };

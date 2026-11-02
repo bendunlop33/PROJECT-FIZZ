@@ -8,7 +8,7 @@ import type { TrainingChange, TrainingProfile, WeightEntry, WeightUnit } from '@
 
 import { nowMs as clockNow, dateAt } from '../../clock';
 import { newUuid } from '../../device/runtime';
-import { openYourPlan } from '../../navigation/actions';
+import { openPlanChange, openYourPlan } from '../../navigation/actions';
 import { localDateKey } from '../../format/dates';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -30,8 +30,10 @@ export function TrainingDetailsScreen() {
   const [data, reload] = useScreenData(async (s) => {
     // (D7) A plan in use owns days a week and session length. A failed read is never taken for no plan (an edit here
     // would change what the plan owns): the screen says it couldn't read, with Try again.
-    const [snap, owner, plan] = await Promise.all([s.training.snapshot(), s.yourData.profile(), s.plans.inUse()]);
-    return { snap, unit: owner?.preferredUnit ?? 'kg', planInUse: plan !== null };
+    // (Ben, 2 Nov: one plan time) A builder plan's own days a week and minutes are shown here, and its rows open Change
+    // plan › Days and time (the plan's own versioned edit, which Profile then follows).
+    const [snap, owner, plan] = await Promise.all([s.training.snapshot(), s.yourData.profile(), s.plans.inUseTime()]);
+    return { snap, unit: owner?.preferredUnit ?? 'kg', planInUse: plan !== null, plan };
   });
   const [editing, setEditing] = useState<Editing>(null);
   const [opId, setOpId] = useState('');
@@ -46,9 +48,13 @@ export function TrainingDetailsScreen() {
       </Screen>
     );
   }
-  const { snap, unit, planInUse } = data.value;
+  const { snap, unit, planInUse, plan } = data.value;
   const p = snap.profile;
-  const v = trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse, healthWeights: snap.healthWeights });
+  const v = trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse, planTime: plan?.time ?? null, healthWeights: snap.healthWeights });
+  const openPlan = () => {
+    if (plan?.time?.editable === true) navigation.dispatch(openPlanChange(plan.planId, 'week'));
+    else navigation.dispatch(openYourPlan(newUuid()));
+  };
 
   const open = (e: Editing) => {
     setOpId(services.newId());
@@ -110,8 +116,8 @@ export function TrainingDetailsScreen() {
       <SectionHeader title={C.training} />
       <Group>
         {v.training.map((r) => (
-          // (D7) `Set by your plan`: the plan's own (Library › Your plan), not an edit here.
-          <Row key={r.key} title={r.title} subtitle={r.value} onPress={() => { if (r.byPlan === true) navigation.dispatch(openYourPlan(newUuid())); else open(r.key); }} />
+          // (D7) The plan's own: Change plan › Days and time on a running builder plan, else Library › Your plan.
+          <Row key={r.key} title={r.title} subtitle={r.value} onPress={() => { if (r.byPlan === true) openPlan(); else open(r.key); }} />
         ))}
         {/* (Ben approved 20 Oct) Lift targets on or off; off hides them everywhere and from the coach. */}
         <Row title={LIFT_TARGET_COPY.setting} trailing={<Switch accessibilityLabel={LIFT_TARGET_COPY.setting} value={p.liftTargetsOn === true} onValueChange={(on) => void save({ kind: 'lift_targets_on', on }, services.newId())} />} />
