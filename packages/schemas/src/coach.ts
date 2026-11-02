@@ -528,8 +528,9 @@ export type UpdateWarmupPrefsArgs = z.infer<typeof UpdateWarmupPrefsArgsSchema>;
  * (Ben, 2 Nov) Fix a past workout, always as a proposal with before/after, Apply and Undo (rule 2): `move` its date or
  * times ("that Tuesday pull was actually Monday": `date` the new local day, `start`/`end` local `HH:MM`, null keeps the
  * time of day / the length), `delete` a duplicate or wrong workout (a soft delete, restorable; Undo brings it back),
- * `pair` a Health workout (`healthId`) with an app workout (`workoutId`), or with the planned run that day (`workoutId`
- * null), `unpair` a Health workout. IDs come from get_recent_sessions (a day's read lists its Health workouts too).
+ * `pair` a Health workout (`healthId`) with an app workout (`workoutId`), or (Ben, 2 Nov) link it to Ben's planned run
+ * that day (`workoutId` null, or that planned activity's ID), `unpair` a Health workout (or unlink it from the planned
+ * run). IDs come from get_recent_sessions (a day's read lists its Health workouts too).
  * Two app workouts are never merged: the app can't; delete the duplicate instead.
  */
 export const ProposeWorkoutFixArgsSchema = z.strictObject({
@@ -1386,6 +1387,18 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
         linkUuid: z.string().min(1).max(64),
         /** That link's version as read; null: no record yet (`link` only). */
         linkVersion: z.int().min(1).nullable(),
+      })
+      .optional(),
+    /**
+     * (Ben, 2 Nov) A Health run linked to (or unlinked from) Ben's planned run that day: the day sheet's `Link` /
+     * `Unlink` on that activity, at `activityVersion` as read (rule 5). `pair` / `unpair` with `sessionId` null.
+     */
+    runLink: z
+      .object({
+        mode: z.enum(['link', 'unlink']),
+        activityId: IdSchema,
+        activityVersion: z.int().min(1),
+        healthUuid: z.string().min(1).max(64),
       })
       .optional(),
   }),

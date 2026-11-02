@@ -117,6 +117,13 @@ export const ACTIVITY_COPY = {
   title: 'Activity',
   done: 'Done',
   planned: 'Planned',
+  /** (Ben, 2 Nov) A planned one whose day has passed with no run linked or matched. */
+  missed: 'Missed',
+  /** (Ben, 2 Nov) The day sheet's one-tap pairing of a planned run with a same-day Health run, and its reverse. */
+  link: 'Link',
+  unlink: 'Unlink',
+  linked: 'Linked',
+  unlinked: 'Unlinked',
   save: 'Save',
   delete: 'Delete',
   saved: 'Activity saved',
@@ -194,7 +201,7 @@ export function activityRow(a: Activity, today: string): ActivityRow {
   const when = activityWhen(a.fields.date, today);
   const planned = a.fields.status === 'planned';
   const source = a.health !== undefined ? a.health.sourceName : a.source === 'health' ? 'Health' : null;
-  const detail = [planned ? ACTIVITY_COPY.planned : null, activityDetail(a.fields) || null, source].filter((x): x is string => x !== null).join(' · ');
+  const detail = [planned ? plannedWord(a.fields.date, today) : null, activityDetail(a.fields) || null, source].filter((x): x is string => x !== null).join(' · ');
   return {
     activityId: a.id,
     version: a.version,
@@ -205,6 +212,15 @@ export function activityRow(a: Activity, today: string): ActivityRow {
     ...(source === null ? {} : { fromHealth: source }),
     accessibilityLabel: [title, when, detail, source === null ? '' : 'from Apple Health'].filter((x) => x !== '').join(', ').replaceAll(NBSP, ' '),
   };
+}
+
+/**
+ * (Ben, 2 Nov: "otherwise its just missed") `Planned` on and before its day; `Missed` once the day has passed with no
+ * run linked or matched (a linked or matched one is listed done, never planned). The word only: it still counts for
+ * the run rule and the week as before (`activityStatusOn`).
+ */
+export function plannedWord(date: string, today: string): string {
+  return date < today ? ACTIVITY_COPY.missed : ACTIVITY_COPY.planned;
 }
 
 /** `Run`; a Health activity's own label (`Strength`, `Walk`, `Tennis`) when its kind is `other` or `sport`. */
@@ -346,4 +362,34 @@ export function undoActivity(current: Activity, input: WriteInput & { targetOpId
       if (current.deletedAtUtc === null) return { kind: 'stale', current };
       return { kind: 'write', next: bump(current, input, { deletedAtUtc: null }, null), expectedVersion: current.version };
   }
+}
+
+/**
+ * (Ben, 2 Nov) `Link` on the day sheet: Ben's planned activity is the Health workout `healthUuid` (the caller offers
+ * only same-kind, same-day ones, `plannedLinkChoices`). On the version the sheet showed; idempotent on its op ID. A
+ * link already there is replaced (Ben picked another run). His planned fields are untouched (rule 2, 6).
+ */
+export function linkActivityHealth(current: Activity, input: WriteInput & { expectedVersion: number; healthUuid: string }): ActivityChange {
+  if (current.source === 'health') return { kind: 'invalid', reason: READ_ONLY };
+  if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
+  if (current.version !== input.expectedVersion || current.deletedAtUtc !== null) return { kind: 'stale', current };
+  if (current.fields.status !== 'planned') return { kind: 'invalid', reason: 'Only a planned activity links' };
+  const uuid = input.healthUuid.trim().toLowerCase();
+  if (uuid === '') return { kind: 'invalid', reason: 'No Health workout' };
+  if (current.healthLink?.healthUuid === uuid) return { kind: 'stale', current };
+  return { kind: 'write', next: bump(current, input, { healthLink: { healthUuid: uuid, linkedAtUtc: input.at.utc } }, null), expectedVersion: current.version };
+}
+
+/**
+ * `Unlink`: the planned activity is back to what the automatic match (or `Missed`) makes of it. Only while it is
+ * still linked to `healthUuid` (the run the sheet showed) at the version shown.
+ */
+export function unlinkActivityHealth(current: Activity, input: WriteInput & { expectedVersion: number; healthUuid: string }): ActivityChange {
+  if (current.source === 'health') return { kind: 'invalid', reason: READ_ONLY };
+  if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
+  if (current.version !== input.expectedVersion || current.deletedAtUtc !== null) return { kind: 'stale', current };
+  if (current.healthLink?.healthUuid !== input.healthUuid.trim().toLowerCase()) return { kind: 'stale', current };
+  const next = bump(current, input, {}, null);
+  delete next.healthLink;
+  return { kind: 'write', next, expectedVersion: current.version };
 }

@@ -586,7 +586,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Fix a past workout (its date, a duplicate, a Health pairing), as a proposal you apply or undo',
     capabilitySection: 'when_you_ask',
     description:
-      'Fix a past workout when Ben asks, as a card he applies (never say it changed). op move: workoutId and the new local date (YYYY-MM-DD), start/end HH:MM only when he gave times (null keeps them). op delete: workoutId of the duplicate or wrong workout (it goes to Recently deleted; Undo brings it back). op pair: healthId (a Health workout from get_recent_sessions) and the app workoutId, or workoutId null for the planned run that day. op unpair: healthId. IDs from get_recent_sessions with date. Two app workouts can’t be merged: propose deleting the duplicate. Unused fields null. reason: one short line.',
+      'Fix a past workout when Ben asks, as a card he applies (never say it changed). op move: workoutId and the new local date (YYYY-MM-DD), start/end HH:MM only when he gave times (null keeps them). op delete: workoutId of the duplicate or wrong workout (it goes to Recently deleted; Undo brings it back). op pair: healthId (a Health workout from get_recent_sessions) and the app workoutId, or workoutId null to link it to Ben’s planned run that day (same day only). op unpair: healthId (also unlinks it from the planned run). IDs from get_recent_sessions with date. Two app workouts can’t be merged: propose deleting the duplicate. Unused fields null. reason: one short line.',
   },
   {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved

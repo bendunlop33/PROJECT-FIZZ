@@ -75,6 +75,20 @@ A this-week change reaches every way into the day: Today's card and Edit (drafte
 this week), and a Your workout draft Ben already changed today (the same one change made on it as a builder edit; the
 day sheet's Undo takes both back).
 
+## 5a. Link a planned run (Ben, 2 Nov)
+
+> Ben: "should be able to link a planned run which then updates it to an actual run (on the same day) otherwise its
+> just missed".
+
+- A planned run's row (any planned activity) with nothing paired: `Link` when Health has a run of its kind that
+  started on its local date (in the planned run's zone). One run: one tap. Several: a row of chips
+  (`Garmin · 07:00 · 5 km · 30 min`), Ben picks. Toast `Linked` with Undo.
+- Linked: the row reads done with the run's recorded time and distance; `Unlink` (toast `Unlinked`, Undo).
+- The automatic match (the only run of its kind that day) is unchanged and shows no button.
+- A past planned run with nothing linked or matched reads `missed`.
+- Service: `activities.links(date)`, `activities.linkHealth`, `activities.unlinkHealth`; the coach's
+  `propose_workout_fix` pair / unpair writes the same change.
+
 ## 6. Open
 
 - Every week changes reach an already-edited Your workout draft through its existing `Push B changed` line, not

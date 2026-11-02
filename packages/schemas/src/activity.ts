@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, OperationIdSchema, RecordMetaSchema, TimeZoneSchema, UtcTimestampSchema } from './common';
 import { LocalDateSchema } from './import';
-import { HealthActivityProvenanceSchema } from './health';
+import { HealthActivityProvenanceSchema, HealthUuidSchema } from './health';
 
 /**
  * (Ben, 20 Oct: "Can we add ability to flex ordering and sessions etc
@@ -68,6 +68,13 @@ export const ActivitySchema = RecordMetaSchema.extend({
   source: z.enum(['ben', 'coach', 'health']),
   /** Only with `source: 'health'`: where it came from. */
   health: HealthActivityProvenanceSchema.optional(),
+  /**
+   * (Ben, 2 Nov: "should be able to link a planned run which then updates it to an actual run (on the same day)
+   * otherwise its just missed") Ben's `Link` on his planned activity: the Health workout (same kind, same local day
+   * in `tz`) it was. Lists show it done with that workout's recorded time and distance (`activitiesWithHealth`);
+   * his own fields stay as he planned them underneath. Absent: not linked by hand (the automatic match still applies).
+   */
+  healthLink: z.object({ healthUuid: HealthUuidSchema, linkedAtUtc: UtcTimestampSchema }).optional(),
   /** Tombstone: a deleted activity is kept so Undo can bring it back. Null: live. */
   deletedAtUtc: UtcTimestampSchema.nullable(),
   lastChange: ActivityLastChangeSchema.nullable(),

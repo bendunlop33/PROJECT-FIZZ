@@ -1,4 +1,4 @@
-import { addDays, deriveId, isInHistory, planWorkoutMove, workoutFixApplyOpId, workoutWhenText, type WorkoutFixDetail } from '@fizz/domain';
+import { ACTIVITY_WORD, activityDetail, addDays, deriveId, isInHistory, planWorkoutMove, plannedLinkChoices, workoutFixApplyOpId, workoutWhenText, type WorkoutFixDetail } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import { undoCoachAction, type WorkoutFixPrepared } from '@fizz/coach';
 import type { ActionRecord, Activity, ProposeWorkoutFixArgs, SessionAggregate, UserProfile, ZonedTimestamp } from '@fizz/schemas';
@@ -12,8 +12,10 @@ import type { HealthActivityDetail } from '../health/health-view';
  * - `prepare`: the coach's call checked against the data as it is, nothing written. A move is checked by the
  *   reducer's own time rules (`planWorkoutMove`); a delete only of a finished workout in history; a pairing only to a
  *   workout the Health workout's own sheet offers that day (`health.activity`: Pair or Same workout), an unpair only
- *   of one paired. A Health run is Ben's planned run when it's the only run that day (`activitiesWithHealth`); there
- *   is no by-hand run pairing, so that ask is answered honestly.
+ *   of one paired. A Health run is Ben's planned run when it's the only run that day (`activitiesWithHealth`); (Ben,
+ *   2 Nov) otherwise a pair with the planned run (`workoutId` null, or the planned activity's ID) is the day sheet's
+ *   `Link` on that planned activity, only with a run it offers (same kind, same local day); an unpair of a run Ben
+ *   linked is its `Unlink`.
  * - `card`, `apply`, `undo`: Apply is one coach-store write (`workout_fix`): a `committed` record with `proposalId`
  *   and the change, through Summary's Edit times, History's delete and the day sheet's link changes, on the versions
  *   proposed (stale otherwise, rule 5). Its action and op IDs come from the proposal, so a double tap or a restart
@@ -102,11 +104,15 @@ export function createWorkoutFixService(deps: WorkoutFixServiceDeps) {
             return { kind: 'ok', detail: { kind: 'fix_workout', op: 'unpair', sessionId: sheet.paired.sessionId, sessionVersion: null, title: hTitle, before: `Paired with ${sheet.paired.title}`, after: 'Not paired', link: { mode: 'unlink', healthUuid: uuid, linkUuid: uuid, linkVersion: sheet.paired.linkVersion } } };
           }
           const twin = (await repos().health.links(p.id).catch(() => [])).find((l) => l.status === 'linked' && (l.also ?? []).includes(uuid));
-          if (twin === undefined) return refuse('That Health workout isn’t paired', hTitle);
+          if (twin === undefined) return unlinkFromPlanned(p, sheet, uuid, hTitle);
           const a = await workout(p, twin.sessionId);
           return { kind: 'ok', detail: { kind: 'fix_workout', op: 'unpair', sessionId: twin.sessionId, sessionVersion: null, title: hTitle, before: `Same workout as ${a === null ? 'Workout' : titleOf(a)}`, after: 'Not paired', link: { mode: 'not_same', healthUuid: uuid, linkUuid: twin.healthUuid, linkVersion: twin.version } } };
         }
-        if (args.workoutId === null) return pairWithPlanned(p, sheet, uuid, hTitle);
+        if (args.workoutId === null) return pairWithPlanned(p, sheet, uuid, hTitle, null);
+        const plannedOwn = await repos()
+          .activities.get(args.workoutId)
+          .catch(() => null);
+        if (plannedOwn !== null && plannedOwn.ownerId === p.id && plannedOwn.source !== 'health') return pairWithPlanned(p, sheet, uuid, hTitle, plannedOwn.id);
         const a = await workout(p, args.workoutId);
         if (a === null) return refuse('No workout with that ID; read get_recent_sessions with its date', hTitle);
         if (sheet.paired?.sessionId === a.session.id) return refuse(`Already paired with ${titleOf(a)}`, hTitle);
@@ -125,18 +131,67 @@ export function createWorkoutFixService(deps: WorkoutFixServiceDeps) {
     }
   }
 
+  /** Ben's own activities around a Health workout's day, as stored and as every list shows them (a day either side: zones). */
+  async function plannedAround(p: UserProfile, date: string): Promise<{ own: Activity[]; shown: Activity[] }> {
+    const from = addDays(date, -1);
+    const to = addDays(date, 2);
+    const own = await repos()
+      .activities.listOwnBetween(p.id, from, to)
+      .catch(() => [] as Activity[]);
+    const shown = await repos()
+      .activities.listBetween(p.id, from, to)
+      .catch(() => [] as Activity[]);
+    return { own, shown };
+  }
+
   /**
-   * "Pair my Garmin run with the planned run": a Health run already counts as Ben's planned run when it is the only one
-   * of its kind that day (`activitiesWithHealth`). Nothing pairs a run by hand, so any other case is said honestly.
+   * "Pair my Garmin run with the planned run" (Ben, 2 Nov): the day sheet's `Link` on his planned run that day (the
+   * one he named, `activityId`, or the only one it fits), only with a run that sheet offers it (same kind, same local
+   * day in the planned run's zone, shown on its own). A run that already counts as his says so.
    */
-  async function pairWithPlanned(p: UserProfile, sheet: HealthActivityDetail, uuid: string, hTitle: string): Promise<WorkoutFixPrepared> {
-    const date = sheet.activity.fields.date;
-    const shown: Activity[] = await repos()
-      .activities.listBetween(p.id, date, addDays(date, 1))
-      .catch(() => []);
+  async function pairWithPlanned(p: UserProfile, sheet: HealthActivityDetail, uuid: string, hTitle: string, activityId: string | null): Promise<WorkoutFixPrepared> {
+    const kind = sheet.activity.fields.kind;
+    const word = ACTIVITY_WORD[kind].toLowerCase();
+    const { own, shown } = await plannedAround(p, sheet.activity.fields.date);
     const ben = shown.find((a) => a.source !== 'health' && a.health?.uuid.toLowerCase() === uuid);
-    if (ben !== undefined) return refuse(`Already counts as your ${ben.fields.kind} that day`, hTitle);
-    return refuse(`A Health ${sheet.activity.fields.kind} counts as the planned one on its own only when it’s the only one that day; runs can’t be paired by hand yet`, hTitle);
+    if (ben !== undefined) return refuse(`Already counts as your ${ACTIVITY_WORD[ben.fields.kind].toLowerCase()} that day`, hTitle);
+    const open = own
+      .filter((a) => activityId === null || a.id === activityId)
+      .map((a) => ({ a, st: plannedLinkChoices(a, shown) }))
+      .filter((x) => x.st.state === 'open' && x.st.choices.some((c) => c.healthUuid === uuid));
+    const [only] = open;
+    if (only === undefined) return refuse(activityId === null ? `No planned ${word} that day to link it to` : `Not a planned ${word} on that run’s day`, hTitle);
+    if (open.length > 1) return refuse(`Two planned ${word}s that day; link it on the day sheet`, hTitle);
+    const plannedText = [ACTIVITY_WORD[only.a.fields.kind], activityDetail(only.a.fields)].filter((x) => x !== '').join(' · ');
+    const recorded = activityDetail({ durationS: sheet.activity.fields.durationS, distanceM: sheet.activity.fields.distanceM, effort: null });
+    return {
+      kind: 'ok',
+      detail: {
+        kind: 'fix_workout',
+        op: 'pair',
+        sessionId: null,
+        sessionVersion: null,
+        title: hTitle,
+        before: `Planned ${plannedText}`.slice(0, 200),
+        after: ['Done', recorded].filter((x) => x !== '').join(' · ').slice(0, 200),
+        runLink: { mode: 'link', activityId: only.a.id, activityVersion: only.a.version, healthUuid: uuid },
+      },
+    };
+  }
+
+  /** Unpair of a Health run Ben linked to his planned run: its `Unlink`. One that counts on its own has nothing to unlink. */
+  async function unlinkFromPlanned(p: UserProfile, sheet: HealthActivityDetail, uuid: string, hTitle: string): Promise<WorkoutFixPrepared> {
+    const { own, shown } = await plannedAround(p, sheet.activity.fields.date);
+    for (const a of own) {
+      const st = plannedLinkChoices(a, shown);
+      if (st.state === 'linked' && st.healthUuid === uuid) {
+        const word = ACTIVITY_WORD[a.fields.kind].toLowerCase();
+        return { kind: 'ok', detail: { kind: 'fix_workout', op: 'unpair', sessionId: null, sessionVersion: null, title: hTitle, before: `Linked to your planned ${word}`, after: 'Not linked', runLink: { mode: 'unlink', activityId: a.id, activityVersion: a.version, healthUuid: uuid } } };
+      }
+    }
+    const ben = shown.find((a) => a.source !== 'health' && a.health?.uuid.toLowerCase() === uuid);
+    if (ben !== undefined) return refuse(`Counts as your ${ACTIVITY_WORD[ben.fields.kind].toLowerCase()} on its own (the only one that day)`, hTitle);
+    return refuse('That Health workout isn’t paired', hTitle);
   }
 
   async function proposal(proposalId: string): Promise<{ p: UserProfile; record: ActionRecord; d: WorkoutFixDetail } | null> {

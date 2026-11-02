@@ -74,8 +74,8 @@ describe('long and hard (Ben, 20 Oct)', () => {
     const plannedSat = activity(14, run({ date: '2026-10-24', status: 'planned', effort: 'long' }));
     // Counts: yesterday's planned long run keeps legs off today.
     expect(legRunNear([plannedThu], TODAY)?.why).toBe('Long run yesterday');
-    // Rows keep `Planned` before, on and after its date (row and the sheet's `Cancel run` agree).
-    expect([plannedThu, plannedFri, plannedSat].map((a) => activityRow(a, TODAY).detail.split(' · ')[0])).toEqual(['Planned', 'Planned', 'Planned']);
+    // Rows keep `Planned` on and before its date; (Ben, 2 Nov) after it, with nothing linked or matched, `Missed`. Never done.
+    expect([plannedThu, plannedFri, plannedSat].map((a) => activityRow(a, TODAY).detail.split(' · ')[0])).toEqual(['Missed', 'Planned', 'Planned']);
     expect(activityRow(plannedFri, TODAY)).toMatchObject({ when: 'Today', planned: true });
     // The coach: today's may not have happened; a past one is counted but never confirmed.
     expect([plannedThu, plannedFri, plannedSat].map((a) => activityStatusOn(a, TODAY))).toEqual(['planned (counts)', 'planned', 'planned']);
