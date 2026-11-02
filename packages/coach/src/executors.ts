@@ -447,7 +447,8 @@ function undoWhat(target: ActionRecord): string {
       return 'today’s Set up';
     case 'propose_plan_swap':
       if (d.op === 'day_edit') return `the change to ${d.days.map((x) => x.routineName).join(', ')} in your plan`;
-      return d.op === 'add' ? `${d.addName} in your plan` : `${d.removeName ?? 'Exercise'} → ${d.addName} in your plan`;
+      // (Ben, 2 Nov) Several adds in one proposal: each named once (`Exercise bike and Rowing machine in your plan`).
+      return d.op === 'add' ? `${[...new Set([d.addName, ...d.days.flatMap((x) => (x.add === undefined ? [] : [x.add.name]))])].join(' and ')} in your plan` : `${d.removeName ?? 'Exercise'} → ${d.addName} in your plan`;
     case 'update_warmup_prefs':
       return 'the warm-up change';
     case 'update_rest_settings':

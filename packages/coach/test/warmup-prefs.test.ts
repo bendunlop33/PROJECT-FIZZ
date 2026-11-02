@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { asksForGeneralWarmup, asksForWarmupChange, buildTurnRegistry, PARTIAL_ASK_LINE, PLAN_ADD_LINE, WARMUP_PREFS_TOOL_LINE } from '../src/index';
+import { asksForWarmupChange, buildTurnRegistry, PARTIAL_ASK_LINE, PLAN_ADD_LINE, WARMUP_PREFS_TOOL_LINE } from '../src/index';
 import { futureScopeOnly } from '../src/request';
 import { semanticArgs } from '../src/tool-call';
 import { COACH_INSTRUCTIONS as INSTRUCTIONS } from '../src/turn';
-import { COACH_TOOL_ARGS, UpdateWarmupPrefsArgsSchema } from '@fizz/schemas';
+import { COACH_TOOL_ARGS, ProposePlanAddArgsSchema, UpdateWarmupPrefsArgsSchema } from '@fizz/schemas';
 import { strictJsonSchema } from '../src/function-tools';
 
 /** (Ben, 1 Nov) `update_warmup_prefs`: offered in every chat with a profile; applied only on Ben's own words. */
@@ -31,32 +31,37 @@ describe('update_warmup_prefs', () => {
     expect(WARMUP_PREFS_TOOL_LINE).toContain('Never say you can’t change warm-ups');
   });
 
-  // (Ben, 2 Nov, build 513) "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days".
-  it('a standing cardio-first rule is a warm-up change (his exact words); today only, or a question, is not', () => {
-    const ben = 'bike for 8 minutes first on leg days, rowing for 4 minutes first on other days';
-    expect(asksForGeneralWarmup(ben)).toBe(true);
-    expect(asksForWarmupChange(ben)).toBe(true);
-    // Recurring: never read as a change to today's live workout.
-    expect(futureScopeOnly(ben)).toBe(true);
-    expect(asksForGeneralWarmup('5 min row before every workout')).toBe(true);
-    expect(asksForGeneralWarmup('Always start with 10 minutes on the bike')).toBe(true);
-    expect(asksForGeneralWarmup('add a bike to today, 8 minutes first')).toBe(false);
-    expect(asksForGeneralWarmup('Should I do 8 minutes of bike first on leg days?')).toBe(false);
-    expect(asksForGeneralWarmup('Bench felt heavy today')).toBe(false);
+  // (Ben, 2 Nov: "no i am talking about the ability to add that with the coach for the plan. the coach should know
+  // when there are leg days. it just needs the ability to add it") Cardio first is a plan add, not a warm-up setting.
+  const BEN = 'bike for 8 minutes first on leg days, rowing for 4 minutes first on other days';
+
+  it('his exact words are not a warm-up setting change; they are recurring (never today’s workout)', () => {
+    expect(asksForWarmupChange(BEN)).toBe(false);
+    expect(futureScopeOnly(BEN)).toBe(true);
   });
 
-  it('the tool takes general rules (strict schema: every field present), the routing line names it, and the plan add points here', () => {
-    const parsed = UpdateWarmupPrefsArgsSchema.safeParse({ simpleLoads: null, exercises: [], general: [{ days: 'legs', exercise: 'bike', minutes: 8 }, { days: 'other', exercise: 'rowing', minutes: 4 }], benAsked: true, benQuote: 'x' });
-    expect(parsed.success).toBe(true);
-    // A call from before the field still parses.
+  it('update_warmup_prefs has no cardio rules any more; the routing lines send cardio first to propose_plan_add', () => {
+    // The retired field is refused (strict schema), and not offered to the model.
+    expect(UpdateWarmupPrefsArgsSchema.safeParse({ simpleLoads: null, exercises: [], general: [{ days: 'legs', exercise: 'bike', minutes: 8 }], benAsked: true, benQuote: 'x' }).success).toBe(false);
     expect(UpdateWarmupPrefsArgsSchema.safeParse({ simpleLoads: true, exercises: [], benAsked: true, benQuote: 'x' }).success).toBe(true);
-    const schema = strictJsonSchema(COACH_TOOL_ARGS.update_warmup_prefs) as { required: string[] };
-    expect(schema.required).toContain('general');
-    expect(WARMUP_PREFS_TOOL_LINE).toContain('A standing cardio-first rule');
-    expect(PLAN_ADD_LINE).toContain('update_warmup_prefs');
-    // The same rule twice is the same call (idempotent op ID), whatever the case of the words.
-    const a = semanticArgs({ tool: 'update_warmup_prefs', args: { simpleLoads: null, exercises: [], general: [{ days: 'legs', exercise: 'Bike', minutes: 8 }], benAsked: true, benQuote: 'x' } } as never);
-    const b = semanticArgs({ tool: 'update_warmup_prefs', args: { simpleLoads: null, exercises: [], general: [{ days: 'legs', exercise: 'bike', minutes: 8 }], benAsked: true, benQuote: 'y' } } as never);
+    expect((strictJsonSchema(COACH_TOOL_ARGS.update_warmup_prefs) as { required: string[] }).required).not.toContain('general');
+    expect(WARMUP_PREFS_TOOL_LINE).toContain('is not a warm-up setting: it is propose_plan_add');
+    expect(PLAN_ADD_LINE).toContain('Never update_warmup_prefs for this');
+    expect(PLAN_ADD_LINE).toContain('you decide which plan days are leg days');
+  });
+
+  it('propose_plan_add carries a second add (`also`) with its own days; no code-decided day types', () => {
+    const call = {
+      add: 'exercise-bike', days: ['Legs A', 'Legs B'], after: null, workingSets: 1, reps: null, load: null, position: 'first', before: null, minutes: 8, distanceM: null,
+      also: [{ add: 'rowing-erg', days: ['Push A', 'Pull A', 'Upper B'], position: 'first', before: null, after: null, workingSets: 1, reps: null, minutes: 4, distanceM: null }],
+      notIncluded: null, reason: 'Cardio first.',
+    };
+    expect(ProposePlanAddArgsSchema.safeParse(call).success).toBe(true);
+    expect(ProposePlanAddArgsSchema.safeParse({ ...call, dayType: 'legs' }).success).toBe(false);
+    expect((strictJsonSchema(COACH_TOOL_ARGS.propose_plan_add) as { required: string[] }).required).toContain('also');
+    // The same proposal twice is the same call (idempotent op ID), whatever the order or case of the days.
+    const a = semanticArgs({ tool: 'propose_plan_add', args: call } as never);
+    const b = semanticArgs({ tool: 'propose_plan_add', args: { ...call, reason: 'x', also: [{ ...call.also[0], days: ['upper b', 'Pull A', 'push a'] }] } } as never);
     expect(a).toEqual(b);
   });
 

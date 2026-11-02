@@ -1,5 +1,5 @@
 import { activityDetail, ACTIVITY_WORD, cardioDistanceText, cardioValuesText, customExerciseLine, formatDuration, formatNumber, liftTargetValueText, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs, rirOfRpe } from '@fizz/domain';
-import type { ActionDetail, ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
+import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
  * `renderActionResult` (coach-contract CC1, §5.1): every line that says
@@ -563,6 +563,22 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
           const text = `Every week: ${d.days.map((x) => x.routineName).join(', ')}: ${(d.dayEdit?.lines ?? []).join('; ')}.`;
           return make(status, text, speakable(text));
         }
+        // (Ben, 2 Nov) Several adds in one proposal: each with its days (`+ Exercise bike 8 min first (Legs A, Legs B); …`).
+        if (d.op === 'add' && d.days.some((x) => x.add !== undefined)) {
+          const groups = new Map<string, { what: string; days: string[] }>();
+          for (const x of d.days) {
+            const add = x.add ?? { id: d.addId, name: d.addName, ...(d.durationS === undefined ? {} : { durationS: d.durationS }), ...(d.distanceM === undefined ? {} : { distanceM: d.distanceM }), ...(d.beforeName === undefined ? {} : { beforeName: d.beforeName }) };
+            const e = x.edits[0];
+            const place = e?.first === true ? ' first' : e?.beforeRowId !== undefined && add.beforeName !== undefined ? ` before ${add.beforeName}` : e?.afterName == null ? '' : ` after ${e.afterName}`;
+            const what = `+ ${add.name}${planAddTargetText(add)}${place}`;
+            const g = groups.get(what) ?? { what, days: [] };
+            g.days.push(x.routineName);
+            groups.set(what, g);
+          }
+          const partial = d.notIncluded === undefined ? '' : ` Partial: not included ${d.notIncluded}.`;
+          const text = `Every week: ${[...groups.values()].map((g) => `${g.what} (${g.days.join(', ')})`).join('; ')}.${partial}`;
+          return make(status, text, speakable(text));
+        }
         // (Ben, 2 Nov) An add's place (first, before, after) and a cardio or timed target (`8 min`, `2,000 m`).
         const target = d.op === 'add' ? planAddTargetText(d) : '';
         const place = d.position === 'first' ? ' first' : d.position === 'before' && d.beforeName !== undefined ? ` before ${d.beforeName}` : d.afterName == null ? '' : ` after ${d.afterName}`;
@@ -741,7 +757,7 @@ export function renderActionResult(record: ActionRecord, surface: RenderSurface,
 }
 
 /** (Ben, 2 Nov) A plan add's cardio or timed target on its card: ` 8 min`, ` 2,000 m`, ` 8 min · 2,000 m`; '' for none. */
-function planAddTargetText(d: Extract<ActionDetail, { kind: 'propose_plan_swap' }>): string {
+function planAddTargetText(d: { durationS?: number | undefined; distanceM?: number | undefined }): string {
   const parts = [...(d.durationS === undefined ? [] : [d.durationS % 60 === 0 ? `${String(d.durationS / 60)} min` : `${String(Math.floor(d.durationS / 60))}:${String(d.durationS % 60).padStart(2, '0')}`]), ...(d.distanceM === undefined ? [] : [cardioDistanceText(d.distanceM)])];
   return parts.length === 0 ? '' : ` ${parts.join(' · ')}`;
 }
