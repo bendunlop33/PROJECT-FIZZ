@@ -148,3 +148,22 @@ export function PlanSwapCard({ record, onChanged }: { record: ActionRecord; onCh
     </CoachCardFrame>
   );
 }
+
+/** (Ben, 2 Nov) The swap proposal saved with an exercise preference, by its record ID (the preference's card shows it). */
+export function PlanSwapCardById({ actionId, onChanged }: { actionId: string; onChanged?: () => void }) {
+  const services = useServices();
+  const [record, setRecord] = useState<ActionRecord | null>(null);
+  useEffect(() => {
+    const screen = { alive: true };
+    void services.planSwap
+      .record(actionId)
+      .catch(() => null)
+      .then((r) => {
+        if (screen.alive) setRecord(r);
+      });
+    return () => {
+      screen.alive = false;
+    };
+  }, [services, actionId]);
+  return record === null ? null : <PlanSwapCard record={record} {...(onChanged === undefined ? {} : { onChanged })} />;
+}

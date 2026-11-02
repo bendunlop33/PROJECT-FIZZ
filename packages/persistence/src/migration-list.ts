@@ -45,7 +45,8 @@ import { MIGRATION_0038 } from './schema/0038-apple-health';
 import { MIGRATION_0039 } from './schema/0039-coach-builder-powers';
 import { MIGRATION_0040 } from './schema/0040-coach-plan-swap';
 import { MIGRATION_0041 } from './schema/0041-coach-warmup-prefs';
-import { MIGRATION_0042 } from './schema/0042-coach-plan-change';
+import { MIGRATION_0042 } from './schema/0042-coach-prefs-rebalance';
+import { MIGRATION_0043 } from './schema/0043-coach-plan-change';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -111,8 +112,10 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(40, 'coach-plan-swap', MIGRATION_0040),
   // (Ben, 1 Nov) Warm-up preferences from the coach (`update_warmup_prefs` records).
   sqlMigration(41, 'coach-warmup-prefs', MIGRATION_0041),
+  // (Ben, 2 Nov) Exercise preferences and Rebalance from the coach (`set_exercise_preference`, `propose_rebalance` records).
+  sqlMigration(42, 'coach-prefs-rebalance', MIGRATION_0042),
   // (Ben, 2 Nov) Plan-level changes and rest settings from the coach (`propose_plan_change`, `update_rest_settings` records).
-  sqlMigration(42, 'coach-plan-change', MIGRATION_0042),
+  sqlMigration(43, 'coach-plan-change', MIGRATION_0043),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */

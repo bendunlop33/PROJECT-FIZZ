@@ -49,6 +49,10 @@ import {
   createPlanChangeExecutor,
   asksPlanSettingChange,
   type PlanChangeDeps,
+  createExercisePrefExecutors,
+  type ExercisePrefDeps,
+  createRebalanceExecutor,
+  type RebalanceDeps,
   type LiftTargetDeps,
   createStructuralExecutors,
   createBuildExecutor,
@@ -481,6 +485,10 @@ export interface CoachServiceDeps {
   restSettings?: { prepare: RestSettingsDeps['prepare'] };
   /** (Ben, 2 Nov) `propose_plan_change`'s checks (the plan builder's preview). Absent: the tool is never offered. */
   planChange?: { prepare: PlanChangeDeps['prepare'] };
+  /** (Ben, 2 Nov) `set_exercise_preference`: whether a builder plan is in use, and the checks. Absent: never offered. */
+  exercisePrefs?: { available: () => Promise<boolean>; prepare: ExercisePrefDeps['prepare'] };
+  /** (Ben, 2 Nov) `propose_rebalance`: Plan › Muscles' Rebalance for the plan in use (the screen's engine). Absent: never offered. */
+  rebalance?: { prepare: RebalanceDeps['prepare'] };
   store: () => Store;
   profile: () => Promise<UserProfile | null>;
   now: () => ZonedTimestamp;
@@ -1955,6 +1963,12 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (warmupTool && deps.warmupPrefs !== undefined) Object.assign(executors, createWarmupPrefsExecutors({ store: coachStore(), prepare: deps.warmupPrefs.prepare }));
     // (Ben, 2 Nov) Rest settings: every chat with a profile (the turn offers it on rest words and applies it only when Ben asked).
     if (warmupTool && deps.restSettings !== undefined) Object.assign(executors, createRestSettingsExecutors({ store: coachStore(), prepare: deps.restSettings.prepare }));
+    // (Ben, 2 Nov) Exercise likes and dislikes (a builder plan's Any preferences) and Rebalance, from every chat while a plan
+    // is in use; the turn offers each only on the words that need it.
+    const prefsTool = inUse !== null && deps.exercisePrefs !== undefined && (await deps.exercisePrefs.available().catch(() => false));
+    if (prefsTool && deps.exercisePrefs !== undefined) Object.assign(executors, createExercisePrefExecutors({ store: coachStore(), prepare: deps.exercisePrefs.prepare }));
+    const rebalanceTool = inUse !== null && deps.rebalance !== undefined;
+    if (rebalanceTool && deps.rebalance !== undefined) Object.assign(executors, createRebalanceExecutor({ store: coachStore(), prepare: deps.rebalance.prepare }));
     try {
       const result = await runCoachTurn(
         {
@@ -1979,6 +1993,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(planInThread !== null || planInUse !== null || planFromNothing ? { planInContext: true } : {}),
           ...(liftTargetsOn ? { liftTargetsOn: true } : {}),
           ...(warmupTool ? { trainingProfile: true } : {}),
+          ...(prefsTool ? { exercisePrefs: true } : {}),
+          ...(rebalanceTool ? { rebalance: true } : {}),
           ...(weekRead !== null && executors.propose_week !== undefined ? { week: true } : {}),
           ...(inUse !== null ? { planInUse: true } : {}),
           ...(inUse !== null && pbAppliedBuilder(inUse) !== null ? { builderPlan: true } : {}),

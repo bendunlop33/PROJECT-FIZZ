@@ -76,6 +76,8 @@ Entries: **T** Today, Plan (opens Today's thread), Progress, an exercise chart; 
 | reads (`get_*`) | ✓ (B: history reads only) | ✓ |
 | `propose_plan_change` (2 Nov: lighter week, days a week, length, Set/Any days, End) | – | plan + words (proposal) |
 | `update_rest_settings` (2 Nov: rest per set type, when short on time, shorten main lift) | – | profile + rest words (at once when asked, Undo; `Today too?`) |
+| `set_exercise_preference` (2 Nov) | – | builder plan + like/dislike words (at once, Undo; swap as a proposal) |
+| `propose_rebalance` (2 Nov) | – | plan + muscle/balance words (proposal) |
 | `set_next_session_targets` | post-workout review only | unchanged (not a chat) |
 
 ## Consequences
@@ -230,4 +232,36 @@ Two tools join the registry, every chat (`general`, `workout`), never the post-w
   the card offers `Today too?`: one `coach_edit_today` of `edit_planned_set` rest steps (pending sets on the old default
   only) with its own Undo (`revert_coach_edit`, which now keeps a logged set's rest).
 
-Migration 42 adds both record kinds to `coach_actions`. Not yet run on Ben's iPhone.
+Migration 43 adds both record kinds to `coach_actions` (after 42's). Not yet run on Ben's iPhone.
+## Amendment (2 Nov 2026, Ben's approval the same day): exercise likes and dislikes, and Rebalance, from every chat
+
+On 1 Nov Ben told the coach to remove leg extension as a preference and his plan didn't change: no tool could set one.
+The preferences are the plan builder's **Any preferences** (Plan setup › Edit plan; the plan in use's answers: question
+picks, `likes`, `never`), read by the builder, the plan swap and Rebalance. They are not in Profile (Ben to say whether
+he wants a Profile entry to them).
+
+1. **`set_exercise_preference`** (target `exercisePrefs`: a builder plan in use and Ben's own like/dislike words this turn,
+   `asksExercisePreference`): not preferred, preferred, or none, on the plan's answers (`pbSetExercisePreference`; a
+   question whose pick holds it goes back to No preference, nothing else changes). His stated preference, so it applies
+   at once with Undo (rule 3); the call is never run on words that don't state it. One versioned write of the plan
+   document with its record (`exercise_pref`, rule 5); every builder version's answers carry it, so an Undo of a later
+   plan edit can't bring the old preference back. Undo only while the preferences are as it left them.
+2. **The swap on the same card:** when a newly not-preferred exercise is in the plan, the record carries a
+   `propose_plan_swap` proposal (the 30 Oct engine and card: each day's change, Apply, Undo, `Today too`; a day changed
+   since is `Out of date`). The substitute: the coach's `swapTo` from get_substitutions when it is usable here, not
+   pain-flagged, not itself not preferred and leads with the same muscle group; else the app's pick (his pick on that
+   question, then the catalogue's substitutes, the builder's other options for that slot, the movement family), with the
+   same checks. Already not preferred (set on Plan setup): nothing is written; the swap is its own card. Plan setup's
+   `In your plan · Replace` uses the same pick (now also same-muscle).
+3. **`propose_rebalance`** (target `rebalanceOpen`: Rebalance can run on the plan in use and his words are about muscles or
+   balance, `asksMuscleBalance`): the record is Plan › Muscles' Rebalance card from the **same engine and service**
+   (`planMuscles.rebalance`), lines, bars, day lengths and Why? as the screen shows them; the coach card draws the
+   screen's own body (`RebalanceBody`). Per-line skip, Apply (`planMuscles.apply` on the version the coach read, op ID
+   from the record, refused when the plan moved on) and Undo (only while that Apply is the plan's last edit); the card's
+   state is read from the plan's op IDs, so it survives a restart. No focus input: the engine fills every gap in order,
+   and the ranges are the approved V1/V4 ones (FQ/VC/ST candidates not used). Nothing to propose: one line, no card.
+4. **Turn size:** both tools, their prompt lines and descriptions load only on the words that need them, so plan turns
+   don't grow (1 Nov `planWorkContext` unchanged). `propose_rebalance` counts as a plan card for the plan-part nudge.
+5. **Migration 42** adds `set_exercise_preference` and `propose_rebalance` to `coach_actions` (rows kept, as 41 did).
+
+Not yet run on Ben's iPhone.

@@ -12,6 +12,7 @@ import { useDataChanged, useScreenData, useServices } from '../../shell/context'
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Card, Chip, Eyebrow, PrimaryButton, StatusLine, TextButton, Toast, ToastHost, toastBottom } from '../../ui';
 import { MuscleBar } from '../../ui/muscle-bar';
+import { RebalanceBody } from './RebalanceBody';
 
 /**
  * (Ben, 1 Nov; docs/design/plan-muscles.md, prototype `plan-muscles.html`) Library › Plan › **Muscles**: the plan's
@@ -209,7 +210,6 @@ function RebalancePanel({ onDone, onCancel, onToast, reloadAll }: { onDone: (t: 
   const services = useServices();
   const [rejected, setRejected] = useState<ReadonlySet<string>>(new Set());
   const [card, reloadCard] = useScreenData((s) => s.planMuscles.rebalance(rejected));
-  const [why, setWhy] = useState(false);
   const busy = useRef(false);
   const op = useRef<string | null>(null);
   useEffect(() => {
@@ -255,65 +255,17 @@ function RebalancePanel({ onDone, onCancel, onToast, reloadAll }: { onDone: (t: 
       <AppText variant="headline" accessibilityRole="header">
         {PLAN_MUSCLES_COPY.rebalance}
       </AppText>
-      {c.empty ? (
-        <AppText variant="callout" color="text.secondary">
-          Nothing fits within your days’ time.
-        </AppText>
-      ) : null}
-      {c.lines.map((l) => (
-        <Pressable
-          key={l.id}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: l.accepted }}
-          accessibilityLabel={`${l.text}, ${l.accepted ? 'accepted' : 'skipped'}`}
-          onPress={() => {
-            setRejected((s) => {
-              const n = new Set(s);
-              if (n.has(l.id)) n.delete(l.id);
-              else n.add(l.id);
-              return n;
-            });
-          }}
-          style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
-        >
-          <AppText variant="callout" numeric color={l.accepted ? 'text.primary' : 'text.tertiary'} style={{ flex: 1, ...(l.accepted ? {} : { textDecorationLine: 'line-through' }) }}>
-            {l.text}
-          </AppText>
-          <AppText variant="callout" color={l.accepted ? 'status.done' : 'text.tertiary'}>
-            {l.accepted ? PB_EDIT_COPY.accept : PB_EDIT_COPY.reject}
-          </AppText>
-        </Pressable>
-      ))}
-      {c.bars.length > 0 ? (
-        <View style={{ gap: theme.space['1'], paddingTop: theme.space['2'], borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
-          {c.bars.map((b) => (
-            <AppText key={b.group} variant="callout" numeric color={b.statusAfter === 'in' ? 'status.done' : 'status.warning'}>
-              {b.text}
-            </AppText>
-          ))}
-        </View>
-      ) : null}
-      {c.minutes.length > 0 ? (
-        <View style={{ gap: theme.space['1'] }}>
-          {c.minutes.map((m) => (
-            <AppText key={m.dayIndex} variant="callout" numeric color={m.over ? 'status.warning' : 'text.secondary'}>
-              {m.text}
-            </AppText>
-          ))}
-        </View>
-      ) : null}
-      <Pressable accessibilityRole="button" accessibilityLabel="Why? Rebalance" accessibilityState={{ expanded: why }} onPress={() => { setWhy((w) => !w); }} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
-        <AppText variant="callout" color="text.secondary" style={{ textDecorationLine: 'underline' }}>
-          Why?
-        </AppText>
-      </Pressable>
-      {why
-        ? c.why.map((l) => (
-            <AppText key={l} variant="callout" color="text.secondary" numeric>
-              {l}
-            </AppText>
-          ))
-        : null}
+      <RebalanceBody
+        card={c}
+        onToggle={(id) => {
+          setRejected((s) => {
+            const n = new Set(s);
+            if (n.has(id)) n.delete(id);
+            else n.add(id);
+            return n;
+          });
+        }}
+      />
       <PrimaryButton label={PB_EDIT_COPY.apply} disabled={!c.canApply} onPress={() => { apply(c); }} />
       <TextButton label="Skip" tone="secondary" onPress={onCancel} />
     </Card>
