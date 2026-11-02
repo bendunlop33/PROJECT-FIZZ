@@ -98,4 +98,5 @@ fix, one feature at a time. Record significant technical decisions in
 - Store UTC timestamps with the timezone; keep original imported values as provenance.
 - kg/lb and load convention (total barbell, per-dumbbell, stack, assisted) are always explicit.
 - Commit small, descriptive commits.
+- **Ben is not a PT (Ben, 2 Nov 2026).** Training-method questions (volume, frequency, rep ranges, warm-ups, progression, stalls) are researched by `training-researcher`, then put to Ben as one recommendation with its evidence, not as a choice for him to make. He still approves the rules.
 - **UI copy is minimal (Ben, 10 Oct 2026).** Screens show values and actions, not explanations of rules, guardrails or how things work. No reassurance lines ("Nothing changes unless you say so"), no rule labels in the main UI ("built-in rule", "snapped to"), no paragraphs of lead text. Honesty still applies (rule 1, 6): when something matters (offline, AI unavailable, an estimate) use the shortest possible word or icon, and put any explanation behind an optional "Why?" or info tap.
