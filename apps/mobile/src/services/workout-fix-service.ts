@@ -86,7 +86,6 @@ export function createWorkoutFixService(deps: WorkoutFixServiceDeps) {
       case 'delete': {
         const a = await workout(p, args.workoutId);
         if (a === null) return refuse('No workout with that ID; read get_recent_sessions with its date');
-        if (a.session.status !== 'finished') return refuse('Only a finished workout can be deleted', titleOf(a));
         const n = setsOf(a);
         return { kind: 'ok', detail: { kind: 'fix_workout', op: 'delete', sessionId: a.session.id, sessionVersion: a.session.version, title: titleOf(a), before: `${workoutWhenText(a.session)} · ${String(n)} ${n === 1 ? 'set' : 'sets'}`, after: 'Deleted' } };
       }

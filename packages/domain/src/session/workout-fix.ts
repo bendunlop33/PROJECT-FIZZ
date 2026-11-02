@@ -2,7 +2,7 @@ import type { ActionDetail, SessionAggregate, SessionCommand, ZonedTimestamp } f
 
 import { clockText, localDateOf, localMidnightUtcMs, localTimeUtcMs } from '../calendar';
 import { toIso, toMs } from '../time';
-import { shortDateText } from './deletion';
+import { isInHistory, shortDateText } from './deletion';
 import { reduceSession } from './reducer';
 
 /**
@@ -50,7 +50,7 @@ export type WorkoutMovePlan =
 export function planWorkoutMove(agg: SessionAggregate, req: { date: string | null; start: string | null; end: string | null }, at: ZonedTimestamp): WorkoutMovePlan {
   const s = agg.session;
   if (s.localDate !== undefined) return { ok: false, line: 'An imported workout keeps its date' };
-  if (s.status !== 'finished' || s.endedAt === null) return { ok: false, line: 'Only a finished workout can move' };
+  if (!isInHistory(s) || s.endedAt === null) return { ok: false, line: 'Only a finished workout can move' };
   const tz = s.startedAt.tz;
   const startMs = toMs(s.startedAt.utc);
   const day = localDateOf(startMs, tz);
