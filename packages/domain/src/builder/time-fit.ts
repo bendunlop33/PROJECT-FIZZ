@@ -2,7 +2,7 @@ import { BUILD_LIMITS, type BuilderSetup } from '@fizz/schemas';
 import { slotsOf } from './arrange';
 import { fromDraftPlan, toDraftPlan, type DraftCodecContext } from './codec';
 import { estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
-import { clampMinutes, FIT_RULES, fitToMinutes, type BuilderFitStep } from './fit';
+import { clampMinutes, FIT_RULES, fitToMinutes, TIME_STEP_RULES, type BuilderFitStep } from './fit';
 import { workingCount } from './set-rows';
 import { carriedSets, withCarriedBack, withoutCarried, type CarriedHold } from './carried';
 import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
@@ -177,6 +177,12 @@ export interface WorkoutTimeFitInput {
   grow?: boolean;
   /** Exercises `+` may add, best first (the day's main group, then the secondary group's). Absent: none. */
   addCandidates?: { arm: readonly string[]; mainGroup: readonly string[] };
+  /**
+   * (Ben, 2 Nov: "it jumps massively") A `−` (-1) or `+` (1) tap: the fit lands within `TIME_STEP_RULES.nearMin` of
+   * `to` when the workout allows (sets before exercises, both ways), and a tap that would change nothing goes on to the
+   * next 5-minute step that does. Absent (Undo, a length set outright): the fit as it was.
+   */
+  step?: -1 | 1;
 }
 
 export interface WorkoutTimeFitOutcome {
@@ -260,12 +266,12 @@ export function refitWorkoutToTime(i: WorkoutRefitInput): WorkoutTimeFitOutcome 
   return withHeldBack(refitBare({ ...i, original, work }), held, i.ctx);
 }
 
-function refitBare(i: WorkoutRefitInput): WorkoutTimeFitOutcome {
+function refitBare(i: WorkoutRefitInput, near = false): WorkoutTimeFitOutcome {
   const to = clampMinutes(i.to);
   const fromMinutes = clampMinutes(i.fromMinutes);
   if (to >= fromMinutes) return { workout: i.original, fit: null, minutes: to, over: false };
   const held = heldSets(i.original, i.work);
-  const r = fitToMinutes(i.work, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: false, supersets: i.supersets });
+  const r = fitToMinutes(i.work, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: false, supersets: i.supersets, ...(near ? { near: true } : {}) });
   if (r.steps.length === 0 && Object.keys(held).length === 0) return { workout: i.original, fit: null, minutes: to, over: r.status === 'over' };
   // The fit never cuts a touched slot (fit.ts), so its own cuts and the held sets never share a key.
   const cut: Record<string, number> = { ...held };
@@ -288,8 +294,29 @@ export function withOriginalRows(original: BuilderWorkout, changed: BuilderWorko
   return { ...changed, restLevel: original.restLevel, blocks: changed.blocks.map((b) => ({ ...b, slots: b.slots.map(rowsOf) })) };
 }
 
-/** `fitWorkoutToTime`: Your workout at a new length (see the module comment). */
+/**
+ * `fitWorkoutToTime`: Your workout at a new length (see the module comment). (Ben, 2 Nov) A tap (`step`) that would
+ * leave the workout as long as it is goes on to the next 5-minute step that changes it (never a no-op tap); none does
+ * (nothing more to cut or add): the first answer.
+ */
 export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome {
+  const first = fitWorkoutOnce(i);
+  if (i.step === undefined || first.full === true) return first;
+  const was = estimateBuilderSeconds(i.current, i.ctx);
+  const moved = (r: WorkoutTimeFitOutcome) => (i.step === 1 ? estimateBuilderSeconds(r.workout, i.ctx) > was + 29 : estimateBuilderSeconds(r.workout, i.ctx) < was - 29);
+  if (moved(first)) return first;
+  for (let to = clampMinutes(i.to), tries = 0; tries < 40; tries += 1) {
+    const next = stepTimeMinutes(to, i.step);
+    if (next === to) break;
+    to = next;
+    const r = fitWorkoutOnce({ ...i, to });
+    if (r.full === true) break;
+    if (moved(r)) return r;
+  }
+  return first;
+}
+
+function fitWorkoutOnce(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome {
   const filled = i.fit?.filledTo !== undefined;
   // (Review todaylean B3) A fill is live and Time is still at or above what it filled to: it stays as it is (an explicit
   // `+` grows on, Ben 28 Oct).
@@ -308,7 +335,7 @@ export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome 
     const r = i.grow === true && fit !== null && filled ? growWorkout(current, to, i, fit) : growWorkout(original, to, i, null);
     return held.length === 0 ? r : withHeldBack(r, held, i.ctx);
   }
-  const r = refitBare({ original, work, fromMinutes, to: i.to, ctx: i.ctx, mainGroup: i.mainGroup, supersets: i.supersets });
+  const r = refitBare({ original, work, fromMinutes, to: i.to, ctx: i.ctx, mainGroup: i.mainGroup, supersets: i.supersets }, i.step !== undefined);
   return held.length === 0 ? r : withHeldBack(r, held, i.ctx);
 }
 
@@ -320,12 +347,15 @@ export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome 
  * could be added: the original as it is, `full`.
  */
 function growWorkout(from: BuilderWorkout, to: number, i: WorkoutTimeFitInput, live: BuilderTimeFit | null): WorkoutTimeFitOutcome {
-  const g = fitToMinutes(from, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: true, supersets: i.supersets, addCandidates: i.addCandidates ?? { arm: [], mainGroup: [] } });
+  const near = i.step === undefined ? {} : { near: true, nearBase: live?.base ?? from };
+  const g = fitToMinutes(from, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: true, supersets: i.supersets, addCandidates: i.addCandidates ?? { arm: [], mainGroup: [] }, ...near });
   if (g.steps.length === 0) return live === null ? { workout: from, fit: null, minutes: clampMinutes(i.minutes), over: false, ...(g.full === true ? { full: true as const } : {}) } : { workout: from, fit: live, minutes: live.filledTo ?? to, over: false, ...(g.full === true ? { full: true as const } : {}) };
   const added = [...(live?.added ?? []), ...g.steps.flatMap((st) => (st.kind === 'add' ? [{ slotKey: st.slotKey, why: st.why }] : []))];
   const isAdded = new Set(added.map((a) => a.slotKey));
-  const raised: Record<string, number> = { ...(live?.raised ?? {}) };
-  for (const st of g.steps) if (st.kind === 'sets' && st.to > st.from && !isAdded.has(st.slotKey)) raised[st.slotKey] = (raised[st.slotKey] ?? 0) + st.to - st.from;
+  const tally = new Map<string, number>(Object.entries(live?.raised ?? {}));
+  // (Ben, 2 Nov) Sets a near `+` gave back (an exercise added past the window) come off what was raised.
+  for (const st of g.steps) if (st.kind === 'sets' && !isAdded.has(st.slotKey)) tally.set(st.slotKey, (tally.get(st.slotKey) ?? 0) + st.to - st.from);
+  const raised: Record<string, number> = Object.fromEntries([...tally].filter(([, n]) => n > 0));
   const base = live?.base ?? from;
   const fromMinutes = live?.fromMinutes ?? clampMinutes(estimateBuilderMinutes(from, i.ctx));
   const fit: BuilderTimeFit = { base, fromMinutes, dropped: [], ...(added.length === 0 ? {} : { added }), ...(Object.keys(raised).length === 0 ? {} : { raised }), filledTo: to };
@@ -465,7 +495,7 @@ export interface LiveTime {
  * (`+`) so every tap moves something: an estimate just under its length (a fit can't land on the minute) would step to
  * where it already is, and one over it (Ben's own edits) to a length the fit gives back uncut. Pure.
  */
-export function liveTime(i: { estimate: number; length: number; floor?: number; growFromEstimate?: boolean; cutLive?: boolean }): LiveTime {
+export function liveTime(i: { estimate: number; length: number; floor?: number; growFromEstimate?: boolean; cutLive?: boolean; filled?: boolean }): LiveTime {
   const estimate = Math.max(0, Math.round(i.estimate));
   const length = clampMinutes(i.length);
   const floor = clampMinutes(i.floor ?? length);
@@ -478,10 +508,17 @@ export function liveTime(i: { estimate: number; length: number; floor?: number; 
   // estimate, never past the length first. Elsewhere `+` goes past the length (a fit there only gives back cuts).
   // At least 3 minutes more, so a fit that landed just under its step (34 of 35) still moves on a tap.
   if (i.growFromEstimate === true && estimate > 0) {
+    // (Ben, 2 Nov: "it jumps massively") Each tap steps 5 minutes from the length Ben last chose while the workout is
+    // within `nearMin` of it (a fit can't land on the minute), so the steps stay even; past that (his own edits moved
+    // it), from the estimate. A tap that changes nothing goes on to the next step (`fitWorkoutToTime`, `step`).
+    const held = Math.abs(estimate - length) <= TIME_STEP_RULES.nearMin ? length : estimate;
+    const down = stepTimeMinutes(held, -1);
+    // Below the length before the first Time change only, unless `+` filled past it (a shorter Time fills less).
+    const cut = i.filled === true || down < floor ? down : stepTimeMinutes(floor, -1);
     // While a cut is live (`cutLive`), past the length too: more Time first gives back what it cut, and a cut that
     // landed under its length would otherwise be asked for the same length again.
-    const up = Math.max(stepTimeMinutes(estimate + 2, 1), i.cutLive === true ? stepTimeMinutes(length, 1) : 0);
-    return { minutes: estimate, over: estimate > length, less: less < floor ? less : null, more: up > estimate ? up : null };
+    const up = Math.max(stepTimeMinutes(held, 1), i.cutLive === true ? stepTimeMinutes(length, 1) : 0);
+    return { minutes: estimate, over: estimate > length + TIME_STEP_RULES.nearMin, less: cut < held ? cut : null, more: up > held ? up : null };
   }
   if (more <= length) more = stepTimeMinutes(length, 1);
   return { minutes: estimate, over: estimate > length, less: less < floor ? less : null, more: more > length ? more : null };

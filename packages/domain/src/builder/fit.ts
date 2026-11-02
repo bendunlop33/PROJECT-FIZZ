@@ -135,7 +135,19 @@ export interface BuilderFitOptions {
    * leaves without its pair partner can need a warm-up of its own. Absent (a started workout's sets): as they are.
    */
   settle?: (w: BuilderWorkout) => BuilderWorkout;
+  /**
+   * (Ben, 2 Nov: "it jumps massively") Your workout's Time `−`/`+`: land within `TIME_STEP_RULES.nearMin` of the length.
+   * Shorter: of the ladder's ways to fit, one that lands within the window below the length first (shorter rests, then
+   * sets, then exercises, as above); none does: the nearest it can land, at most the window past the length. Longer:
+   * an exercise added past the window gives back sets the `+` ladder raised (4 → 3) to land inside it.
+   */
+  near?: boolean;
+  /** (Ben, 2 Nov) Longer, near: the workout before any `+` (a live fill's base); sets are never given back below its. */
+  nearBase?: BuilderWorkout;
 }
+
+/** (Ben, 2 Nov) Time's `−`/`+` land within this many minutes of the 5-minute step asked for, when the workout allows. */
+export const TIME_STEP_RULES = { nearMin: 3 } as const;
 
 const cloneW = (w: BuilderWorkout): BuilderWorkout => ({ restLevel: w.restLevel, blocks: w.blocks.map((b) => ({ ...b, slots: [...b.slots] })) });
 const allSlots = (w: BuilderWorkout): BuilderSlot[] => w.blocks.flatMap((b) => b.slots);
@@ -160,13 +172,46 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
   const floor = rawOpts.floorMinutes;
   const minutes = floor === undefined || !Number.isFinite(rawOpts.minutes) ? clampMinutes(rawOpts.minutes) : Math.max(floor, Math.min(FIT_RULES.maxMinutes, Math.round(rawOpts.minutes)));
   const opts: BuilderFitOptions = { ...rawOpts, minutes };
+  const over = estimateBuilderSeconds(input, ctx) > opts.minutes * 60 + 29;
+  if (!over && opts.grow) return grow(cloneW(input), ctx, opts);
+  if (opts.near === true && opts.settle === undefined && over) return nearShrink(input, ctx, opts);
+  return shrink(input, ctx, opts);
+}
+
+/**
+ * (Ben, 2 Nov) The shorter ladder landing near the length (`near`): the ladder as it is, then with fewer rest levels
+ * and (Supersets on) without pairs, so a rest level or a pair that saves more than asked doesn't push it far under.
+ * The first, in that order, within the window below the length; none: the nearest (a tie: the earlier).
+ */
+function nearShrink(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOptions): BuilderFitResult {
+  const targetS = opts.minutes * 60;
+  const loS = (opts.minutes - TIME_STEP_RULES.nearMin) * 60 - 29;
+  const floor = ctx.fitRestLevel ?? DEFAULT_FIT_REST_LEVEL;
+  const caps = (['shortest', 'shorter', 'normal'] as const).filter((l) => rank(l) <= rank(floor));
+  const runs: BuilderFitResult[] = [];
+  for (const supersets of opts.supersets ? [true, false] : [false]) {
+    for (const cap of caps) runs.push(shrink(input, { ...ctx, fitRestLevel: cap }, { ...opts, supersets }));
+  }
+  const secsOf = (r: BuilderFitResult) => estimateBuilderSeconds(r.workout, ctx);
+  const landed = runs.filter((r) => r.status !== 'over');
+  const inside = landed.find((r) => secsOf(r) >= loS && secsOf(r) <= targetS + 29);
+  if (inside !== undefined) return inside;
+  let best: BuilderFitResult | null = null;
+  for (const r of landed) if (best === null || Math.abs(secsOf(r) - targetS) < Math.abs(secsOf(best) - targetS)) best = r;
+  return best ?? runs[0] ?? shrink(input, ctx, opts);
+}
+
+/** The shorter ladder (steps 1–4 above). */
+function shrink(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOptions): BuilderFitResult {
   const limitS = opts.minutes * 60 + 29;
   const secs = (w: BuilderWorkout) => estimateBuilderSeconds(w, ctx);
   const over = (w: BuilderWorkout) => secs(w) > limitS;
   const done = (w: BuilderWorkout, steps: BuilderFitStep[], status: BuilderFitStatus): BuilderFitResult => ({ workout: w, steps, status, minutes: estimateBuilderMinutes(w, ctx) });
   let w = cloneW(input);
   const steps: BuilderFitStep[] = [];
-  if (!over(w)) return opts.grow ? grow(w, ctx, opts) : done(w, steps, 'fits');
+  if (!over(w)) return done(w, steps, 'fits');
+  // (Ben, 2 Nov) Time's `−`/`+`: the cut lands within the window below the length when one does (`near`).
+  const near: LeastLostNear | undefined = opts.near === true && opts.settle === undefined ? nearWindow() : undefined;
 
   // (1) Accessory rests, one level at a time, no lower than Ben's `Rest when short on time` (the main lift's never move).
   const restFloor = ctx.fitRestLevel ?? DEFAULT_FIT_REST_LEVEL;
@@ -228,14 +273,14 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
   // (their value is weighed first, as in step 4). Rule F (Ben, 27 Oct): on a day whose main group isn't Arms, the arm
   // isolations are trimmed and left out here, before any other accessory loses a set.
   const from = w;
-  const trimmed = settledFit(limitS, (limit) => leastLostFit(from, ctx, limit, weigh, new Map(subRoleGuards(from, ctx.info, opts.mainGroup).map((g) => [g.slotKey, 'kept'])), false));
+  const trimmed = settledFit(limitS, (limit) => leastLostFit(from, ctx, limit, weigh, new Map(subRoleGuards(from, ctx.info, opts.mainGroup).map((g) => [g.slotKey, 'kept'])), false, near));
   if (trimmed.fits) {
     steps.push(...trimmed.steps);
     return done(trimmed.workout, steps, 'fitted');
   }
   // (4) The least training lost: every way of keeping each accessory (2+ sets, or left out) is weighed at once,
   // keeping the main sub-roles' exercises as long as anything else can go (Ben, 24 Oct).
-  const best = settledFit(limitS, (limit) => guardedFit(from, ctx, limit, weigh, opts.mainGroup));
+  const best = settledFit(limitS, (limit) => guardedFit(from, ctx, limit, weigh, opts.mainGroup, near));
   steps.push(...best.steps);
   return done(best.workout, steps, best.fits ? 'fitted' : 'over');
 }
@@ -299,18 +344,19 @@ type GuardMode = 'full' | 'kept';
  * cut); then kept with fewer sets (their sets go before anything else's); then without the later sub-roles, one at a
  * time (the row before the vertical pull); then no guard at all (the plain least-lost fit, or the shortest).
  */
-function guardedFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, weigh: FitWeigh, mainGroup: BuilderGroupName | null): ReturnType<typeof leastLostFit> {
+function guardedFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, weigh: FitWeigh, mainGroup: BuilderGroupName | null, near?: LeastLostNear): ReturnType<typeof leastLostFit> {
   const guards = subRoleGuards(w, ctx.info, mainGroup);
   const levels: Map<string, GuardMode>[] = [];
   if (guards.length > 0) {
     levels.push(new Map(guards.map((g) => [g.slotKey, 'full'])));
     for (let n = guards.length; n >= 1; n -= 1) levels.push(new Map(guards.slice(0, n).map((g) => [g.slotKey, 'kept'])));
   }
+  // (Ben, 2 Nov) Near the length: within each level; sub-role coverage still comes first (never given up to land nearer).
   for (const guard of levels) {
-    const r = leastLostFit(w, ctx, limitS, weigh, guard);
+    const r = leastLostFit(w, ctx, limitS, weigh, guard, true, near);
     if (r.fits) return r;
   }
-  return leastLostFit(w, ctx, limitS, weigh, new Map());
+  return leastLostFit(w, ctx, limitS, weigh, new Map(), true, near);
 }
 
 /** One way to keep a block: what it becomes (null: left out), its seconds with the changeover, the value and sets kept. */
@@ -415,6 +461,16 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, w
   return out;
 }
 
+/** (Ben, 2 Nov) Time's `−`/`+`: land within `belowS` under the length first, else the nearest, at most `pastS` past it. */
+interface LeastLostNear {
+  /** Below the length's limit (its minute + 29 s): down to a rounded `nearMin` under the length. */
+  belowS: number;
+  /** Past the limit: up to a rounded `nearMin` over the length. */
+  pastS: number;
+}
+
+const nearWindow = (): LeastLostNear => ({ belowS: TIME_STEP_RULES.nearMin * 60 + 58, pastS: TIME_STEP_RULES.nearMin * 60 });
+
 /**
  * Steps (3) and (4) (`mayLeaveOut` false: step 3, sets only), the least training lost (Ben's "the cheapest cut", D9; fit-to-time 23 Oct "the least training lost, not
  * one step at a time", SP2): of every way to keep each cuttable accessory at 2+ sets or leave it out, the one that fits
@@ -423,11 +479,13 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, w
  * left out or cut could come back and still fit. Nothing fits: the shortest it can be (status over). The main lift and
  * Ben's edited slots are never cut; at least one exercise stays.
  */
-function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, weigh: FitWeigh, guard: ReadonlyMap<string, GuardMode>, mayLeaveOut = true): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
+function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, weigh: FitWeigh, guard: ReadonlyMap<string, GuardMode>, mayLeaveOut = true, near?: LeastLostNear): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
   const choices = w.blocks.map((b) => blockChoices(b, w, ctx, weigh, guard, mayLeaveOut));
   // The blocks' seconds (with a changeover each) against the limit: setup is once, and the first block has no changeover.
   // (Ben, 2 Nov) His general warm-up's minutes come off the room first: the fit makes room for it, never cuts it.
   const room = limitS - BUILDER_TIME.setupS + betweenSecondsOf(ctx) - generalWarmupSecondsFor(w, ctx);
+  // (Ben, 2 Nov) Near: states up to the window past the length are kept too (the nearest may be just past it).
+  const reach = room + (near?.pastS ?? 0);
   const minAfter: number[] = new Array<number>(choices.length + 1).fill(0);
   for (let i = choices.length - 1; i >= 0; i -= 1) minAfter[i] = (minAfter[i + 1] ?? 0) + Math.min(...(choices[i] ?? []).map((c) => c.secs));
   // By total seconds, the state that keeps most. States that can't fit any more are dropped as they arise.
@@ -437,7 +495,7 @@ function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, we
     for (const [secs, st] of states) {
       for (const [k, c] of opts.entries()) {
         const total = secs + c.secs;
-        if (total + (minAfter[i + 1] ?? 0) > room) continue;
+        if (total + (minAfter[i + 1] ?? 0) > reach) continue;
         const cand: FitState = { guard: st.guard + c.guard, held: st.held + c.held, value: st.value + c.value, sets: st.sets + c.sets, picks: [...st.picks, k] };
         const cur = next.get(total);
         if (cur === undefined || keepsMore(cand, cur)) next.set(total, cand);
@@ -446,11 +504,23 @@ function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, we
     states = next;
   }
   let best: { secs: number; st: FitState } | null = null;
+  // (Ben, 2 Nov) Near: the most kept within the window below the length; none there: the nearest under or just past.
+  const lo = near === undefined ? -Infinity : room - near.belowS;
+  let under: { secs: number; st: FitState } | null = null;
+  let past: { secs: number; st: FitState } | null = null;
   for (const [secs, st] of states) {
     // Total 0: nothing kept (at least one exercise stays).
     if (secs <= 0) continue;
+    if (secs > room) {
+      if (past === null || secs < past.secs || (secs === past.secs && keepsMore(st, past.st))) past = { secs, st };
+      continue;
+    }
+    if (under === null || keepsMore(st, under.st, { a: secs, b: under.secs })) under = { secs, st };
+    if (secs < lo) continue;
     if (best === null || keepsMore(st, best.st, { a: secs, b: best.secs })) best = { secs, st };
   }
+  const aim = room - 29;
+  if (best === null) best = under === null ? past : past === null || Math.abs(aim - under.secs) <= Math.abs(past.secs - aim) ? under : past;
   const fits = best !== null;
   const picks = best?.st.picks ?? shortestPicks(choices);
   const blocks: BuilderBlock[] = [];
@@ -581,6 +651,26 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
     consider({ ...w, restLevel: level }, { kind: 'rest', from: w.restLevel, to: level });
   }
   const growable = (s: BuilderSlot) => s.touched !== true && !isTimedSlot(s);
+  // (Ben, 2 Nov) Near the length (`near`): an exercise added past the window gives back sets `+` raised (the lowest
+  // value, the later exercise first; never below the count before any `+`, `nearBase`, or 3) to land within it.
+  const nearOn = opts.near === true;
+  const before = new Map(allSlots(opts.nearBase ?? input).map((x) => [x.key, workingCount(x)]));
+  const valueOf = (x: BuilderSlot) => fitSetValue(x.exerciseId, ctx.info, opts.mainGroup);
+  const trimBack = (from: BuilderWorkout, added: ReadonlySet<string>): BuilderWorkout => {
+    let t = from;
+    while (secs(t) > targetS + 29 + TIME_STEP_RULES.nearMin * 60) {
+      const all = allSlots(t);
+      const pick = all
+        .filter((x) => !x.main && growable(x) && !added.has(x.key) && workingCount(x) > Math.max(3, before.get(x.key) ?? Infinity))
+        .sort((a, b) => valueOf(a) - valueOf(b) || all.indexOf(b) - all.indexOf(a))[0];
+      if (pick === undefined) break;
+      const next = replaceSlot(t, pick.key, setWorkingCount(pick, workingCount(pick) - 1));
+      if (secs(next) < targetS - 29 - TIME_STEP_RULES.nearMin * 60) break;
+      t = next;
+    }
+    return t;
+  };
+  const addedKeys = new Set<string>();
   // (2) +1 set on the accessories, round by round, up to 4 each.
   for (let changed = true, rounds = 0; changed && short(w) && rounds < GROW_RULES.maxSetRounds; rounds += 1) {
     changed = false;
@@ -610,13 +700,13 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
     for (const id of pool.ids) {
       if (!short(w) || allSlots(w).length >= GROW_RULES.maxExercises) break;
       if (inWorkout(id) || clashes(id) || ctx.info(id)?.group !== pool.group) continue;
-      const made = [3, 2].map((n) => insertAfterGroup(w, makeSlot(id, { main: false, workingSets: n }, ctx), [pool.group], ctx, opts.supersets));
+      const made = [3, 2].map((n) => insertAfterGroup(w, makeSlot(id, { main: false, workingSets: n }, ctx), [pool.group], ctx, opts.supersets)).map((m) => (nearOn ? { ...m, w: trimBack(m.w, new Set([...addedKeys, m.key])) } : m));
       const three = made[0];
       const two = made[1];
       if (three === undefined || two === undefined) continue;
       // 3 sets, unless 2 lands nearer the length.
       const pick = Math.abs(secs(two.w) - targetS) < Math.abs(secs(three.w) - targetS) && secs(three.w) > limitS ? two : three;
-      consider(pick.w, { kind: 'add', slotKey: pick.key, exerciseId: id, why: pool.why });
+      if (consider(pick.w, { kind: 'add', slotKey: pick.key, exerciseId: id, why: pool.why })) addedKeys.add(pick.key);
     }
   }
   // Nothing taken but something could be added: the smallest step (every explicit + moves something).
@@ -624,6 +714,19 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
   if (steps.length === 0 && fallback !== null && opts.planBufferMin === undefined) {
     w = fallback.w;
     steps.push(fallback.step);
+  }
+  // (Ben, 2 Nov) Near: the fallback add trimmed back too, and the set steps as the counts now are (a trim gave some back).
+  if (nearOn && steps.some((st) => st.kind === 'add')) {
+    const added = new Set(steps.flatMap((st) => (st.kind === 'add' ? [st.slotKey] : [])));
+    w = trimBack(w, added);
+    const was = new Map(allSlots(input).map((x) => [x.key, workingCount(x)]));
+    const sets: BuilderFitStep[] = [];
+    for (const x of allSlots(w)) {
+      const from = was.get(x.key);
+      if (from !== undefined && !added.has(x.key) && from !== workingCount(x)) sets.push({ kind: 'sets', slotKey: x.key, exerciseId: x.exerciseId, from, to: workingCount(x) });
+    }
+    const kept = steps.filter((st) => st.kind !== 'sets' && (st.kind !== 'add' || allSlots(w).some((x) => x.key === st.slotKey)));
+    steps.splice(0, steps.length, ...kept.filter((st) => st.kind === 'rest'), ...sets, ...kept.filter((st) => st.kind !== 'rest'));
   }
   const full = steps.length === 0 && short(w);
   return { workout: w, steps, status: steps.length === 0 ? 'fits' : 'fitted', minutes: estimateBuilderMinutes(w, ctx), ...(full ? { full: true as const } : {}) };
