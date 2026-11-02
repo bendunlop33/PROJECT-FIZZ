@@ -69,6 +69,28 @@ export async function saveHealthLinkChangeIn(tx: SqlExecutor, ownerId: string, c
   }
 }
 
+/**
+ * Link, unlink, `Not it` or `Same workout`, decided against the stored link inside a caller's transaction: the day
+ * sheet's write (`changeLink`) and (Ben, 2 Nov) the coach's applied fix (`workout_fix`) are this one write.
+ */
+export async function changeLinkIn(
+  tx: SqlExecutor,
+  ownerId: string,
+  healthUuid: string,
+  make: (current: HealthLink | null, linkedElsewhere: (sessionId: string) => Promise<boolean>) => Promise<HealthLinkChange> | HealthLinkChange,
+): Promise<HealthLinkWrite> {
+  const current = await linkIn(tx, ownerId, healthUuid);
+  const elsewhere = async (sessionId: string) =>
+    (await tx.getFirst("SELECT 1 AS x FROM health_links WHERE owner_id = ? AND session_id = ? AND status = 'linked' AND health_uuid <> ?", [ownerId, sessionId, healthUuid.toLowerCase()])) !== null;
+  const out = await saveHealthLinkChangeIn(tx, ownerId, await make(current, elsewhere));
+  // (Q1) A link or unlink changes whether the app's own Health write should exist: check those workouts again.
+  if (out.status === 'written') {
+    const ids = [...new Set([current?.sessionId, out.link.sessionId].filter((x): x is string => x !== undefined))];
+    for (const id of ids) await tx.run('UPDATE health_writes SET session_revision = -1 WHERE session_id = ?', [id]);
+  }
+  return out;
+}
+
 function decodeWorkoutSample(row: SqlRow): HealthWorkoutSample {
   const id = rowId(row.id);
   return checkRead(HealthWorkoutSampleSchema, parseJson('health_samples', id, 'data', row.data ?? null), 'health_samples', id);
@@ -252,18 +274,7 @@ export class SqliteHealth {
    * says whether that workout already has another linked activity.
    */
   changeLink(ownerId: string, healthUuid: string, make: (current: HealthLink | null, linkedElsewhere: (sessionId: string) => Promise<boolean>) => Promise<HealthLinkChange> | HealthLinkChange): Promise<HealthLinkWrite> {
-    return this.db.write(async (tx) => {
-      const current = await linkIn(tx, ownerId, healthUuid);
-      const elsewhere = async (sessionId: string) =>
-        (await tx.getFirst("SELECT 1 AS x FROM health_links WHERE owner_id = ? AND session_id = ? AND status = 'linked' AND health_uuid <> ?", [ownerId, sessionId, healthUuid.toLowerCase()])) !== null;
-      const out = await saveHealthLinkChangeIn(tx, ownerId, await make(current, elsewhere));
-      // (Q1) A link or unlink changes whether the app's own Health write should exist: check those workouts again.
-      if (out.status === 'written') {
-        const ids = [...new Set([current?.sessionId, out.link.sessionId].filter((x): x is string => x !== undefined))];
-        for (const id of ids) await tx.run('UPDATE health_writes SET session_revision = -1 WHERE session_id = ?', [id]);
-      }
-      return out;
-    });
+    return this.db.write((tx) => changeLinkIn(tx, ownerId, healthUuid, make));
   }
 
   /**
