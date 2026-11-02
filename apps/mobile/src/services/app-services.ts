@@ -1170,6 +1170,7 @@ export function createAppServices(deps: AppServicesDeps) {
   const exercisePrefs = createExercisePrefsService({
     store: () => deps.manager.store,
     profile: getProfile,
+    now: deps.now,
     catalogueExercises,
     swapOut: (req) => planSwap.swapOut(req),
   });
@@ -1500,6 +1501,8 @@ export function createAppServices(deps: AppServicesDeps) {
     planBuilder,
     /** (Ben, 30 Oct) One exercise swapped in every plan day: the proposal card, Apply, Undo, Today too; Settings' Replace. */
     planSwap,
+    /** (Ben, 2 Nov) Profile › Likes & dislikes: the plan in use's Any preferences, the coach's tool's own service. */
+    exercisePrefs,
     /** (Ben, 2 Nov) The coach's plan-level change card: Apply, Undo. */
     planChange,
     /** (Ben, 2 Nov) The coach's rest-settings card: `Today too?` and its Undo. */
