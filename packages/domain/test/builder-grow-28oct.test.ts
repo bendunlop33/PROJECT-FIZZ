@@ -204,14 +204,17 @@ describe('Your workout’s + (fitWorkoutToTime grow)', () => {
 });
 
 describe('liveTime: Your workout’s + steps from the estimate', () => {
-  it('at least 3 minutes more, to the next 5; elsewhere + still goes past the length', () => {
+  // (Ben, 2 Nov: "it jumps massively") Replaces the 28 Oct "at least 3 minutes more" rule (33 → 40, 42 of 45 → 45):
+  // within 3 minutes of the length Ben chose, + steps 5 from that length; otherwise to the next 5 from the estimate.
+  // A step that would change nothing goes on to the next one in `fitWorkoutToTime` (time-step-2nov.test.ts).
+  it('to the next 5 from the length held (within 3 minutes of it), else from the estimate; elsewhere + still goes past the length', () => {
     expect(liveTime({ estimate: 32, length: 60, growFromEstimate: true }).more).toBe(35);
     expect(liveTime({ estimate: 34, length: 35, growFromEstimate: true }).more).toBe(40);
-    expect(liveTime({ estimate: 33, length: 60, growFromEstimate: true }).more).toBe(40);
+    expect(liveTime({ estimate: 33, length: 60, growFromEstimate: true }).more).toBe(35);
     expect(liveTime({ estimate: 180, length: 180, growFromEstimate: true }).more).toBeNull();
     expect(liveTime({ estimate: 32, length: 60 }).more).toBe(65);
-    // A cut live (a fit landed under its length): past the length, so more Time always gives something back.
+    // A fit that landed under its length steps from the length, cut live or not.
     expect(liveTime({ estimate: 42, length: 45, growFromEstimate: true, cutLive: true }).more).toBe(50);
-    expect(liveTime({ estimate: 42, length: 45, growFromEstimate: true }).more).toBe(45);
+    expect(liveTime({ estimate: 42, length: 45, growFromEstimate: true }).more).toBe(50);
   });
 });
