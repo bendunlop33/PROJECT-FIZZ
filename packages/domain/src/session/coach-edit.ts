@@ -619,6 +619,20 @@ export function coachEditPainHold(input: { aggregate: SessionAggregate; command:
         if (f !== null) return said(step.exercise.name, f);
         break;
       }
+      case 'edit_planned_set': {
+        // (2 Nov, coachplan) Mostly a rest change; one that raises the target load or reps is held like an adjust (rule 9).
+        const set = s.sets.find((x) => x.id === step.setId);
+        const row = rowOfSet(step.setId);
+        if (set === undefined || row === undefined) break;
+        const p = step.patch;
+        if ((p.load === undefined || p.load === null) && (p.reps === undefined || p.reps === null)) break;
+        const before = { load: set.planned.load, reps: set.planned.reps, ...(set.planned.rpe !== null ? { rpe: set.planned.rpe } : {}) };
+        const after = { load: p.load ?? set.planned.load, reps: p.reps ?? set.planned.reps, ...(set.planned.rpe !== null ? { rpe: set.planned.rpe } : {}) };
+        if (!isIncrease(before, after, row.loadConvention)) break;
+        const why = harder(row);
+        if (why !== null) return why;
+        break;
+      }
       case 'remove_exercise':
       case 'skip_exercise':
       case 'move_exercise':
