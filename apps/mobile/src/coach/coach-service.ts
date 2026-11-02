@@ -44,6 +44,8 @@ import {
   createLiftTargetExecutors,
   createWarmupPrefsExecutors,
   type WarmupPrefsDeps,
+  createWorkoutFixExecutor,
+  type WorkoutFixDeps,
   type LiftTargetDeps,
   createStructuralExecutors,
   createBuildExecutor,
@@ -170,6 +172,7 @@ import {
   type ExerciseHistoryView,
   exerciseRecordsView,
   recentSessionsView,
+  type HealthDayLine,
   lastDaysView,
   LAST_DAYS,
   localMidnightUtcMs,
@@ -471,6 +474,10 @@ export interface CoachServiceDeps {
   liftTargets?: { on: () => Promise<boolean>; prepare: LiftTargetDeps['prepare'] };
   /** (Ben, 1 Nov) `update_warmup_prefs`'s checks. Absent: the tool is never offered. */
   warmupPrefs?: { prepare: WarmupPrefsDeps['prepare'] };
+  /** (Ben, 2 Nov) `propose_workout_fix`'s checks (a past workout's date, a duplicate, a Health pairing). Absent: never offered. */
+  workoutFix?: { prepare: WorkoutFixDeps['prepare'] };
+  /** (Ben, 2 Nov) One day's Health workouts and how each is paired, for `get_recent_sessions` with a date. */
+  healthDay?: (date: string) => Promise<HealthDayLine[]>;
   store: () => Store;
   profile: () => Promise<UserProfile | null>;
   now: () => ZonedTimestamp;
@@ -1005,7 +1012,10 @@ export function createCoachService(deps: CoachServiceDeps) {
           const from = localMidnightUtcMs(addDays(date, -1), p.timezone);
           const to = localMidnightUtcMs(addDays(date, 2), p.timezone);
           const day = (await repos().sessions.listFinishedBetween(p.id, toIso(from), toIso(to)).catch(() => [] as HistoryWorkout[])).filter((a) => (a.session.localDate ?? localDateOf(toMs(a.session.startedAt.utc), p.timezone)) === date);
-          return recentSessionsView({ sessions: day, count, gymNames: await gymNames() });
+          // (Ben, 2 Nov) A day's read names each workout's times and that day's Health workouts with how each is paired.
+          const health = deps.healthDay === undefined ? [] : await deps.healthDay(date).catch(() => [] as HealthDayLine[]);
+          const v = recentSessionsView({ sessions: day, count, gymNames: await gymNames(), withTimes: true });
+          return health.length === 0 ? v : { ...v, health };
         }
         const refs = await repos().sessions.listFinishedRefs(p.id, count, { includeImported: true }).catch(() => []);
         const aggs: SessionAggregate[] = [];
@@ -1937,6 +1947,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     // (Ben, 1 Nov) Warm-up settings: every chat (the turn applies a call only when Ben asked).
     const warmupTool = (kind === 'general' || kind === 'workout') && deps.warmupPrefs !== undefined;
     if (warmupTool && deps.warmupPrefs !== undefined) Object.assign(executors, createWarmupPrefsExecutors({ store: coachStore(), prepare: deps.warmupPrefs.prepare }));
+    // (Ben, 2 Nov) Fixing a past workout: every chat; the turn offers it only on his words about one (always a proposal).
+    if (chat && deps.workoutFix !== undefined) Object.assign(executors, createWorkoutFixExecutor({ store: coachStore(), prepare: deps.workoutFix.prepare }));
     try {
       const result = await runCoachTurn(
         {

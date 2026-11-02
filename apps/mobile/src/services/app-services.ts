@@ -74,6 +74,7 @@ import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
 import { createLiftTargetService } from './lift-target-service';
 import { createWarmupPrefsService } from './warmup-prefs-service';
+import { createWorkoutFixService } from './workout-fix-service';
 import { createPlanServices } from './plan-services';
 import { createPlanSwapService } from './plan-swap-service';
 import { createPlanMusclesService } from './plan-muscles-service';
@@ -651,6 +652,14 @@ export function createAppServices(deps: AppServicesDeps) {
     return { goal: t?.goal ?? (answers === null ? null : volumeGoalOfFocus(answers.focus)), priorities: priorityGroupsOf(answers?.priorities ?? []) };
   }
 
+  /** (Ben, 2 Nov) Past workouts fixed from the coach: a date moved, a duplicate deleted, a Health workout paired. */
+  const workoutFix = createWorkoutFixService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    healthActivity: (uuid) => health.activity(uuid),
+  });
+
   const coach = createCoachService({
     muscleGoal: muscleGoalNow,
     planMuscleLines: () => planMuscles.coachLines(),
@@ -671,6 +680,9 @@ export function createAppServices(deps: AppServicesDeps) {
     liftTargets: { on: () => liftTargets.on(), prepare: (args, at) => liftTargets.prepare(args, at) },
     // (Ben, 1 Nov) The coach's warm-up settings tool, in every chat.
     warmupPrefs: { prepare: (args, at) => warmupPrefs.prepare(args, at) },
+    // (Ben, 2 Nov) Fixing past workouts (as proposals), and a day's Health workouts in the coach's day read.
+    workoutFix: { prepare: (args) => workoutFix.prepare(args) },
+    healthDay: (date) => health.coachDay(date),
     week: {
       view: () => weekly.week.contextView(),
       tool: async () => {
@@ -1457,6 +1469,7 @@ export function createAppServices(deps: AppServicesDeps) {
     health,
     liftTargets,
     warmupPrefs,
+    workoutFix,
     gyms,
     imports,
     importLayouts,
