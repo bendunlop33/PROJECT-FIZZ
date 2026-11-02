@@ -75,6 +75,7 @@ Entries: **T** Today, Plan (opens Today's thread), Progress, an exercise chart; 
 | `find_exercises`, `propose_exercise` | T, S, W / – | ✓ |
 | reads (`get_*`) | ✓ (B: history reads only) | ✓ |
 | `set_next_session_targets` | post-workout review only | unchanged (not a chat) |
+| `propose_workout_fix` (2 Nov: a past workout's date, a duplicate, a Health pairing) | – | words (proposal) |
 
 ## Consequences
 
@@ -209,3 +210,20 @@ Decisions (amending 31 Oct decisions 1–3):
    secondary (main false, fewer sets, lower RPE) or swap.
 
 Not yet run on Ben's iPhone.
+
+## Amendment (2 Nov 2026, Ben approved coach tools for past workouts)
+
+- **`propose_workout_fix`** joins the registry in every chat, opened only by Ben's words about fixing a past workout
+  (`asksPastWorkoutFix`, gate `pastWorkoutWords`, like `update_gym`'s gym words), so an ordinary turn carries neither the
+  tool nor its prompt line. Ops: `move` (date or times), `delete` (a duplicate or wrong workout), `pair` (a Health workout
+  with an app workout, or with the planned run that day), `unpair`. Always a proposal (`fix_workout` record) with before →
+  after, Apply and Undo (rule 2); Apply writes a second, committed record with the change in one coach-store transaction,
+  through the existing writes (Summary's Edit times `update_session_timing` + `shift`, History's soft delete, the day
+  sheet's link changes via the shared `changeLinkIn`), on the versions proposed; stale is refused (rule 5). Undo is the
+  coach store's undo of that record (times back, Restore, Unpair / Pair back).
+- **Reads:** `get_recent_sessions` with a date lists each workout's ID and times and that day's Health workouts with their
+  pairing state, so the coach names the right one.
+- **Not built:** merging two app workouts (the store has none; the coach proposes deleting the duplicate), and pairing a
+  Health run by hand (a run pairs with the planned run on its own when it is the only one that day).
+- **Never list** now reads `Delete or change a past workout without your Apply`; `Delete or rewrite a set, an import or a
+  check-in`. Migration 42 adds `fix_workout` to `coach_actions`. Not yet run on Ben's iPhone.
