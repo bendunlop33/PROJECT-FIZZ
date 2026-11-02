@@ -1,7 +1,7 @@
 /**
  * Builds `packages/coach/data/playbook-v1.json`, the versioned bundle of the
  * approved playbook rules the coach is sent (ADR 0020 §6), from the rules
- * tables in `docs/training-guides/playbook-v1.md` (v1, then the rules approved 2 Nov). A unit test re-parses the
+ * tables in `docs/training-guides/playbook-v1.md` (v1, the warm-up rules approved 22 Oct, then the rules approved 2 Nov). A unit test re-parses the
  * Markdown and fails when the bundle drifts from it.
  *
  * Usage: node --import ./packages/catalogue/scripts/ts-hooks.ts packages/coach/scripts/playbook-bundle.ts [--write]
@@ -9,7 +9,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export type PlaybookUse = 'in_use' | 'not_in_use' | 'code_only';
+/**
+ * `endurance_switch` (Ben, 2 Nov): in use only while the endurance switch is on; the coach context works the switch
+ * out from Ben's activities each turn (`enduranceSwitch`).
+ */
+export type PlaybookUse = 'in_use' | 'code_only' | 'endurance_switch';
 
 export interface PlaybookRule {
   id: string;
@@ -38,12 +42,8 @@ function plain(cell: string): string {
     .trim();
 }
 
-/** Rules 11–13 need the endurance switch, and v1 has no endurance data (ADR 0020 §6). */
-const NOT_IN_USE: Record<string, string> = {
-  '11': 'not in use: no endurance training logged',
-  '12': 'not in use: no endurance training logged',
-  '13': 'not in use: no endurance training logged',
-};
+/** (Ben, 2 Nov) Rules 11–13 follow the endurance switch (rule G), worked out per turn from his activities. */
+const ON_ENDURANCE_SWITCH = new Set(['11', '12', '13']);
 
 /** One `## Playbook rules (approved …)` section's table rows, in order. */
 function sectionRows(markdown: string, heading: string): string[][] {
@@ -78,8 +78,14 @@ export function parsePlaybookRules(markdown: string): PlaybookRule[] {
     if (!V1_ID.test(id)) continue;
     const short = plain(cells[1] ?? '');
     if (/^Removed\b/.test(short)) continue;
-    const use: PlaybookUse = id === '7-F' ? 'code_only' : NOT_IN_USE[id] !== undefined ? 'not_in_use' : 'in_use';
-    rules.push({ id, short, appliesWhen: plain(cells[2] ?? ''), grade: plain(cells[3] ?? ''), use, note: NOT_IN_USE[id] ?? (id === '7-F' ? 'code: the built-in rule, never sent as advice' : null) });
+    const use: PlaybookUse = id === '7-F' ? 'code_only' : ON_ENDURANCE_SWITCH.has(id) ? 'endurance_switch' : 'in_use';
+    rules.push({ id, short, appliesWhen: plain(cells[2] ?? ''), grade: plain(cells[3] ?? ''), use, note: id === '7-F' ? 'code: the built-in rule, never sent as advice' : null });
+  }
+  // (22 Oct) WU1–WU12, the warm-up rules Ben approved; his later amendments (SW1, PH1, PL1, CW1) are in the 2 Nov table.
+  for (const cells of sectionRows(markdown, '## Playbook rules (approved 22 Oct 2026)')) {
+    const id = cells[0] ?? '';
+    if (!/^WU\d{1,2}$/.test(id)) continue;
+    rules.push({ id, short: plain(cells[1] ?? ''), appliesWhen: plain(cells[2] ?? ''), grade: plain(cells[3] ?? ''), use: 'in_use', note: null });
   }
   for (const cells of sectionRows(markdown, '## Playbook rules (approved 2 Nov 2026)')) {
     const id = cells[0] ?? '';

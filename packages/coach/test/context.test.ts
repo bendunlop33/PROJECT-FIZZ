@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { applyTrainingChange, newCheckIn, newPainFlag, newTrainingProfile } from '@fizz/domain';
-import type { CoachMessage, Memory, TrainingChange, TrainingProfile } from '@fizz/schemas';
+import { activitiesWithHealth, applyTrainingChange, enduranceSwitch, newCheckIn, newPainFlag, newTrainingProfile } from '@fizz/domain';
+import { ActivitySchema, type Activity, type ActivityFields, type CoachMessage, type HealthWorkoutSample, type Memory, type TrainingChange, type TrainingProfile } from '@fizz/schemas';
 import { buildPlaybookBundle, PLAYBOOK_JSON, PLAYBOOK_MD } from '../scripts/playbook-bundle';
-import { buildCoachContext, chatRuleNumbers, contextInputItems, describeCoachContext, PLAYBOOK_V1, type CoachContextInput } from '../src/context';
+import { buildCoachContext, chatRuleNumbers, contextInputItems, describeCoachContext, ENDURANCE_SWITCH_OFF, ENDURANCE_SWITCH_UNREAD, PLAYBOOK_V1, type CoachContextInput } from '../src/context';
+import { COACH_INSTRUCTIONS, ENDURANCE_SWITCH_LINE } from '../src/turn';
 import { at, id, OWNER, workout } from './turn-fixtures';
 
 const memory: Memory = {
@@ -34,19 +35,23 @@ function input(over: Partial<CoachContextInput> = {}): CoachContextInput {
 }
 
 /** (Ben, 2 Nov) Approved after v1 and enforced by the app: the coach must be able to name them. */
-const APPROVED_2_NOV = ['FQ1', 'FQ2', 'FQ3', 'VC1', 'VC2', 'VC3', 'VC4', 'LW1', 'LW2', 'LW3', 'PC1', 'RUN1', 'RUN2', 'CW1'];
+const APPROVED_2_NOV = ['FQ1', 'FQ2', 'FQ3', 'VC1', 'VC2', 'VC3', 'VC4', 'LW1', 'LW2', 'LW3', 'PC1', 'RUN1', 'RUN2', 'SW1', 'PH1', 'PL1', 'CW1'];
+/** (22 Oct) The warm-up rules Ben approved ("look good"), in short form. */
+const APPROVED_22_OCT = ['WU1', 'WU2', 'WU3', 'WU4', 'WU5', 'WU6', 'WU7', 'WU8', 'WU9', 'WU10', 'WU11', 'WU12'];
+/** (Ben, 2 Nov) His own warm-up choices (1 Nov simple weights and prehab, 2 Nov plate ladder): approved rules. */
+const BENS_WARMUP_RULES = ['SW1', 'PH1', 'PL1'];
 
 describe('the playbook bundle (ADR 0020 §6)', () => {
   it('matches the approved playbook Markdown (regenerate with scripts/playbook-bundle.ts --write)', () => {
     const fromMd = buildPlaybookBundle(readFileSync(PLAYBOOK_MD, 'utf8'));
     expect(JSON.parse(readFileSync(PLAYBOOK_JSON, 'utf8'))).toEqual(fromMd);
-    expect(PLAYBOOK_V1.rules.map((r) => r.id)).toEqual(['1', '2', '3', '4', '5', '6', '7', '7-F', '8', '9', '10', '11', '12', '13', 'G', 'T', ...APPROVED_2_NOV]);
+    expect(PLAYBOOK_V1.rules.map((r) => r.id)).toEqual(['1', '2', '3', '4', '5', '6', '7', '7-F', '8', '9', '10', '11', '12', '13', 'G', 'T', ...APPROVED_22_OCT, ...APPROVED_2_NOV]);
   });
 
   it('(Ben, 2 Nov) every rule approved since v1 that the app enforces is in the coach context, in use, by its ID', () => {
     const ctx = buildCoachContext(input());
     const rules = ctx.coachingKnowledge.playbook.rules;
-    for (const id of APPROVED_2_NOV) {
+    for (const id of [...APPROVED_22_OCT, ...APPROVED_2_NOV]) {
       const r = rules.find((x) => x.id === id);
       expect(r, id).toBeDefined();
       expect(r?.status, id).toBe('in use');
@@ -63,21 +68,112 @@ describe('the playbook bundle (ADR 0020 §6)', () => {
     expect(text).toContain('≤ 3 weeks after the lighter week');
     // VC2's "> 30 total" backstop was dropped by Ben; candidates awaiting him are not in force.
     expect(text).not.toMatch(/30 total|> 30/);
-    for (const candidate of ['R1', 'WU1', 'WU8', 'HT1', 'SS1']) expect(rules.map((x) => x.id)).not.toContain(candidate);
+    for (const candidate of ['R1', 'HT1', 'SS1']) expect(rules.map((x) => x.id)).not.toContain(candidate);
+    // (22 Oct) WU1–WU12 are approved and in; the R, HT and SS candidates stay out. Ben's amendments win where they differ.
+    expect(rules.filter((x) => /^WU/.test(x.id)).map((x) => x.id)).toEqual(APPROVED_22_OCT);
+    expect(rules.map((x) => x.id).filter((x) => /^(?:R|HT|SS)\d/.test(x))).toEqual([]);
+    expect(rules.find((x) => x.id === 'WU8')?.rule).toContain('SW1 rounds the loads and PL1 sets bar and plate-loaded ladders');
+    expect(rules.find((x) => x.id === 'WU4')?.rule).toContain('PL1 replaces this ladder');
+    expect(rules.find((x) => x.id === 'WU7')?.rule).toContain('Prehab work follows PH1');
     // Coaching knowledge, never Your data (rule 10).
     expect(JSON.stringify(ctx.yourData)).not.toContain('FQ1');
   });
 
-  it('7-F is code, never sent as advice; 11–13 are sent as not in use; 14 (removed) is absent', () => {
+  it('7-F is code, never sent as advice; 14 (removed) is absent; with no activities read, 11–13 say so', () => {
     const ctx = buildCoachContext(input());
     const rules = ctx.coachingKnowledge.playbook.rules;
     expect(rules.map((r) => r.id)).not.toContain('7-F');
     expect(rules.map((r) => r.id)).not.toContain('14');
     expect(rules.filter((r) => r.status !== 'in use').map((r) => [r.id, r.status])).toEqual([
-      ['11', 'not in use: no endurance training logged'],
-      ['12', 'not in use: no endurance training logged'],
-      ['13', 'not in use: no endurance training logged'],
+      ['11', ENDURANCE_SWITCH_UNREAD],
+      ['12', ENDURANCE_SWITCH_UNREAD],
+      ['13', ENDURANCE_SWITCH_UNREAD],
     ]);
+    expect(ctx.yourData.enduranceSwitch).toBeUndefined();
+  });
+
+  it('(Ben, 2 Nov) Ben’s own warm-up choices are approved rules, with a reason', () => {
+    const rules = buildCoachContext(input()).coachingKnowledge.playbook.rules;
+    for (const id of BENS_WARMUP_RULES) {
+      const r = rules.find((x) => x.id === id);
+      expect(r?.status, id).toBe('in use');
+      expect(r?.rule, id).toContain('Reason:');
+    }
+    const text = JSON.stringify(rules);
+    expect(text).toContain('100 → 60, 80; 105 → 60, 90');
+    expect(text).toContain('no jump over 30 %');
+  });
+});
+
+describe('(Ben, 2 Nov) rules 11–13 follow the endurance switch', () => {
+  const TODAY = '2026-11-02';
+  let n = 0;
+  const mine = (f: Partial<ActivityFields>): Activity => {
+    n += 1;
+    return ActivitySchema.parse({
+      id: `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+      ownerId: OWNER,
+      version: 1,
+      createdAtUtc: '2026-10-27T10:00:00.000Z',
+      updatedAtUtc: '2026-10-27T10:00:00.000Z',
+      fields: { kind: 'run', status: 'done', date: TODAY, durationS: null, distanceM: null, effort: null, ...f },
+      tz: 'Europe/London',
+      source: 'ben',
+      deletedAtUtc: null,
+      lastChange: null,
+      opIds: [`op-${String(n)}`],
+    });
+  };
+  const garmin: HealthWorkoutSample = {
+    uuid: 'a0000000-0000-4000-8000-000000000001',
+    activityType: 37,
+    startUtc: '2026-10-31T08:00:00.000Z',
+    endUtc: '2026-10-31T09:40:00.000Z',
+    tz: 'Europe/London',
+    durationS: 6000,
+    distanceM: 18_000,
+    avgHeartRate: 150,
+    maxHeartRate: 170,
+    sourceName: 'Garmin Connect',
+    sourceBundleId: 'com.garmin.connect.mobile',
+    externalId: null,
+  };
+  const healthRuns = (samples: HealthWorkoutSample[]) => activitiesWithHealth({ ownerId: OWNER, samples, links: [], own: [], ownBundleId: null, writtenUuids: new Set(), appSessionIds: new Set() });
+  const statuses = (acts: Activity[]) => {
+    const ctx = buildCoachContext(input({ enduranceSwitch: enduranceSwitch(acts, TODAY) }));
+    return { ctx, rules: Object.fromEntries(ctx.coachingKnowledge.playbook.rules.filter((r) => ['11', '12', '13'].includes(r.id)).map((r) => [r.id, r.status])) };
+  };
+
+  it('a long Garmin run from Apple Health in the last 7 days: 11–13 in use, and Your data names the run', () => {
+    const { ctx, rules } = statuses(healthRuns([garmin]));
+    expect(rules).toEqual({ '11': 'in use', '12': 'in use', '13': 'in use' });
+    expect(ctx.yourData.enduranceSwitch).toEqual({ on: true, session: { kind: 'run', date: '2026-10-31', status: 'done', effort: 'long', from: 'Apple Health (Garmin)' }, rules: '11, 12, 13 in use' });
+    // Which run it was is Your data; the playbook only gets on or off (rule 10).
+    expect(JSON.stringify(ctx.coachingKnowledge)).not.toContain('2026-10-31');
+    expect(describeCoachContext(ctx).coachingKnowledge[0]?.detail).not.toContain('not in use');
+  });
+
+  it('a planned hard or long run in the next 7 days: in use', () => {
+    expect(statuses([mine({ date: '2026-11-07', status: 'planned', effort: 'long' })]).rules).toEqual({ '11': 'in use', '12': 'in use', '13': 'in use' });
+    expect(statuses([mine({ date: '2026-11-04', status: 'planned', effort: 'hard' })]).rules['12']).toBe('in use');
+  });
+
+  it('only easy runs, a short Health run, or a missed planned run: not in use, said honestly', () => {
+    const short = healthRuns([{ ...garmin, endUtc: '2026-10-31T08:30:00.000Z', durationS: 1800, distanceM: 5000 }]);
+    const off = { '11': ENDURANCE_SWITCH_OFF, '12': ENDURANCE_SWITCH_OFF, '13': ENDURANCE_SWITCH_OFF };
+    expect(statuses([mine({ date: '2026-11-01', effort: 'easy', distanceM: 6000 }), mine({ date: '2026-11-05', status: 'planned', effort: 'easy' })]).rules).toEqual(off);
+    expect(statuses(short).rules).toEqual(off);
+    const missed = statuses([mine({ date: '2026-11-01', status: 'planned', effort: 'long' })]);
+    expect(missed.rules).toEqual(off);
+    expect(missed.ctx.yourData.enduranceSwitch).toEqual({ on: false, session: null, rules: '11, 12, 13 not in use' });
+    expect(ENDURANCE_SWITCH_OFF).toBe('not in use: no hard/long/key endurance in plan or log');
+  });
+
+  it('the coach is told to apply them in proposals while on (rule 12: never overwrite the run), and not to mention them while off', () => {
+    expect(COACH_INSTRUCTIONS).toContain(ENDURANCE_SWITCH_LINE);
+    expect(ENDURANCE_SWITCH_LINE).toContain('never moved or overwritten');
+    expect(ENDURANCE_SWITCH_LINE).toContain('don’t mention them');
+    expect(PLAYBOOK_V1.rules.find((r) => r.id === '12')?.short).toContain('Show the trade-off as a proposal; never overwrite the run.');
   });
 });
 
@@ -172,7 +268,7 @@ describe('describeCoachContext (What the coach can see)', () => {
       { label: 'Memories', detail: '1 memory' },
     ]);
     expect(d.coachingKnowledge).toEqual([
-      { label: 'Playbook v1 (2026-10-09)', detail: '29 rules, 3 not in use' },
+      { label: 'Playbook v1 (2026-10-09)', detail: '44 rules, 3 not in use' },
       { label: 'Exercise cues', detail: 'Bench press' },
     ]);
     expect(d.notAvailable).toHaveLength(4);
