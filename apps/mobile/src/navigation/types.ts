@@ -113,6 +113,12 @@ export type ProgressStackParams = {
   ProgressLiftBlock: { blockKey: string | null; exerciseId: string; name?: string };
   /** (block-progress §4) Every block kept, and one lift compared across them. */
   ProgressBlocks: undefined;
+  /** (Ben, 2 Nov; plan-summary.md) The plan in use at a glance (This block's header); Edit opens Plan setup. */
+  ProgressPlan: undefined;
+  /** (plan-summary.md) A day from the plan summary: Library's plan day screen, in this stack so back is the summary. */
+  ProgressPlanDay: { routineId: string; name?: string; week?: number };
+  /** (plan-summary.md) `Muscles ›` from the plan summary: Plan › Muscles, in this stack. */
+  ProgressPlanMuscles: undefined;
 };
 
 /** History's list: every workout and activity, or (`month`, `YYYY-MM`) one month's. */

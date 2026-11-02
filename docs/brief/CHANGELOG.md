@@ -1274,3 +1274,9 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **LW3:** no catch-up: the planned path doesn't advance in the lighter week (the week after is the last build week plus one step), and the Blocks view reads the lighter week as a deload, never a stall. The planned-vs-done `Behind` status isn't built yet; when it is, it compares against this path.
 - **Pain:** a lighter week never clears a pain flag; a normalised week D drafts as a normal week with the pain hold as usual. With no AI, code applies the same arithmetic.
 - **Open:** not run on Ben's iPhone. No code implemented Q4 (the 2 Nov build already didn't end the block), so nothing was removed.
+## 2026-11-02: A tidy plan summary from Progress (Ben, 2 Nov)
+
+- **Ben's words:** "When you click on plan in overview of progress I think it should include a very tidy summary of the plan"; sets per week as bars ("bars is fine"); Main lifts kept. Prototype `docs/design/prototypes/plan-summary-2nov.html`; spec `docs/design/plan-summary.md`.
+- **Entry:** Progress › Lifts › This block's `Week 3 of 6 ›` opens the summary (Progress stack). `Edit` (top right) and `Edit plan` open Plan setup at Gym goals on the plan in use, as Change plan › Goal does (finished block: `Start next block`; coach plan: Library › Plan).
+- **Contents:** `<Focus> · <N> weeks`, `Week 3 of 6 · ends Sun 13 Dec`, the week strip (done, now, deload `↓`), days / week · minutes · effort, the days (main lift · exercise count, done dot, `Next`; tap opens the day), main lifts now → plan-end `est.` (the Gym goals table's own numbers), sets per week (Plan › Muscles' own bars, below range amber, `Muscles ›`). A coach-built plan shows what it has.
+- **Open:** coach-built plans have no This block section, so no Progress entry yet. Not yet seen on Ben's iPhone. No migration.

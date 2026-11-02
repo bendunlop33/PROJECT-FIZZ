@@ -73,6 +73,7 @@ import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
 import { BlockScreen, BlocksScreen, LiftBlockScreen } from '../screens/progress/BlockScreens';
 import { MusclesScreen } from '../screens/progress/MusclesScreen';
 import { ProgressScreen } from '../screens/progress/ProgressScreen';
+import { PlanSummaryScreen } from '../screens/progress/PlanSummaryScreen';
 import { PastWeeksScreen, ReviewDetailScreen } from '../screens/progress/ReviewDetailScreen';
 import { HistoryScreen } from '../screens/history/HistoryScreen';
 import { RecentlyDeletedScreen } from '../screens/repeat/RecentlyDeletedScreen';
@@ -174,6 +175,10 @@ function ProgressNavigator() {
       <ProgressStack.Screen name="ProgressBlock" component={BlockScreen} options={{ title: '', headerBackTitle: 'Progress' }} />
       <ProgressStack.Screen name="ProgressLiftBlock" component={LiftBlockScreen} options={({ route }) => ({ title: route.params.name ?? '', headerBackTitle: 'Progress' })} />
       <ProgressStack.Screen name="ProgressBlocks" component={BlocksScreen} options={{ title: 'Blocks', headerBackTitle: 'Progress' }} />
+      {/* (Ben, 2 Nov; plan-summary.md) The plan at a glance; its days and Muscles open here so back is the summary. */}
+      <ProgressStack.Screen name="ProgressPlan" component={PlanSummaryScreen} options={{ title: '', headerBackTitle: 'Progress' }} />
+      <ProgressStack.Screen name="ProgressPlanDay" component={PlanDayScreen} options={{ title: '', headerBackTitle: 'Plan' }} />
+      <ProgressStack.Screen name="ProgressPlanMuscles" component={PlanMusclesScreen} options={{ title: 'Muscles', headerBackTitle: 'Plan' }} />
     </ProgressStack.Navigator>
   );
 }
