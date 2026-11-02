@@ -277,6 +277,11 @@ export interface BuilderSlot {
   ownWarmups?: true;
   /** Ben unlinked this slot from a superset: automatic pairing never re-pairs it (review B3). */
   unlinked?: true;
+  /**
+   * (Ben, 2 Nov) A cardio or timed slot from a plan-day row Ben asked for as a warm-up (`RoutineExercise.warmup`):
+   * `Warm-up` in its meta, carried to Start. Its sets are working sets; nothing plans or counts it differently.
+   */
+  warmup?: true;
   /** The plan-day template exercise this slot came from (kept through a swap): `Cable fly → Incline press` (§2.8). */
   origin?: string;
   /**

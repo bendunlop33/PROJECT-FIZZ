@@ -14,6 +14,8 @@ interface AddPartOut {
   load: Load | null;
   durationS?: number;
   distanceM?: number;
+  /** (Ben, 2 Nov) A cardio or timed add Ben asked for as a warm-up. */
+  warmup?: true;
   days: { routineId: string; routineName: string; versionBefore: number; edits: { kind: 'add'; rowId: string; afterRowId: string | null; afterName: string | null; first?: boolean; beforeRowId?: string }[]; before: string[]; after: string[] }[];
 }
 
@@ -52,7 +54,7 @@ export interface PlanSwapServiceDeps {
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
   /** Whether the current gym can do it (no gym: yes). Replace's pick only; Ben's own ask is never refused on kit (ADR 0038). */
   usableHere: (exercise: Exercise) => Promise<boolean>;
-  editDayEveryWeek: (req: { routineId: string; expectedVersion: number; opId: string; edit: { kind: 'swap' | 'remove' | 'add'; rowId: string; fromExerciseId: string | null; toExerciseId: string | null; afterRowId?: string | null; sets?: number; reps?: { min: number; max: number }; load?: Load | null; first?: boolean; beforeRowId?: string; durationS?: number; distanceM?: number } }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
+  editDayEveryWeek: (req: { routineId: string; expectedVersion: number; opId: string; edit: { kind: 'swap' | 'remove' | 'add'; rowId: string; fromExerciseId: string | null; toExerciseId: string | null; afterRowId?: string | null; sets?: number; reps?: { min: number; max: number }; load?: Load | null; first?: boolean; beforeRowId?: string; durationS?: number; distanceM?: number; warmup?: true } }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
   /** (Ben, 1 Nov) A whole plan-day change, every week (`plans.editDayRowsEveryWeek`). Absent: day edits aren't wired. */
   editDayRowsEveryWeek?: (req: { routineId: string; expectedVersion: number; opId: string; edit: PlanDayEdit; lines: readonly string[] }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
   revertRoutine: (req: { actionId: string; opId: string }) => Promise<{ ok: boolean }>;
@@ -207,6 +209,8 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
     // (Ben, 2 Nov) A cardio or timed add's work time (and a cardio distance), as asked; reps don't apply.
     const durationS = timed && req.minutes != null && req.minutes > 0 ? Math.min(14_400, Math.max(1, Math.round(req.minutes * 60))) : undefined;
     const distanceM = addEx.measurement === 'cardio' && req.distanceM != null && req.distanceM > 0 ? Math.min(100_000, Math.round(req.distanceM)) : undefined;
+    // (Ben, 2 Nov) A warm-up mark only on cardio or timed work; on a lift the flag is left off (it stays a normal row).
+    const warmup = req.warmup === true && timed;
     const days = preview.days.map((d) => {
       const rows = [...(inUse.days.find((x) => x.routineId === d.routineId)?.rows ?? [])].sort((a, b) => a.order - b.order);
       const before = rows.map((r) => nameOf(r.exerciseId).slice(0, 120));
@@ -216,7 +220,7 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
       const place = d.first === true ? { first: true } : d.beforeRowId !== undefined ? { beforeRowId: d.beforeRowId } : {};
       return { routineId: d.routineId, routineName: d.routineName.slice(0, 120), versionBefore: d.versionBefore, edits: [{ kind: 'add' as const, rowId: d.rowId, afterRowId: d.afterRowId, afterName, ...place }], before: before.slice(0, 30), after: after.slice(0, 30) };
     });
-    return { kind: 'ok', part: { addEx, afterEx, beforeEx, first: position === 'first', sets: req.sets, reps: timed ? null : req.reps, load, ...(durationS === undefined ? {} : { durationS }), ...(distanceM === undefined ? {} : { distanceM }), days } };
+    return { kind: 'ok', part: { addEx, afterEx, beforeEx, first: position === 'first', sets: req.sets, reps: timed ? null : req.reps, load, ...(durationS === undefined ? {} : { durationS }), ...(distanceM === undefined ? {} : { distanceM }), ...(warmup ? { warmup: true as const } : {}), days } };
   }
 
   /**
@@ -264,6 +268,7 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
         ...(head.first ? { position: 'first' as const } : head.beforeEx !== null ? { position: 'before' as const, beforeId: head.beforeEx.id, beforeName: head.beforeEx.name.slice(0, 120) } : {}),
         ...(head.durationS === undefined ? {} : { durationS: head.durationS }),
         ...(head.distanceM === undefined ? {} : { distanceM: head.distanceM }),
+        ...(head.warmup === true ? { warmup: true as const } : {}),
         ...(req.notIncluded == null ? {} : { notIncluded: req.notIncluded.slice(0, 160) }),
         days: [
           ...head.days,
@@ -278,6 +283,7 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
                 ...(m.durationS === undefined ? {} : { durationS: m.durationS }),
                 ...(m.distanceM === undefined ? {} : { distanceM: m.distanceM }),
                 ...(m.beforeEx === null ? {} : { beforeName: m.beforeEx.name.slice(0, 120) }),
+                ...(m.warmup === true ? { warmup: true as const } : {}),
               },
             })),
           ),
@@ -528,7 +534,7 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
       const done: string[] = [];
       for (const day of x.d.days) {
         let expected = day.versionBefore;
-        const own = day.add === undefined ? { id: x.d.addId, sets: x.d.sets, reps: x.d.reps, load: x.d.load ?? null, durationS: x.d.durationS, distanceM: x.d.distanceM } : { ...day.add, load: null };
+        const own = day.add === undefined ? { id: x.d.addId, sets: x.d.sets, reps: x.d.reps, load: x.d.load ?? null, durationS: x.d.durationS, distanceM: x.d.distanceM, warmup: x.d.warmup } : { ...day.add, load: null };
         for (const [i, e] of day.edits.entries()) {
           if (e.kind === 'edit') continue;
           const edit =
@@ -548,6 +554,8 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
                   ...(e.beforeRowId === undefined ? {} : { beforeRowId: e.beforeRowId }),
                   ...(own.durationS === undefined ? {} : { durationS: own.durationS }),
                   ...(own.distanceM === undefined ? {} : { distanceM: own.distanceM }),
+                  // (Ben, 2 Nov) A warm-up he asked for: the new row carries the mark.
+                  ...(own.warmup === true ? { warmup: true as const } : {}),
                 }
               : { kind: e.kind, rowId: e.rowId, fromExerciseId: x.d.removeId ?? null, toExerciseId: e.kind === 'swap' ? x.d.addId : null };
           const r = await deps.editDayEveryWeek({ routineId: day.routineId, expectedVersion: expected, opId: planSwapOpId(actionId, day.routineId, i), edit }).catch(() => ({ ok: false as const, reason: 'failed', message: PLAN_SWAP_COPY.failed }));

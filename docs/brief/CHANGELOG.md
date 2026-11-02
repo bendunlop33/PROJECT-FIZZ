@@ -1307,3 +1307,12 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Undo-able by doing:** linking a run later (Link on the day sheet, or the coach's fix_workout), the automatic match, or adding/marking the run done makes it done and it counts again. No new UI, setting or migration.
 - **Supersedes:** weekly-plan.md WP3 ("Not confirmed, never Missed"), and the 2 Nov Link entry's "only the word changed; it still counts".
 - **Open:** not run on Ben's iPhone.
+## 2026-11-02: Cardio Ben asks for as a warm-up is marked Warm-up (Ben, 2 Nov)
+
+- **Ben's words:** "yes if i ask for it. to be clear the warm-up could be any cardio exercise".
+- **When:** `propose_plan_add` (and each `also` add) takes `warmup`. The mark is kept only when Ben's words that turn call the cardio a warm-up ("as a warm-up", "to warm up"); "add a 10 min row at the end" stays a normal timed exercise. Any cardio or timed catalogue exercise can be one (bike, rower, treadmill, ski erg, cross trainer, stair climber, his own). On a lift the flag is ignored (a normal row).
+- **What:** a row mark (`warmup`) on the plan day's row, carried to Your workout, Start, the live workout and history. Its sets stay working sets (a warm-up set type made the row vanish at Start). Apply sets it; Undo removes the row and its mark. Still no PB, volume or muscle-set credit for cardio. The time estimate counts it once, as the timed set it is; no extra warm-up allowance.
+- **UI:** `Warm-up` as secondary text in the row's meta: the proposal card's day line (`Legs A: Exercise bike · 8 min, first, warm-up`), Library › Plan › day, Your workout and the live workout's exercise header. No icon, no explanation.
+- **Fix found on the way:** Your workout for a plan day dropped any cardio or timed row (only Today's Start kept it), so the coach's cardio first vanished there. A plan day's timed row now opens on Your workout with its work time.
+- **Records:** migration 45 adds `session_exercises.warmup` (NULL on older rows). Plan-day rows, drafts and coach records hold it as optional JSON fields.
+- **Open:** not run on Ben's iPhone. The coach can't take the mark off a row yet ("that row's not a warm-up"): `propose_plan_day_edit` has no field for it; a swap to a lift, or removing the row, clears it.

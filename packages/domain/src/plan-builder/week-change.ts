@@ -225,7 +225,7 @@ function withLoad(templates: readonly SetTemplate[], load: Load | null | undefin
 }
 
 /** A row the day sheet's `Add` makes: `sets` working sets of `reps`, nothing else (no superset, not a main lift). */
-export function pbAddedRow(e: Pick<PlanWeekExerciseEdit, 'rowId' | 'toExerciseId' | 'sets' | 'reps' | 'load' | 'durationS' | 'distanceM'>, order: number, measurement: Measurement = 'reps'): RoutineExercise | null {
+export function pbAddedRow(e: Pick<PlanWeekExerciseEdit, 'rowId' | 'toExerciseId' | 'sets' | 'reps' | 'load' | 'durationS' | 'distanceM' | 'warmup'>, order: number, measurement: Measurement = 'reps'): RoutineExercise | null {
   if (e.toExerciseId === null) return null;
   const n = e.sets ?? 3;
   const timed = measurement === 'duration' || measurement === 'cardio';
@@ -244,11 +244,12 @@ export function pbAddedRow(e: Pick<PlanWeekExerciseEdit, 'rowId' | 'toExerciseId
     targetRir: null,
     restOverrideS: null,
   }));
-  return { id: e.rowId, exerciseId: e.toExerciseId, equipmentId: null, order, supersetGroup: null, setTemplates, restBySetType: {}, transitionRestS: null, progressionRuleId: null, main: false };
+  // (Ben, 2 Nov) A warm-up mark only on cardio or timed work (a lift is never marked this way).
+  return { id: e.rowId, exerciseId: e.toExerciseId, equipmentId: null, order, supersetGroup: null, setTemplates, restBySetType: {}, transitionRestS: null, progressionRuleId: null, main: false, ...(e.warmup === true && timed ? { warmup: true as const } : {}) };
 }
 
 /** One change on a list of rows (the template for `Every week`, or this week's copy). Unknown rows change nothing. */
-export function oneExerciseChange(rows: readonly RoutineExercise[], e: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load' | 'first' | 'beforeRowId' | 'durationS' | 'distanceM'>, measurementOf: (exerciseId: string) => Measurement = () => 'reps'): RoutineExercise[] {
+export function oneExerciseChange(rows: readonly RoutineExercise[], e: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load' | 'first' | 'beforeRowId' | 'durationS' | 'distanceM' | 'warmup'>, measurementOf: (exerciseId: string) => Measurement = () => 'reps'): RoutineExercise[] {
   const sorted = [...rows].sort((a, b) => a.order - b.order);
   const at = (id: string) => sorted.findIndex((r) => r.id === id);
   switch (e.kind) {
@@ -257,7 +258,11 @@ export function oneExerciseChange(rows: readonly RoutineExercise[], e: Pick<Plan
       const row = sorted[i];
       if (row === undefined || e.toExerciseId === null) return sorted;
       const to = e.toExerciseId;
-      const swapped = replaceExercise([row], row.id, { id: to, measurement: measurementOf(to) })[0] ?? row;
+      const toMeasurement = measurementOf(to);
+      const replaced = replaceExercise([row], row.id, { id: to, measurement: toMeasurement })[0] ?? row;
+      // (Ben, 2 Nov) A warm-up mark stays only on cardio or timed work: a lift swapped in is a normal row.
+      const swapped: RoutineExercise = { ...replaced };
+      if (toMeasurement !== 'cardio' && toMeasurement !== 'duration') delete swapped.warmup;
       // Only the exercise changes: the row's place, superset, main mark, rests and set shapes stay as they were.
       return sorted.map((r, k) => (k === i ? { ...swapped, setTemplates: withLoad(swapped.setTemplates, e.load) } : r));
     }

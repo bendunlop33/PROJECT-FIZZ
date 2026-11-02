@@ -17,11 +17,11 @@ describe('migration 35 (session_exercises index)', () => {
     await at34.repos.profiles.save(profile(), null);
     await at34.repos.sessions.save(richFinishedSession(), null);
     const before = await at34.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toMatchObject({ from: 34, to: 44, applied: [35, 36, 37, 38, 39, 40, 41, 42, 43, 44] });
+    expect(await migrate(db)).toMatchObject({ from: 34, to: 45, applied: [35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45] });
     const at35 = await openStore(db);
     // Migration 37 adds `sessions.past_log` and `timing_audit.shift_ms` (both NULL here).
     const after = await at35.db.read((q) => exportTables(q));
-    expect(after).toEqual({ ...before, health_writes: [], health_links: [], sessions: (before.sessions ?? []).map((r) => ({ ...r, past_log: null })), timing_audit: (before.timing_audit ?? []).map((r) => ({ ...r, shift_ms: null })) });
+    expect(after).toEqual({ ...before, health_writes: [], health_links: [], sessions: (before.sessions ?? []).map((r) => ({ ...r, past_log: null })), timing_audit: (before.timing_audit ?? []).map((r) => ({ ...r, shift_ms: null })), session_exercises: (before.session_exercises ?? []).map((r) => ({ ...r, warmup: null })) });
     const plan = await at35.db.read((q) => q.getAll<{ detail: string }>('EXPLAIN QUERY PLAN SELECT * FROM session_exercises WHERE session_id = ? ORDER BY ordinal, id', ['x']));
     expect(plan.map((r) => r.detail).join(' ')).toContain('session_exercises_session');
     expect((await checkIntegrity(at35.db)).ok).toBe(true);

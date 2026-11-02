@@ -1,8 +1,8 @@
 import { BUILD_LIMITS, PLAN_DAY_LIMITS, type VariationOp } from '@fizz/schemas';
 import { infoOrDefault, slotsOf } from './arrange';
 import { BUILDER_SET_RULES, workingCount } from './set-rows';
-import { makeSlot } from './slot';
-import type { BuilderBlock, BuilderContext, BuilderInfoLookup, BuilderWorkout } from './types';
+import { makeExtraSlot, makeSlot } from './slot';
+import type { BuilderBlock, BuilderContext, BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
 
 /**
  * Templates, the Start prompt and variations (workout-builder-v3 §1.3,
@@ -23,6 +23,10 @@ export interface TemplateSlotSpec {
   main: boolean;
   workingSets: number;
   group: string | null;
+  /** (Ben, 2 Nov) A cardio or timed row's work time per set (seconds), as the template has it; absent: the default. */
+  workS?: number | null;
+  /** (Ben, 2 Nov) The template row is a warm-up Ben asked for (`RoutineExercise.warmup`). */
+  warmup?: boolean;
 }
 
 /** `workoutFromTemplate`: consecutive exercises with one superset letter are one round (Ben's own pair). */
@@ -30,8 +34,12 @@ export function workoutFromTemplate(specs: readonly TemplateSlotSpec[], ctx: Bui
   const blocks: BuilderBlock[] = [];
   let prev: string | null = null;
   for (const s of specs) {
-    if (ctx.info(s.exerciseId) === null) continue;
-    const slot = { ...makeSlot(s.exerciseId, { main: s.main, workingSets: s.workingSets }, ctx), origin: s.exerciseId };
+    // (Ben, 2 Nov) A cardio or timed row (no builder group: the coach's bike first) opens as a timed slot with the
+    // template's work time, as Start plans it, so Your workout shows (and starts) what Today's Start would.
+    const timed = ctx.info(s.exerciseId) === null ? (ctx.extra?.(s.exerciseId) ?? null) : null;
+    if (ctx.info(s.exerciseId) === null && timed === null) continue;
+    const made = timed === null ? makeSlot(s.exerciseId, { main: s.main, workingSets: s.workingSets }, ctx) : makeExtraSlot(s.exerciseId, { workS: s.workS ?? null, sets: s.workingSets }, ctx);
+    const slot: BuilderSlot = { ...made, origin: s.exerciseId, ...(s.warmup === true && timed !== null && timed.measurement !== 'reps' ? { warmup: true as const } : {}) };
     const last = blocks[blocks.length - 1];
     if (s.group !== null && s.group === prev && last !== undefined && !s.main && !last.slots.some((x) => x.main)) last.slots.push(slot);
     else blocks.push({ slots: [slot], auto: false });

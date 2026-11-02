@@ -42,6 +42,8 @@ export const SETUP_COPY = {
 
 export const WORKOUT_COPY = {
   back: '‹ Set up',
+  /** (Ben, 2 Nov) A cardio row Ben asked for as a warm-up, in its meta line. */
+  warmupRow: 'Warm-up',
   /** A coach suggestion applied from Coach review (§2.6 `Applied · Undo`). */
   applied: 'Applied',
   /** Done on Coach review: a ticked note couldn't be saved. */
@@ -312,13 +314,14 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
           ...(superset ? [{ name: 'unlink' as const, label: WORKOUT_COPY.unlink }] : []),
         ];
         const n = workingCount(s);
-        const spoken = [label, name, superset ? 'superset' : null, s.main ? 'main lift' : null, `${String(n)} ${n === 1 ? 'set' : 'sets'}`, warm > 0 ? `plus ${String(warm)} warm-up` : null, timed !== null ? timedSpoken(timed) : `top set ${loadSpoken(top?.load ?? null, s.unit, s.convention)}`, f?.mayHurt === true ? WORKOUT_COPY.mayHurt : null, f?.notHere === true ? WORKOUT_COPY.notHere : null].filter((x): x is string => x !== null);
+        const spoken = [label, name, superset ? 'superset' : null, s.main ? 'main lift' : null, s.warmup === true ? WORKOUT_COPY.warmupRow : null, `${String(n)} ${n === 1 ? 'set' : 'sets'}`, warm > 0 ? `plus ${String(warm)} warm-up` : null, timed !== null ? timedSpoken(timed) : `top set ${loadSpoken(top?.load ?? null, s.unit, s.convention)}`, f?.mayHurt === true ? WORKOUT_COPY.mayHurt : null, f?.notHere === true ? WORKOUT_COPY.notHere : null].filter((x): x is string => x !== null);
         return {
           slotKey: s.key,
           exerciseId: s.exerciseId,
           label,
           name,
-          works: f?.works ?? null,
+          // (Ben, 2 Nov) A warm-up cardio row Ben asked for: `Warm-up` after its works line (or on its own).
+          works: s.warmup === true ? [f?.works ?? null, WORKOUT_COPY.warmupRow].filter((x): x is string => x !== null && x !== '').join(' · ') : (f?.works ?? null),
           setsText: String(n),
           warmText: warm > 0 ? `+${String(warm)} W` : null,
           topText,

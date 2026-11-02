@@ -369,6 +369,12 @@ export const ProposePlanAddArgsSchema = z.strictObject({
   minutes: z.number().min(0).max(240).nullable().optional(),
   distanceM: z.int().min(0).max(100_000).nullable().optional(),
   /**
+   * (Ben, 2 Nov: "yes if i ask for it … the warm-up could be any cardio exercise") True only when Ben's ask calls this
+   * cardio or timed add a warm-up ("bike 8 min first as a warm-up"); the row is then marked `Warm-up`. Code keeps it
+   * only when his words say warm-up and the exercise is cardio or timed. Null or absent: a normal exercise.
+   */
+  warmup: z.boolean().nullable().optional(),
+  /**
    * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") More adds in the same
    * proposal, each into its own days (a day takes one add per proposal): one card, one Apply, one Undo. The coach picks
    * the days by name (it reads each day's exercises); code never decides which days are leg days. Null: none.
@@ -385,6 +391,8 @@ export const ProposePlanAddArgsSchema = z.strictObject({
         reps: z.strictObject({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable(),
         minutes: z.number().min(0).max(240).nullable(),
         distanceM: z.int().min(0).max(100_000).nullable(),
+        /** (Ben, 2 Nov) As the top-level `warmup`. Absent on calls made before it. */
+        warmup: z.boolean().nullable().optional(),
       }),
     )
     .max(3)
@@ -1488,6 +1496,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     /** (Ben, 2 Nov) A cardio or timed add's work time per set (seconds) and a distance (metres). Absent: the default. */
     durationS: z.int().min(1).max(14_400).optional(),
     distanceM: z.int().min(1).max(100_000).optional(),
+    /** (Ben, 2 Nov) The add is a warm-up Ben asked for: the new rows are marked `Warm-up`. Absent: not marked. */
+    warmup: z.literal(true).optional(),
     /** (Ben, 2 Nov) The part of Ben's ask this proposal leaves out, as the coach said it: the card reads `Partial`. */
     notIncluded: z.string().min(1).max(160).optional(),
     days: z
@@ -1513,6 +1523,7 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
               durationS: z.int().min(1).max(14_400).optional(),
               distanceM: z.int().min(1).max(100_000).optional(),
               beforeName: z.string().min(1).max(120).optional(),
+              warmup: z.literal(true).optional(),
             })
             .optional(),
           /** The day's exercises before and after (names, in order): the card's before/after. */

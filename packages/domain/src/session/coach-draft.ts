@@ -696,6 +696,7 @@ export function draftAsRoutine(draft: Pick<WorkoutDraft, 'id' | 'ownerId' | 'nam
       progressionRuleId: null,
       main: s.main,
       structureChangedAtUtc: version.createdAt.utc,
+      ...(s.warmup === true ? { warmup: true as const } : {}),
     }));
   return {
     id: coachDraftRoutineId(draft.id),

@@ -850,18 +850,20 @@ export function planSwapLines(r: ActionRecord): { head: string; days: string[]; 
     const timed = [work, dist].filter((x): x is string => x !== null).join(' · ');
     const head = timed !== '' ? `+ ${d.addName} · ${d.sets === undefined || d.sets === 1 ? '' : `${String(d.sets)} × `}${timed}` : `+ ${d.addName}${d.sets === undefined ? '' : ` · ${String(d.sets)}${reps}`}${load}`;
     const place = (e: (typeof d.days)[number]['edits'][number]): string => (e.first === true ? 'first' : e.beforeRowId !== undefined && d.beforeName !== undefined ? `before ${d.beforeName}` : e.afterName == null ? 'at the end' : `after ${e.afterName}`);
+    // (Ben, 2 Nov) A warm-up he asked for: `Legs A: Exercise bike · 8 min, first, warm-up`.
+    const warm = (w: boolean | undefined) => (w === true ? ', warm-up' : '');
     // (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") Several adds in one
     // proposal: each day names its own (`Legs A: Exercise bike · 8 min, first`); the head lists them.
     if (d.days.some((x) => x.add !== undefined)) {
-      const own = (x: (typeof d.days)[number]) => x.add ?? { id: d.addId, name: d.addName, ...(d.sets === undefined ? {} : { sets: d.sets }), ...(d.durationS === undefined ? {} : { durationS: d.durationS }), ...(d.distanceM === undefined ? {} : { distanceM: d.distanceM }), ...(d.beforeName === undefined ? {} : { beforeName: d.beforeName }) };
+      const own = (x: (typeof d.days)[number]) => x.add ?? { id: d.addId, name: d.addName, ...(d.sets === undefined ? {} : { sets: d.sets }), ...(d.durationS === undefined ? {} : { durationS: d.durationS }), ...(d.distanceM === undefined ? {} : { distanceM: d.distanceM }), ...(d.beforeName === undefined ? {} : { beforeName: d.beforeName }), ...(d.warmup === true ? { warmup: true as const } : {}) };
       const what = (a: ReturnType<typeof own>) => {
         const t = [a.durationS === undefined ? null : a.durationS % 60 === 0 ? `${String(a.durationS / 60)} min` : formatDuration(a.durationS), a.distanceM === undefined ? null : cardioDistanceText(a.distanceM)].filter((x): x is string => x !== null).join(' · ');
         return t === '' ? a.name : `${a.name} · ${t}`;
       };
       const where = (x: (typeof d.days)[number]) => x.edits.map((e) => (e.first === true ? 'first' : e.beforeRowId !== undefined && own(x).beforeName !== undefined ? `before ${own(x).beforeName ?? ''}` : e.afterName == null ? 'at the end' : `after ${e.afterName}`)).join(', ');
-      return { head: `+ ${[...new Set(d.days.map((x) => what(own(x))))].join(', ')}`, days: d.days.map((x) => `${x.routineName}: ${what(own(x))}, ${where(x)}`), ...(d.notIncluded === undefined ? {} : { partial: `Partial · not included: ${d.notIncluded}` }) };
+      return { head: `+ ${[...new Set(d.days.map((x) => what(own(x))))].join(', ')}`, days: d.days.map((x) => `${x.routineName}: ${what(own(x))}, ${where(x)}${warm(own(x).warmup)}`), ...(d.notIncluded === undefined ? {} : { partial: `Partial · not included: ${d.notIncluded}` }) };
     }
-    return { head, days: d.days.map((x) => `${x.routineName}: ${x.edits.map(place).join(', ')}`), ...(d.notIncluded === undefined ? {} : { partial: `Partial · not included: ${d.notIncluded}` }) };
+    return { head, days: d.days.map((x) => `${x.routineName}: ${x.edits.map(place).join(', ')}${warm(d.warmup)}`), ...(d.notIncluded === undefined ? {} : { partial: `Partial · not included: ${d.notIncluded}` }) };
   }
   const out = d.removeName ?? 'Exercise';
   return { head: `${out} → ${d.addName}`, days: d.days.map((x) => (x.edits.every((e) => e.kind === 'remove') ? `${x.routineName}: − ${out}` : x.routineName)) };

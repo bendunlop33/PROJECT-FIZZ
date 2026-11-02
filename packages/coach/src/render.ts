@@ -567,10 +567,11 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
         if (d.op === 'add' && d.days.some((x) => x.add !== undefined)) {
           const groups = new Map<string, { what: string; days: string[] }>();
           for (const x of d.days) {
-            const add = x.add ?? { id: d.addId, name: d.addName, ...(d.durationS === undefined ? {} : { durationS: d.durationS }), ...(d.distanceM === undefined ? {} : { distanceM: d.distanceM }), ...(d.beforeName === undefined ? {} : { beforeName: d.beforeName }) };
+            const add = x.add ?? { id: d.addId, name: d.addName, ...(d.durationS === undefined ? {} : { durationS: d.durationS }), ...(d.distanceM === undefined ? {} : { distanceM: d.distanceM }), ...(d.beforeName === undefined ? {} : { beforeName: d.beforeName }), ...(d.warmup === true ? { warmup: true as const } : {}) };
             const e = x.edits[0];
             const place = e?.first === true ? ' first' : e?.beforeRowId !== undefined && add.beforeName !== undefined ? ` before ${add.beforeName}` : e?.afterName == null ? '' : ` after ${e.afterName}`;
-            const what = `+ ${add.name}${planAddTargetText(add)}${place}`;
+            // (Ben, 2 Nov) A warm-up he asked for says so.
+            const what = `+ ${add.name}${planAddTargetText(add)}${place}${add.warmup === true ? ', warm-up' : ''}`;
             const g = groups.get(what) ?? { what, days: [] };
             g.days.push(x.routineName);
             groups.set(what, g);
@@ -582,7 +583,7 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
         // (Ben, 2 Nov) An add's place (first, before, after) and a cardio or timed target (`8 min`, `2,000 m`).
         const target = d.op === 'add' ? planAddTargetText(d) : '';
         const place = d.position === 'first' ? ' first' : d.position === 'before' && d.beforeName !== undefined ? ` before ${d.beforeName}` : d.afterName == null ? '' : ` after ${d.afterName}`;
-        const what = d.op === 'add' ? `+ ${d.addName}${target}${place}` : `${d.removeName ?? 'Exercise'} → ${d.addName}`;
+        const what = d.op === 'add' ? `+ ${d.addName}${target}${place}${d.warmup === true ? ', warm-up' : ''}` : `${d.removeName ?? 'Exercise'} → ${d.addName}`;
         // (Ben, 2 Nov) A proposal that does only part of his ask says so.
         const partial = d.notIncluded === undefined ? '' : ` Partial: not included ${d.notIncluded}.`;
         const text = `Every week: ${what} (${d.days.map((x) => x.routineName).join(', ')}).${partial}`;

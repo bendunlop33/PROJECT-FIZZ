@@ -48,6 +48,7 @@ import { MIGRATION_0041 } from './schema/0041-coach-warmup-prefs';
 import { MIGRATION_0042 } from './schema/0042-coach-prefs-rebalance';
 import { MIGRATION_0043 } from './schema/0043-coach-workout-fix';
 import { MIGRATION_0044 } from './schema/0044-coach-plan-change';
+import { MIGRATION_0045 } from './schema/0045-session-warmup-row';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -119,6 +120,8 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(43, 'coach-workout-fix', MIGRATION_0043),
   // (Ben, 2 Nov) Plan-level changes and rest settings from the coach (`propose_plan_change`, `update_rest_settings` records).
   sqlMigration(44, 'coach-plan-change', MIGRATION_0044),
+  // (Ben, 2 Nov) A warm-up cardio row Ben asked for keeps its mark in the workout and history (`session_exercises.warmup`).
+  sqlMigration(45, 'session-warmup-row', MIGRATION_0045),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */
