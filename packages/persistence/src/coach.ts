@@ -21,7 +21,7 @@ import {
   type PlaybookCandidate,
   type TrainingChange,
 } from '@fizz/schemas';
-import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTargetSourceBasis, planRevertGymEdit, reduceSession, sameWarmupPrefs, suggestionInDate, undoActivity, undoPlanControl, warmupPrefsRevert, type GymEdit } from '@fizz/domain';
+import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTargetSourceBasis, pbSetPlanPrefs, planRevertGymEdit, reduceSession, sameWarmupPrefs, suggestionInDate, undoActivity, undoPlanControl, warmupPrefsRevert, type GymEdit } from '@fizz/domain';
 import { ACTIVITY_SPEC } from './activities';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
@@ -116,6 +116,8 @@ function sessionOf(record: ActionRecord): string | null {
     case 'propose_workout_edit':
     case 'fill_setup':
     case 'propose_plan_swap':
+    case 'set_exercise_preference':
+    case 'propose_rebalance':
     case 'undo':
       return null;
     case 'update_warmup_prefs':
@@ -630,6 +632,16 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback('stale_version');
         return null;
       }
+      case 'exercise_pref': {
+        // (Ben, 2 Nov) One exercise's preference on the plan in use's answers, on the version the turn read, with its record.
+        if (write.plan.ownerId !== ownerId) throw new Error('Plan owner differs from the store owner');
+        const current = await getPlanDraftIn(tx, write.plan.id);
+        if (current === null || current.ownerId !== ownerId) throw new Rollback('missing');
+        if (current.status !== 'applied' || current.version !== write.expectedVersion) throw new Rollback('stale_version');
+        const r = await saveDocumentIn(tx, PLAN_DRAFT_SPEC, write.plan, write.expectedVersion);
+        if (!r.ok) throw new Rollback('stale_version');
+        return null;
+      }
       case 'lift_target': {
         // (Ben, 20 Oct) The target and its record together, on the profile version the coach read (rule 5).
         const r = await changeTrainingProfileIn(tx, ownerId, { kind: 'set_lift_target', target: write.target }, profileWrite(write.action.opId, write.expectedVersion, write.action.createdAt.utc, write.target.setOnDate));
@@ -898,6 +910,19 @@ export class SqliteCoachStore {
       case 'fill_setup':
       case 'propose_plan_swap':
         return 'unsupported';
+      // (Ben, 2 Nov) Rebalance's Apply and Undo are Ben's own plan edits (`planMuscles.apply` / `undo`), as on Plan › Muscles.
+      case 'propose_rebalance':
+        return 'unsupported';
+      case 'set_exercise_preference': {
+        // (Ben, 2 Nov) The preference back, only while the plan's preferences are still as this change left them (a later
+        // change to them stays, rule 5). The plan's days never changed, so nothing else comes back.
+        const plan = await getPlanDraftIn(tx, d.planId);
+        if (plan === null || plan.ownerId !== ownerId) return 'changed_since';
+        const c = pbSetPlanPrefs(plan, { expectedVersion: null, opId: `undo:${target.actionId}`, at: { utc: atUtc, tz: target.createdAt.tz }, parts: d.before, onlyIf: d.after });
+        if (c.kind !== 'write') return 'changed_since';
+        if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion)).ok) return 'changed_since';
+        return 'ok';
+      }
       // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
       // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
       // The coach's fit to time has its own Undo (`drafts.undoCoachFit`), versioned on the draft.

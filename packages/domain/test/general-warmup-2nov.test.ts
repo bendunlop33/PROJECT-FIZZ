@@ -238,7 +238,7 @@ describe('time: the estimate and the fit count it', () => {
     const w = legDay();
     const first = w.blocks[0]?.slots[0];
     if (first === undefined) throw new Error('no slot');
-    const bikeFirst = { ...w, blocks: [{ slots: [{ ...first, key: 'bike#1', exerciseId: 'bike', rows: [{ type: 'working' as const, reps: null, load: null, rpe: null, durationS: 480 }] }], auto: false }, ...w.blocks] };
+    const bikeFirst = { ...w, blocks: [{ slots: [{ ...first, key: 'bike#1', exerciseId: 'bike', rows: [{ type: 'working' as const, reps: 0, load: null, rpe: null, durationS: 480 }] }], auto: false }, ...w.blocks] };
     expect(estimateBuilderSeconds(bikeFirst, withRules) - estimateBuilderSeconds(bikeFirst, plain)).toBe(0);
   });
 
@@ -246,8 +246,8 @@ describe('time: the estimate and the fit count it', () => {
     const full = estimateBuilderSeconds(legDay(), plain);
     // A length the plain day has to shrink to, and both can reach.
     const target = Math.round(full / 60) - 2;
-    const fitted = fitToMinutes(legDay(), withRules, { minutes: target, supersets: false });
-    const without = fitToMinutes(legDay(), plain, { minutes: target, supersets: false });
+    const fitted = fitToMinutes(legDay(), withRules, { minutes: target, supersets: false, mainGroup: 'Legs', grow: false });
+    const without = fitToMinutes(legDay(), plain, { minutes: target, supersets: false, mainGroup: 'Legs', grow: false });
     // Both land at the time asked (the warm-up's 9 minutes inside it), so the one with it keeps less lifting.
     expect(estimateBuilderSeconds(fitted.workout, withRules)).toBeLessThanOrEqual(target * 60 + 29);
     expect(estimateBuilderSeconds(fitted.workout, plain)).toBeLessThan(estimateBuilderSeconds(without.workout, plain));

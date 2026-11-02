@@ -20,6 +20,7 @@ import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SplitDayIdSchem
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
+import { PLAN_BUILDER_LIMITS, PlanPrefAnswerSchema } from './plan-builder';
 import { GeneralWarmupDaysSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
 import { ActivityEffortSchema, ActivityFieldsShapeSchema, ActivityKindSchema, ActivityStatusSchema, WeekBasisSchema, WeekMergeSchema, WeekRowSchema, WeekSkipSchema, type Activity } from './activity';
 import { LocalDateSchema } from './import';
@@ -100,6 +101,8 @@ export const CoachEntityKindSchema = z.enum([
   'builder_setup',
   /** (Ben, 1 Nov) His warm-up preferences on the training profile (`update_warmup_prefs`), with today's pending warm-ups re-planned; Undo puts both back. */
   'warmup_prefs',
+  /** (Ben, 2 Nov) One exercise's preference on Any preferences (the plan in use's answers, `set_exercise_preference`); Undo puts it back. */
+  'exercise_pref',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -482,6 +485,29 @@ export const UpdateWarmupPrefsArgsSchema = z.strictObject({
 });
 export type UpdateWarmupPrefsArgs = z.infer<typeof UpdateWarmupPrefsArgsSchema>;
 
+/**
+ * (Ben, 2 Nov: "I don't like leg extensions, take them out") One exercise's preference on Any preferences (the plan in
+ * use's answers): `not_preferred`, `preferred`, or `none` (cleared). `exercise`: a name or catalogueId. `swapTo`: with
+ * `not_preferred`, a substitute from get_substitutions for the plan days that have it (null: the app picks one for the
+ * same muscles). Applies at once with Undo when Ben stated it (rule 3); the plan swap is always a proposal.
+ */
+export const SetExercisePreferenceArgsSchema = z.strictObject({
+  exercise: z.string().min(1).max(120),
+  preference: z.enum(['not_preferred', 'preferred', 'none']),
+  swapTo: z.string().min(1).max(80).nullable(),
+  ...askClaim,
+});
+export type SetExercisePreferenceArgs = z.infer<typeof SetExercisePreferenceArgsSchema>;
+
+/**
+ * (Ben, 2 Nov) Plan › Muscles' Rebalance for the plan in use, from the coach: the same engine and the same card (per-day
+ * lines, bars, day lengths, per-line skip, Apply and Undo). Always a proposal (rule 3).
+ */
+export const ProposeRebalanceArgsSchema = z.strictObject({
+  reason,
+});
+export type ProposeRebalanceArgs = z.infer<typeof ProposeRebalanceArgsSchema>;
+
 export const RenameWorkoutArgsSchema = z.strictObject({
   /** The session version the coach read (rule 5). */
   baseVersion: z.int().min(1),
@@ -742,6 +768,10 @@ export const CoachToolNameSchema = z.enum([
   'update_warmup_prefs',
   /** (Ben, 1 Nov) One plan day's order and sets/reps/RPE/main every week: a proposal he applies, with Undo. */
   'propose_plan_day_edit',
+  /** (Ben, 2 Nov) One exercise's preference (not preferred / preferred / none), applied with Undo when Ben states it. */
+  'set_exercise_preference',
+  /** (Ben, 2 Nov) Plan › Muscles' Rebalance for the plan in use: the same proposal as the screen's, Apply and Undo. */
+  'propose_rebalance',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -786,6 +816,8 @@ export const COACH_TOOL_ARGS = {
   propose_plan_add: ProposePlanAddArgsSchema,
   update_warmup_prefs: UpdateWarmupPrefsArgsSchema,
   propose_plan_day_edit: ProposePlanDayEditArgsSchema,
+  set_exercise_preference: SetExercisePreferenceArgsSchema,
+  propose_rebalance: ProposeRebalanceArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -1358,6 +1390,40 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
       })
       .optional(),
   }),
+  /**
+   * (Ben, 2 Nov) One exercise's preference on Any preferences, set because Ben said it (`set_exercise_preference`):
+   * `before`/`after` the plan in use's preference parts (Undo only while they are still `after`). `key`: the catalogue
+   * key (or his exercise's ID) the answers hold. `inPlan`: the plan days that have it. `swapActionId`: the plan swap
+   * proposal made with it (a `propose_plan_swap` record, shown in this card), null when none fits or it isn't in the plan.
+   */
+  z.object({
+    kind: z.literal('set_exercise_preference'),
+    planId: IdSchema,
+    exerciseId: z.string().min(1).max(64),
+    key: z.string().min(1).max(80),
+    name: z.string().min(1).max(120),
+    preference: z.enum(['not_preferred', 'preferred', 'none']),
+    before: z.object({ prefs: z.record(z.string().min(1).max(20), PlanPrefAnswerSchema), likes: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes), never: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes) }),
+    after: z.object({ prefs: z.record(z.string().min(1).max(20), PlanPrefAnswerSchema), likes: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes), never: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes) }),
+    inPlan: z.array(z.string().max(120)).max(14),
+    swapActionId: IdSchema.nullable(),
+  }),
+  /**
+   * (Ben, 2 Nov) Plan › Muscles' Rebalance made by the coach (`propose_rebalance`): exactly the screen's card for the
+   * plan at `planVersion` (the same engine, `planMuscles.rebalance`). Apply is the screen's (`planMuscles.apply`, op ID
+   * from this record, refused when the plan moved on, rule 5); Undo the screen's. The card re-reads the live lines while
+   * open (per-line skip); these are what the coach saw.
+   */
+  z.object({
+    kind: z.literal('propose_rebalance'),
+    planId: IdSchema,
+    planVersion: z.int().min(1),
+    lines: z.array(z.object({ id: z.string().min(1).max(40), dayIndex: z.int().min(0).max(14), text: z.string().max(200) })).max(40),
+    bars: z.array(z.object({ group: z.string().min(1).max(40), text: z.string().max(120), inRange: z.boolean() })).max(20),
+    minutes: z.array(z.object({ dayIndex: z.int().min(0).max(14), text: z.string().max(120), over: z.boolean() })).max(14),
+    why: z.array(z.string().max(400)).max(2),
+    resolved: z.boolean(),
+  }),
   /** ADR 0039: today's Set up filled from Ben's words (`toast`: what it says; Undo is on Set up). */
   z.object({
     kind: z.literal('fill_setup'),
@@ -1764,6 +1830,8 @@ export type CoachWrite =
    * warm-ups planned again (`command`, an `adjust_pending_targets` on the session version read), with the record.
    */
   | { kind: 'warmup_prefs'; action: ActionRecord; change: TrainingChange; expectedVersion: number; session: { sessionId: string; command: SessionCommand } | null }
+  /** (Ben, 2 Nov) The plan in use with one exercise's preference changed (`set_exercise_preference`), on `expectedVersion` (rule 5), with its record. */
+  | { kind: 'exercise_pref'; action: ActionRecord; plan: PlanDraft; expectedVersion: number }
   /** (Ben, 20 Oct) An activity the coach logged and its record, in one write (`expectedVersion` null: new). */
   | { kind: 'activity'; action: ActionRecord; activity: Activity; expectedVersion: number | null };
 

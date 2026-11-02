@@ -486,6 +486,36 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Change Ben’s warm-up settings when he asks: simpleLoads true for Simple warm-up weights (the bar, then 10 kg steps; dumbbells in 5s; machines in 10s), false for the exact percentages, null to leave it. exercises: per exercise (a name or ID he has), warmups off (none), normal (the usual warm-ups, even on prehab), or default; [] for none. general: his standing cardio-first warm-up ("bike for 8 minutes first on leg days, rowing for 4 minutes first on other days"): one entry per kind of day, days legs (leg days, decided by code from the day’s exercises), other (every other day) or all (every day), exercise the cardio exercise (a name or catalogueId: bike, rowing machine…), minutes (0 turns that day’s off); days not named keep theirs; null leaves it. It goes first in every workout he starts from then on, whatever the plan. Today’s warm-ups not yet done are planned again; logged sets never change. benAsked true only when his message this turn asks for this, with benQuote his words copied exactly; false when it is your idea (nothing changes; ask him).',
   },
   {
+    // (Ben, 2 Nov: "I don't like leg extensions, take them out") Any preferences on the plan in use, from every chat,
+    // only on his like/dislike words (`exercisePrefs`: a builder plan in use and those words). Applies at once with Undo
+    // because it is his stated preference; a swap out of his plan rides on the same card as a proposal (rule 3).
+    name: 'set_exercise_preference',
+    effect: 'versioned_update',
+    writes: ['exercise_pref'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Mark an exercise you like or don’t, with Undo (a swap out of your plan as a proposal)',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Set Ben’s preference for one exercise when he states it: not_preferred ("I don’t like leg extensions"), preferred ("I like hack squats"), or none to clear it. exercise: its name or catalogueId. swapTo: with not_preferred, a substitute for the same muscles from get_substitutions for the plan days that have it, or null for the app’s pick; null otherwise. Saved at once on his plan’s Any preferences with Undo; the plan itself changes only if he applies the swap shown on the same card. benAsked true only when his message this turn states it, with benQuote his words copied exactly; false when it is your idea (nothing changes; ask him).',
+  },
+  {
+    // (Ben, 2 Nov: "am I doing enough biceps?", "rebalance my plan") Plan › Muscles' Rebalance from every chat, the same
+    // engine and card as the screen; only on muscle or balance words while a builder plan runs (`rebalanceOpen`). Always a
+    // proposal with per-line skip, Apply and Undo (rule 3); versioned (rule 5).
+    name: 'propose_rebalance',
+    effect: 'propose',
+    writes: ['proposal'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Rebalance your plan’s muscles, as a proposal you apply or undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Plan › Muscles’ Rebalance for the plan in use: one proposal that brings each muscle group’s direct weekly sets into its range (trim above 20, swap, superset, then add, at most +2 sets a group, every day within its minutes, never a not-preferred, pain-flagged or unavailable exercise). The app works it out; you give only the reason. Ben sees each line (skip any), the bars and day lengths, Apply and Undo. Refused with one line when every group is in range or nothing fits.',
+  },
+  {
     // ADR 0039 (Ben, 29 Oct): the builder's Your workout draft before Start, from any chat while one is in context
     // (`builderDraft`). The builder's own edit coach makes the change from Ben's words; it is always a proposal with
     // Apply / Skip (rule 3: in the builder before Start, what he asks for comes back as a proposal).
@@ -551,7 +581,8 @@ export const COACH_NEVER: readonly string[] = [
 /** (20 Oct) `gym_equipment`: a gym's profile and items (`update_gym`); every record keeps its version, Undo puts it back. */
 /** (Ben, 20 Oct) `lift_target`: a target on Ben's training profile he asked for; Undo puts back what was there. */
 /** (Ben, 1 Nov) `warmup_prefs`: his warm-up settings and today's pending warm-ups; Undo puts both back. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target', 'warmup_prefs']);
+/** (Ben, 2 Nov) `exercise_pref`: one exercise's preference on the plan in use's answers (no days change); Undo puts it back. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target', 'warmup_prefs', 'exercise_pref']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -630,6 +661,10 @@ export interface TurnGate {
   liftTargetsOn?: boolean;
   /** (Ben, 1 Nov) A training profile exists: `update_warmup_prefs`. */
   trainingProfile?: boolean;
+  /** (Ben, 2 Nov) A builder plan is in use and Ben's words state a like or dislike: `set_exercise_preference`. */
+  exercisePrefs?: boolean;
+  /** (Ben, 2 Nov) Rebalance can run on the plan in use and Ben's words are about muscles or balance: `propose_rebalance`. */
+  rebalanceOpen?: boolean;
   /** ADR 0039: this week has days (a plan in use, or Ben's split) and its tool is wired: `propose_week`. */
   week?: boolean;
   /** ADR 0039: a plan is in use (paused or not): `pause_plan`. */
@@ -647,7 +682,7 @@ export interface TurnGate {
  * (no live workout: nothing to edit today; no plan: nothing to pause). Tools not listed act on something that is
  * always there (Ben's memories, his gyms, his history) or are opened by his words alone (`needMet`).
  */
-export type ToolTarget = 'liveWorkout' | 'week' | 'planInUse' | 'lightTurn' | 'liftTargetsOn' | 'builderDraft' | 'setupOpen' | 'trainingProfile';
+export type ToolTarget = 'liveWorkout' | 'week' | 'planInUse' | 'lightTurn' | 'liftTargetsOn' | 'builderDraft' | 'setupOpen' | 'trainingProfile' | 'exercisePrefs' | 'rebalanceOpen';
 
 export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   edit_today: 'liveWorkout',
@@ -662,6 +697,8 @@ export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   think_harder: 'lightTurn',
   set_lift_target: 'liftTargetsOn',
   update_warmup_prefs: 'trainingProfile',
+  set_exercise_preference: 'exercisePrefs',
+  propose_rebalance: 'rebalanceOpen',
   propose_workout_edit: 'builderDraft',
   fill_setup: 'setupOpen',
 };

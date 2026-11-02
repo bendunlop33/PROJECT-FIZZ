@@ -1,4 +1,4 @@
-import { PB_PREF_QUESTIONS, leadBuilderGroup, workoutDayType, currentPlanVersion, planDayEditPreview, type PlanDayEdit, deriveId, liveRoutines, notPreferredInPlan, painFlagCovering, pbAppliedBuilder, pbNotPreferred, pbNotPreferredReplacement, planAddPreview, planRoutines, planSwapDirection, planSwapPreview, toMs, isArchivedExercise, type PlanSwapDayInput } from '@fizz/domain';
+import { PB_PREF_QUESTIONS, leadBuilderGroup, workoutDayType, currentPlanVersion, directMuscleGroup, type PbPrefParts, planDayEditPreview, type PlanDayEdit, deriveId, liveRoutines, notPreferredInPlan, painFlagCovering, pbAppliedBuilder, pbNotPreferred, pbNotPreferredReplacement, planAddPreview, planRoutines, planSwapDirection, planSwapPreview, toMs, isArchivedExercise, type PlanSwapDayInput } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { ActionDetail, ActionRecord, Exercise, Load, PainFlag, PlanBuilderAnswers, PlanDraft, Routine, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import type { PlanAddRequest, PlanDayEditRequest, PlanSwapPrepared } from '@fizz/coach';
@@ -291,6 +291,27 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
     };
   }
 
+  /**
+   * What replaces a not-preferred exercise (catalogue keys): his own pick on its question, else the first catalogue
+   * substitute usable here, not held for pain, not itself not preferred and (2 Nov, the muscle balance) leading with the
+   * same muscle group. Null: nothing fits.
+   */
+  async function replacementFor(p: UserProfile, of: (x: string) => Exercise | null, key: string, answers: Pick<PlanBuilderAnswers, 'prefs' | 'likes' | 'never'>, all: readonly Exercise[] = []): Promise<string | null> {
+    const flagged = await flagsNow(p);
+    const out = of(key);
+    // (Ben, 2 Nov) Best first: the catalogue's substitutes, then the plan builder's other options for the same slot (Any
+    // preferences' question), then the same movement family (get_substitutions' own sources).
+    const slot = PB_PREF_QUESTIONS.filter((q) => q.opts.some((o) => o.includes(key))).flatMap((q) => [...q.opts.flat(), ...q.other]);
+    const family = out?.family === undefined ? [] : all.filter((e) => e.family === out.family && e.id !== out.id && e.measurement === out.measurement).map((e) => e.catalogueKey ?? e.id).sort();
+    const alternatives = [...new Set([...(deps.catalogueSubstitutions?.(key) ?? []).filter((k): k is string => k !== null), ...slot, ...family])].filter((k) => k !== key && (out === null || sameGroup(out, of(k))));
+    const usable = new Map<string, boolean>();
+    for (const k of [...alternatives, ...pickedKeys(answers)]) {
+      const x = of(k);
+      usable.set(k, x !== null && !isArchivedExercise(x) && (await deps.usableHere(x).catch(() => false)));
+    }
+    return pbNotPreferredReplacement(key, answers, { usable: (k) => usable.get(k) ?? false, held: (k) => flagged(of(k)?.id ?? k), alternatives });
+  }
+
   async function owner(): Promise<UserProfile | null> {
     return deps.profile().catch(() => null);
   }
@@ -361,6 +382,34 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
     },
 
     /**
+     * (Ben, 2 Nov) The coach's `set_exercise_preference` with not preferred: the plan swap that takes `key` out of every
+     * plan day that has it, under the new preferences `answers`. The substitute: the coach's `swapTo` (from
+     * get_substitutions) when it is usable here, not held for pain, not itself not preferred and trains the same muscle
+     * group; else what Replace would pick. Never written here: the coach saves the proposal. Null: not in the plan, or
+     * nothing fits.
+     */
+    async swapOut(req: { key: string; swapTo: string | null; answers: PbPrefParts }): Promise<PlanSwapPrepared | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const inUse = await planInUse(p);
+      if (inUse === null) return null;
+      const { all, of } = await pool(p);
+      const out = of(req.key);
+      if (out === null || !inUse.days.some((d) => d.rows.some((r) => r.exerciseId === out.id))) return null;
+      const no = notPreferredIds(req.answers, of);
+      const flagged = await flagsNow(p);
+      const fits = async (x: Exercise | null): Promise<boolean> => x !== null && x.id !== out.id && !isArchivedExercise(x) && !no.has(x.id) && !flagged(x.id) && (await deps.usableHere(x).catch(() => false));
+      const wanted = req.swapTo === null ? null : of(req.swapTo);
+      let pick: Exercise | null = wanted !== null && (await fits(wanted)) && sameGroup(out, wanted) ? wanted : null;
+      if (pick === null) {
+        const r = await replacementFor(p, of, req.key, req.answers, all);
+        pick = r === null ? null : of(r);
+      }
+      if (pick === null) return null;
+      return propose(p, { remove: out.id, add: pick.id }, { flip: false });
+    },
+
+    /**
      * Settings (Any preferences): each exercise these answers mark not preferred that the plan in use has, its days and
      * what Replace would put in. Empty: none, or no plan in use.
      */
@@ -369,20 +418,13 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
       if (p === null) return [];
       const inUse = await planInUse(p);
       if (inUse === null) return [];
-      const { of } = await pool(p);
+      const { all, of } = await pool(p);
       const no = notPreferredIds(answers, of);
-      const flagged = await flagsNow(p);
       const out: NotPreferredInPlan[] = [];
       for (const hit of notPreferredInPlan(new Set(no.keys()), inUse.days)) {
         const e = of(hit.exerciseId);
         const key = no.get(hit.exerciseId) ?? e?.catalogueKey ?? hit.exerciseId;
-        const alternatives = (deps.catalogueSubstitutions?.(key) ?? []).filter((k): k is string => k !== null);
-        const usable = new Map<string, boolean>();
-        for (const k of [...alternatives, ...pickedKeys(answers)]) {
-          const x = of(k);
-          usable.set(k, x !== null && !isArchivedExercise(x) && (await deps.usableHere(x).catch(() => false)));
-        }
-        const pick = pbNotPreferredReplacement(key, answers, { usable: (k) => usable.get(k) ?? false, held: (k) => flagged(of(k)?.id ?? k), alternatives });
+        const pick = await replacementFor(p, of, key, answers, all);
         out.push({ key, name: e?.name ?? key, days: hit.days, replacement: pick === null ? null : { key: pick, name: of(pick)?.name ?? pick } });
       }
       return out;
@@ -515,6 +557,14 @@ function dayEditLine(row: Routine['exercises'][number] | undefined, c: PlanDayEd
     ...(c.main === undefined ? [] : [c.main ? 'main lift' : 'secondary']),
   ];
   return `${nameOf(row.exerciseId)}: ${parts.join(' · ')}`;
+}
+
+/** (Ben, 2 Nov) The muscle balance: a substitute leads with the same muscle group (either unknown: allowed). */
+function sameGroup(a: Exercise, b: Exercise | null): boolean {
+  if (b === null) return false;
+  const ga = directMuscleGroup(a);
+  const gb = directMuscleGroup(b);
+  return ga === null || gb === null || ga === gb;
 }
 
 /** Every exercise his answers pick (an option or Other), Replace's first choice. */
