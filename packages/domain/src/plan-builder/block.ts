@@ -9,7 +9,7 @@ import { deriveId } from '../stable';
 import { toMs } from '../time';
 import type { PbExercise, PbLoad } from './engine';
 import { fmt, type PlanKit } from './loads';
-import { pbAtWeek, pbIsDeload, type PbWeekTarget } from './weeks';
+import { pbAtWeek, pbIsDeload, type PbDeloadAnswers, type PbWeekTarget } from './weeks';
 
 /**
  * A builder plan's training block (Ben, 23 Oct: **the plan's length is block 1**; training-blocks.md §4.1). Pure.
@@ -50,7 +50,7 @@ export interface PbBlockWorkout {
 }
 
 export interface PbBlockInput {
-  answers: Pick<PlanBuilderAnswers, 'weeks' | 'effort'> & { lighterWeeks?: readonly number[] | undefined };
+  answers: PbDeloadAnswers;
   appliedAtUtc: string;
   pauses?: readonly PlanPause[] | undefined;
   /** The plan's finished workouts (any order; ones before Apply or after now are ignored). */

@@ -14,6 +14,8 @@ import { CardActions, CoachCardFrame } from './CoachCardFrame';
  * (Ben, 2 Nov) A plan-level change the coach proposed (a lighter week, days a week, length, Set/Any days, End): the
  * plan, then each before → after line. `Skip` · `Apply` (rule 3: a proposal), then `Undo`. Apply and Undo are the plan's
  * own writes (the plan builder's `Apply changes`, or End), op IDs from the record. Every value is from the record.
+ * (LW2) A lighter week that drops a planned deload shows both lines (`Week 3 of 6 → Lighter`, `Deload: week 6 → none`);
+ * the one Apply covers both and the one Undo restores both (they are one set of plan answers).
  */
 export function PlanChangeCard({ record, onChanged }: { record: ActionRecord; onChanged?: () => void }) {
   const theme = useTheme();

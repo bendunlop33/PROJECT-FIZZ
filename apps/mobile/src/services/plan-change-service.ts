@@ -17,6 +17,8 @@ import type { PlanServices } from './plan-services';
  *   moved: `Out of date`, rule 5), with an op ID derived from the proposal so a double tap or a restart writes once; the
  *   block's start, lead-in, week numbers, done weeks and this week's done days stay (30 Oct rule). Undo is that edit's
  *   own Undo (or End's: the plan in use again). Done workouts are their own records and never change (rule 2).
+ *   (LW1–LW2) A lighter week and the planned deload it turns into a normal week are one set of answers, so one Apply
+ *   writes both and one Undo restores both; a stale proposal applies neither.
  */
 
 export interface PlanChangeServiceDeps {

@@ -3,7 +3,7 @@ import type { EquipmentKind, LoadConvention, PlanBuilderAnswers, PlanDraft, Plan
 import { addDays, localDateOf, localWeekBounds, weekdayIndexOfDate } from '../calendar';
 import { formatNumber, localDateText } from '../display';
 import { pbBlockWeekOf, type PbBlockWeek, type PbBlockWorkout, type PbFinishedRef } from '../plan-builder/block';
-import { pbIsDeload } from '../plan-builder/weeks';
+import { pbIsDeload, type PbDeloadAnswers } from '../plan-builder/weeks';
 import { toMs } from '../time';
 import { KG_PER_LB } from '../units';
 import {
@@ -80,7 +80,7 @@ export interface TrainingBlock {
   /** `Muscle`, `Strength`; a coach plan's name. */
   goal: string;
   /** Builder plans: the plan's length and effort (deload weeks); null on a coach plan (no length). */
-  answers: Pick<PlanBuilderAnswers, 'weeks' | 'effort' | 'sessions'> | null;
+  answers: (Pick<PlanBuilderAnswers, 'weeks' | 'effort' | 'sessions'> & Pick<PbDeloadAnswers, 'lighterWeeks' | 'skippedDeloads'>) | null;
   /** The block's weeks, worked out at its end (or now). */
   week: PbBlockWeek;
   /** The lead-in's Monday (a block applied after its Monday); null: none. */
@@ -133,7 +133,17 @@ export function trainingBlocks(plans: readonly BlockPlanDoc[], refs: readonly Pb
     const endedAtUtc = current ? null : (next?.members[0]?.applied?.atUtc ?? stop(latest));
     const endMs = endedAtUtc === null ? nowMs : Math.min(nowMs, toMs(endedAtUtc) - 1);
     const builder = versionOf(latest)?.builder?.answers ?? null;
-    const answers = builder === null ? null : { weeks: builder.weeks, effort: builder.effort, sessions: builder.sessions };
+    // (Ben, 2 Nov, LW3) Lighter weeks read as deload weeks here too (never a stall), and a skipped deload as a normal week.
+    const answers =
+      builder === null
+        ? null
+        : {
+            weeks: builder.weeks,
+            effort: builder.effort,
+            sessions: builder.sessions,
+            ...(builder.lighterWeeks !== undefined ? { lighterWeeks: builder.lighterWeeks } : {}),
+            ...(builder.skippedDeloads !== undefined ? { skippedDeloads: builder.skippedDeloads } : {}),
+          };
     const startMs = toMs(g.startUtc);
     const planIds = new Set(g.members.map((m) => m.id));
     const made = new Map(g.members.flatMap((m) => (m.applied?.made ?? []).map((x) => [x.routineId, x.dayIndex] as const)));
