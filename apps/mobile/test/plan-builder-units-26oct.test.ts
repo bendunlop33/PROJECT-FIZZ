@@ -42,7 +42,7 @@ describe('plan builder units (Ben, 26 Oct)', () => {
   it('the screen has no hard-coded kg header and uses the session’s unit', () => {
     expect(screen).not.toContain('`kg × ${');
     expect(screen).toContain('expectTable(expect, answers.weeks, s.nameOf, unitOf, s.unit)');
-    expect(screen).toContain('<TableRow cells={checkHeader(headUnit)} head />');
+    expect(screen).toContain('<TableRow cells={checkHeader(headUnit)} widths={widths} head />');
   });
 
   it('loading shows the frame with Close at once and a light skeleton after a beat, never a blank page', () => {
