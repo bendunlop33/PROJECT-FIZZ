@@ -44,6 +44,7 @@ import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PARTI
 import { splitSentences } from './sentences';
 import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
 import { asksForWarmupChange, WARMUP_PREFS_NOT_ASKED_LINE, WARMUP_PREFS_TOOL_LINE } from './warmup-prefs';
+import { asksPastWorkoutFix, WORKOUT_FIX_LINE } from './workout-fix';
 import { asksExercisePreference, EXERCISE_PREF_NOT_ASKED_LINE, EXERCISE_PREF_TOOL_LINE } from './exercise-prefs';
 import { asksMuscleBalance, REBALANCE_TOOL_LINE } from './plan-rebalance';
 
@@ -536,7 +537,7 @@ function runnable(registry: TurnRegistry, executors: CoachExecutors): TurnRegist
 
 /** (Ben, 28 Oct) `lastDays` in YOUR DATA, as the main coach is told it. */
 export const LAST_DAYS_COACH_LINE =
-  'lastDays in YOUR DATA is his last 7 days: each finished workout (app, logged later or FitNotes import) with its working sets as logged, and his runs and other activities. For one day in full read get_recent_sessions with date or daysAgo (1 = yesterday). When he asks to change his next workout or plan because of one, use the proposal tools; a past workout is never changed.';
+  'lastDays in YOUR DATA is his last 7 days: each finished workout (app, logged later or FitNotes import) with its working sets as logged, and his runs and other activities. For one day in full read get_recent_sessions with date or daysAgo (1 = yesterday). When he asks to change his next workout or plan because of one, use the proposal tools. A past workout’s logged sets are never changed; its date, a duplicate or a Health pairing only as a propose_workout_fix card when he asks.';
 
 /**
  * (Ben, 31 Oct, build 493: "It should be more solution focused.") A gap the coach finds comes with its fix as a card, not
@@ -954,6 +955,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(req.trainingProfile === true ? { trainingProfile: true } : {}),
     ...(req.exercisePrefs === true && gateWords !== null && asksExercisePreference(gateWords) ? { exercisePrefs: true } : {}),
     ...(req.rebalance === true && gateWords !== null && asksMuscleBalance(gateWords) ? { rebalanceOpen: true } : {}),
+    // (Ben, 2 Nov) Fixing a past workout: only on his words about one.
+    ...(chatTurn && saidWords !== null && asksPastWorkoutFix(saidWords) ? { pastWorkoutWords: true } : {}),
   };
   // (Ben, 1 Nov, build 500) A targeted change to or question about the plan in use (not a rebuild, not a workout build):
   // what it needs and no more. The build tools and their view (a third of the request) are left out; it comes back sooner.
@@ -1082,7 +1085,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
   const findLine = (registry.tools.some((t) => t.name === 'update_warmup_prefs') ? `\n${WARMUP_PREFS_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'set_exercise_preference') ? `\n${EXERCISE_PREF_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_rebalance') ? `\n${REBALANCE_TOOL_LINE}` : '') + (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
-  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_day_edit') ? `\n${PLAN_DAY_EDIT_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
+  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_day_edit') ? `\n${PLAN_DAY_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_fix') ? `\n${WORKOUT_FIX_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine + weekLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);

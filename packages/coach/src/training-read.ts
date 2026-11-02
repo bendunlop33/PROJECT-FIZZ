@@ -81,7 +81,8 @@ export function createTrainingReadExecutors(port: TrainingReadPort): CoachExecut
             if (call.tool !== 'get_recent_sessions' || port.recentSessions === undefined) throw new TypeError(call.tool);
             const date = recentSessionsDate(call.args, ctx.now);
             const v = date === null ? await port.recentSessions(call.args.count) : await port.recentSessions(call.args.count, { date });
-            if (v.sessions.length > 0) return { kind: 'read', data: v };
+            // (Ben, 2 Nov) A day with only Health workouts (a Garmin run) is still that day's read.
+            if (v.sessions.length > 0 || (v.health?.length ?? 0) > 0) return { kind: 'read', data: v };
             return NOT_AVAILABLE(date === null ? 'no finished workouts' : `no finished workouts on ${date}`);
           },
         }),

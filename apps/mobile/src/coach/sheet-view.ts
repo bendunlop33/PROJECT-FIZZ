@@ -234,6 +234,8 @@ export interface CardView {
   setupFill?: ActionRecord;
   /** (Ben, 30 Oct) One exercise swapped in every plan day: each day's change, Apply / Skip, Undo, `Today too`. */
   planSwap?: ActionRecord;
+  /** (Ben, 2 Nov) A past workout's fix: before → after, Apply (Delete, with a confirm) / Skip, then Undo. */
+  workoutFix?: ActionRecord;
   /** (Ben, 2 Nov) An exercise's preference saved with its plan swap proposal: one card, the line and Undo, the swap under it. */
   prefSwap?: { swapActionId: string };
   /** (Ben, 2 Nov) Plan › Muscles' Rebalance from the coach: the screen's card (per-line skip, Apply, Undo). */
@@ -424,6 +426,7 @@ export function cardView(r: ActionRecord): CardView {
     ...(r.detail.kind === 'propose_workout_edit' && r.status === 'proposed' ? { draftEdit: r } : {}),
     ...(r.detail.kind === 'fill_setup' && r.status === 'committed' ? { setupFill: r } : {}),
     ...(r.detail.kind === 'propose_plan_swap' && r.status === 'proposed' ? { planSwap: r } : {}),
+    ...(r.detail.kind === 'fix_workout' && r.status === 'proposed' ? { workoutFix: r } : {}),
     ...(r.detail.kind === 'set_exercise_preference' && r.status === 'committed' && r.detail.swapActionId !== null ? { prefSwap: { swapActionId: r.detail.swapActionId } } : {}),
     ...(r.detail.kind === 'propose_rebalance' && r.status === 'proposed' ? { rebalance: r } : {}),
   };
@@ -810,6 +813,22 @@ export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<B
  * (Ben, 30 Oct) A plan swap's lines from its record: `Leg extension → Leg press`, then each day (`Legs B: − Leg
  * extension` where the day already has the exercise coming in). App text only.
  */
+/**
+ * (Ben, 2 Nov) A past-workout fix card: `Pull A`, then `Tue 28 Oct · 18:04–19:02 → Mon 27 Oct · 18:04–19:02`. Its icon
+ * and the Apply word (`Delete` for a delete, behind a confirm). From the record only.
+ */
+export function workoutFixLines(r: ActionRecord): { icon: 'calendar' | 'trash' | 'link'; head: string; change: string; applyLabel: 'Apply' | 'Delete'; destructive: boolean } | null {
+  if (r.detail.kind !== 'fix_workout') return null;
+  const d = r.detail;
+  return {
+    icon: d.op === 'move' ? 'calendar' : d.op === 'delete' ? 'trash' : 'link',
+    head: d.title,
+    change: `${d.before} → ${d.after}`,
+    applyLabel: d.op === 'delete' ? 'Delete' : 'Apply',
+    destructive: d.op === 'delete',
+  };
+}
+
 export function planSwapLines(r: ActionRecord): { head: string; days: string[]; partial?: string } | null {
   if (r.detail.kind !== 'propose_plan_swap') return null;
   const d = r.detail;
