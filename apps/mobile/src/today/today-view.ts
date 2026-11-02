@@ -1,4 +1,4 @@
-import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_PICK_COPY, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type FeedItem, planDayColourKey, type TodayControls, type TodayDay, type TodayMain, type WeekTile, type WeekTileMark } from '@fizz/domain';
+import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_PICK_COPY, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type FeedItem, type PlannedLinkChoice, type PlannedLinkState, planDayColourKey, type TodayControls, type TodayDay, type TodayMain, type WeekTile, type WeekTileMark } from '@fizz/domain';
 
 /**
  * Today (v2)'s screen rules (workout-builder-v3 §2.0, prototypes/today-v2.html), pure so they are tested
@@ -355,7 +355,7 @@ export interface DaySheetRow {
  * values are History's (`feed`) and the plan day's card (`plannedDetail`); nothing invented. A tile with nothing on it
  * has no sheet (`[]`).
  */
-export function daySheetRows(tile: Pick<WeekTile, 'items' | 'marks'>, feed: readonly FeedItem[], plannedDetail: (dayName: string) => string | null): DaySheetRow[] {
+export function daySheetRows(tile: Pick<WeekTile, 'items' | 'marks'> & { past?: boolean }, feed: readonly FeedItem[], plannedDetail: (dayName: string) => string | null): DaySheetRow[] {
   return tile.items.map((it, i) => {
     const mark = tile.marks[i] ?? { shape: 'ring', colour: 'neutral', planned: true };
     switch (it.kind) {
@@ -366,7 +366,8 @@ export function daySheetRows(tile: Pick<WeekTile, 'items' | 'marks'>, feed: read
       case 'activity': {
         const f = feed.find((x) => x.kind === 'activity' && x.activityId === it.activityId);
         const title = f?.title ?? it.text;
-        const detail = it.planned ? 'planned' : (f?.value ?? null);
+        // (Ben, 2 Nov: "otherwise its just missed") A planned one whose day has passed with no run linked or matched.
+        const detail = it.planned ? (tile.past === true ? 'missed' : 'planned') : (f?.value ?? null);
         const health = f?.kind === 'activity' && f.fromHealth !== undefined;
         return { key: `a:${it.activityId}`, mark, title, health, detail, open: { kind: 'activity', activityId: it.activityId }, accessibilityLabel: [title, health ? 'from Apple Health' : null, detail].filter((x): x is string => x !== null).join(', ') };
       }
@@ -396,6 +397,13 @@ export interface PairedDaySheetRow extends DaySheetRow {
   /** `same`: (Ben, 31 Oct) a paired workout this one may be a second recording of (`Same workout` joins that link). */
   pair: { healthUuid: string; choices: { sessionId: string; label: string; same?: { linkUuid: string; linkVersion: number } }[] } | null;
   unpair: { healthUuid: string; linkVersion: number } | null;
+  /**
+   * (Ben, 2 Nov) Ben's planned activity with nothing paired: `Link` with the day's Health workouts of its kind (one:
+   * one tap; several: he picks). Null: none to offer.
+   */
+  runLink?: { activityId: string; version: number; choices: readonly PlannedLinkChoice[] } | null;
+  /** (Ben, 2 Nov) His planned activity he linked: `Unlink`. */
+  runUnlink?: { activityId: string; version: number; healthUuid: string } | null;
 }
 
 export function pairedDaySheetRows(
@@ -405,6 +413,8 @@ export function pairedDaySheetRows(
     same?: Readonly<Record<string, readonly { sessionId: string; linkUuid: string; linkVersion: number }[]>>;
     paired: Readonly<Record<string, { healthUuid: string; linkVersion: number; facts: string | null; source: string }>>;
   },
+  /** (Ben, 2 Nov) Each of Ben's activities' Link / Unlink (`activities.links`). */
+  runLinks: Readonly<Record<string, PlannedLinkState>> = {},
 ): PairedDaySheetRow[] {
   const titleOf = new Map(rows.flatMap((r) => (r.open?.kind === 'summary' ? [[r.open.sessionId, r.title] as const] : [])));
   return rows.flatMap((r): PairedDaySheetRow[] => {
@@ -419,7 +429,10 @@ export function pairedDaySheetRows(
         ...same.map((c) => ({ sessionId: c.sessionId, label: `Same as ${titleOf.get(c.sessionId) ?? 'Workout'}`, same: { linkUuid: c.linkUuid, linkVersion: c.linkVersion } })),
       ];
       const pair = all.length === 0 ? null : { healthUuid: o.activityId, choices: all };
-      return [{ ...r, source: null, note: null, pair, unpair: null }];
+      const rl = runLinks[o.activityId];
+      const runLink = rl?.state === 'open' && rl.choices.length > 0 ? { activityId: rl.activityId, version: rl.version, choices: rl.choices } : null;
+      const runUnlink = rl?.state === 'linked' ? { activityId: rl.activityId, version: rl.version, healthUuid: rl.healthUuid } : null;
+      return [{ ...r, source: null, note: null, pair, unpair: null, runLink, runUnlink }];
     }
     if (o?.kind === 'summary') {
       const p = pairs.paired[o.sessionId];

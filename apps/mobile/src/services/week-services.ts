@@ -1,4 +1,8 @@
 import {
+  linkActivityHealth,
+  plannedLinkChoices,
+  unlinkActivityHealth,
+  type PlannedLinkState,
   ACTIVITY_COPY,
   activeWeekPlan,
   activePause,
@@ -356,6 +360,45 @@ export function createWeekServices(deps: WeekServicesDeps) {
     },
     edit: (req: { activityId: string; expectedVersion: number; fields: ActivityFields; opId: string }): Promise<ActivityOutcome> => change(req.activityId, (c) => editActivity(c, { expectedVersion: req.expectedVersion, opId: req.opId, at: deps.now(), fields: req.fields })),
     remove: (req: { activityId: string; expectedVersion: number; opId: string }): Promise<ActivityOutcome> => change(req.activityId, (c) => deleteActivity(c, { expectedVersion: req.expectedVersion, opId: req.opId, at: deps.now() })),
+    /**
+     * (Ben, 2 Nov: "should be able to link a planned run which then updates it to an actual run (on the same day)
+     * otherwise its just missed") The day sheet's Link / Unlink on each of Ben's activities dated `date`: `open` with
+     * that day's Health workouts of its kind showing on their own (same local day in the activity's zone; never
+     * another day's), `linked` (his Link: Unlink), `matched` (done). Local reads only; unreadable: none.
+     */
+    async links(date: string): Promise<Record<string, PlannedLinkState>> {
+      const p = await deps.profile();
+      if (p === null) return {};
+      try {
+        const own = await repos().activities.listOwnBetween(p.id, date, addDays(date, 1));
+        if (own.length === 0) return {};
+        // A day either side: a Health run's own date can differ from the planned run's zone.
+        const shown = await repos().activities.listBetween(p.id, addDays(date, -1), addDays(date, 2));
+        return Object.fromEntries(own.map((a) => [a.id, plannedLinkChoices(a, shown)]));
+      } catch {
+        return {};
+      }
+    },
+    /** `Link`: the planned activity is the Health workout `healthUuid`, if it is still one of that day's choices (rule 5). */
+    async linkHealth(req: { activityId: string; expectedVersion: number; healthUuid: string; opId: string }): Promise<ActivityOutcome> {
+      const p = await deps.profile();
+      if (p === null) return { ok: false, reason: 'missing', message: ACTIVITY_FAIL.missing };
+      const uuid = req.healthUuid.trim().toLowerCase();
+      const own = await repos()
+        .activities.get(req.activityId)
+        .catch(() => null);
+      if (own === null || own.ownerId !== p.id) return { ok: false, reason: 'missing', message: ACTIVITY_FAIL.missing };
+      // A retry of a Link that landed replays (the op ID is on the record).
+      if (!own.opIds.includes(req.opId)) {
+        const shown = await between(p.id, addDays(own.fields.date, -1), addDays(own.fields.date, 2));
+        const st = plannedLinkChoices(own, shown);
+        if (st.state !== 'open' || !st.choices.some((c) => c.healthUuid === uuid)) return { ok: false, reason: 'stale', message: ACTIVITY_FAIL.stale };
+      }
+      return change(req.activityId, (c) => linkActivityHealth(c, { expectedVersion: req.expectedVersion, opId: req.opId, at: deps.now(), healthUuid: uuid }));
+    },
+    /** `Unlink` (and Link's Undo): back to the automatic match, or `Missed` once its day has passed. */
+    unlinkHealth: (req: { activityId: string; expectedVersion: number; healthUuid: string; opId: string }): Promise<ActivityOutcome> =>
+      change(req.activityId, (c) => unlinkActivityHealth(c, { expectedVersion: req.expectedVersion, opId: req.opId, at: deps.now(), healthUuid: req.healthUuid })),
     /** The toast's Undo of the last add, edit or delete (`targetOpId`). */
     undo: (req: { activityId: string; targetOpId: string; opId: string }): Promise<ActivityOutcome> => change(req.activityId, (c) => undoActivity(c, { opId: req.opId, at: deps.now(), targetOpId: req.targetOpId })),
     async get(activityId: string): Promise<Activity | null> {

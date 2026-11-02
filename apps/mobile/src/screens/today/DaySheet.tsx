@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { DAY_SHEET_COPY, MAIN_LIFT_COPY, TODAY_V2_COPY, type WorkoutListRow } from '@fizz/domain';
+import { ACTIVITY_COPY, DAY_SHEET_COPY, MAIN_LIFT_COPY, TODAY_V2_COPY, type PlannedLinkState, type WorkoutListRow } from '@fizz/domain';
 import type { PlanWeekExerciseEdit } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -108,6 +108,22 @@ export function DaySheetFlow({
     void services.health.dayPairs(pairDate).then(
       (p) => {
         if (alive) setPairs(p);
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [services, pairDate, readN]);
+  // (Ben, 2 Nov) Each planned run's Link / Unlink on that date: read with the sheet (and after each write), local only.
+  const [runLinks, setRunLinks] = useState<Record<string, PlannedLinkState>>({});
+  useEffect(() => {
+    setRunLinks({});
+    if (pairDate === null) return;
+    let alive = true;
+    void services.activities.links(pairDate).then(
+      (l) => {
+        if (alive) setRunLinks(l);
       },
       () => undefined,
     );
@@ -223,6 +239,42 @@ export function DaySheetFlow({
         onAction: () => {
           onToast(null);
           void services.routines.revert({ actionId, opId: newUuid() }).then((u) => {
+            reread();
+            if (!u.ok) onToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
+
+  /**
+   * (Ben, 2 Nov) `Link`: Ben's planned run is that Health run (one versioned write on his activity), its toast with
+   * Undo (Unlink on the version it wrote); `Unlink` likewise, Undo links it again.
+   */
+  async function runLinkWrite(mode: 'link' | 'unlink', req: { activityId: string; version: number; healthUuid: string }) {
+    if (busy.current) return;
+    busy.current = true;
+    setChoosing(null);
+    try {
+      type Req = Parameters<typeof services.activities.linkHealth>[0];
+      const linkIt = (q: Req) => services.activities.linkHealth(q);
+      const unlinkIt = (q: Req) => services.activities.unlinkHealth(q);
+      const write = mode === 'link' ? linkIt : unlinkIt;
+      const back = mode === 'link' ? unlinkIt : linkIt;
+      const r = await write({ activityId: req.activityId, expectedVersion: req.version, healthUuid: req.healthUuid, opId: newUuid() });
+      reread();
+      if (!r.ok) {
+        onToast({ text: r.message });
+        return;
+      }
+      onToast({
+        text: mode === 'link' ? ACTIVITY_COPY.linked : ACTIVITY_COPY.unlinked,
+        action: DAY_SHEET_COPY.undo,
+        onAction: () => {
+          onToast(null);
+          void back({ activityId: req.activityId, expectedVersion: r.activity.version, healthUuid: req.healthUuid, opId: newUuid() }).then((u) => {
             reread();
             if (!u.ok) onToast({ text: u.message });
           });
@@ -376,7 +428,7 @@ export function DaySheetFlow({
   }
 
   const changed = new Set(sheet?.changed ?? []);
-  const shownRows = pairedDaySheetRows(doneRows, pairs);
+  const shownRows = pairedDaySheetRows(doneRows, pairs, runLinks);
   const rowIdOf = (exerciseId: string) => rows?.rows.find((x) => x.exerciseId === exerciseId)?.rowId ?? null;
   const a = sheet?.actions;
   const status = sheet === null ? null : (
@@ -410,6 +462,14 @@ export function DaySheetFlow({
                 }}
                 onChoose={(healthUuid, c) => void choose(healthUuid, c)}
                 onUnpair={(u, sessionId) => void unpair(u.healthUuid, u.linkVersion, sessionId)}
+                runChoosing={choosing === `run:${r.runLink?.activityId ?? ''}`}
+                onRunLink={(l) => {
+                  const [only] = l.choices;
+                  if (l.choices.length === 1 && only !== undefined) void runLinkWrite('link', { activityId: l.activityId, version: l.version, healthUuid: only.healthUuid });
+                  else setChoosing((c) => (c === `run:${l.activityId}` ? null : `run:${l.activityId}`));
+                }}
+                onRunChoose={(l, healthUuid) => void runLinkWrite('link', { activityId: l.activityId, version: l.version, healthUuid })}
+                onRunUnlink={(u) => void runLinkWrite('unlink', u)}
               />
             ))}
           </Group>
@@ -555,9 +615,18 @@ export function DoneRow({
   onPair,
   onChoose,
   onUnpair,
+  runChoosing = false,
+  onRunLink,
+  onRunChoose,
+  onRunUnlink,
 }: {
   row: PairedDaySheetRow;
   choosing: boolean;
+  /** (Ben, 2 Nov) Several Health runs that day: the choice is open. */
+  runChoosing?: boolean;
+  onRunLink?: (l: NonNullable<PairedDaySheetRow['runLink']>) => void;
+  onRunChoose?: (l: NonNullable<PairedDaySheetRow['runLink']>, healthUuid: string) => void;
+  onRunUnlink?: (u: NonNullable<PairedDaySheetRow['runUnlink']>) => void;
   onOpen: (o: NonNullable<DaySheetOpen>) => void;
   onPair: (p: NonNullable<PairedDaySheetRow['pair']>) => void;
   onChoose: (healthUuid: string, choice: NonNullable<PairedDaySheetRow['pair']>['choices'][number]) => void;
@@ -583,7 +652,7 @@ export function DoneRow({
               </AppText>
             ) : null}
           </View>
-          {open !== null && r.pair === null && r.unpair === null ? <Icon name="chevron.right" size={14} color="text.tertiary" /> : null}
+          {open !== null && r.pair === null && r.unpair === null && (r.runLink ?? null) === null && (r.runUnlink ?? null) === null ? <Icon name="chevron.right" size={14} color="text.tertiary" /> : null}
         </Pressable>
         {r.pair !== null ? (() => {
           const [only] = r.pair.choices;
@@ -592,7 +661,23 @@ export function DoneRow({
           return <TextButton label={label} accessibilityLabel={r.pair.choices.length === 1 ? (sameOnly ? only.label.replace(/^Same as/, HEALTH_COPY.sameWorkoutAs) : `${HEALTH_COPY.pair} with ${only?.label ?? ''}`) : label} onPress={() => { if (r.pair !== null) onPair(r.pair); }} />;
         })() : null}
         {r.unpair !== null && sessionId !== null ? <TextButton label={HEALTH_COPY.unpair} tone="secondary" onPress={() => { if (r.unpair !== null) onUnpair(r.unpair, sessionId); }} /> : null}
+        {r.runLink != null && onRunLink !== undefined ? (() => {
+          const l = r.runLink;
+          const [only] = l.choices;
+          return <TextButton label={ACTIVITY_COPY.link} accessibilityLabel={l.choices.length === 1 && only !== undefined ? `${ACTIVITY_COPY.link} ${only.label}` : ACTIVITY_COPY.link} onPress={() => { onRunLink(l); }} />;
+        })() : null}
+        {r.runUnlink != null && onRunUnlink !== undefined ? (() => {
+          const u = r.runUnlink;
+          return <TextButton label={ACTIVITY_COPY.unlink} tone="secondary" onPress={() => { onRunUnlink(u); }} />;
+        })() : null}
       </View>
+      {runChoosing && r.runLink != null && onRunChoose !== undefined ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'], paddingHorizontal: theme.space['4'], paddingBottom: theme.space['2'] }}>
+          {r.runLink.choices.map((c) => (
+            <Chip key={c.healthUuid} size="min" label={c.label} selected={false} onPress={() => { if (r.runLink != null) onRunChoose(r.runLink, c.healthUuid); }} />
+          ))}
+        </View>
+      ) : null}
       {choosing && r.pair !== null ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'], paddingHorizontal: theme.space['4'], paddingBottom: theme.space['2'] }}>
           {r.pair.choices.map((c) => (
