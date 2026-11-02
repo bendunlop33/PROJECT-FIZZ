@@ -234,6 +234,10 @@ export interface CardView {
   setupFill?: ActionRecord;
   /** (Ben, 30 Oct) One exercise swapped in every plan day: each day's change, Apply / Skip, Undo, `Today too`. */
   planSwap?: ActionRecord;
+  /** (Ben, 2 Nov) A plan-level change (a lighter week, days a week, length, days, End): its lines, Apply / Skip, Undo. */
+  planChange?: ActionRecord;
+  /** (Ben, 2 Nov) Rest settings changed with a live workout whose rests it moves: the card adds `Today too?` (own Undo). */
+  restToday?: ActionRecord;
 }
 
 const GYM_STATUS: Record<GymProposalState['state'], CardView['status']> = {
@@ -382,7 +386,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym', 'set_lift_target', 'log_activity', 'update_warmup_prefs']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym', 'set_lift_target', 'log_activity', 'update_warmup_prefs', 'update_rest_settings']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
@@ -420,6 +424,8 @@ export function cardView(r: ActionRecord): CardView {
     ...(r.detail.kind === 'propose_workout_edit' && r.status === 'proposed' ? { draftEdit: r } : {}),
     ...(r.detail.kind === 'fill_setup' && r.status === 'committed' ? { setupFill: r } : {}),
     ...(r.detail.kind === 'propose_plan_swap' && r.status === 'proposed' ? { planSwap: r } : {}),
+    ...(r.detail.kind === 'propose_plan_change' && r.status === 'proposed' ? { planChange: r } : {}),
+    ...(r.detail.kind === 'update_rest_settings' && r.status === 'committed' && r.detail.today !== null ? { restToday: r } : {}),
   };
 }
 
@@ -818,6 +824,12 @@ export function planSwapLines(r: ActionRecord): { head: string; days: string[] }
   }
   const out = d.removeName ?? 'Exercise';
   return { head: `${out} → ${d.addName}`, days: d.days.map((x) => (x.edits.every((e) => e.kind === 'remove') ? `${x.routineName}: − ${out}` : x.routineName)) };
+}
+
+/** (Ben, 2 Nov) A plan-level change's lines from its record: the plan, then each before → after. App text only. */
+export function planChangeLines(r: ActionRecord): { head: string; lines: string[] } | null {
+  if (r.detail.kind !== 'propose_plan_change') return null;
+  return { head: r.detail.planName === '' ? 'Your plan' : r.detail.planName, lines: [...r.detail.lines] };
 }
 
 export const DRAFT_EDIT_COPY = { apply: 'Apply', skip: 'Skip', undo: 'Undo', applied: 'Applied', skipped: 'Skipped', undone: 'Undone', openSetup: 'Open Set up' } as const;

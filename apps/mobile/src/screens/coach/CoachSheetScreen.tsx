@@ -53,6 +53,8 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SecondaryButton, SheetKeyboardAvoidingView, TEXT_PRESSED_OPACITY, TextButton, TextField, useKeyboardVisible } from '../../ui';
 import { PlanSwapCard } from './PlanSwapCard';
+import { PlanChangeCard } from './PlanChangeCard';
+import { RestTodayRow } from './RestTodayRow';
 import { DraftEditCard, SetupFillCard, useOpenSetup } from './DraftCards';
 import { CoachCard } from './CoachCard';
 import { HeaderButton, SendButton } from './SheetButtons';
@@ -997,10 +999,20 @@ function Row({
       if (row.card.week !== undefined && onDraft !== undefined) return <WeekProposalCard record={row.card.week} onChanged={onDraft.changed} />;
       if (row.card.draftEdit !== undefined && onDraft !== undefined) return <DraftEditCard record={row.card.draftEdit} onChanged={onDraft.changed} />;
       if (row.card.planSwap !== undefined) return <PlanSwapCard record={row.card.planSwap} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
+      if (row.card.planChange !== undefined) return <PlanChangeCard record={row.card.planChange} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
       if (row.card.setupFill !== undefined && onDraft !== undefined) return <SetupFillCard record={row.card.setupFill} onOpen={onDraft.openSetup} />;
       if (row.card.activityOffer !== undefined && onDraft !== undefined) return <ActivityOfferCard record={row.card.activityOffer} onChanged={onDraft.changed} />;
       if (row.card.plan !== undefined && onDraft !== undefined) return <PlanCard record={row.card.plan} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       if (row.card.draft !== undefined && onDraft !== undefined) return <WorkoutDraftCard record={row.card.draft} gymId={onDraft.gymId} onOpen={onDraft.open} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
+      if (row.card.restToday !== undefined) {
+        // (Ben, 2 Nov) The rest change's own card (Undo), then `Today too?` with its own Undo.
+        return (
+          <View style={{ gap: theme.space['1'] }}>
+            <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onGymChange={onGymChange} onMemory={onMemory} onNewExercise={onNewExercise} />
+            <RestTodayRow record={row.card.restToday} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />
+          </View>
+        );
+      }
       return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onGymChange={onGymChange} onMemory={onMemory} onNewExercise={onNewExercise} />;
     case 'note':
       return (

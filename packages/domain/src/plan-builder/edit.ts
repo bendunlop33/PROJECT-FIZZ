@@ -309,6 +309,9 @@ export function pbDayTargets(plan: Pick<PlanDraft, 'weekVersions' | 'applied' | 
   const nextN = pbWeekVersionOf(plan, Math.min(weeks, block.week + 1));
   const idx = new Set<number>();
   for (const n of [nowN, nextN]) for (const d of pbVersionOf(plan, n)?.days ?? []) idx.add(d.index);
+  // (Ben, 2 Nov: "go to 4 days a week") A day the plan's workouts mirror now that neither week has any more is out of
+  // the plan (null): its workout leaves the rotation (Undo puts it back). Before, it was left as it was.
+  for (const i of pbDaysAtOf(plan).keys()) idx.add(i);
   for (const i of idx) {
     const n = done.has(i) ? nextN : nowN;
     out.set(i, (pbVersionOf(plan, n)?.days ?? []).some((d) => d.index === i) ? n : null);

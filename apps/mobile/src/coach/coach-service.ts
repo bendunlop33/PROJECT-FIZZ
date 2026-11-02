@@ -44,6 +44,11 @@ import {
   createLiftTargetExecutors,
   createWarmupPrefsExecutors,
   type WarmupPrefsDeps,
+  createRestSettingsExecutors,
+  type RestSettingsDeps,
+  createPlanChangeExecutor,
+  asksPlanSettingChange,
+  type PlanChangeDeps,
   type LiftTargetDeps,
   createStructuralExecutors,
   createBuildExecutor,
@@ -218,6 +223,7 @@ import {
   workoutMuscleGroups,
   type FindableExercise,
   customExerciseIdOf,
+  pbAppliedBuilder,
   customExerciseLine,
   customFieldsOf,
   exerciseNearDuplicate,
@@ -471,6 +477,10 @@ export interface CoachServiceDeps {
   liftTargets?: { on: () => Promise<boolean>; prepare: LiftTargetDeps['prepare'] };
   /** (Ben, 1 Nov) `update_warmup_prefs`'s checks. Absent: the tool is never offered. */
   warmupPrefs?: { prepare: WarmupPrefsDeps['prepare'] };
+  /** (Ben, 2 Nov) `update_rest_settings`'s checks. Absent: the tool is never offered. */
+  restSettings?: { prepare: RestSettingsDeps['prepare'] };
+  /** (Ben, 2 Nov) `propose_plan_change`'s checks (the plan builder's preview). Absent: the tool is never offered. */
+  planChange?: { prepare: PlanChangeDeps['prepare'] };
   store: () => Store;
   profile: () => Promise<UserProfile | null>;
   now: () => ZonedTimestamp;
@@ -1846,9 +1856,12 @@ export function createCoachService(deps: CoachServiceDeps) {
     const planInThread = kind !== 'summary' && req.input.kind === 'words' ? await threadOpenPlan(p, req.threadId) : null;
     const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
     // Review planview-19oct B1: no open plan here and Ben's words change "my plan" (Library's `Ask coach to change`): the plan in use is the basis.
-    const planInUse = kind !== 'summary' && req.input.kind === 'words' && planInThread === null && changesPlanInUse(said) ? await appliedPlanOf(p) : null;
+    // (Ben, 2 Nov) "Go to 4 days a week", "make the plan 8 weeks", "make next week lighter" on a builder plan: the plan builder
+    // makes the change (`propose_plan_change`), never a coach rewrite of the plan, so no build view is read for it.
+    const builderSettingAsk = kind !== 'summary' && req.input.kind === 'words' && planInThread === null && deps.planChange !== undefined && asksPlanSettingChange(said) && pbAppliedBuilder(await repos().planDrafts.applied(p.id).catch(() => null)) !== null;
+    const planInUse = kind !== 'summary' && req.input.kind === 'words' && planInThread === null && !builderSettingAsk && changesPlanInUse(said) ? await appliedPlanOf(p) : null;
     // ADR 0038: "change my plan to 4 days" with no plan in use and none open here builds one (the plan builder's proposal).
-    const planFromNothing = kind !== 'summary' && req.input.kind === 'words' && planInThread === null && planInUse === null && changesPlanInUse(said);
+    const planFromNothing = kind !== 'summary' && req.input.kind === 'words' && planInThread === null && planInUse === null && !builderSettingAsk && changesPlanInUse(said);
     const planWanted = kind !== 'summary' && req.input.kind === 'words' && (planFollowUp || asksForPlan(said) || (planInThread !== null && (revisesPlan(said) || changesPlanInUse(said))) || planInUse !== null || planFromNothing);
     const build = kind !== 'summary' && req.input.kind === 'words' ? await buildTurn(p, said, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread, basedOn: planInUse } : null) : null;
     if (build !== null) Object.assign(executors, build.executors);
@@ -1889,6 +1902,9 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (swap?.prepareAdd !== undefined) Object.assign(executors, createPlanAddExecutor({ store: coachStore(), prepare: (r) => swap.prepareAdd?.(r) ?? Promise.resolve({ kind: 'refused', line: 'No plan in use' }) }));
       // (Ben, 1 Nov, build 500) One plan day's order and sets every week (shoulders before bench in Push B), from every chat.
       if (swap?.prepareDayEdit !== undefined) Object.assign(executors, createPlanDayEditExecutor({ store: coachStore(), prepare: (r) => swap.prepareDayEdit?.(r) ?? Promise.resolve({ kind: 'refused', line: 'No plan in use' }) }));
+      // (Ben, 2 Nov) A lighter week, days a week, plan length, Set/Any days or End: a proposal, from every chat.
+      const change = deps.planChange;
+      if (change !== undefined) Object.assign(executors, createPlanChangeExecutor({ store: coachStore(), prepare: (r) => change.prepare(r) }));
     }
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first. Review exlist
@@ -1937,6 +1953,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     // (Ben, 1 Nov) Warm-up settings: every chat (the turn applies a call only when Ben asked).
     const warmupTool = (kind === 'general' || kind === 'workout') && deps.warmupPrefs !== undefined;
     if (warmupTool && deps.warmupPrefs !== undefined) Object.assign(executors, createWarmupPrefsExecutors({ store: coachStore(), prepare: deps.warmupPrefs.prepare }));
+    // (Ben, 2 Nov) Rest settings: every chat with a profile (the turn offers it on rest words and applies it only when Ben asked).
+    if (warmupTool && deps.restSettings !== undefined) Object.assign(executors, createRestSettingsExecutors({ store: coachStore(), prepare: deps.restSettings.prepare }));
     try {
       const result = await runCoachTurn(
         {
@@ -1963,6 +1981,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(warmupTool ? { trainingProfile: true } : {}),
           ...(weekRead !== null && executors.propose_week !== undefined ? { week: true } : {}),
           ...(inUse !== null ? { planInUse: true } : {}),
+          ...(inUse !== null && pbAppliedBuilder(inUse) !== null ? { builderPlan: true } : {}),
           ...(executors.propose_workout_edit !== undefined ? { builderDraft: true } : {}),
           ...(executors.fill_setup !== undefined ? { setupOpen: true } : {}),
           signal: stop.signal,
