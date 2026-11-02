@@ -53,6 +53,8 @@ import { MorningReminderScreen } from '../screens/profile/MorningReminderScreen'
 import { AppleHealthScreen } from '../screens/profile/AppleHealthScreen';
 import { morningTapOpensToday } from '../reminders/morning';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
+import { ExercisePrefsScreen } from '../screens/profile/ExercisePrefsScreen';
+import { EXERCISE_PREF_COPY } from '../services/exercise-prefs-service';
 import { SplitScreen } from '../screens/profile/SplitScreen';
 import { CheckInSettingsScreen } from '../screens/profile/CheckInSettingsScreen';
 import { RestWhenShortScreen } from '../screens/profile/RestWhenShortScreen';
@@ -208,6 +210,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="RestWhenShort" component={RestWhenShortScreen} options={{ title: REST_WHEN_SHORT_COPY.title }} />
       <ProfileStack.Screen name="RestTimes" component={RestTimesScreen} options={{ title: REST_TIMES_COPY.title }} />
       <ProfileStack.Screen name="CardioFirst" component={CardioFirstScreen} options={{ title: WARMUP_PREFS_COPY.general }} />
+      <ProfileStack.Screen name="ExercisePrefs" component={ExercisePrefsScreen} options={{ title: EXERCISE_PREF_COPY.title }} />
       <ProfileStack.Screen name="Memory" component={MemoryScreen} options={{ title: 'Memory' }} />
       <ProfileStack.Screen name="Playbook" component={PlaybookScreen} options={{ title: 'Playbook' }} />
       <ProfileStack.Screen name="CoachConnection" component={CoachConnectionScreen} options={{ title: 'Coach connection' }} />

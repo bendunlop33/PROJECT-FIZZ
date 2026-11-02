@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, View, useWindowDimensions, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { toMs, fmt, PB_EDIT_COPY, pbDaysReady, pbToggleDay, pbTapSport, pbTogglePriority, pbToggleSportDay, pbWarmUpText, pbWithSessions,  PB_EXTRA_LIFTS, PB_PREF_DAYS, type PbEditScope, type PbExercise, type PlanKit } from '@fizz/domain';
+import { toMs, fmt, PB_EDIT_COPY, pbDaysReady, pbSetExercisePreference, pbToggleDay, pbTapSport, pbTogglePriority, pbToggleSportDay, pbWarmUpText, pbWithSessions,  PB_EXTRA_LIFTS, PB_PREF_DAYS, type PbEditScope, type PbExercise, type PlanKit } from '@fizz/domain';
 import type { PlanBuilderAnswers, PlanPrefAnswer, PlanTarget } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -60,6 +60,7 @@ type Sheet =
   | { kind: 'abs' }
   | { kind: 'other'; qId: string }
   | { kind: 'likes' }
+  | { kind: 'never' }
   | { kind: 'exercise'; day: number; key: string }
   | null;
 type Draft = PlanBuilderSession['draft'];
@@ -573,6 +574,15 @@ export function PlanSetupScreen() {
             <Chip size="min" label={C.add} selected={false} onPress={() => { setSheet({ kind: 'likes' }); }} />
           </View>
         </Question>
+        {/* (Ben, 2 Nov) Not preferred: the same list as Profile › Likes & dislikes and the coach's dislikes. */}
+        <Question label={C.notPreferred}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+            {answers.never.map((k) => (
+              <Chip key={k} size="min" label={`${s.nameOf(k)} ×`} selected onPress={() => { set({ ...answers, never: answers.never.filter((x) => x !== k) }); }} />
+            ))}
+            <Chip size="min" label={C.add} selected={false} onPress={() => { setSheet({ kind: 'never' }); }} />
+          </View>
+        </Question>
       </>
     );
   } else if (plan !== null) {
@@ -801,16 +811,27 @@ export function PlanSetupScreen() {
           </View>
         </>
       );
-  } else if (sheet?.kind === 'likes') {
+  } else if (sheet?.kind === 'likes' || sheet?.kind === 'never') {
+    // (Ben, 2 Nov) One exercise is liked or not preferred, never both: adding it to one list takes it off the other
+    // (`pbSetExercisePreference`, as Profile and the coach).
+    const list = sheet.kind === 'likes' ? answers.likes : answers.never;
+    const toggle = (k: string): void => {
+      if (list.includes(k)) {
+        set(sheet.kind === 'likes' ? { ...answers, likes: answers.likes.filter((x) => x !== k) } : { ...answers, never: answers.never.filter((x) => x !== k) });
+        return;
+      }
+      const r = pbSetExercisePreference(answers, k, sheet.kind === 'likes' ? 'preferred' : 'not_preferred');
+      if (r.kind === 'ok') set({ ...answers, ...r.parts });
+    };
     sheetBody = (
       <>
-        <AppText variant="headline">{C.likes}</AppText>
+        <AppText variant="headline">{sheet.kind === 'likes' ? C.likes : C.notPreferred}</AppText>
         {likeGroups((k) => s.kitOf(k) !== null).map((g) => (
           <View key={g.muscle} style={{ gap: theme.space['1'] }}>
             <AppText variant="sectionLabel" color="text.secondary">{g.muscle}</AppText>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
               {g.keys.map((k) => (
-                <Chip key={k} size="min" label={s.nameOf(k)} selected={answers.likes.includes(k)} onPress={() => { set({ ...answers, likes: answers.likes.includes(k) ? answers.likes.filter((x) => x !== k) : [...answers.likes, k] }); }} />
+                <Chip key={k} size="min" label={s.nameOf(k)} selected={list.includes(k)} onPress={() => { toggle(k); }} />
               ))}
             </View>
           </View>

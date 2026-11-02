@@ -94,6 +94,7 @@ export const PB_COPY = {
   noPreference: 'No preference',
   heldForPain: 'Left out for pain',
   likes: 'Others I like',
+  notPreferred: 'Not preferred',
 } as const;
 
 export const PB_WEEKS: readonly PlanBuilderAnswers['weeks'][] = [4, 6, 8, 12];
@@ -160,7 +161,7 @@ export function weekRowValue(a: PlanBuilderAnswers): string {
 
 /** `None`, `3 set`. */
 export function prefsRowValue(a: PlanBuilderAnswers): string {
-  const n = Object.values(a.prefs).filter((x) => x !== 'either').length + a.likes.length;
+  const n = Object.values(a.prefs).filter((x) => x !== 'either').length + a.likes.length + a.never.length;
   return n === 0 ? PB_COPY.none : `${String(n)} set`;
 }
 

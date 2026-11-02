@@ -26,6 +26,7 @@ import { voiceCapability } from '../../voice/speaker';
 import { voiceRowLine } from '../../voice/settings';
 import { MorningReminderRow } from './MorningReminderRow';
 import { WARMUP_PREFS_COPY } from '../../services/warmup-prefs-service';
+import { EXERCISE_PREF_COPY } from '../../services/exercise-prefs-service';
 
 /** (Rule 10) Profile's two data groups, with Data & backup's names. */
 export const PROFILE_SECTIONS = { yourData: 'Your data', knowledge: 'Coaching knowledge' } as const;
@@ -43,7 +44,7 @@ export function ProfileScreen() {
   const probe = useProbeResults();
   const { prefs, update } = useDevicePrefs();
   const [data, reload] = useScreenData(async (s) => {
-    const [backup, banners, pain, gyms, coach, training, planInUse, health, warmups] = await Promise.all([
+    const [backup, banners, pain, gyms, coach, training, planInUse, health, warmups, likes] = await Promise.all([
       s.backups.getStatus(),
       loadBanners(s, install),
       s.pain.active(),
@@ -57,11 +58,13 @@ export function ProfileScreen() {
       s.health.screen().then((v) => v.line, () => null),
       // (Ben, 1 Nov) `Simple warm-up weights`; a failed read shows no switch.
       s.warmupPrefs.view().catch(() => null),
+      // (Ben, 2 Nov) Likes & dislikes: the plan in use's Any preferences; a failed read shows no value.
+      s.exercisePrefs.view().catch(() => null),
     ]);
     const [snap, owner] = training;
     const split = snap === null || planInUse === null ? null : profileSplitRow(snap.profile, snap.mainLifts, planInUse);
     const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg', healthWeights: snap.healthWeights }).summary, split, checkIn: checkInScheduleLine(checkInSettingsFor(snap.profile).schedule), restWhenShort: REST_LEVEL_NAMES[fitRestLevelOf(snap.profile)], restTimes: hasOwnRestDefaults(restDefaultsOf(snap.profile)) ? REST_TIMES_COPY.own : REST_TIMES_COPY.standard };
-    return { backup, banners, pain, gyms, coach, training: lines, health, warmups };
+    return { backup, banners, pain, gyms, coach, training: lines, health, warmups, likes };
   });
   useEffect(() => {
     reload();
@@ -194,6 +197,16 @@ export function ProfileScreen() {
             }}
           />
         ) : null}
+        {/* (Ben, 2 Nov) Exercise likes and dislikes: the plan in use's Any preferences (Plan setup and the coach edit the same). No builder plan in use: the row says so and doesn't open. */}
+        <Row
+          title={EXERCISE_PREF_COPY.title}
+          icon="hand.thumbsup"
+          subtitle={data.state !== 'ready' || data.value.likes === null ? null : data.value.likes.kind === 'ready' ? EXERCISE_PREF_COPY.counts(data.value.likes.liked.length, data.value.likes.notPreferred.length) : data.value.likes.why === 'no_plan' ? EXERCISE_PREF_COPY.noPlan : EXERCISE_PREF_COPY.notThisPlan}
+          disabled={data.state === 'ready' && data.value.likes?.kind !== 'ready'}
+          onPress={() => {
+            if (data.state === 'ready' && data.value.likes?.kind === 'ready') navigation.navigate('ExercisePrefs');
+          }}
+        />
         {/* Ben, 20 Oct: `Targets hit 5 of last 6` on main lifts only, when on (this phone; default off). */}
         <Row
           title="Targets hit"

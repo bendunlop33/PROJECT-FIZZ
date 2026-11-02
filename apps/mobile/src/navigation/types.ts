@@ -32,6 +32,8 @@ export type ProfileStackParams = {
   RestTimes: undefined;
   /** Profile › Training › Cardio first (Ben, 2 Nov): his general (cardio) warm-up by kind of day. */
   CardioFirst: undefined;
+  /** Profile › Training › Likes & dislikes (Ben, 2 Nov): the plan in use's Any preferences, Liked and Not preferred. */
+  ExercisePrefs: undefined;
   /** Profile → Coach → Memory (coach-memory §2.1). */
   Memory: undefined;
   /** Profile → Coach → Playbook: chat rules to review (coaching-playbook §2.1). */

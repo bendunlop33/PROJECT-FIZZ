@@ -55,8 +55,8 @@ export function SwapSheet({
     onQuery: (q: string) => void;
     /** A muscle chip (null: `All`); the suggestions follow a group chip. */
     onChip: (group: BroadMuscleGroup | null) => void;
-    /** `＋ Add your own`: the custom-exercise form, the name pre-filled when searching. */
-    onAddOwn: (name: string | null) => void;
+    /** `＋ Add your own`: the custom-exercise form, the name pre-filled when searching. None: no such button. */
+    onAddOwn?: (name: string | null) => void;
     /** (Ben, 26 Oct) The index the view is over (the suggestions' equipment chip), the chip on, and its tap. */
     index?: PickerIndex | null;
     equipment?: EquipmentFilter | null;
@@ -248,12 +248,14 @@ export function SwapSheet({
             </View>
           ))}
           {view.empty !== null ? <StatusLine icon="info.circle" tone="info" text={view.empty} /> : null}
-          <TextButton
-            label={view.addOwn.label}
-            onPress={() => {
-              picker.onAddOwn(view.addOwn.name);
-            }}
-          />
+          {picker.onAddOwn !== undefined ? (
+            <TextButton
+              label={view.addOwn.label}
+              onPress={() => {
+                picker.onAddOwn?.(view.addOwn.name);
+              }}
+            />
+          ) : null}
         </>
       )}
     </BottomCard>
