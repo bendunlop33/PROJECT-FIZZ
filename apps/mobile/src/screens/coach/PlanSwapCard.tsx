@@ -71,6 +71,11 @@ export function PlanSwapCard({ record, onChanged }: { record: ActionRecord; onCh
           {l}
         </AppText>
       ))}
+      {lines.partial === undefined ? null : (
+        <AppText variant="callout" color="status.warning">
+          {lines.partial}
+        </AppText>
+      )}
       {notice !== null ? (
         <AppText variant="callout" color="text.secondary">
           {notice}

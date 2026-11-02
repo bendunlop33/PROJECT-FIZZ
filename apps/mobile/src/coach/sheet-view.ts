@@ -9,7 +9,7 @@
  */
 
 import { failureWhy, memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
-import { customExerciseLine, isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
+import { customExerciseLine, cardioDistanceText, formatDuration, isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
 import type { ActionRecord, BenInput, CustomExerciseFields, CoachMessage, CoachTurn, CoachTurnError, CoachTurnFailure, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, GymProposalState, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
@@ -804,7 +804,7 @@ export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<B
  * (Ben, 30 Oct) A plan swap's lines from its record: `Leg extension → Leg press`, then each day (`Legs B: − Leg
  * extension` where the day already has the exercise coming in). App text only.
  */
-export function planSwapLines(r: ActionRecord): { head: string; days: string[] } | null {
+export function planSwapLines(r: ActionRecord): { head: string; days: string[]; partial?: string } | null {
   if (r.detail.kind !== 'propose_plan_swap') return null;
   const d = r.detail;
   // (Ben, 1 Nov) A day edit: the day, then one line per change (`Order: …`, `Dumbbell bench press: 3 → 2 sets · secondary`).
@@ -813,8 +813,13 @@ export function planSwapLines(r: ActionRecord): { head: string; days: string[] }
   if (d.op === 'add') {
     const reps = d.reps == null ? '' : d.reps.min === d.reps.max ? ` × ${String(d.reps.min)}` : ` × ${String(d.reps.min)}–${String(d.reps.max)}`;
     const load = d.load == null ? '' : ` @ ${String(d.load.value)} ${d.load.unit}${d.load.convention === 'per_hand' ? ' each' : ''}`;
-    const head = `+ ${d.addName}${d.sets === undefined ? '' : ` · ${String(d.sets)}${reps}`}${load}`;
-    return { head, days: d.days.map((x) => `${x.routineName}: ${x.edits.map((e) => (e.afterName == null ? 'at the end' : `after ${e.afterName}`)).join(', ')}`) };
+    // (Ben, 2 Nov) A cardio or timed add: `+ Exercise bike · 8 min` (one bout), `· 4 × 1:30`, `· 2,000 m`.
+    const work = d.durationS === undefined ? null : d.durationS % 60 === 0 ? `${String(d.durationS / 60)} min` : formatDuration(d.durationS);
+    const dist = d.distanceM === undefined ? null : cardioDistanceText(d.distanceM);
+    const timed = [work, dist].filter((x): x is string => x !== null).join(' · ');
+    const head = timed !== '' ? `+ ${d.addName} · ${d.sets === undefined || d.sets === 1 ? '' : `${String(d.sets)} × `}${timed}` : `+ ${d.addName}${d.sets === undefined ? '' : ` · ${String(d.sets)}${reps}`}${load}`;
+    const place = (e: (typeof d.days)[number]['edits'][number]): string => (e.first === true ? 'first' : e.beforeRowId !== undefined && d.beforeName !== undefined ? `before ${d.beforeName}` : e.afterName == null ? 'at the end' : `after ${e.afterName}`);
+    return { head, days: d.days.map((x) => `${x.routineName}: ${x.edits.map(place).join(', ')}`), ...(d.notIncluded === undefined ? {} : { partial: `Partial · not included: ${d.notIncluded}` }) };
   }
   const out = d.removeName ?? 'Exercise';
   return { head: `${out} → ${d.addName}`, days: d.days.map((x) => (x.edits.every((e) => e.kind === 'remove') ? `${x.routineName}: − ${out}` : x.routineName)) };

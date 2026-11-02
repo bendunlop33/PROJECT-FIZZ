@@ -1,4 +1,4 @@
-import { PB_PREF_QUESTIONS, currentPlanVersion, planDayEditPreview, type PlanDayEdit, deriveId, liveRoutines, notPreferredInPlan, painFlagCovering, pbAppliedBuilder, pbNotPreferred, pbNotPreferredReplacement, planAddPreview, planRoutines, planSwapDirection, planSwapPreview, toMs, isArchivedExercise, type PlanSwapDayInput } from '@fizz/domain';
+import { PB_PREF_QUESTIONS, leadBuilderGroup, workoutDayType, currentPlanVersion, planDayEditPreview, type PlanDayEdit, deriveId, liveRoutines, notPreferredInPlan, painFlagCovering, pbAppliedBuilder, pbNotPreferred, pbNotPreferredReplacement, planAddPreview, planRoutines, planSwapDirection, planSwapPreview, toMs, isArchivedExercise, type PlanSwapDayInput } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { ActionDetail, ActionRecord, Exercise, Load, PainFlag, PlanBuilderAnswers, PlanDraft, Routine, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import type { PlanAddRequest, PlanDayEditRequest, PlanSwapPrepared } from '@fizz/coach';
@@ -38,7 +38,7 @@ export interface PlanSwapServiceDeps {
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
   /** Whether the current gym can do it (no gym: yes). Replace's pick only; Ben's own ask is never refused on kit (ADR 0038). */
   usableHere: (exercise: Exercise) => Promise<boolean>;
-  editDayEveryWeek: (req: { routineId: string; expectedVersion: number; opId: string; edit: { kind: 'swap' | 'remove' | 'add'; rowId: string; fromExerciseId: string | null; toExerciseId: string | null; afterRowId?: string | null; sets?: number; reps?: { min: number; max: number }; load?: Load | null } }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
+  editDayEveryWeek: (req: { routineId: string; expectedVersion: number; opId: string; edit: { kind: 'swap' | 'remove' | 'add'; rowId: string; fromExerciseId: string | null; toExerciseId: string | null; afterRowId?: string | null; sets?: number; reps?: { min: number; max: number }; load?: Load | null; first?: boolean; beforeRowId?: string; durationS?: number; distanceM?: number } }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
   /** (Ben, 1 Nov) A whole plan-day change, every week (`plans.editDayRowsEveryWeek`). Absent: day edits aren't wired. */
   editDayRowsEveryWeek?: (req: { routineId: string; expectedVersion: number; opId: string; edit: PlanDayEdit; lines: readonly string[] }) => Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: string; message: string }>;
   revertRoutine: (req: { actionId: string; opId: string }) => Promise<{ ok: boolean }>;
@@ -176,15 +176,35 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
     const names = { remove: '', add: addEx?.name ?? req.add };
     if (inUse === null) return { kind: 'refused', line: 'No plan in use', names };
     if (addEx === null || isArchivedExercise(addEx)) return { kind: 'refused', line: `${req.add} isn’t in Ben’s exercises; use a catalogueId from plan.inUse.days, build.usable or find_exercises`, names };
-    const afterEx = req.after === null ? null : of(req.after);
-    if (req.after !== null && afterEx === null) return { kind: 'refused', line: `${req.after} isn’t an exercise in the plan; use a catalogueId from plan.inUse.days, or null for the end`, names };
+    // (Ben, 2 Nov) Its place: first, last, straight before or after an exercise (after: the default).
+    const position = req.position ?? 'after';
+    const afterEx = req.after === null || position !== 'after' ? null : of(req.after);
+    if (position === 'after' && req.after !== null && afterEx === null) return { kind: 'refused', line: `${req.after} isn’t an exercise in the plan; use a catalogueId from plan.inUse.days, or null for the end`, names };
+    const beforeEx = position === 'before' && req.before != null ? of(req.before) : null;
+    if (position === 'before' && beforeEx === null) return { kind: 'refused', line: `${req.before ?? 'before'} isn’t an exercise in the plan; use a catalogueId from plan.inUse.days`, names };
     if (notPreferredIds(answersOf(inUse.plan), of).has(addEx.id)) return { kind: 'refused', line: `${addEx.name} is not preferred in your plan settings`, names };
     if ((await flagsNow(p))(addEx.id)) return { kind: 'refused', line: `${addEx.name} has a pain flag`, names };
-    const preview = planAddPreview(inUse.days, { add: addEx.id, dayNames: req.days, after: afterEx?.id ?? null, rowIdOf: (routineId) => deriveId(`plan-add-row:${inUse.plan.id}:${routineId}:${addEx.id}:${String(inUse.days.find((d) => d.routineId === routineId)?.version ?? 0)}`) });
+    // (Ben, 2 Nov) Days by kind too: every leg day, every other day, or every day (`workoutDayType` on each day's rows).
+    const typed = req.dayType == null ? [] : inUse.days.filter((d) => {
+      if (req.dayType === 'all') return true;
+      const kind = workoutDayType([...d.routine.exercises].sort((a, b) => a.order - b.order).map((r) => {
+        const e = of(r.exerciseId);
+        return { group: e === null ? null : leadBuilderGroup(e), sets: r.setTemplates.filter((t) => t.setType !== 'warmup').length };
+      }));
+      return kind === req.dayType;
+    }).map((d) => d.name);
+    const dayNames = [...new Set([...req.days, ...typed])];
+    if (dayNames.length === 0) return { kind: 'refused', line: req.dayType == null ? `Name the days; the days are ${inUse.days.map((d) => d.name).join(', ')}` : `No ${req.dayType === 'legs' ? 'leg' : 'other'} days in the plan; the days are ${inUse.days.map((d) => d.name).join(', ')}`, names };
+    const preview = planAddPreview(inUse.days, { add: addEx.id, dayNames, after: afterEx?.id ?? null, position: position === 'last' ? 'after' : position, before: beforeEx?.id ?? null, rowIdOf: (routineId) => deriveId(`plan-add-row:${inUse.plan.id}:${routineId}:${addEx.id}:${String(inUse.days.find((d) => d.routineId === routineId)?.version ?? 0)}`) });
     if (preview.kind === 'unknown_days') return { kind: 'refused', line: `No plan day called ${preview.unknown.join(', ')}; the days are ${inUse.days.map((d) => d.name).join(', ')}`, names };
     if (preview.kind === 'already') return { kind: 'refused', line: `${addEx.name} is already in ${preview.days.join(', ')}`, names };
     const nameOf = (id: string): string => of(id)?.name ?? 'Exercise';
-    const load: Load | null = req.load === null ? null : { value: req.load, unit: p.preferredUnit, convention: addEx.defaultLoadConvention };
+    const timed = addEx.measurement === 'cardio' || addEx.measurement === 'duration';
+    const load: Load | null = req.load === null || timed ? null : { value: req.load, unit: p.preferredUnit, convention: addEx.defaultLoadConvention };
+    // (Ben, 2 Nov) A cardio or timed add's work time (and a cardio distance), as asked; reps don't apply.
+    const durationS = timed && req.minutes != null && req.minutes > 0 ? Math.min(14_400, Math.max(1, Math.round(req.minutes * 60))) : undefined;
+    const distanceM = addEx.measurement === 'cardio' && req.distanceM != null && req.distanceM > 0 ? Math.min(100_000, Math.round(req.distanceM)) : undefined;
+    const placeFirst = position === 'first';
     return {
       kind: 'ok',
       detail: {
@@ -197,15 +217,20 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
         afterId: afterEx?.id ?? null,
         afterName: afterEx === null ? null : afterEx.name.slice(0, 120),
         sets: req.sets,
-        reps: req.reps,
+        reps: timed ? null : req.reps,
         load,
+        ...(placeFirst ? { position: 'first' as const } : beforeEx !== null ? { position: 'before' as const, beforeId: beforeEx.id, beforeName: beforeEx.name.slice(0, 120) } : {}),
+        ...(durationS === undefined ? {} : { durationS }),
+        ...(distanceM === undefined ? {} : { distanceM }),
+        ...(req.notIncluded == null ? {} : { notIncluded: req.notIncluded.slice(0, 160) }),
         days: preview.days.map((d) => {
           const rows = [...(inUse.days.find((x) => x.routineId === d.routineId)?.rows ?? [])].sort((a, b) => a.order - b.order);
           const before = rows.map((r) => nameOf(r.exerciseId).slice(0, 120));
-          const at = d.afterRowId === null ? rows.length : rows.findIndex((r) => r.id === d.afterRowId) + 1;
+          const at = d.first === true ? 0 : d.beforeRowId !== undefined ? rows.findIndex((r) => r.id === d.beforeRowId) : d.afterRowId === null ? rows.length : rows.findIndex((r) => r.id === d.afterRowId) + 1;
           const after = [...before.slice(0, at), addEx.name.slice(0, 120), ...before.slice(at)];
-          const afterName = d.afterRowId === null ? null : nameOf(rows[at - 1]?.exerciseId ?? '').slice(0, 120);
-          return { routineId: d.routineId, routineName: d.routineName.slice(0, 120), versionBefore: d.versionBefore, edits: [{ kind: 'add' as const, rowId: d.rowId, afterRowId: d.afterRowId, afterName }], before: before.slice(0, 30), after: after.slice(0, 30) };
+          const afterName = d.afterRowId === null ? null : nameOf(rows.find((r) => r.id === d.afterRowId)?.exerciseId ?? '').slice(0, 120);
+          const place = d.first === true ? { first: true } : d.beforeRowId !== undefined ? { beforeRowId: d.beforeRowId } : {};
+          return { routineId: d.routineId, routineName: d.routineName.slice(0, 120), versionBefore: d.versionBefore, edits: [{ kind: 'add' as const, rowId: d.rowId, afterRowId: d.afterRowId, afterName, ...place }], before: before.slice(0, 30), after: after.slice(0, 30) };
         }),
         today: null,
       },
@@ -415,7 +440,21 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
           if (e.kind === 'edit') continue;
           const edit =
             e.kind === 'add'
-              ? { kind: 'add' as const, rowId: e.rowId, fromExerciseId: null, toExerciseId: x.d.addId, afterRowId: e.afterRowId ?? null, ...(x.d.sets === undefined ? {} : { sets: x.d.sets }), ...(x.d.reps == null ? {} : { reps: x.d.reps }), load: x.d.load ?? null }
+              ? {
+                  kind: 'add' as const,
+                  rowId: e.rowId,
+                  fromExerciseId: null,
+                  toExerciseId: x.d.addId,
+                  afterRowId: e.afterRowId ?? null,
+                  ...(x.d.sets === undefined ? {} : { sets: x.d.sets }),
+                  ...(x.d.reps == null ? {} : { reps: x.d.reps }),
+                  load: x.d.load ?? null,
+                  // (Ben, 2 Nov) Its place in the day and a cardio or timed target.
+                  ...(e.first === true ? { first: true } : {}),
+                  ...(e.beforeRowId === undefined ? {} : { beforeRowId: e.beforeRowId }),
+                  ...(x.d.durationS === undefined ? {} : { durationS: x.d.durationS }),
+                  ...(x.d.distanceM === undefined ? {} : { distanceM: x.d.distanceM }),
+                }
               : { kind: e.kind, rowId: e.rowId, fromExerciseId: x.d.removeId ?? null, toExerciseId: e.kind === 'swap' ? x.d.addId : null };
           const r = await deps.editDayEveryWeek({ routineId: day.routineId, expectedVersion: expected, opId: planSwapOpId(actionId, day.routineId, i), edit }).catch(() => ({ ok: false as const, reason: 'failed', message: PLAN_SWAP_COPY.failed }));
           if (!r.ok) {
