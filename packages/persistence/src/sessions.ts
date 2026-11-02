@@ -145,7 +145,8 @@ function exerciseRow(e: SessionExercise, ordinal: number): Record<string, SqlVal
     note: e.note ?? null,
     removed: e.removed === undefined ? null : JSON.stringify(e.removed),
     swapped_from: e.swappedFrom === undefined ? null : JSON.stringify(e.swappedFrom),
-    warmup: e.warmup === true ? 1 : null,
+    // (Migration 45) Written only when set, so older schemas (a restore before migrating) take the row as before.
+    ...(e.warmup === true ? { warmup: 1 } : {}),
   };
 }
 

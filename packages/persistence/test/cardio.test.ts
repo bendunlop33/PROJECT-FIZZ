@@ -131,6 +131,7 @@ describe('migration 21: the four machines become cardio, history included', () =
       const copy = { ...row };
       delete copy.measures_cardio;
       delete copy.round_offset;
+      delete copy.warmup;
       return copy;
     });
     expect(tables.session_exercises.find((r) => r.exercise_id === ROWING_ID)).toMatchObject({ measurement: 'reps', measures_distance: 1 });
@@ -189,6 +190,7 @@ describe('migration 21 mid-workout: an air-bike timer already running (review S7
       const copy = { ...row };
       delete copy.measures_cardio;
       delete copy.round_offset;
+      delete copy.warmup;
       return copy;
     });
     // Schema 26's tables weren't there yet either.

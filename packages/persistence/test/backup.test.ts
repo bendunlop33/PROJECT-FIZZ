@@ -520,6 +520,7 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.measures_distance;
       delete copy.measures_cardio;
       delete copy.round_offset;
+      delete copy.warmup;
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {
@@ -639,6 +640,7 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
       delete copy.measures_distance;
       delete copy.measures_cardio;
       delete copy.round_offset;
+      delete copy.warmup;
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {

@@ -56,9 +56,22 @@ export function beforeSchema31(a: SessionAggregate): SessionAggregate {
   return { ...a, restTimer };
 }
 
+/** A backup's tables as a schema-44 build wrote them: no `session_exercises.warmup` (migration 45, Ben 2 Nov). */
+export function withoutSchema45<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+  const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  if (out.session_exercises) {
+    out.session_exercises = out.session_exercises.map((row) => {
+      const copy = { ...row };
+      delete copy.warmup;
+      return copy;
+    });
+  }
+  return out as T;
+}
+
 /** A backup's tables as a schema-37 build wrote them: no Apple Health writes or links (migration 38, Ben 27 Oct). */
 export function withoutSchema38<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
-  const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  const out: Record<string, Record<string, unknown>[]> = withoutSchema45({ ...tables });
   delete out.health_writes;
   delete out.health_links;
   return out as T;
