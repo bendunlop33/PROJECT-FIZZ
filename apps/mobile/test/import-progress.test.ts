@@ -370,7 +370,8 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
       const { services: s } = await h.launch();
       const gymId = await setUpGym(h, s);
       const rows: [string, number, number][] = [];
-      for (const d of ['2026-10-02', '2026-10-05']) rows.push([d, 60, 2], [d, 60, 2], [d, 60, 2], [d, 40, 6]);
+      // ST1 (Ben, 2 Nov): the two misses ≥ 7 days apart (was 2 and 5 Oct).
+      for (const d of ['2026-09-28', '2026-10-05']) rows.push([d, 60, 2], [d, 60, 2], [d, 60, 2], [d, 40, 6]);
       await importFile(s, finisherFile(rows), { workouts: 2, sets: 8 });
       const [day] = (await s.history.pastWorkouts()).rows.map((r) => r.sessionId);
       const bench = await exerciseIdOf(s, 'Bench press');

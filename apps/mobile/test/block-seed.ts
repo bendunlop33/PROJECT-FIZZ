@@ -10,10 +10,11 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
  *
  * - Block 1 · Strength, 4 weeks (Maintain): applied Mon 3 Aug; the main lift 60, 62.5, 65, 67.5 × 5.
  * - Block 2 · Muscle, 4 weeks (Standard: week 4 deload): Mon 7 Sep; 60, 62.5, 65 × 8, then the deload.
- * - Block 3 · Muscle, 6 weeks: Mon 5 Oct; week 1 70 kg at the plan's reps, weeks 2 and 3 70 × 2 (stalled 2 weeks;
- *   two misses in a row at one load, so the built-in rule's stall reset is offered).
- *   The day's first accessory the same: its planned reps, then 2 reps twice. An off-plan lat pulldown in week 3.
- * The clock ends on Wed 21 Oct (block 3's week 3), 18:00 in London.
+ * - Block 3 · Muscle, 6 weeks: Mon 5 Oct; week 1 70 kg at the plan's reps, weeks 2–4 70 × 2 (stalled 3 weeks: ST2
+ *   needs ≥ 3 weeks and ≥ 3 sessions with no new best, Ben 2 Nov; misses a week apart at one load, so the built-in
+ *   rule's stall reset is offered, ST1).
+ *   The day's first accessory the same: its planned reps, then 2 reps three times. An off-plan lat pulldown in week 3.
+ * The clock ends on Wed 28 Oct (block 3's week 4), 18:00 in London.
  */
 
 export const DAY = 86_400_000;
@@ -127,7 +128,7 @@ export async function benWithBlocks(opts: Parameters<typeof createHarness>[1] = 
   plans.push({ planId, mainId, routineId });
   let latest = '';
   const accessoryIds: string[] = [];
-  for (const [i, missed] of [false, true, true].entries()) {
+  for (const [i, missed] of [false, true, true, true].entries()) {
     h.clockMs = at('2026-10-05', 10) + i * 7 * DAY + DAY;
     // A miss: 2 reps, under the rep range the plan day sets (the rule's stall reset needs two in a row at one load).
     latest = await logPlanDay(h, s, gymId, routineId, mainId, 70, (floor) => (missed ? 2 : floor), (floor) => (missed ? 2 : floor), accessoryIds);
@@ -137,6 +138,6 @@ export async function benWithBlocks(opts: Parameters<typeof createHarness>[1] = 
   // An off-plan workout in week 3 too (counts for the block): lat pulldown.
   h.clockMs = at('2026-10-21', 12);
   const offPlan = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 59, reps: 10, rpe: 8 }] }]);
-  h.clockMs = at('2026-10-21', 18);
+  h.clockMs = at('2026-10-28', 18);
   return { h, launched, s, gymId, plans, accessory: { exerciseId: accessory, latestSessionId: latest }, offPlanSessionId: offPlan };
 }

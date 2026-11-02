@@ -24,19 +24,19 @@ describe('block progress (real SQLite)', () => {
     const v = await ben.s.blockProgress.blocks();
     expect(v?.rows.map((r) => r.title)).toEqual(['Block 3 · Muscle', 'Block 2 · Muscle', 'Block 1 · Strength']);
     expect(v?.rows[0]).toMatchObject({ tag: 'Now', current: true });
-    expect(v?.rows[0]?.sub).toContain('week 3 of 6');
+    expect(v?.rows[0]?.sub).toContain('week 4 of 6');
     expect(v?.rows[1]?.sub).toBe('7 Sep – 4 Oct · 4 of 12 sessions');
     expect(v?.rows[2]?.sub).toBe('3 Aug – 30 Aug · 4 of 12 sessions');
     expect(v?.rows[2]?.facts).toMatch(/\+7\.5 kg/);
   });
 
-  it('This block: Week 3 of 6, the main lift stalled 2 weeks; a past block opens the same view', async () => {
+  it('This block: Week 4 of 6, the main lift stalled 3 weeks (ST2); a past block opens the same view', async () => {
     ben = await benWithBlocks();
     const now = await ben.s.blockProgress.thisBlock();
-    expect(now).toMatchObject({ title: 'This block', meta: 'Week 3 of 6', current: true });
+    expect(now).toMatchObject({ title: 'This block', meta: 'Week 4 of 6', current: true });
     const row = now?.rows.find((r) => r.exerciseId === ben?.plans[2]?.mainId);
     expect(row).toMatchObject({ stalled: true, delta: null });
-    expect(row?.bars.map((b) => b.state)).toEqual(['up', 'stalled', 'stalled', 'none', 'none', 'deload']);
+    expect(row?.bars.map((b) => b.state)).toEqual(['up', 'stalled', 'stalled', 'stalled', 'none', 'deload']);
     const blocks = await ben.s.blockProgress.blocks();
     const past = await ben.s.blockProgress.thisBlock(blocks?.rows[1]?.key ?? null);
     expect(past).toMatchObject({ title: 'Block 2 · Muscle', meta: '7 Sep – 4 Oct', current: false });
@@ -57,10 +57,10 @@ describe('block progress (real SQLite)', () => {
   it('a stalled lift’s Next week: the coach’s bigger change (3 → 4 sets) with Skip / Apply; Apply then Undo, each a versioned write', async () => {
     let model = new StepModel([]);
     ben = await benWithBlocks({ coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
-    // The plan day's accessory (straight working sets): stalled 2 weeks.
+    // The plan day's accessory (straight working sets): stalled 3 weeks (ST2).
     const id = ben.accessory.exerciseId;
     const d = await ben.s.blockProgress.liftDetail(null, id, 'connected');
-    expect(d?.view.pill).toEqual({ text: 'Stalled 2 weeks', tone: 'stalled' });
+    expect(d?.view.pill).toEqual({ text: 'Stalled 3 weeks', tone: 'stalled' });
     expect(d?.view.latestSessionId).toBe(ben.accessory.latestSessionId);
     // The coach's Summary review of that workout (rule 3: a clear signal, two weeks with no gain): one bigger change.
     model = new StepModel([
@@ -105,7 +105,7 @@ describe('block progress (real SQLite)', () => {
     ben = await benWithBlocks();
     const mainId = ben.plans[2]?.mainId ?? '';
     const d = await ben.s.blockProgress.liftDetail(null, mainId);
-    expect(d?.view.pill).toEqual({ text: 'Stalled 2 weeks', tone: 'stalled' });
+    expect(d?.view.pill).toEqual({ text: 'Stalled 3 weeks', tone: 'stalled' });
     expect(d?.view.table.every((r) => r.e1rm === '—' || r.e1rm.endsWith(' est.'))).toBe(true);
     const next = d?.next;
     if (next == null) throw new Error('no Next week row');
@@ -182,13 +182,13 @@ describe('block progress (real SQLite)', () => {
   it('a week with only an off-plan workout is a block week by date; its sets count (decision 4)', async () => {
     ben = await benWithBlocks();
     const { h, s, gymId } = ben;
-    // Week 4 (26 Oct): no plan day, one off-plan bench workout.
-    h.clockMs = Date.parse('2026-10-27T17:00:00.000Z');
+    // Week 5 (2 Nov): no plan day, one off-plan bench workout.
+    h.clockMs = Date.parse('2026-11-03T17:00:00.000Z');
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 72.5, reps: 6, rpe: 8 }] }]);
-    h.clockMs = Date.parse('2026-11-03T12:00:00.000Z');
-    expect((await s.blockProgress.thisBlock())?.meta).toBe('Week 5 of 6');
+    h.clockMs = Date.parse('2026-11-10T12:00:00.000Z');
+    expect((await s.blockProgress.thisBlock())?.meta).toBe('Week 6 of 6');
     const d = await s.blockProgress.liftDetail(null, ben.plans[2]?.mainId ?? '');
-    expect(d?.view.table.find((r) => r.week === '4')?.topSet).toBe('72.5×6 kg');
+    expect(d?.view.table.find((r) => r.week === '5')?.topSet).toBe('72.5×6 kg');
     // A gain after the stall ends it.
     expect(d?.view.stalled).toBe(false);
   });

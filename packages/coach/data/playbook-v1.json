@@ -5,7 +5,7 @@
   "rules": [
     {
       "id": "1",
-      "short": "Weekly sets per muscle group start from Ben's stated days a week and session length, or from his own logged sets per lifting day × his stated days. His goal sets the range. Sets grow by 1–2 only when he asks. In a short week, keep the loads and cut sets. Frequency: prefer ≥ 2 sessions a week per group only as a tie-breaker; never flag a group trained once. Upper limits: no warning between a group's range top and 20 direct sets a week; flag above 20 direct, or above 8 direct for one group on one day (move the excess to another day first). Assisted sets never flag. Strength focus: other groups top out at 10.",
+      "short": "Weekly sets per muscle group start from Ben's stated days a week and session length, or from his own logged sets per lifting day × his stated days. His goal sets the range. Sets grow by 1–2 only when he asks. In a short week, keep the loads and cut sets.",
       "appliesWhen": "Any plan or weekly-volume advice",
       "grade": "Strong / Moderate / Weak / Practice, split by claim (see 1)",
       "use": "in_use",
@@ -69,8 +69,8 @@
     },
     {
       "id": "8",
-      "short": "A stall: a miss stall is 2 consecutive comparable sessions failing the same target ≥ 7 days apart (inside 7 days, a third); a no-progress stall is no new best for ≥ 3 sessions and ≥ 3 weeks (deload, lead-in, return and pain weeks skipped; a lift held at a machine max or rep cap is a ceiling, not a stall). Offer a rep-scheme change or variation first, then a 5–10% reset; 2+ lifts stalled in the same fortnight → rule 10's deload instead. Only when Ben opens a review or asks. One bad session gets a note only.",
-      "appliesWhen": "Next-session targets, block view, weekly review",
+      "short": "A stall (2–3 sessions failing the same target): propose a 5–10% reset or a rep-scheme change. One bad session gets a note only.",
+      "appliesWhen": "Next-session targets",
       "grade": "Practice",
       "use": "in_use",
       "note": null
