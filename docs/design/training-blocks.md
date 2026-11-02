@@ -50,7 +50,7 @@ No rebuilds: a new block reuses the same plan days. Only the targets move on, pl
 
 ### 2.3 Deload
 - **Planned:** the last week of the block. Every session that week drafts lighter: loads −10 % (rounded down), one set fewer per exercise (never below 2), and target effort around RPE 7. Ben's playbook rule 10 is "cut sets, keep load if RPE ≤ 7 allows". The exact size is in Q3.
-- **Early:** when real signals say so (§4.3), the app **offers** `Deload this week?` in the weekly review or as a line on Today. It never forces one. If Ben accepts, that week is the deload and the block ends after it (Q4).
+- **Early:** when real signals say so (§4.3), the app **offers** `Deload this week?` in the weekly review or as a line on Today. It never forces one. If Ben accepts, that week is the deload. ~~The block ends after it (Q4).~~ *Superseded (Ben, 2 Nov, LW1–LW3 in [early-lighter-week.md](../training-guides/early-lighter-week.md)): the plan keeps its length; the next planned deload becomes a normal week only when it falls ≤ 3 weeks after the lighter week; never ends, restarts or extends the plan.*
 - Ben can also `Skip deload` (block ends after week 5) or ask the coach for a deload at any time.
 
 ### 2.4 Holidays and gaps
@@ -237,7 +237,7 @@ Applied by the Today drafter after §3.1 and **before** fitting (fitting runs on
 
 **TB4 Weekly review uses the block.**
 - The weekly facts list planned vs done per main lift for that block week.
-- Signals (a) met in week 4 → one `Deload this week?` offer. Apply → that week drafts as a deload and the block ends after it. Undo restores the week. Week 2 never offers.
+- Signals (a) met in week 4 → one `Deload this week?` offer. Apply → that week drafts as a deload; the block carries on (LW1, superseding Q4: a planned deload ≤ 3 weeks later becomes a normal week, in the same Apply). Undo restores both. Week 2 never offers.
 
 **TB5 Block-end review + next block.**
 - On first open after week 6, the review appears with facts that match a code recount. A coach sentence with a wrong number is hidden.
@@ -254,7 +254,7 @@ All as recommended, with one change:
 1. Weekly targets are what he's compared against; today's weights still come from what he actually lifted. **Yes.**
 2. Block length 6 weeks (5 build + deload). **Yes.**
 3. Deload: loads −10 %, one set fewer per exercise, about RPE 7. **Yes.**
-4. Accepting an early deload ends the block after that week. **Yes.**
+4. Accepting an early deload ends the block after that week. **Yes.** *Superseded 2 Nov by LW1–LW3 ([early-lighter-week.md](../training-guides/early-lighter-week.md)) for builder plans and older coach blocks alike: the plan carries on at its length.*
 5. A week with no lifting (not paused) doesn't count; the block waits; nothing marked missed. **Yes.**
 6. Block week in Today's header (`Tuesday · Week 3 of 6`). **Yes.**
 7. **Changed:** `How did it feel?` stays after every workout (one tap on Summary, already built in Wave 3) and feeds both the weekly and the block review; the block review shows the block's Easy/Good/Hard counts.

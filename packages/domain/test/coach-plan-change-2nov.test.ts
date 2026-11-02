@@ -35,17 +35,18 @@ const block = (week: number, leadIn = false) => ({ week, leadIn });
 describe('pbPlanChange', () => {
   const six = answers({ weeks: 6, effort: 'standard', sessions: 5 });
 
-  it('"make next week a lighter week" in week 2 of 6: week 3 drafts as a deload week; the effort’s own deload stays', () => {
+  it('"make next week a lighter week" in week 2 of 6: week 3 drafts as a deload week; (LW1) the deload 3 weeks later goes', () => {
     const r = pbPlanChange(six, { kind: 'lighter_week', week: 'next' }, block(2));
     if (r.kind !== 'ok') throw new Error(r.line);
     expect(r.answers.lighterWeeks).toEqual([3]);
-    expect(r.lines).toEqual(['Week 3 of 6 → Deload', '−10 % load, 1 set fewer']);
-    expect(pbDeloadWeeks(r.answers)).toEqual([3, 6]);
+    expect(r.answers.skippedDeloads).toEqual([6]);
+    expect(r.lines).toEqual(['Week 3 of 6 → Lighter', 'Deload: week 6 → none', '−10 % load, 1 set fewer']);
+    expect(pbDeloadWeeks(r.answers)).toEqual([3]);
     expect(pbIsDeload(r.answers, 3)).toBe(true);
     // A deload week isn't a progression week (as the effort's own).
     expect(pbProgWeeks(r.answers, 5)).toBe(pbProgWeeks(six, 5) - 1);
     // Nothing else in the answers changes.
-    expect({ ...r.answers, lighterWeeks: undefined }).toEqual({ ...six, lighterWeeks: undefined });
+    expect({ ...r.answers, lighterWeeks: undefined, skippedDeloads: undefined }).toEqual({ ...six, lighterWeeks: undefined, skippedDeloads: undefined });
   });
 
   it('this week; the lead-in can’t be lighter but next week (week 1) can; never past the end or on a deload week', () => {

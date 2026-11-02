@@ -118,6 +118,12 @@ export const PlanBuilderAnswersSchema = z.object({
    * the plan's length; dropped when a new block starts.
    */
   lighterWeeks: z.array(z.int().min(1).max(12)).max(12).optional(),
+  /**
+   * (Ben, 2 Nov, LW1) The effort's planned deload weeks that draft as normal build weeks because a lighter week came
+   * within 3 weeks before them (docs/training-guides/early-lighter-week.md). Absent: none. Set and cleared only with the
+   * lighter week that caused it (one proposal, one Undo); dropped when a new block starts.
+   */
+  skippedDeloads: z.array(z.int().min(1).max(12)).max(12).optional(),
 });
 export type PlanBuilderAnswers = z.infer<typeof PlanBuilderAnswersSchema>;
 

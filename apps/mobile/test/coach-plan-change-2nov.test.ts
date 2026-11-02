@@ -80,7 +80,7 @@ async function block(s: AppServices) {
 const setsOf = async (s: AppServices, id: string): Promise<SessionAggregate['sets']> => (await s.workout.load(id))?.aggregate.sets ?? [];
 
 describe('plan-level changes from the coach (Ben, 2 Nov)', () => {
-  it('"make next week a lighter week": a proposal; Apply makes week 3 a deload week, block kept; double Apply writes once; Undo', async () => {
+  it('"make next week a lighter week": a proposal; Apply makes week 3 lighter and (LW1) week 6 normal, block kept; double Apply writes once; one Undo restores both', async () => {
     const { s, planId } = await running();
     const was = await block(s);
     expect(was).toMatchObject({ planId, current: 2, of: 6, deload: [6] });
@@ -96,7 +96,8 @@ describe('plan-level changes from the coach (Ben, 2 Nov)', () => {
     expect(r.cards.map((c) => [c.record.status, c.record.detail.kind])).toEqual([['proposed', 'propose_plan_change']]);
     const card = r.cards[0];
     if (card?.record.detail.kind !== 'propose_plan_change') throw new Error('card');
-    expect(card.record.detail.lines).toEqual(['Week 3 of 6 → Deload', '−10 % load, 1 set fewer']);
+    // (LW2) Both changes on the one card: the deload in week 6 is 3 weeks after the lighter week, so it goes.
+    expect(card.record.detail.lines).toEqual(['Week 3 of 6 → Lighter', 'Deload: week 6 → none', '−10 % load, 1 set fewer']);
     // Nothing changed yet (rule 3).
     expect(await block(s)).toEqual(was);
     expect(await s.planChange.card(card.record.actionId)).toEqual({ kind: 'open' });
@@ -104,13 +105,50 @@ describe('plan-level changes from the coach (Ben, 2 Nov)', () => {
     expect(await s.planChange.apply(card.record.actionId)).toEqual({ ok: true });
     expect(await s.planChange.apply(card.record.actionId)).toEqual({ ok: true });
     const after = await block(s);
-    expect(after).toMatchObject({ planId, since: was.since, current: 2, of: 6, deload: [3, 6], startsOn: was.startsOn });
+    // (LW1) The plan keeps its 6 weeks and its start; never ended, restarted or extended.
+    expect(after).toMatchObject({ planId, since: was.since, current: 2, of: 6, deload: [3], startsOn: was.startsOn });
     expect(after.answers.lighterWeeks).toEqual([3]);
+    expect(after.answers.skippedDeloads).toEqual([6]);
     expect(await s.planChange.card(card.record.actionId)).toEqual({ kind: 'applied' });
 
     expect(await s.planChange.undo(card.record.actionId)).toBe(true);
-    expect(await block(s)).toEqual(was);
+    const undone = await block(s);
+    expect(undone).toEqual(was);
+    expect(undone.answers.lighterWeeks).toBeUndefined();
+    expect(undone.answers.skippedDeloads).toBeUndefined();
     expect(await s.planChange.card(card.record.actionId)).toEqual({ kind: 'undone' });
+  });
+
+  it('(LW1) an 8-week plan: a lighter week 3 keeps the deload in week 8 (5 weeks later); the card shows only the lighter week', async () => {
+    const { s } = await running({ weeks: 8 });
+    model = new StepModel([() => toolCall('propose_plan_change', { change: { kind: 'lighter_week', week: 'next' }, reason: 'Ben asked.' }), () => replyWith('Next week lighter.')]);
+    const card = (await say(s, 'make next week a lighter week')).cards[0];
+    if (card?.record.detail.kind !== 'propose_plan_change') throw new Error('card');
+    expect(card.record.detail.lines).toEqual(['Week 3 of 8 → Lighter', '−10 % load, 1 set fewer']);
+    expect(await s.planChange.apply(card.record.actionId)).toEqual({ ok: true });
+    const after = await block(s);
+    expect(after).toMatchObject({ current: 2, of: 8, deload: [3, 8] });
+    expect(after.answers.skippedDeloads).toBeUndefined();
+  });
+
+  it('(LW2, rule 5) a lighter-week proposal that would drop the deload is refused once the plan moved on; neither change is applied', async () => {
+    const { s } = await running();
+    model = new StepModel([
+      () => toolCall('propose_plan_change', { change: { kind: 'lighter_week', week: 'next' }, reason: 'Ben asked.' }),
+      () => replyWith('Next week lighter.'),
+      () => toolCall('propose_plan_change', { change: { kind: 'days_per_week', days: 4, weekdays: null }, reason: 'Fewer days.' }),
+      () => replyWith('4 days.'),
+    ]);
+    const lighter = (await say(s, 'make next week a lighter week')).cards[0];
+    const days = (await say(s, 'go to 4 days a week')).cards[0];
+    if (lighter?.record.detail.kind !== 'propose_plan_change' || days === undefined) throw new Error('cards');
+    expect(lighter.record.detail.lines).toContain('Deload: week 6 → none');
+    expect(await s.planChange.apply(days.record.actionId)).toEqual({ ok: true });
+    expect(await s.planChange.apply(lighter.record.actionId)).toEqual({ ok: false, line: 'Out of date. Ask again.' });
+    const now = await block(s);
+    expect(now).toMatchObject({ of: 6, deload: [6] });
+    expect(now.answers.lighterWeeks).toBeUndefined();
+    expect(now.answers.skippedDeloads).toBeUndefined();
   });
 
   it('"go to 4 days a week": the plan builder re-fits it from this week; the block start, the week and the done workout stay', async () => {

@@ -1,7 +1,7 @@
 import { PlanWeeksSchema, type PlanBuilderAnswers } from '@fizz/schemas';
 import { pbWithSessions } from './answers';
 import { pbWeekdayName } from './edit';
-import { pbDeloadWeeks, pbIsDeload } from './weeks';
+import { pbDeloadSkippedBy, pbDeloadWeeks, pbIsDeload, pbIsPlannedDeload } from './weeks';
 import { PB_PREF_DAYS } from './tables';
 
 /**
@@ -11,8 +11,10 @@ import { PB_PREF_DAYS } from './tables';
  * proposal Ben applies (rule 3).
  *
  * - `lighter_week`: this or next block week drafts as a deload week (the approved shape, training-blocks Q3: −10 %
- *   load, one set fewer, RPE ≤ 7), on top of the effort's own deload weeks. Not in the lead-in (it isn't a block week),
- *   not past the plan's end, not a week that is a deload already.
+ *   load, one set fewer, RPE ≤ 7). Not in the lead-in (it isn't a block week), not past the plan's end, not a week
+ *   that is a deload already. (Ben, 2 Nov, LW1–LW2; supersedes training-blocks Q4) The plan keeps its length and is
+ *   never ended, restarted or extended; the next planned deload D after the lighter week L becomes a normal build week
+ *   when D − L ≤ 3 (`skippedDeloads`), in the same proposal (one Apply, one Undo). Later deloads stay.
  * - `days_per_week`: the Week page's `Sessions a week` (`pbWithSessions`: the usual days for the count, the split
  *   follows unless Ben chose one); named weekdays make it Set days on them.
  * - `length`: Gym goals' plan length (4, 6, 8 or 12 weeks), never shorter than the week the plan is in; lighter weeks
@@ -56,7 +58,14 @@ export function pbPlanChange(a: PlanBuilderAnswers, req: PbPlanChangeRequest, bl
       if (w > a.weeks) return { kind: 'refused', line: `The plan ends after week ${String(a.weeks)}` };
       if (pbIsDeload(a, w)) return { kind: 'refused', line: `Week ${String(w)} is already a deload week` };
       const answers: PlanBuilderAnswers = { ...a, lighterWeeks: unique([...(a.lighterWeeks ?? []), w]) };
-      return { kind: 'ok', answers, lines: [`Week ${String(w)} of ${String(a.weeks)} → Deload`, '−10 % load, 1 set fewer'], fromWeek: w };
+      const lines = [`Week ${String(w)} of ${String(a.weeks)} → Lighter`];
+      const skipped = pbDeloadSkippedBy(a, w);
+      if (skipped !== null) {
+        answers.skippedDeloads = unique([...(a.skippedDeloads ?? []), skipped]);
+        lines.push(`Deload: week ${String(skipped)} → none`);
+      }
+      lines.push('−10 % load, 1 set fewer');
+      return { kind: 'ok', answers, lines, fromWeek: w };
     }
     case 'days_per_week': {
       if (!Number.isInteger(req.days) || req.days < 2 || req.days > 7) return { kind: 'refused', line: 'Plans have 2 to 7 days a week' };
@@ -80,6 +89,10 @@ export function pbPlanChange(a: PlanBuilderAnswers, req: PbPlanChangeRequest, bl
       const answers: PlanBuilderAnswers = { ...a, weeks: ok.data };
       if (lighter.length > 0) answers.lighterWeeks = lighter;
       else delete answers.lighterWeeks;
+      // (LW1) A skipped deload stays skipped only while it is still one of the plan's planned deloads.
+      const skipped = (a.skippedDeloads ?? []).filter((w) => pbIsPlannedDeload(answers, w));
+      if (skipped.length > 0) answers.skippedDeloads = skipped;
+      else delete answers.skippedDeloads;
       const lines = [`${String(a.weeks)} → ${String(ok.data)} weeks`];
       const was = pbDeloadWeeks(a);
       const now = pbDeloadWeeks(answers);
@@ -110,10 +123,14 @@ export function pbWeekdayOf(key: (typeof PB_WEEKDAY_KEYS)[number]): number {
   return PB_WEEKDAY_KEYS.indexOf(key);
 }
 
-/** A new block (`Start next block`, Set up a plan with none in use): Ben's lighter weeks were for the block that ended. */
+/**
+ * A new block (`Start next block`, Set up a plan with none in use): Ben's lighter weeks, and the planned deloads they
+ * skipped (LW1), were for the block that ended.
+ */
 export function pbWithoutLighterWeeks(a: PlanBuilderAnswers): PlanBuilderAnswers {
-  if (a.lighterWeeks === undefined) return a;
+  if (a.lighterWeeks === undefined && a.skippedDeloads === undefined) return a;
   const out = { ...a };
   delete out.lighterWeeks;
+  delete out.skippedDeloads;
   return out;
 }

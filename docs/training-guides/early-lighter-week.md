@@ -1,17 +1,17 @@
 # What happens after an early lighter week
 
-*Training-researcher answer for Ben, 2 Nov 2026. All sources checked 2026-11-02. Not medical advice: pain or injury stops progression on that movement and the coach suggests seeing a professional (CLAUDE.md rule 9). Builds on approved playbook rule 10, [training-blocks.md](../design/training-blocks.md) §2.3/§4.3/§4.4 and Q3/Q4, [plan-builder.md](../design/plan-builder.md) (Effort: Standard deloads in the last week, Push every 4th week, Maintain none), the 2 Nov `propose_plan_change` entry in [CHANGELOG](../brief/CHANGELOG.md), and [evidence-core.md](evidence-core.md) §7. **Everything here is a candidate awaiting Ben's approval.***
+*Training-researcher answer for Ben, 2 Nov 2026. All sources checked 2026-11-02. Not medical advice: pain or injury stops progression on that movement and the coach suggests seeing a professional (CLAUDE.md rule 9). Builds on approved playbook rule 10, [training-blocks.md](../design/training-blocks.md) §2.3/§4.3/§4.4 and Q3/Q4, [plan-builder.md](../design/plan-builder.md) (Effort: Standard deloads in the last week, Push every 4th week, Maintain none), the 2 Nov `propose_plan_change` entry in [CHANGELOG](../brief/CHANGELOG.md), and [evidence-core.md](evidence-core.md) §7. **Ben approved LW1–LW3 on 2 Nov 2026; they supersede training-blocks Q4 for all plans, including older coach blocks.***
 
 **Summary**
 1. **Recommendation:** the plan carries on at its chosen length. The planned deload stays unless it would come **within 3 weeks** of the lighter week. In that case it becomes a normal week (option b). The plan is never ended, restarted or extended automatically.
 2. **Why:** a deload exists to clear fatigue. Two lighter weeks close together cost training without adding recovery. Most lifters and coaches deload every ~4–6 weeks, and the app's own Push effort already spaces deloads 4 weeks apart.
 3. **Why not end the block (old Q4):** Q4 was written when a block was a separate 6-week stretch. Now the plan *is* the block, so ending it would discard the weeks Ben chose and force a rebuild. A lighter week can also be asked for reasons other than fatigue (travel, illness, a busy week).
 4. **Evidence:** there are no trials on what to do after a reactive deload. The Delphi panel agreed deloads can come anywhere in a block and that several deloads per block are fine. The rule's details are **Practice**.
-5. **Needs Ben:** approve LW1–LW3. They supersede training-blocks Q4 (approved 21 Oct) for all plans, so the change needs a CHANGELOG line.
+5. **Approved (Ben, 2 Nov):** LW1–LW3. They supersede training-blocks Q4 (approved 21 Oct) for all plans; CHANGELOG 2 Nov.
 
-## Candidate playbook rules
+## Playbook rules (approved)
 
-All are candidates. Nothing applies until Ben approves. LW = lighter week.
+Ben approved LW1–LW3 on 2 Nov 2026. LW = lighter week.
 
 | # | Rule | Applies when | Evidence grade | Sources |
 |---|---|---|---|---|
@@ -52,7 +52,7 @@ Inputs: the plan's planned deload weeks `P` (from Effort), its `lighterWeeks` an
 - **Rule 6:** no fatigue score is invented. LW1 only uses week numbers.
 - **Rule 10:** these are Coaching knowledge. The plan's `lighterWeeks`/`skippedDeloads` are Your data.
 
-**Conflicts flagged (Ben decides):**
+**Conflicts flagged (resolved: Ben approved LW1–LW3, 2 Nov):**
 1. **Supersedes training-blocks Q4** (approved 21 Oct: "accepting an early deload ends the block after that week"). This applies to builder plans and to the older `Start a block` coach blocks, so there is one rule. It changes an approved answer, so it needs Ben's OK and a CHANGELOG line. The 2 Nov build already doesn't apply Q4, so code changes only by adding step 3 (the skipped deload) and LW3's path hold.
 2. **2 Nov CHANGELOG** says "The effort's own deload weeks stay." LW1 changes this to "stay unless within 3 weeks after the lighter week".
 3. **Playbook rule 10** ("every 4–8 weeks if Ben prefers") is unchanged. LW1 is consistent with its lower bound.

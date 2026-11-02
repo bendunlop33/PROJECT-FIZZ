@@ -23,15 +23,42 @@ export function deloadSetCount(sets: number): number {
   return Math.max(Math.min(2, sets), sets - 1);
 }
 
-/** The answers a week's deload reads: the effort's schedule, and (Ben, 2 Nov) any lighter weeks the coach applied. */
-export type PbDeloadAnswers = Pick<PlanBuilderAnswers, 'effort' | 'weeks'> & { lighterWeeks?: readonly number[] | undefined };
+/**
+ * The answers a week's deload reads: the effort's schedule, (Ben, 2 Nov) any lighter weeks the coach applied, and
+ * (LW1) the effort's deload weeks that a lighter week turned back into normal build weeks.
+ */
+export type PbDeloadAnswers = Pick<PlanBuilderAnswers, 'effort' | 'weeks'> & { lighterWeeks?: readonly number[] | undefined; skippedDeloads?: readonly number[] | undefined };
+
+/** The effort's own deload schedule (Standard: the last week of 4+; Push: every 4th; Maintain: none), before LW1. */
+export function pbIsPlannedDeload(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks'>, w: number): boolean {
+  if (w < 1 || w > a.weeks) return false;
+  if (a.effort === 'standard') return a.weeks >= 4 && w === a.weeks;
+  if (a.effort === 'push') return w % 4 === 0;
+  return false;
+}
 
 export function pbIsDeload(a: PbDeloadAnswers, w: number): boolean {
   // (Ben, 2 Nov) A lighter week Ben asked for drafts as a deload week does (the approved shape, Q3).
   if (a.lighterWeeks?.includes(w) === true && w <= a.weeks) return true;
-  if (a.effort === 'standard') return a.weeks >= 4 && w === a.weeks;
-  if (a.effort === 'push') return w % 4 === 0;
-  return false;
+  // (LW1) A planned deload a lighter week came just before drafts as a normal build week.
+  if (a.skippedDeloads?.includes(w) === true) return false;
+  return pbIsPlannedDeload(a, w);
+}
+
+/** (LW1) Lighter week L and the next planned deload D come within this many weeks: D becomes a normal week. */
+export const PB_LIGHTER_SKIP_WITHIN = 3;
+
+/**
+ * (Ben, 2 Nov, LW1) The planned deload a lighter week in week `l` turns into a normal build week, or null: the next
+ * planned deload D after L, when D − L ≤ 3 (null too when D is skipped already). Forward only: a deload already done
+ * never goes, and later deloads stay.
+ */
+export function pbDeloadSkippedBy(a: PbDeloadAnswers, l: number): number | null {
+  for (let d = l + 1; d <= a.weeks; d += 1) {
+    if (!pbIsPlannedDeload(a, d)) continue;
+    return d - l <= PB_LIGHTER_SKIP_WITHIN && a.skippedDeloads?.includes(d) !== true ? d : null;
+  }
+  return null;
 }
 
 export function pbDeloadWeeks(a: PbDeloadAnswers): number[] {

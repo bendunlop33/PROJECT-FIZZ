@@ -63,7 +63,7 @@ export function createPlanChangeExecutor(deps: PlanChangeDeps): CoachExecutors {
 
 /** Sent while the tool is offered. */
 export const PLAN_CHANGE_LINE =
-  'The plan in use can be changed as a whole with propose_plan_change: a lighter (deload) week this or next week; days a week (the app rebuilds the split and keeps exercises where it can, never rewrite the days yourself); the plan’s length (4, 6, 8 or 12 weeks); Set days on named weekdays or Any days; or End the plan (his own workouts come back). It is a proposal he applies with Undo; the block’s start and done weeks never change. Never say you can’t change these.';
+  'The plan in use can be changed as a whole with propose_plan_change: a lighter (deload) week this or next week (the plan keeps its length; the app drops a planned deload due within 3 weeks after it and the card shows that, never end or extend the plan for it); days a week (the app rebuilds the split and keeps exercises where it can, never rewrite the days yourself); the plan’s length (4, 6, 8 or 12 weeks); Set days on named weekdays or Any days; or End the plan (his own workouts come back). It is a proposal he applies with Undo; the block’s start and done weeks never change. Never say you can’t change these.';
 
 const LIGHTER = /\b(?:lighter|easier|easy|deload|recovery|back[- ]?off|rest) week\b|\bdeload\b|\b(?:week|it) (?:lighter|easier)\b|\blighter (?:this|next) week\b|\b(?:take|make|have) (?:this|next) week (?:light|lighter|easy|easier)\b/;
 const DAYS = /\b(?:\d|one|two|three|four|five|six|seven)[- ]?(?:days?|sessions?)(?: a| per| each)? ?(?:week|wk)\b|\b(?:\d|two|three|four|five|six|seven) days\b|\b(?:fewer|more|less) (?:days|sessions)\b|\bdays? (?:a|per) week\b/;
