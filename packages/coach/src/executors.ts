@@ -450,6 +450,10 @@ function undoWhat(target: ActionRecord): string {
       return d.op === 'add' ? `${d.addName} in your plan` : `${d.removeName ?? 'Exercise'} → ${d.addName} in your plan`;
     case 'update_warmup_prefs':
       return 'the warm-up change';
+    case 'update_rest_settings':
+      return 'the rest change';
+    case 'propose_plan_change':
+      return 'the change to your plan';
     case 'fix_workout':
       return d.op === 'delete' ? `deleting ${d.title}` : d.op === 'move' ? `the move of ${d.title}` : `the pairing with ${d.title}`;
     case 'set_exercise_preference':

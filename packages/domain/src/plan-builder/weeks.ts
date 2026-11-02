@@ -23,18 +23,23 @@ export function deloadSetCount(sets: number): number {
   return Math.max(Math.min(2, sets), sets - 1);
 }
 
-export function pbIsDeload(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks'>, w: number): boolean {
+/** The answers a week's deload reads: the effort's schedule, and (Ben, 2 Nov) any lighter weeks the coach applied. */
+export type PbDeloadAnswers = Pick<PlanBuilderAnswers, 'effort' | 'weeks'> & { lighterWeeks?: readonly number[] | undefined };
+
+export function pbIsDeload(a: PbDeloadAnswers, w: number): boolean {
+  // (Ben, 2 Nov) A lighter week Ben asked for drafts as a deload week does (the approved shape, Q3).
+  if (a.lighterWeeks?.includes(w) === true && w <= a.weeks) return true;
   if (a.effort === 'standard') return a.weeks >= 4 && w === a.weeks;
   if (a.effort === 'push') return w % 4 === 0;
   return false;
 }
 
-export function pbDeloadWeeks(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks'>): number[] {
+export function pbDeloadWeeks(a: PbDeloadAnswers): number[] {
   return Array.from({ length: a.weeks }, (_, i) => i + 1).filter((w) => pbIsDeload(a, w));
 }
 
 /** Progression weeks before week `w` (deloads don't count). */
-export function pbProgWeeks(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks'>, w: number): number {
+export function pbProgWeeks(a: PbDeloadAnswers, w: number): number {
   let k = 0;
   for (let i = 1; i < w; i += 1) if (!pbIsDeload(a, i)) k += 1;
   return k;
@@ -56,7 +61,7 @@ export interface PbWeekTarget {
 }
 
 /** One exercise's planned target in week `w` (1-based). `kit`: its item here, null for bodyweight. */
-export function pbAtWeek(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks' | 'focus'>, e: PbExercise, kit: PlanKit | null, w: number): PbWeekTarget {
+export function pbAtWeek(a: PbDeloadAnswers & Pick<PlanBuilderAnswers, 'focus'>, e: PbExercise, kit: PlanKit | null, w: number): PbWeekTarget {
   const k = a.effort === 'maintain' ? 0 : pbProgWeeks(a, w);
   const dl = pbIsDeload(a, w);
   const load0 = e.load.kind === 'kg' ? e.load.value : null;

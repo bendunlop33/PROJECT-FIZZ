@@ -74,6 +74,8 @@ Entries: **T** Today, Plan (opens Today's thread), Progress, an exercise chart; 
 | memory, `set_pain_flag`, playbook | words (T, S, W) / – | words |
 | `find_exercises`, `propose_exercise` | T, S, W / – | ✓ |
 | reads (`get_*`) | ✓ (B: history reads only) | ✓ |
+| `propose_plan_change` (2 Nov: lighter week, days a week, length, Set/Any days, End) | – | plan + words (proposal) |
+| `update_rest_settings` (2 Nov: rest per set type, when short on time, shorten main lift) | – | profile + rest words (at once when asked, Undo; `Today too?`) |
 | `set_exercise_preference` (2 Nov) | – | builder plan + like/dislike words (at once, Undo; swap as a proposal) |
 | `propose_rebalance` (2 Nov) | – | plan + muscle/balance words (proposal) |
 | `set_next_session_targets` | post-workout review only | unchanged (not a chat) |
@@ -213,6 +215,25 @@ Decisions (amending 31 Oct decisions 1–3):
 
 Not yet run on Ben's iPhone.
 
+## Amendment (2 Nov 2026, Ben's approval the same day): plan-level changes and rest settings
+
+Two tools join the registry, every chat (`general`, `workout`), never the post-workout review:
+
+- **`propose_plan_change`** (target `planInUse`, gate `planChangeWords`: his words ask for a lighter week, days a week,
+  plan length, Set/Any days or End; `asksPlanSettingChange`). Always a proposal (rule 3) with before → after, Apply and
+  Undo. The change becomes new plan-builder answers (`pbPlanChange` in `@fizz/domain`) and is previewed and applied
+  through the builder's own `Edit plan` → `Apply changes` (End through the plan's End), so the engine re-fits the split,
+  keeps exercises where it can, and the block's start, week numbers and done weeks stay. Apply checks the plan version
+  and block week the proposal read (stale → `Out of date`, rule 5); op IDs derive from the record. A lighter week is a
+  `lighterWeeks` entry on the answers and drafts as the existing deload week (Q3). On a builder plan these asks are a
+  targeted plan turn (decision 4 of 1 Nov): no `propose_plan`, no build view, and never forced into `edit_today`.
+- **`update_rest_settings`** (target `trainingProfile`, gate `restWords`: his words are about rest times, not a rest
+  day). A `versioned_update` of one profile snapshot (`rest_settings`), applied at once with Undo when his words this
+  turn ask (`asksForRestChange`), else nothing runs and the coach asks. Rest times' limits are kept. With a workout live
+  the card offers `Today too?`: one `coach_edit_today` of `edit_planned_set` rest steps (pending sets on the old default
+  only) with its own Undo (`revert_coach_edit`, which now keeps a logged set's rest).
+
+Migration 44 adds both record kinds to `coach_actions` (after 42's and 43's). Not yet run on Ben's iPhone.
 ## Amendment (2 Nov 2026, Ben approved coach tools for past workouts)
 
 - **`propose_workout_fix`** joins the registry in every chat, opened only by Ben's words about fixing a past workout

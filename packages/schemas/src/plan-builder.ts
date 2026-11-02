@@ -112,6 +112,12 @@ export const PlanBuilderAnswersSchema = z.object({
   likes: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes),
   /** Never (catalogue keys). */
   never: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes),
+  /**
+   * (Ben, 2 Nov) Block weeks Ben asked the coach to make lighter (`A lighter week`): each drafts as the plan's deload
+   * week does (−10 % load, one set fewer, RPE ≤ 7), on top of the effort's own deload weeks. Absent: none. Never past
+   * the plan's length; dropped when a new block starts.
+   */
+  lighterWeeks: z.array(z.int().min(1).max(12)).max(12).optional(),
 });
 export type PlanBuilderAnswers = z.infer<typeof PlanBuilderAnswersSchema>;
 

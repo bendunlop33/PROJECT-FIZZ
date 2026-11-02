@@ -343,6 +343,7 @@ import {
   type TemplateFitResult,
   warmupPrefsOf,
   warmupPrefsCommand,
+  restTodayCommand,
   warmupLookupOf,
   type ResolvedWarmupPrefs,
   followMainLift,
@@ -376,6 +377,7 @@ import type {
   Routine,
   RoutineExercise,
   RestSetting,
+  RestSettings,
   SessionAggregate,
   SessionCheckIn,
   SessionPlanDay,
@@ -3305,6 +3307,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         ...op,
       });
       return command === null ? null : { sessionId: data.aggregate.session.id, command };
+    },
+
+    /**
+     * (Ben, 2 Nov) `Today too?` after a rest-settings change: the open workout's pending sets whose rest is the old
+     * default for their set type get the new one (`restTodayCommand`), one `coach_edit_today` under `actionId`. Null:
+     * none open, or nothing there to change. Done sets and rests Ben set himself never change (rule 2).
+     */
+    async restSettingsCommand(change: { before: RestSettings; after: RestSettings }, op: { opId: string; actionId: string; at: ZonedTimestamp }, sessionId?: string): Promise<{ sessionId: string; command: CommandOf<'coach_edit_today'>; sets: number } | null> {
+      const data = await workout.load(sessionId).catch(() => null);
+      if (data === null || data.aggregate.session.status !== 'active') return null;
+      const info = data.builderInfo ?? {};
+      const command = restTodayCommand({ aggregate: data.aggregate, before: change.before, after: change.after, info: (id) => info[id] ?? null, ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }), ...op });
+      return command === null ? null : { sessionId: data.aggregate.session.id, command, sets: command.steps.length };
     },
 
     /** Everything the Active workout screen needs, read once per change. */

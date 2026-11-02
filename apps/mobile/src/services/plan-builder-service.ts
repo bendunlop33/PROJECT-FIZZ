@@ -41,6 +41,7 @@ import {
   pbStartReps,
   pbSameDays,
   planIsOpen,
+  pbWithoutLighterWeeks,
   stableStringify,
   toMs,
   type PbHistory,
@@ -145,6 +146,8 @@ export interface PlanEditSession {
   planVersion: number;
   /** The block week now (1-based) and the plan's length now. */
   week: number;
+  /** (Ben, 2 Nov) This week is the plan's lead-in (`week` is 1 and the block starts next Monday). */
+  leadIn: boolean;
   weeksNow: number;
   preview: (answers: PlanBuilderAnswers, rejected: ReadonlySet<string>, scope: PbEditScope) => PlanEditView;
 }
@@ -291,7 +294,8 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     const leftover = editing ? null : await openDraft(p.id, at.utc);
     const leftoverV = leftover === null ? null : currentPlanVersion(leftover);
     const starting = fromAnswers ?? pbStartingAnswers(await repo().listByOwner(p.id).catch(() => []));
-    const answers = starting ?? pbDefaultAnswers({ sessions: training?.daysPerWeek ?? null, minutes: training?.sessionMinutes ?? null });
+    // (Ben, 2 Nov) Lighter weeks the coach applied belong to their block: a new block starts without them.
+    const answers = starting === null ? pbDefaultAnswers({ sessions: training?.daysPerWeek ?? null, minutes: training?.sessionMinutes ?? null }) : editing ? starting : pbWithoutLighterWeeks(starting);
     const lifts = (a: PlanBuilderAnswers): PbLiftStart[] =>
       [...PB_CHECK_LIFTS, ...a.extraLifts.filter((k) => !(PB_CHECK_LIFTS as readonly string[]).includes(k))].flatMap((k) => {
         const s = pbLiftStart(k, kitOf, historyOf, a.lifts[k], nowMs);
@@ -331,6 +335,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
               planId: inUse.id,
               planVersion: inUse.version,
               week: eb.week,
+              leadIn: eb.leadIn === true,
               weeksNow: fromAnswers.weeks,
               preview: (a, rejected, scope) => {
                 const next = editNext(inUse.id, a);

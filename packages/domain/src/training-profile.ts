@@ -253,6 +253,23 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
       delete next.restDefaultsS;
       return next;
     }
+    case 'rest_settings': {
+      // (Ben, 2 Nov) The coach's rest change: the whole snapshot, with the same limits as Rest times (0:30–6:00, 15 s).
+      const L = REST_DEFAULT_LIMITS;
+      const own = c.settings.restDefaultsS ?? {};
+      for (const [k, v] of Object.entries(own)) {
+        if (!RestDefaultKeySchema.safeParse(k).success || !intIn(v, L.minS, L.maxS) || v % L.stepS !== 0) return null;
+      }
+      if (c.settings.fitRestLevel !== null && !FitRestLevelSchema.safeParse(c.settings.fitRestLevel).success) return null;
+      const next = { ...p };
+      if (Object.keys(own).length === 0) delete next.restDefaultsS;
+      else next.restDefaultsS = { ...own };
+      if (c.settings.fitRestLevel === null) delete next.fitRestLevel;
+      else next.fitRestLevel = c.settings.fitRestLevel;
+      if (c.settings.fitShortenMain) next.fitShortenMain = true;
+      else delete next.fitShortenMain;
+      return next;
+    }
     case 'progress_lifts': {
       const ids = [...new Set(c.exerciseIds.map((x) => x.trim()))];
       if (ids.length > TRAINING_LIMITS.progressLiftsMax || ids.some((x) => x.length === 0 || x.length > 64)) return null;

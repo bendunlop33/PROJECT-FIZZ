@@ -77,6 +77,8 @@ import { createWarmupPrefsService } from './warmup-prefs-service';
 import { createWorkoutFixService } from './workout-fix-service';
 import { createPlanServices } from './plan-services';
 import { createPlanSwapService } from './plan-swap-service';
+import { createPlanChangeService } from './plan-change-service';
+import { createRestSettingsService } from './rest-settings-service';
 import { createPlanMusclesService } from './plan-muscles-service';
 import { createExercisePrefsService } from './exercise-prefs-service';
 import { createPlanBuilderService } from './plan-builder-service';
@@ -627,6 +629,16 @@ export function createAppServices(deps: AppServicesDeps) {
     now: deps.now,
   });
 
+  /** (Ben, 2 Nov) The coach's rest settings (`update_rest_settings`) and the card's `Today too?`. */
+  const restSettings = createRestSettingsService({
+    training,
+    todayCommand: (change, op, sessionId) => loop.workout.restSettingsCommand(change, op, sessionId),
+    dispatch: (sessionId, command) => loop.workout.dispatch(sessionId, command),
+    session: async (sessionId) => (await loop.workout.load(sessionId).catch(() => null))?.aggregate ?? null,
+    getAction: (actionId) => repos().coach.getAction(actionId),
+    now: deps.now,
+  });
+
   /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
   /** (Ben, 20 Oct) Activities (runs, rides, swims, sport) and this week's shape. Local only. */
   const weekly = createWeekServices({
@@ -690,6 +702,9 @@ export function createAppServices(deps: AppServicesDeps) {
     liftTargets: { on: () => liftTargets.on(), prepare: (args, at) => liftTargets.prepare(args, at) },
     // (Ben, 1 Nov) The coach's warm-up settings tool, in every chat.
     warmupPrefs: { prepare: (args, at) => warmupPrefs.prepare(args, at) },
+    // (Ben, 2 Nov) Rest settings and plan-level changes from every chat. `planChange` is made below (used after startup).
+    restSettings: { prepare: (args, at) => restSettings.prepare(args, at) },
+    planChange: { prepare: (r) => planChange.prepare(r) },
     // (Ben, 2 Nov) Fixing past workouts (as proposals), and a day's Health workouts in the coach's day read.
     workoutFix: { prepare: (args) => workoutFix.prepare(args) },
     healthDay: (date) => health.coachDay(date),
@@ -1172,6 +1187,12 @@ export function createAppServices(deps: AppServicesDeps) {
     plans,
   });
 
+  /**
+   * (Ben, 2 Nov) The coach's plan-level changes (a lighter week, days a week, length, Set/Any days, End): previewed and
+   * applied through the plan builder's `Edit plan` and the plan's own End, as a proposal with Apply / Undo.
+   */
+  const planChange = createPlanChangeService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, planBuilder, plans });
+
   /** Library › Exercises (exercise-library §9): browse, detail, Add to a workout. Local only. */
   const library = createLibraryService({
     repos,
@@ -1479,6 +1500,10 @@ export function createAppServices(deps: AppServicesDeps) {
     planBuilder,
     /** (Ben, 30 Oct) One exercise swapped in every plan day: the proposal card, Apply, Undo, Today too; Settings' Replace. */
     planSwap,
+    /** (Ben, 2 Nov) The coach's plan-level change card: Apply, Undo. */
+    planChange,
+    /** (Ben, 2 Nov) The coach's rest-settings card: `Today too?` and its Undo. */
+    restSettings,
     /** (Ben, 20 Oct) Runs, rides, swims and sport: add, edit, delete, Undo; Recent and calendar rows. */
     activities: weekly.activities,
     /** (Ben, 20 Oct) This week's shape: the coach's proposal card, Apply, Undo. */

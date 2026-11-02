@@ -616,6 +616,26 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Warm-ups not changed: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
+    case 'update_rest_settings': {
+      // (Ben, 2 Nov) What changed, one line each; Undo (and `Today too?`) on the card.
+      if (st === 'committed') {
+        const text = d.lines.join(' · ');
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not changed: your settings changed.', 'Not changed. Your settings changed.');
+      const text = `Rest not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
+    case 'propose_plan_change': {
+      // (Ben, 2 Nov) A plan-level change: its before → after lines; Apply / Skip, then Undo, on the card.
+      if (st === 'proposed') {
+        const text = `${d.planName === '' ? 'Your plan' : d.planName}: ${d.lines.join(' · ')}`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
+      const text = `Plan not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
     case 'fix_workout': {
       // (Ben, 2 Nov) A past workout fixed: `Pull A · Tue 28 Oct · 18:04–19:02 → Mon 27 Oct · 18:04–19:02`; Apply / Undo on the card.
       if (st === 'proposed' || st === 'committed') {

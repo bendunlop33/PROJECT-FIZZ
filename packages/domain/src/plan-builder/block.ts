@@ -50,7 +50,7 @@ export interface PbBlockWorkout {
 }
 
 export interface PbBlockInput {
-  answers: Pick<PlanBuilderAnswers, 'weeks' | 'effort'>;
+  answers: Pick<PlanBuilderAnswers, 'weeks' | 'effort'> & { lighterWeeks?: readonly number[] | undefined };
   appliedAtUtc: string;
   pauses?: readonly PlanPause[] | undefined;
   /** The plan's finished workouts (any order; ones before Apply or after now are ignored). */

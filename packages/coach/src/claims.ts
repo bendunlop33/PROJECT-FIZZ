@@ -1134,6 +1134,18 @@ function factsOf(record: ActionRecord): RecordFacts {
       // (20 Oct, ADR 0029) The gym's lines as saved: the numbers in them (`Dumbbells: 2–40 kg, every 2`).
       for (const l of d.lines) for (const m of l.matchAll(/\d+(?:\.\d+)?/g)) f.numbers.add(m[0]);
       break;
+    case 'update_rest_settings':
+      // (Ben, 2 Nov) The rests as saved (`Isolation 1:30 → 2:00`): each as m:ss, minutes and seconds ("2 minutes", "120 s").
+      for (const l of d.lines) {
+        for (const m of l.matchAll(/(\d+):(\d{2})/g)) {
+          const sec = Number(m[1]) * 60 + Number(m[2]);
+          f.numbers.add(m[0]);
+          f.numbers.add(String(sec));
+          f.numbers.add(String(sec / 60));
+        }
+      }
+      break;
+    case 'propose_plan_change':
     case 'rename_workout':
     case 'propose_next_workout_change':
     case 'update_routine':

@@ -21,7 +21,7 @@ import {
   type PlaybookCandidate,
   type TrainingChange,
 } from '@fizz/schemas';
-import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTargetSourceBasis, pbSetPlanPrefs, planRevertGymEdit, reduceSession, sameWarmupPrefs, suggestionInDate, undoActivity, undoPlanControl, warmupPrefsRevert, type GymEdit } from '@fizz/domain';
+import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTargetSourceBasis, pbSetPlanPrefs, planRevertGymEdit, reduceSession, restSettingsOf, sameRestSettings, sameWarmupPrefs, suggestionInDate, undoActivity, undoPlanControl, warmupPrefsRevert, type GymEdit } from '@fizz/domain';
 import { ACTIVITY_SPEC } from './activities';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
@@ -117,6 +117,8 @@ function sessionOf(record: ActionRecord): string | null {
     case 'propose_workout_edit':
     case 'fill_setup':
     case 'propose_plan_swap':
+    case 'propose_plan_change':
+    case 'update_rest_settings':
     case 'set_exercise_preference':
     case 'propose_rebalance':
     case 'undo':
@@ -666,6 +668,12 @@ export class SqliteCoachStore {
         }
         return null;
       }
+      case 'rest_settings': {
+        // (Ben, 2 Nov) His rest settings on the profile version read, with the record (rule 5).
+        const r = await changeTrainingProfileIn(tx, ownerId, write.change, profileWrite(write.action.opId, write.expectedVersion, write.action.createdAt.utc, write.action.createdAt.utc.slice(0, 10)));
+        if (r.status === 'stale' || r.status === 'invalid') throw new Rollback('stale_version');
+        return null;
+      }
       case 'workout_fix': {
         // (Ben, 2 Nov) Ben's Apply on a past-workout fix: the proposal still open, the change on the versions proposed.
         const proposalId = write.action.detail.kind === 'fix_workout' ? write.action.detail.proposalId : undefined;
@@ -900,6 +908,14 @@ export class SqliteCoachStore {
         }
         return 'ok';
       }
+      case 'update_rest_settings': {
+        // (Ben, 2 Nov) The settings before, only while they are still as this action left them. `Today too` has its own
+        // Undo on the card (the workout's `revert_coach_edit`).
+        const p = await readTrainingProfileIn(tx, ownerId);
+        if (p === null || !sameRestSettings(restSettingsOf(p), d.after)) return 'changed_since';
+        const r = await changeTrainingProfileIn(tx, ownerId, { kind: 'rest_settings', settings: d.before }, profileWrite(`undo:${target.actionId}`, p.version, atUtc, atUtc.slice(0, 10)));
+        return r.status === 'written' || r.status === 'replayed' ? 'ok' : 'changed_since';
+      }
       case 'log_activity': {
         // (Ben, 20 Oct) The activity the coach logged comes out (a tombstone), or one it marked done is planned again
         // (review S5), only while it is as this write left it.
@@ -918,9 +934,11 @@ export class SqliteCoachStore {
       // ADR 0039: a draft change's Apply and Undo are the builder's own writes (`workout_drafts`); Set up's fill has its
       // own Undo on Set up.
       // (Ben, 30 Oct) A plan swap's Apply and Undo are Ben's own routine writes (`update_routine` records).
+      // (Ben, 2 Nov) A plan change's Apply and Undo are the plan's own writes (`Apply changes`, End), from its card.
       case 'propose_workout_edit':
       case 'fill_setup':
       case 'propose_plan_swap':
+      case 'propose_plan_change':
         return 'unsupported';
       // (Ben, 2 Nov) Ben's applied past-workout fix: put back while nothing changed since (the proposal itself is never undone).
       case 'fix_workout':

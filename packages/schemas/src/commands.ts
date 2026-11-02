@@ -839,6 +839,8 @@ export const CoachEditStepSchema = z.discriminatedUnion('type', [
   LinkSupersetCommandSchema,
   SplitSupersetCommandSchema,
   SetMainLiftCommandSchema,
+  /** (Ben, 2 Nov) A pending set's rest (`Today too?` after a rest-settings change); only `restS` is ever patched this way. */
+  EditPlannedSetCommandSchema,
 ]);
 export type CoachEditStep = z.infer<typeof CoachEditStepSchema>;
 
@@ -864,7 +866,8 @@ export const CoachEditTodayCommandSchema = z.object({
   opId: OperationIdSchema,
   expectedVersion: z.int().min(1),
   actionId: IdSchema,
-  steps: z.array(CoachEditStepSchema).min(1).max(24),
+  /** (Ben, 2 Nov) Up to 60: a rest change today touches each pending set it moves. Model edits stay within `planCoachEdit`'s own bounds. */
+  steps: z.array(CoachEditStepSchema).min(1).max(60),
 });
 export type CoachEditTodayCommand = z.infer<typeof CoachEditTodayCommandSchema>;
 

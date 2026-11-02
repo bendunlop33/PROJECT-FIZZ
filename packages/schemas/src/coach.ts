@@ -20,8 +20,8 @@ import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SplitDayIdSchem
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
-import { PLAN_BUILDER_LIMITS, PlanPrefAnswerSchema } from './plan-builder';
-import { GeneralWarmupDaysSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
+import { PLAN_BUILDER_LIMITS, PlanBuilderAnswersSchema, PlanPrefAnswerSchema } from './plan-builder';
+import { FitRestLevelSchema, GeneralWarmupDaysSchema, RestDefaultKeySchema, RestSettingsSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
 import { ActivityEffortSchema, ActivityFieldsShapeSchema, ActivityKindSchema, ActivityStatusSchema, WeekBasisSchema, WeekMergeSchema, WeekRowSchema, WeekSkipSchema, type Activity } from './activity';
 import { LocalDateSchema } from './import';
 import { BuilderProposalSchema } from './builder-coach';
@@ -101,6 +101,10 @@ export const CoachEntityKindSchema = z.enum([
   'builder_setup',
   /** (Ben, 1 Nov) His warm-up preferences on the training profile (`update_warmup_prefs`), with today's pending warm-ups re-planned; Undo puts both back. */
   'warmup_prefs',
+  /** (Ben, 2 Nov) His rest settings on the training profile (`update_rest_settings`), applied when he asks; Undo puts them back. */
+  'rest_settings',
+  /** (Ben, 2 Nov) The plan in use's length, days, schedule, a lighter week or its End (`propose_plan_change`): a proposal he applies. */
+  'plan_settings',
   /** (Ben, 2 Nov) One exercise's preference on Any preferences (the plan in use's answers, `set_exercise_preference`); Undo puts it back. */
   'exercise_pref',
 ]);
@@ -298,6 +302,41 @@ export type ProposeDraftEditArgs = z.infer<typeof ProposeDraftEditArgsSchema>;
  * proposal with the before and after per day, Apply and Undo (rule 3: a structural future change). Only that exercise
  * changes; its sets, reps, rest, place and superset stay.
  */
+/**
+ * (Ben, 2 Nov) A plan-level change to the plan in use, always a proposal with before/after, Apply and Undo (rule 3):
+ * `lighter_week` this or next block week drafts as a deload week; `days_per_week` the plan rebuilt for that many days
+ * (the plan builder re-fits the split, keeps exercises where it can and the block's start); `length` the block's weeks;
+ * `schedule` Any days or Set days on the named weekdays; `end` the plan's End (his own workouts back). Weekdays as
+ * `mon` … `sun`; null when he named none.
+ */
+export const PlanWeekdayNameSchema = z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+export const PlanChangeArgSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('lighter_week'), week: z.enum(['this', 'next']) }),
+  z.strictObject({ kind: z.literal('days_per_week'), days: z.int().min(1).max(7), weekdays: z.array(PlanWeekdayNameSchema).max(7).nullable() }),
+  z.strictObject({ kind: z.literal('length'), weeks: z.int().min(1).max(52) }),
+  z.strictObject({ kind: z.literal('schedule'), schedule: z.enum(['any', 'set']), weekdays: z.array(PlanWeekdayNameSchema).max(7).nullable() }),
+  z.strictObject({ kind: z.literal('end') }),
+]);
+export type PlanChangeArg = z.infer<typeof PlanChangeArgSchema>;
+
+export const ProposePlanChangeArgsSchema = z.strictObject({ change: PlanChangeArgSchema, reason });
+export type ProposePlanChangeArgs = z.infer<typeof ProposePlanChangeArgsSchema>;
+
+/**
+ * (Ben, 2 Nov) Ben's rest settings, changed when he asks (applied at once with Undo: they are his settings). `rests`:
+ * a default rest per set type (`workingMain` main lift working sets, `top` top set, `backoff` back-off, `workingCompound`
+ * compound accessory, `workingIsolation` isolation accessory, `round` superset round, `warmup`), seconds, or null for the
+ * standard one; [] for none. `whenShort`: `Rest when short on time` (`normal` Standard rest, `shorter` Medium,
+ * `shortest` Minimum); null: unchanged. `shortenMain`: `Shorten main lift too`; null: unchanged.
+ */
+export const UpdateRestSettingsArgsSchema = z.strictObject({
+  rests: z.array(z.strictObject({ setType: RestDefaultKeySchema, seconds: z.int().min(0).max(3600).nullable() })).max(7),
+  whenShort: FitRestLevelSchema.nullable(),
+  shortenMain: z.boolean().nullable(),
+  ...askClaim,
+});
+export type UpdateRestSettingsArgs = z.infer<typeof UpdateRestSettingsArgsSchema>;
+
 export const ProposePlanSwapArgsSchema = z.strictObject({
   remove: z.string().min(1).max(80),
   add: z.string().min(1).max(80),
@@ -787,6 +826,10 @@ export const CoachToolNameSchema = z.enum([
   'update_warmup_prefs',
   /** (Ben, 1 Nov) One plan day's order and sets/reps/RPE/main every week: a proposal he applies, with Undo. */
   'propose_plan_day_edit',
+  /** (Ben, 2 Nov) A lighter week, days a week, plan length, Set/Any days or End for the plan in use: a proposal with Apply/Undo. */
+  'propose_plan_change',
+  /** (Ben, 2 Nov) Default rests per set type, `Rest when short on time`, `Shorten main lift too`: applied with Undo when Ben asks. */
+  'update_rest_settings',
   /** (Ben, 2 Nov) A past workout's date moved, a duplicate deleted, a Health workout paired or unpaired: a proposal he applies, with Undo. */
   'propose_workout_fix',
   /** (Ben, 2 Nov) One exercise's preference (not preferred / preferred / none), applied with Undo when Ben states it. */
@@ -837,6 +880,8 @@ export const COACH_TOOL_ARGS = {
   propose_plan_add: ProposePlanAddArgsSchema,
   update_warmup_prefs: UpdateWarmupPrefsArgsSchema,
   propose_plan_day_edit: ProposePlanDayEditArgsSchema,
+  propose_plan_change: ProposePlanChangeArgsSchema,
+  update_rest_settings: UpdateRestSettingsArgsSchema,
   propose_workout_fix: ProposeWorkoutFixArgsSchema,
   set_exercise_preference: SetExercisePreferenceArgsSchema,
   propose_rebalance: ProposeRebalanceArgsSchema,
@@ -1286,6 +1331,35 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     sessionId: IdSchema.nullable(),
     changedSetIds: z.array(IdSchema).max(60),
     removedSetIds: z.array(IdSchema).max(60),
+  }),
+  /**
+   * (Ben, 2 Nov) Ben's rest settings changed because he asked (`update_rest_settings`): the whole snapshot before and
+   * after (Undo needs the profile still at `after`). `today`: the live workout when the change moves some of its pending
+   * rests, for `Today too?` (its own change, on that workout's version, with its own Undo); null: none open or nothing
+   * there to change.
+   */
+  z.object({
+    kind: z.literal('update_rest_settings'),
+    lines: z.array(z.string().min(1).max(200)).min(1).max(10),
+    before: RestSettingsSchema,
+    after: RestSettingsSchema,
+    today: z.object({ sessionId: IdSchema, sets: z.int().min(1).max(200) }).nullable(),
+  }),
+  /**
+   * (Ben, 2 Nov) A plan-level change to the plan in use (`propose_plan_change`), always a proposal: `change` what it is,
+   * `answers` the plan builder's answers Apply rebuilds from (null for `end`), `planVersion` and `blockWeek` as read
+   * (Apply is refused as out of date when either moved, rule 5), `lines` the card's before → after. Apply is the plan's
+   * own `Apply changes` (or End) with an op ID from this record; Undo its own Undo. Done weeks and workouts never change.
+   */
+  z.object({
+    kind: z.literal('propose_plan_change'),
+    change: z.enum(['lighter_week', 'days_per_week', 'length', 'schedule', 'end']),
+    planId: IdSchema,
+    planName: z.string().max(120),
+    planVersion: z.int().min(1),
+    blockWeek: z.int().min(0).max(13),
+    answers: PlanBuilderAnswersSchema.nullable(),
+    lines: z.array(z.string().min(1).max(200)).max(12),
   }),
   /**
    * (Ben, 2 Nov) A past workout fixed (`propose_workout_fix`). The coach's record is `proposed` (before/after, Apply,
@@ -1880,6 +1954,8 @@ export type CoachWrite =
    * warm-ups planned again (`command`, an `adjust_pending_targets` on the session version read), with the record.
    */
   | { kind: 'warmup_prefs'; action: ActionRecord; change: TrainingChange; expectedVersion: number; session: { sessionId: string; command: SessionCommand } | null }
+  /** (Ben, 2 Nov) His rest settings (a `rest_settings` change) on `expectedVersion` (rule 5), with the record. */
+  | { kind: 'rest_settings'; action: ActionRecord; change: TrainingChange; expectedVersion: number }
   /** (Ben, 2 Nov) The plan in use with one exercise's preference changed (`set_exercise_preference`), on `expectedVersion` (rule 5), with its record. */
   | { kind: 'exercise_pref'; action: ActionRecord; plan: PlanDraft; expectedVersion: number }
   /** (Ben, 20 Oct) An activity the coach logged and its record, in one write (`expectedVersion` null: new). */

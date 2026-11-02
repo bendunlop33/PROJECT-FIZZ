@@ -116,6 +116,18 @@ export type RestDefaultKey = z.infer<typeof RestDefaultKeySchema>;
  */
 export const REST_DEFAULT_LIMITS = { minS: 30, maxS: 360, stepS: 15 } as const;
 
+/**
+ * (Ben, 2 Nov) Ben's rest settings as one snapshot: his own default rests (`restDefaultsS`, only those he set; null:
+ * none), `Rest when short on time` (null: the default, Minimum rest) and `Shorten main lift too`. The coach's
+ * `update_rest_settings` writes one whole snapshot (`rest_settings` change) so its Undo puts back exactly the one before.
+ */
+export const RestSettingsSchema = z.object({
+  restDefaultsS: z.partialRecord(RestDefaultKeySchema, z.int().min(REST_DEFAULT_LIMITS.minS).max(REST_DEFAULT_LIMITS.maxS)).nullable(),
+  fitRestLevel: FitRestLevelSchema.nullable(),
+  fitShortenMain: z.boolean(),
+});
+export type RestSettings = z.infer<typeof RestSettingsSchema>;
+
 /** (Ben, 1 Nov) One exercise's warm-ups: `off` none; `normal` the planner's table (even for prehab work). */
 export const WarmupExerciseSettingSchema = z.enum(['off', 'normal']);
 export type WarmupExerciseSetting = z.infer<typeof WarmupExerciseSettingSchema>;
@@ -284,6 +296,8 @@ export type TrainingChange =
   | { kind: 'pin_note'; exerciseId: string; gymId: string | null; text: string }
   /** (Ben, 26 Oct) Unpin it (the text is kept as today's note by the caller when Ben asks). */
   | { kind: 'unpin_note'; exerciseId: string; gymId: string | null }
+  /** (Ben, 2 Nov) The coach's rest change: the whole rest snapshot (defaults, `Rest when short on time`, `Shorten main lift too`). */
+  | { kind: 'rest_settings'; settings: RestSettings }
   /** (Ben, 1 Nov) `Simple warm-up weights`, and/or warm-ups per exercise (`null` = back to the default). */
   /** (Ben, 2 Nov) `general`: his general warm-up rules, replacing the ones stored (null or []: none). Absent: unchanged. */
   | { kind: 'warmup_prefs'; simpleLoads?: boolean; perExercise?: Readonly<Record<string, WarmupExerciseSetting | null>>; general?: readonly GeneralWarmupRule[] | null }

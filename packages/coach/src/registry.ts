@@ -486,6 +486,35 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Change Ben’s warm-up settings when he asks: simpleLoads true for Simple warm-up weights (the bar, then 10 kg steps; dumbbells in 5s; machines in 10s), false for the exact percentages, null to leave it. exercises: per exercise (a name or ID he has), warmups off (none), normal (the usual warm-ups, even on prehab), or default; [] for none. general: his standing cardio-first warm-up ("bike for 8 minutes first on leg days, rowing for 4 minutes first on other days"): one entry per kind of day, days legs (leg days, decided by code from the day’s exercises), other (every other day) or all (every day), exercise the cardio exercise (a name or catalogueId: bike, rowing machine…), minutes (0 turns that day’s off); days not named keep theirs; null leaves it. It goes first in every workout he starts from then on, whatever the plan. Today’s warm-ups not yet done are planned again; logged sets never change. benAsked true only when his message this turn asks for this, with benQuote his words copied exactly; false when it is your idea (nothing changes; ask him).',
   },
   {
+    // (Ben, 2 Nov) Plan-level changes to the plan in use from any chat (ADR 0039): a lighter week, days a week, the
+    // plan's length, Set/Any days, End. Always a proposal (rule 3); offered only while a plan is in use and Ben's words
+    // ask for one of these (`planChangeWords`), so other turns don't carry it (trimmed context, 1 Nov).
+    name: 'propose_plan_change',
+    effect: 'propose',
+    writes: ['plan_settings'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Change your plan’s length, days a week or days, add a lighter week, or end it, as a proposal you apply or undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Propose a plan-level change to the plan in use (YOUR DATA plan.inUse) when Ben asks. change.kind: lighter_week (week this or next: that block week drafts as a deload week, about 10 % lighter and a set fewer); days_per_week (days 2–7; weekdays mon…sun only when he named them, else null): the app rebuilds the plan for that many days with the plan builder, keeping exercises where it can; length (weeks: 4, 6, 8 or 12); schedule (any, or set with the weekdays he named); end (End the plan: its days leave the rotation and his own workouts come back). The block’s start, done weeks and done workouts never change. Ben sees before/after and applies it; nothing changes until he does.',
+  },
+  {
+    // (Ben, 2 Nov) His rest settings, every chat with a training profile, offered on words about rest. Applies at once
+    // with Undo when he asked (the turn reads his words, `asksForRestChange`); else nothing changes and the coach asks.
+    name: 'update_rest_settings',
+    effect: 'versioned_update',
+    writes: ['rest_settings'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Change your rest times when you ask, with Undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Change Ben’s rest settings when he asks: rests, one per set type he named (setType workingMain, top, backoff, workingCompound, workingIsolation, round or warmup; "accessories" are workingCompound and workingIsolation), seconds in 15 s steps from 30 to 360, or null for the standard rest; [] for none. whenShort: Rest when short on time (normal, shorter, shortest), null to leave it. shortenMain: Shorten main lift too, null to leave it. Logged sets never change; with a workout live the card offers Today too. benAsked true only when his message this turn asks for this, with benQuote his words copied exactly; false when it is your idea (nothing changes; ask him).',
+  },
+  {
     // (Ben, 2 Nov: "I don't like leg extensions, take them out") Any preferences on the plan in use, from every chat,
     // only on his like/dislike words (`exercisePrefs`: a builder plan in use and those words). Applies at once with Undo
     // because it is his stated preference; a swap out of his plan rides on the same card as a proposal (rule 3).
@@ -599,7 +628,7 @@ export const COACH_NEVER: readonly string[] = [
 /** (Ben, 20 Oct) `lift_target`: a target on Ben's training profile he asked for; Undo puts back what was there. */
 /** (Ben, 1 Nov) `warmup_prefs`: his warm-up settings and today's pending warm-ups; Undo puts both back. */
 /** (Ben, 2 Nov) `exercise_pref`: one exercise's preference on the plan in use's answers (no days change); Undo puts it back. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target', 'warmup_prefs', 'exercise_pref']);
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target', 'warmup_prefs', 'exercise_pref', 'rest_settings']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -686,6 +715,10 @@ export interface TurnGate {
   week?: boolean;
   /** ADR 0039: a plan is in use (paused or not): `pause_plan`. */
   planInUse?: boolean;
+  /** (Ben, 2 Nov) Ben's words ask for a lighter week, days a week, plan length, Set/Any days or End: `propose_plan_change`. */
+  planChangeWords?: boolean;
+  /** (Ben, 2 Nov) Ben's words are about rest times: `update_rest_settings`. */
+  restWords?: boolean;
   /** ADR 0039: a Your workout draft (not started) is in context: `propose_workout_edit`. */
   builderDraft?: boolean;
   /** ADR 0039: today's Set up can be filled (no live workout): `fill_setup`. */
@@ -716,6 +749,8 @@ export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   think_harder: 'lightTurn',
   set_lift_target: 'liftTargetsOn',
   update_warmup_prefs: 'trainingProfile',
+  propose_plan_change: 'planInUse',
+  update_rest_settings: 'trainingProfile',
   set_exercise_preference: 'exercisePrefs',
   propose_rebalance: 'rebalanceOpen',
   propose_workout_edit: 'builderDraft',
@@ -802,6 +837,9 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'ben_request':
       if (t.name === 'ask_build_question') return requestOpens(t, g.benRequest) && g.buildQuestionOpen === true ? null : 'needs_request';
       if (t.name === 'update_gym') return g.gymWords === true ? null : 'needs_request';
+      // (Ben, 2 Nov) Loaded only on the turns that need them (trimmed context): his words this turn.
+      if (t.name === 'propose_plan_change') return g.planChangeWords === true ? null : 'needs_request';
+      if (t.name === 'update_rest_settings') return g.restWords === true ? null : 'needs_request';
       if (t.name === 'propose_workout_fix') return g.pastWorkoutWords === true ? null : 'needs_request';
       if (requestOpens(t, g.benRequest)) return null;
       if (t.name === 'propose_workout' && g.kind !== 'summary' && g.buildOpen === true) return null;

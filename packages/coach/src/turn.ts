@@ -44,6 +44,8 @@ import { isBareAccept, isFixOffer, offerAcceptedLine, offerContinuationOf, PARTI
 import { splitSentences } from './sentences';
 import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
 import { asksForWarmupChange, WARMUP_PREFS_NOT_ASKED_LINE, WARMUP_PREFS_TOOL_LINE } from './warmup-prefs';
+import { asksForRestChange, mentionsRestSettings, REST_SETTINGS_NOT_ASKED_LINE, REST_SETTINGS_TOOL_LINE } from './rest-settings';
+import { asksPlanSettingChange, PLAN_CHANGE_LINE } from './plan-change';
 import { asksPastWorkoutFix, WORKOUT_FIX_LINE } from './workout-fix';
 import { asksExercisePreference, EXERCISE_PREF_NOT_ASKED_LINE, EXERCISE_PREF_TOOL_LINE } from './exercise-prefs';
 import { asksMuscleBalance, REBALANCE_TOOL_LINE } from './plan-rebalance';
@@ -266,6 +268,11 @@ export interface CoachTurnRequest {
   week?: boolean;
   /** ADR 0039: a plan is in use (`pause_plan`), from any chat. */
   planInUse?: boolean;
+  /**
+   * (Ben, 2 Nov) The plan in use was made by the plan builder (it has a block): a lighter week, days a week, length and
+   * Set/Any days go to `propose_plan_change` (rebuilt by the builder), never a whole-plan rewrite. Absent: a coach plan.
+   */
+  builderPlan?: boolean;
   /** ADR 0039: a Your workout draft (not started) is in context (`propose_workout_edit`), from any chat. */
   builderDraft?: boolean;
   /** ADR 0039: today's Set up can be filled (`fill_setup`): no live workout. */
@@ -553,7 +560,7 @@ export const TWO_PART_LINE =
 
 /** (Ben, 31 Oct) Fed back when a plan ask's answer came without a plan card. Never shown to Ben. */
 export const PLAN_PART_NUDGE_LINE =
-  'Not shown yet. Ben asked about or for a change to his plan. If your answer found something to change, call propose_plan_add, propose_plan_swap or propose_plan_day_edit now with that fix (a proposal he applies), then reply. If nothing needs changing, call reply again with the same message.';
+  'Not shown yet. Ben asked about or for a change to his plan. If your answer found something to change, call propose_plan_add, propose_plan_swap, propose_plan_day_edit or propose_plan_change (a lighter week, days a week, length, days, End) now with that fix (a proposal he applies), then reply. If nothing needs changing, call reply again with the same message.';
 
 /** (Ben, 31 Oct) Fed back when a reply ended by asking whether to make a fix, with no card. Never shown to Ben. */
 export const SOLUTION_NUDGE_LINE =
@@ -947,12 +954,16 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     // Mid-workout on the workout's own sheet the turn starts light (low effort, his lighter model if chosen).
     ...(liveWorkout ? { lightTurn: true } : {}),
   });
-  // (Ben, 2 Nov) Two targeted tool groups, loaded only on the words that need them (so other turns don't grow).
+  // (Ben, 2 Nov) The plan-level change and rest tools load only on turns whose words need them (trimmed context, 1 Nov).
   const gateWords = chatTurn && askInput.kind === 'words' ? askInput.text : null;
+  const planChangeWords = gateWords !== null && req.planInUse === true && asksPlanSettingChange(gateWords);
+  const restWords = gateWords !== null && req.trainingProfile === true && mentionsRestSettings(gateWords);
   const gate = {
     ...gated,
     ...(req.liftTargetsOn === true ? { liftTargetsOn: true } : {}),
     ...(req.trainingProfile === true ? { trainingProfile: true } : {}),
+    ...(planChangeWords ? { planChangeWords: true } : {}),
+    ...(restWords ? { restWords: true } : {}),
     ...(req.exercisePrefs === true && gateWords !== null && asksExercisePreference(gateWords) ? { exercisePrefs: true } : {}),
     ...(req.rebalance === true && gateWords !== null && asksMuscleBalance(gateWords) ? { rebalanceOpen: true } : {}),
     // (Ben, 2 Nov) Fixing a past workout: only on his words about one.
@@ -963,8 +974,13 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const fullRegistry = runnable(buildTurnRegistry(gate), ports.executors);
   const sayWords = req.input.kind === 'words' ? (saidWords ?? req.input.text) : null;
   const planToolsAll = fullRegistry.tools.some((t) => PLAN_EDIT_TOOLS.has(t.name));
+  // (Ben, 2 Nov) "Go to 4 days a week", "make the plan 8 weeks", "make next week lighter", "end this plan" on a builder plan:
+  // the plan builder makes the change (`propose_plan_change`), so the turn is a targeted plan turn, not a whole-plan rewrite.
+  const settingAsk = (ws: string | null, tools: readonly { name: string }[]): boolean =>
+    chatTurn && req.planInUse === true && req.builderPlan === true && ws !== null && req.draftInContext !== true && tools.some((t) => t.name === 'propose_plan_change') && !requestHas(classifyBenRequest(ws, 'general'), 'build') && !asksToPausePlan(ws) && asksPlanSettingChange(ws);
   const targetedPlanWork =
-    chatTurn && req.planInUse === true && planToolsAll && sayWords !== null && req.draftInContext !== true && followUp === null && !asksPlanRebuild(sayWords) && !requestHas(classifyBenRequest(sayWords, 'general'), 'build') && (asksPlanFix(sayWords) || planLevelAsk(sayWords));
+    (settingAsk(sayWords, fullRegistry.tools) && followUp === null) ||
+    (chatTurn && req.planInUse === true && planToolsAll && sayWords !== null && req.draftInContext !== true && followUp === null && !asksPlanRebuild(sayWords) && !requestHas(classifyBenRequest(sayWords, 'general'), 'build') && (asksPlanFix(sayWords) || planLevelAsk(sayWords)));
   const registry: TurnRegistry = targetedPlanWork
     ? { tools: fullRegistry.tools.filter((t) => !PLAN_WORK_LEAVES_OUT.has(t.name)), withheld: [...fullRegistry.withheld, ...fullRegistry.tools.filter((t) => PLAN_WORK_LEAVES_OUT.has(t.name)).map((t) => ({ name: t.name, reason: 'plan_work' as const }))] }
     : fullRegistry;
@@ -1039,7 +1055,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // ("does the plan train enough biceps?", "add curls, fix the plan too") is answered with a targeted proposal: only a
   // rebuild (days, split, a new plan) forces the whole-plan proposal, which is the slow answer that timed out.
   const planToolsHere = registry.tools.some((t) => PLAN_EDIT_TOOLS.has(t.name));
-  const targetedPlan = req.planInUse === true && planToolsHere && words !== null && !asksPlanRebuild(words);
+  const settingAsked = req.input.kind === 'words' && settingAsk(words, registry.tools);
+  const targetedPlan = settingAsked || (req.planInUse === true && planToolsHere && words !== null && !asksPlanRebuild(words));
   const forcedPlan = planOffered && words !== null && askedPlan && !targetedPlan && buildPainMention(words) === 'none' && !multiWeekBlock(words);
   const forced = forcedPlan || (buildOffered && words !== null && forcesBuild(words, { draftInContext: req.draftInContext === true }));
   const forcedTool = forcedPlan ? 'propose_plan' : 'propose_workout';
@@ -1055,9 +1072,14 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // heavier", "it's too light", "fix them then", or "try again" after a request that got no change) ends in
   // edit_today: a text answer is held once with a nudge, then edit_today is named, the same way a build is forced.
   const openAsk = todayLive && req.input.kind === 'words' ? openChangeRequestIn(history) : null;
+  // (Ben, 2 Nov) "Make next week lighter" is the plan's lighter week and "rest 2 minutes on accessories" his rest settings,
+  // not a change to today's sets (a rest change today is the rest card's `Today too?`).
+  const restSettingAsk = words !== null && registry.tools.some((t) => t.name === 'update_rest_settings') && asksForRestChange(words) && !/\b(?:today|this workout|these sets|remaining sets|for now)\b/i.test(words);
   const liveChange =
     todayLive &&
     !forced &&
+    !settingAsked &&
+    !restSettingAsk &&
     words !== null &&
     req.input.kind === 'words' &&
     registry.tools.some((t) => t.name === 'edit_today') &&
@@ -1070,7 +1092,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // (Ben, 31 Oct, build 493) Ben asks for a change to the plan in use ("Can u fix the plan too?" counts): the turn ends
   // with a plan proposal, or the coach says nothing needs changing (one nudge). `twoPart`: today's change too, which
   // goes first and never waits on the plan part.
-  const planAsked = planToolsHere && !forcedPlan && words !== null && req.input.kind === 'words' && mention === 'none' && asksPlanFix(words);
+  const planAsked = (settingAsked && mention === 'none') || (planToolsHere && !forcedPlan && words !== null && req.input.kind === 'words' && mention === 'none' && asksPlanFix(words));
   const twoPart = liveChange && planAsked;
   // Review S5: adding is named only with the list of what can be added; without it the model can only guess an ID.
   const addOffered = registry.tools.some((t) => t.name === 'edit_today') && context.yourData.addable !== undefined;
@@ -1084,8 +1106,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
-  const findLine = (registry.tools.some((t) => t.name === 'update_warmup_prefs') ? `\n${WARMUP_PREFS_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'set_exercise_preference') ? `\n${EXERCISE_PREF_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_rebalance') ? `\n${REBALANCE_TOOL_LINE}` : '') + (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
-  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_day_edit') ? `\n${PLAN_DAY_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_fix') ? `\n${WORKOUT_FIX_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
+  const findLine = (registry.tools.some((t) => t.name === 'update_warmup_prefs') ? `\n${WARMUP_PREFS_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'update_rest_settings') ? `\n${REST_SETTINGS_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'set_exercise_preference') ? `\n${EXERCISE_PREF_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_rebalance') ? `\n${REBALANCE_TOOL_LINE}` : '') + (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
+  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_swap') ? `\n${PLAN_SWAP_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_add') ? `\n${PLAN_ADD_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_day_edit') ? `\n${PLAN_DAY_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_plan_change') ? `\n${PLAN_CHANGE_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_fix') ? `\n${WORKOUT_FIX_LINE}` : '') + (twoPart ? `\n${TWO_PART_LINE}` : '') + (offerReply !== null ? `\n${offerAcceptedLine(offerReply)}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine + weekLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
@@ -1230,7 +1252,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let planHeld: string | null = null;
   let solutionHeld: { message: string; streamed: string } | null = null;
   const planCardMade = (): boolean =>
-    entries.some((e) => e.origin === 'this_turn' && (e.record.detail.kind === 'propose_plan_swap' || e.record.detail.kind === 'build_plan' || e.record.detail.kind === 'propose_rebalance' || (e.record.detail.kind === 'set_exercise_preference' && e.record.detail.swapActionId !== null)));
+    entries.some((e) => e.origin === 'this_turn' && (e.record.detail.kind === 'propose_plan_swap' || e.record.detail.kind === 'build_plan' || e.record.detail.kind === 'propose_rebalance' || e.record.detail.kind === 'propose_plan_change' || (e.record.detail.kind === 'set_exercise_preference' && e.record.detail.swapActionId !== null)));
   const anyCard = (): boolean => entries.some((e) => e.origin === 'this_turn');
   const fixToolHere = registry.tools.some((t) => t.name === 'edit_today' || PLAN_EDIT_TOOLS.has(t.name));
   // Coach v3: reads per turn, and identical reads answered from this turn's cache (keyed by the opId).
@@ -1508,6 +1530,21 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     // whether a call applies at once (rule 3). The week's own idea is saved as a proposal he applies; a pause he didn't
     // ask for is never run (the coach asks him).
     // (Ben, 1 Nov) Warm-up settings change only on his words this turn (rule 3); otherwise nothing runs and the coach asks.
+    // (Ben, 2 Nov) Rest settings change only on his words this turn (rule 3); otherwise nothing runs and the coach asks.
+    if (parsed.call.tool === 'update_rest_settings') {
+      const benWords = askInput.kind === 'words' ? askInput.text : words;
+      const asked = benWords !== null && asksForRestChange(benWords) && !declinesChange(benWords) && askClaimOf(parsed.call.args).benAsked !== false;
+      if (!asked) {
+        logLine({ tool: parsed.call.tool, outcome: 'proposed', text: 'Not asked, not applied.', actionId: null });
+        input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: REST_SETTINGS_NOT_ASKED_LINE }) });
+        continue;
+      }
+      const executor = ports.executors.update_rest_settings;
+      if (executor === undefined) throw new Error('No executor for update_rest_settings');
+      const result = await executor(parsed.call, { ...callCtx, opId: parsed.opId });
+      input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, noteResult(parsed.call.tool, result)) });
+      continue;
+    }
     if (parsed.call.tool === 'update_warmup_prefs') {
       const benWords = askInput.kind === 'words' ? askInput.text : words;
       const asked = benWords !== null && asksForWarmupChange(benWords) && !declinesChange(benWords) && askClaimOf(parsed.call.args).benAsked !== false;

@@ -13,4 +13,5 @@ export * from './week-change';
 export * from './plan-swap';
 export * from './rebalance';
 export * from './plan-day-edit';
+export * from './plan-change';
 export * from './exercise-prefs';
