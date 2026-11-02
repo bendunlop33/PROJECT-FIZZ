@@ -231,7 +231,8 @@ describe('S2: the set card’s plate breakdown and warm-up for the new bars and 
     const ramp = warmUpRamp(kg(140), trap);
     // (Ben, 1 Nov) Simple warm-up weights: 140 kg takes 20 kg steps from the 25 kg trap bar (45, 65, 85, 105); 40 % = 56 → 65 (was 55).
     expect(ramp[0]).toEqual({ load: 65, reps: 5 });
-    expect(ramp.length).toBeGreaterThan(2);
+    // (Ben, 2 Nov) Jumps up to 30 % of W on a bar's plate ladder: two steps.
+    expect(ramp.length).toBeGreaterThanOrEqual(2);
     expect(plain(warmUpText(ramp, trap))).toMatch(/^65 × 5 · /);
     expect(warmUpRamp(kg(40), ez)).toEqual([]);
   });

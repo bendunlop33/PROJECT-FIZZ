@@ -4,7 +4,7 @@ import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclu
 import { getAchievableLoads, isLoadAchievable, isPresenceOnly, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
 import { gymLearnFor, gymLearnText, type GymLearn } from '../quick-gym';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
-import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
+import { plateBreakdownLine, setPlateChain, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, cardioElapsedMs, paceText, resumeCardioInterval } from '../cardio';
@@ -833,7 +833,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     side,
     restAfterS: set.rest.seconds,
     restSourceLabel: set.rest.sourceLabel,
-    plateLine: plateBreakdownLine(logValues.load, eq),
+    plateLine: plateBreakdownLine(logValues.load, eq, setPlateChain(own, set.id)),
     warmUp: eq !== null && showsWarmUp(state, set.id) ? warmUpText(warmUpRamp(logValues.load ?? set.planned.load, eq, set.planned.reps?.min ?? null), eq) : null,
     rows: buildSetRows(input, ex.id, set.id),
     next,
@@ -921,7 +921,7 @@ export function exerciseCardFacts(input: Pick<ActiveViewInput, 'aggregate' | 'ru
     if (s.status === 'skipped' || s.planned.load === null) continue;
     const row = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
     const eq = equipmentOf(state, row);
-    const line = plateBreakdownLine(s.planned.load, eq);
+    const line = plateBreakdownLine(s.planned.load, eq, setPlateChain(own, s.id));
     if (line === null) continue;
     const text = `${loadText(s.planned.load, row.loadConvention, eq)}: ${line}`;
     if (seen.has(text)) continue;

@@ -1,7 +1,8 @@
-import type { EquipmentInstance, Load, SessionAggregate, SessionExercise } from '@fizz/schemas';
+import type { EquipmentInstance, Load, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { formatNumber, NBSP } from './display';
 import { isSetCountable } from './exclusions';
 import { buildPlateSetup, getAchievableLoads, isBarLoaded } from './equipment';
+import { platesInChain, type PlateChainContext } from './plate-path';
 import { planWarmups } from './warmup/plan';
 import { simpleWarmupLoads } from './warmup/simple';
 import { matchesEquipment, type HistorySession } from './progression';
@@ -19,13 +20,17 @@ import { toScaled } from './units';
  * their own bar), `20 + 10 / side` for a two-sided plate-loaded machine or a
  * Smith machine (plates added). Null when the load isn't plate-loaded or
  * can't be made from this inventory (the off-profile warning covers that).
+ * With `chain` (the exercise's sets), the plates as that run builds them up
+ * and takes them down (Ben, 2 Nov: smaller plates outermost when they come off).
  */
-export function plateBreakdownLine(load: Load | null, eq: EquipmentInstance | null): string | null {
+export function plateBreakdownLine(load: Load | null, eq: EquipmentInstance | null, chain: PlateChainContext | null = null): string | null {
   if (load === null || eq === null || !(isBarLoaded(eq) || eq.kind === 'plate_loaded_machine' || eq.kind === 'smith_machine')) return null;
   if (load.unit !== eq.unit || load.convention !== eq.loadConvention) return null;
+  // (Ben, 2 Nov) Loaded as its run of sets builds it (`platesInChain`), else the fewest plates.
+  const stack = platesInChain(load.value, eq, chain);
   const r = buildPlateSetup({ value: load.value, unit: load.unit }, eq);
   if (!r.ok) return null;
-  const plates = r.perSide.flatMap((p) => Array.from({ length: p.count }, () => formatNumber(p.mass)));
+  const plates = (stack ?? r.perSide.flatMap((p) => Array.from({ length: p.count }, () => p.mass))).map(formatNumber);
   const side = r.sides === 2 ? `${NBSP}/${NBSP}side` : `${NBSP}on the horn`;
   if (isBarLoaded(eq)) {
     const bar = `${formatNumber(eq.barMass)} bar`;
@@ -149,4 +154,16 @@ export function summaryHighlight(state: SessionAggregate, history: Readonly<Reco
 function whereText(ex: SessionExercise, state: SessionAggregate): string {
   const eq = ex.equipmentId === null ? null : state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId);
   return eq ? ` on ${eq.name}` : '';
+}
+
+/**
+ * (Ben, 2 Nov) An exercise's sets as one run of loads for the plates (`plateBreakdownLine`'s `chain`): what was lifted
+ * on a done set, else its target; skipped and deleted sets are left out. `derived` adds a warm-up's planned load
+ * when it has none of its own (`warmupRampLoads`).
+ */
+export function setPlateChain(sets: readonly WorkoutSet[], at: string, derived: ReadonlyMap<string, Load> | null = null): PlateChainContext | null {
+  const run = sets.filter((s) => s.status !== 'skipped' && s.status !== 'deleted');
+  const i = run.findIndex((s) => s.id === at);
+  if (i < 0) return null;
+  return { loads: run.map((s) => (s.status === 'completed' ? (s.actual?.load ?? null) : (s.planned.load ?? derived?.get(s.id) ?? null))), at: i };
 }

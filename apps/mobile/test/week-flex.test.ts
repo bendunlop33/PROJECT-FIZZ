@@ -422,9 +422,10 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     const push = await s.next.preview(gymId);
     expect(push?.title).toBe('Push');
     expect(push?.aboutMinutes ?? 99).toBeLessThanOrEqual(30);
-    // Chest alone is about 25 with its warm-ups (WU1–WU12; at 15 min the main lifts' warm-up floors alone wouldn't
-    // fit, WU11): the two days' 12 working sets come down, warm-ups cut first, main lifts keeping two.
-    expect(chest).toBe(25);
+    // Chest alone is about 20 with its warm-ups (WU1–WU12; Ben, 2 Nov: the bench's 2 plate-friendly warm-ups, was 25;
+    // at 15 min the main lifts' warm-up floors alone wouldn't fit, WU11): the two days' 12 working sets come down,
+    // warm-ups cut first, main lifts keeping two.
+    expect(chest).toBe(20);
     const working = (push?.targets ?? []).reduce((n, t) => n + Number(/· (\d+) sets?/.exec(sp(t.line))?.[1] ?? 0), 0);
     expect(working).toBeLessThan(12);
     expect(sp(push?.targets.find((t) => t.exerciseName === 'Bench press')?.line)).toBe('Target 100 kg × 6–8 · 3 sets');

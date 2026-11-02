@@ -564,7 +564,9 @@ describe('exerciseCardFacts: a non-current card’s menu and sheet (review S2, S
     const bench = exerciseCardFacts({ aggregate: s }, benchRow);
     expect(bench?.nextSet?.id).toBe(w?.id);
     expect(bench?.coachActionId).toBeNull();
-    expect(bench?.plates.map(plain)).toEqual(['60 kg: 20 bar + 20 / side', '100 kg: 20 bar + 20 + 20 / side', '95 kg: 20 bar + 25 + 10 + 2.5 / side']);
+    // (Ben, 2 Nov) Loaded as the run goes, fewest swaps: 100 as 25 + 10 + 5 so the 95 back-off swaps only the 5 for a
+    // 2.5 (20 + 20 would mean taking both 20s off for it).
+    expect(bench?.plates.map(plain)).toEqual(['60 kg: 20 bar + 20 / side', '100 kg: 20 bar + 25 + 10 + 5 / side', '95 kg: 20 bar + 25 + 10 + 2.5 / side']);
     expect(exerciseCardFacts({ aggregate: s }, 'nope')).toBeNull();
   });
 });

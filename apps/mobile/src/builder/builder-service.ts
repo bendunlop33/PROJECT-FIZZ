@@ -1773,7 +1773,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const at = deps.now();
       const id = deriveId(`builder-draft:${opId}`);
       const built = await buildFor(p, s, `${id}:${opId}`);
-      const stored = storedSetup(s, openedVersions(built));
+      // The build's own fit may shorten rests: stored with the plan, so the next edit keeps them (and every slot's revision).
+      const stored = storedSetup(s, { ...openedVersions(built), restLevel: built.workout.restLevel });
       const draftPlan = withSlotRevs(null, toDraftPlan(built.workout, built.env.codec)).plan;
       const draft = newBuilderDraft({
         id,
@@ -2208,7 +2209,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           // A new workout. With Length left as Time's (review N10): built at the set-up's own length (it still stands
           // for the plan), then Time fits it again, so its note, Undo and more time work as on any fit.
           const built = await buildFor(p, lengthKept ? { ...next, minutes: timeFrom } : next, `${current.id}:${w.opId}`, v.request.gymId);
-          const asBuilt = { ...storedSetup(next, openedVersions(built)), ...(lengthKept && timeFrom !== next.minutes ? { timeFrom } : {}) };
+          const asBuilt = { ...storedSetup(next, { ...openedVersions(built), restLevel: built.workout.restLevel }), ...(lengthKept && timeFrom !== next.minutes ? { timeFrom } : {}) };
           const fitted = lengthKept ? retimed(asBuilt, { original: built.workout, work: built.workout }, built.env) : { workout: built.workout, setup: asBuilt };
           const setup = fitted.setup;
           const plan = withSlotRevs(v.plan, toDraftPlan(fitted.workout, built.env.codec)).plan;

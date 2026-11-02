@@ -448,7 +448,8 @@ describe('(c) warm-ups obey equipment caps and pain blocks', () => {
     const ramp = warmUpRamp(kg(60), bar, first.planned.reps?.min ?? null);
     expect(view.focus?.warmUp).toBe(warmUpText(ramp, bar));
     expect(ramp.every((r) => r.load < 60)).toBe(true);
-    expect(ramp[0]?.load).toBe(20);
+    // (Ben, 2 Nov) Whole 5 kg plates, the bar + plates first (was the bar, 30, 40, 50).
+    expect(ramp.map((r) => r.load)).toEqual([30, 40, 50]);
   });
 
   it('planned warm-up sets go through the same equipment check as working sets, at Start and in Repeat', () => {

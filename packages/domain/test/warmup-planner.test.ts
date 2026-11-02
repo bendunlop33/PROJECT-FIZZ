@@ -55,7 +55,8 @@ describe('WU1 in the builder: warm-ups never count, never touch working sets, an
       expect(s.rows.filter((r) => r.type === 'warmup').every((r) => r.rpe === null)).toBe(true);
     }
     // The incline press after bench is warmed (WU2): none; the pushdown (triceps) keeps its one step (WU7).
-    expect(slotsOf(after.blocks).map((s) => s.rows.filter((r) => r.type === 'warmup').length)).toEqual([4, 0, 1]);
+    // (Ben, 2 Nov) The bench gets 2 plate-friendly warm-ups (was 4).
+    expect(slotsOf(after.blocks).map((s) => s.rows.filter((r) => r.type === 'warmup').length)).toEqual([2, 0, 1]);
   });
   it('warm-ups Ben set himself (`ownWarmups`, or a warm-up kg he typed) are kept as he set them', () => {
     const base = w();
@@ -335,7 +336,10 @@ describe('a fixed count of warm-ups (a saved workout’s, or the coach’s when 
   });
   it('warmupShape: the table’s reps before the gym’s loads are known', () => {
     expect(warmupShape({ cls: 'heavy', reps: 12, warmed: false, firstOfSession: true, floorStart: true, bar: true })).toEqual([8, 5]);
-    expect(warmupShape({ cls: 'heavy', reps: 5, warmed: false, firstOfSession: true, floorStart: false, bar: true })).toEqual([5, 5, 3, 2]);
+    // (Ben, 2 Nov) A bar lift's shape is the plate ladder's (100 × 5 → 60 × 5, 80 × 2), as Start plans it; was the bar, 40, 60, 80.
+    expect(warmupShape({ cls: 'heavy', reps: 5, warmed: false, firstOfSession: true, floorStart: false, bar: true })).toEqual([5, 2]);
+    expect(warmupShape({ cls: 'heavy', reps: 3, warmed: false, firstOfSession: true, floorStart: false, bar: true })).toEqual([5, 2, 1]);
+    expect(warmupShape({ cls: 'heavy', reps: 5, warmed: false, firstOfSession: true, floorStart: false, bar: true, simple: null })).toEqual([5, 5, 3, 2]);
     expect(warmupShape({ cls: 'isolation', reps: 12, warmed: true, firstOfSession: false, floorStart: false, bar: false })).toEqual([]);
     expect(warmupShape({ cls: 'heavy', reps: 12, warmed: false, firstOfSession: false, floorStart: false, bar: false }, 1)).toEqual([5]);
   });

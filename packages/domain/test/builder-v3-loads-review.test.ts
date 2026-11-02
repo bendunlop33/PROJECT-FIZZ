@@ -42,7 +42,7 @@ describe('B1: a kg slot on lb equipment works in lb and says so', () => {
     expect(big.unit).toBe('lb');
   });
 
-  it('a 100 kg bench target on an lb bar: top ≤ 220.5 lb, back-offs ≤ 95 kg in lb, warm-ups bar/40/60/80 % in lb (WU4)', () => {
+  it('a 100 kg bench target on an lb bar: top ≤ 220.5 lb, back-offs ≤ 95 kg in lb, warm-ups in lb (WU4, Ben 2 Nov)', () => {
     const r = setRowsFor({ main: true, role: 'compound', barbell: true, workingSets: 4, repRange: { min: 6, max: 8 }, load: loadInput({ equipment: lbBar, ruleTarget: { value: 100, reps: 6, rpe: 8 } }) });
     expect(r.unit).toBe('lb');
     const top = r.rows.find((x) => x.type === 'top')?.load ?? 0;
@@ -55,13 +55,15 @@ describe('B1: a kg slot on lb equipment works in lb and says so', () => {
       expect(b).toBeLessThan(top);
     }
     const warm = r.rows.filter((x) => x.type === 'warmup').map((x) => x.load ?? 0);
-    expect(warm[0]).toBe(45);
-    // 220.46 → 220 lb; 95 kg = 209.4 → 205 lb. Warm-ups on simple loads (Ben, 1 Nov: the bar + 20 lb steps, was
-    // 80, 130, 170): WU4's gap check then needs one more step (no jump over 55 lb).
-    expect(warm).toHaveLength(5);
+    // 220.46 → 220 lb; 95 kg = 209.4 → 205 lb. Warm-ups on simple loads (Ben, 1 Nov: the bar + 20 lb steps); (Ben,
+    // 2 Nov) from at most the bar + 80 lb, as few as WU4's gap check allows (no jump over 55 lb). Was 45, 65, 105,
+    // 145, 185. Jumps up to 30 % of W on a bar (Ben's 105 → 60, 90).
+    expect(warm).toHaveLength(2);
     for (const w of warm) expect((w - 45) % 20).toBe(0);
-    expect(r.rows.map((x) => x.load)).toEqual([45, 65, 105, 145, 185, 220, 205, 205, 205]);
-    for (const [i, pct] of [0.4, 0.6, 0.8].entries()) expect(warm[i + 1]).toBeLessThanOrEqual(top * pct + 1e-6);
+    expect(r.rows.map((x) => x.load)).toEqual([125, 185, 220, 205, 205, 205]);
+    const pts = [...warm, top];
+    for (let j = 1; j < pts.length; j += 1) expect((pts[j] ?? 0) - (pts[j - 1] ?? 0)).toBeLessThanOrEqual(0.3 * top + 1e-6);
+    for (const w of warm) expect(w).toBeLessThanOrEqual(0.9 * top + 1e-6);
   });
 
   it('drops and a typed kg on lb dumbbells are worked out in lb too', () => {

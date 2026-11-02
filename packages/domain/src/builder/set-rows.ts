@@ -4,6 +4,7 @@ import { planWarmups, warmupProfileOf, type WarmupCut, type WarmupExerciseFacts,
 import { simpleWarmupLoadsIf } from '../warmup/simple';
 import type { WarmupExerciseSetting } from '@fizz/schemas';
 import { backoffTarget, followTop, lowerWithTop } from './backoff';
+import { plateKitOf, stripFriendlyDrop } from '../plate-path';
 import { builderLoad, convertValue, fitHere, formulaApplies, loadForSet, loadFrameOf, roundContextOf, roundDownHere, type RoundContext } from './loads';
 import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, RepRangeT, RoundedLoad, SlotLoadInput } from './types';
 
@@ -100,7 +101,7 @@ export function setRowsFor(input: SetRowsInput): SetRowsResult {
   const loaded = working.some((r) => r.load !== null);
   const startLight = loaded ? null : (work.startLight ?? (input.load.startLightCeiling === null ? null : convertValue(input.load.startLightCeiling, input.load.unit, work.unit)));
   return {
-    rows: [...warmups, ...working],
+    rows: stripFriendlyRows([...warmups, ...working], input.load),
     unit: work.unit,
     convention: work.convention,
     source: loaded ? work.source : 'none',
@@ -133,6 +134,41 @@ const snapBuilt =
   (ctx: RoundContext) =>
   (v: number): number | null =>
     rounded(v, { ...ctx, painCap: null });
+
+/**
+ * (Ben, 2 Nov) Lighter working sets reached by taking plates off: each back-off or drop Ben didn't type, lighter than
+ * the set before it, goes to `stripFriendlyDrop`'s load (the worked-out load when a loading of the sets so far reaches
+ * it by taking the outer plates off; else the heaviest within 5 % or one step below that does; else as worked out).
+ * Only ever lighter, so pain holds, the item's max and the reps and RPE still hold (rules 4, 9). Bars and
+ * plate-loaded machines in their own convention only; a planned row, never a logged set (rule 2). Pure.
+ */
+export function stripFriendlyRows(rows: readonly BuilderSetRow[], load: SlotLoadInput, from = 0): BuilderSetRow[] {
+  const frame = loadFrameOf(load);
+  const eq = frame.kind === 'item' && !frame.added ? frame.equipment : null;
+  const kit = eq !== null && eq.loadConvention === frame.convention ? plateKitOf(eq) : null;
+  if (eq === null || kit === null || kit.plates.length === 0) return [...rows];
+  const loads = getAchievableLoads(eq).loads;
+  const out: BuilderSetRow[] = [];
+  // The working sets only: warm-ups are planned again by place (`settleWarmups`), so every path agrees.
+  const before = (): (number | null)[] => out.filter((x) => x.type !== 'warmup').map((x) => x.load);
+  let prior: { was: number | null; now: number | null } | null = null;
+  for (const [i, r] of rows.entries()) {
+    if (r.type === 'warmup') {
+      out.push(r);
+      continue;
+    }
+    let next = r;
+    if (i >= from && r.typed !== true && (r.type === 'backoff' || r.type === 'drop') && r.load !== null) {
+      // Back-offs at one worked-out load stay at one load (the plates don't change between them).
+      const same = prior !== null && prior.was !== null && Math.abs(prior.was - r.load) < 1e-9;
+      const v = same && prior !== null && prior.now !== null ? prior.now : stripFriendlyDrop({ value: r.load, before: before(), kit, loads });
+      if (Math.abs(v - r.load) > 1e-9) next = { ...r, load: v };
+    }
+    prior = { was: r.load, now: next.load };
+    out.push(next);
+  }
+  return out;
+}
 
 /** Where a slot sits in the workout, for the warm-up planner (WU2, WU6, WU11). */
 export interface WarmupRowsContext {
@@ -438,7 +474,7 @@ export function settleBackoffs(slot: BuilderSlot, load: SlotLoadInput, prior: Bu
     if (moved(next.load, sameShape ? (prior.rows[i]?.load ?? null) : r.load)) shifted.add(i);
     out.push(next);
   });
-  return { ...slot, rows: out };
+  return { ...slot, rows: stripFriendlyRows(out, load) };
 }
 
 /**
@@ -534,7 +570,8 @@ export function addDropSet(slot: BuilderSlot, load: SlotLoadInput): SetRowEdit {
   if (before === undefined || before.type === 'warmup') return { ok: false, reason: 'drop_needs_set_before' };
   const kg = before.load === null ? null : rounded(before.load * R.dropPct, roundCtx(load));
   const row: BuilderSetRow = { type: 'drop', reps: slot.repRange.max + R.dropRepsOver, load: kg, rpe: R.dropRpe };
-  return { ok: true, slot: { ...slot, rows: [...slot.rows, row], touched: true }, rounded: null };
+  // (Ben, 2 Nov) Only the new drop is placed for the plates; the rows before it stay as they are.
+  return { ok: true, slot: { ...slot, rows: stripFriendlyRows([...slot.rows, row], load, slot.rows.length), touched: true }, rounded: null };
 }
 
 /**
@@ -612,6 +649,6 @@ export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'rol
   // Warm-ups follow the new top set (none if Ben had removed them).
   const firstWork = rows.find((x) => x.type === 'top') ?? rows[0];
   const warm = slot.rows.some((x) => x.type === 'warmup') ? warmupsFor({ ...info, main: slot.main, load, ...(firstWork === undefined ? {} : { reps: firstWork.reps }) }, top) : [];
-  next.rows = [...warm, ...rows];
+  next.rows = stripFriendlyRows([...warm, ...rows], load);
   return next;
 }

@@ -142,9 +142,13 @@ describe('Warm-ups setting flows from the plan builder to Start', () => {
     for (const w of sets.filter((x) => x.setType === 'warmup')) expect(w.planned.load?.value ?? Infinity).toBeLessThan(W);
   });
 
-  it('Full (the default): the main lift gets its full ladder', async () => {
+  it('Full (the default): the main lift gets its full ladder, and other exercises their own (Short gives them none)', async () => {
     const { s } = await benWithPlan('full');
     const { snap } = await pushDraft(s, 'full');
-    expect(warmCounts(snap)[mainName(snap)]).toBeGreaterThan(2);
+    const counts = warmCounts(snap);
+    const name = mainName(snap);
+    // (Ben, 2 Nov) The bar ladder is 2–3 plate-friendly warm-ups now, so it can match Short's count; Full still has more in all.
+    expect(counts[name]).toBeGreaterThanOrEqual(2);
+    expect(Object.entries(counts).some(([n, c]) => n !== name && c > 0)).toBe(true);
   });
 });

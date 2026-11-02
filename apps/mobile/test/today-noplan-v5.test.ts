@@ -136,7 +136,9 @@ describe('V5: the Up next card is the plan card', () => {
     // Time: the plan card's control at his usual length (Profile), nothing to Undo back to.
     const usual = data.initial[key]?.minutes ?? 0;
     expect(usual).toBe((await s.training.snapshot())?.profile.sessionMinutes);
-    expect(card.time).toMatchObject({ minutes: usual, undoMinutes: null });
+    // (Ben, 2 Nov) `minutes` is the live estimate: 44 now bench's plate-friendly warm-ups are shorter (it was 45).
+    expect(card.time).toMatchObject({ length: usual, undoMinutes: null });
+    expect(card.time?.minutes).toBeLessThanOrEqual(usual);
     // A short Time: the shared fit (note, detail lines, Undo back to his usual length); the main lift is kept.
     const short = s.todaySession.card(data, sel(data, key, { minutes: 25 }));
     expect(short?.time?.note).not.toBeNull();
