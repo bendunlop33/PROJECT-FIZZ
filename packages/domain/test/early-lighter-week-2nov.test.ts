@@ -157,11 +157,12 @@ describe('LW3: no catch-up after the lighter week', () => {
       { week: 2, deload: false, reached: true, best: best(102.5, 6), sets: 3 },
       { week: 3, deload: deload3, reached: true, best: best(92.5, 6), sets: 2 },
       { week: 4, deload: false, reached: true, best: best(102.5, 6), sets: 3 },
+      { week: 5, deload: false, reached: true, best: best(102.5, 6), sets: 3 },
     ];
     const p = liftBlockProgress(weeks(slots[2]?.deload === true));
-    expect(p.weeks.map((w) => w.state)).toEqual(['base', 'up', 'deload', 'held']);
+    expect(p.weeks.map((w) => w.state)).toEqual(['base', 'up', 'deload', 'held', 'held']);
     expect(p.status).not.toBe('stalled');
-    // Were the lighter week read as a build week, the dip would count toward a stall.
+    // Were the lighter week read as a build week, weeks 3–5 would be 3 weeks without a new best (ST2): a stall.
     expect(liftBlockProgress(weeks(false)).status).toBe('stalled');
   });
 });

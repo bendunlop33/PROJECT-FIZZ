@@ -24,8 +24,8 @@ describe('block progress screens', () => {
     const text = r.text();
     for (const w of ['This block', 'Week 4 of 6', 'Blocks ›', 'Stalled', 'Up / held', 'Deload']) expect(text).toContain(w);
     expect(text.indexOf('This block')).toBeLessThan(text.lastIndexOf('Bench press'));
-    // (Ben, 2 Nov; plan-summary.md) The current block's `Week 3 of 6 ›` opens the plan summary.
-    await r.press('Week 3 of 6 ›');
+    // (Ben, 2 Nov; plan-summary.md) The current block's `Week 4 of 6 ›` opens the plan summary.
+    await r.press('Week 4 of 6 ›');
     expect(JSON.stringify(r.nav)).toContain('ProgressPlan');
     expectHealthy(r);
     await r.unmount();
