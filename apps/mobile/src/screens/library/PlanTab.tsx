@@ -49,7 +49,7 @@ export function PlanTab({ scrollTopKey, planApplied, onPlanApplied }: { scrollTo
     // Review planview S5: a failed read is said, never shown as no plan.
     // (Ben, 26 Oct) A new block week takes its version first (idempotent), so the overview and Today agree.
     await s.plans.syncWeek().catch(() => false);
-    const [planRead, previous, coach, changes] = await Promise.all([
+    const [planRead, previous, coach, changes, allBlocks] = await Promise.all([
       s.plans.overview().then(
         (v) => ({ plan: v, planFailed: false }),
         () => ({ plan: null, planFailed: true }),
@@ -58,9 +58,13 @@ export function PlanTab({ scrollTopKey, planApplied, onPlanApplied }: { scrollTo
       s.coach.availability().catch(() => null),
       // (Redesign D2) The coach's changes to come; a failed read hides the row (never a made-up count).
       s.libraryChanges.read().catch(() => null),
+      // (Ben, 2 Nov) `All blocks ›` only once a block has finished; a failed read hides it.
+      Promise.resolve()
+        .then(() => s.blockProgress.hasFinishedBlock())
+        .catch(() => false),
     ]);
     // (Plan builder, 23 Oct) `Set up a plan` opens the offline builder; the coach only if it were missing.
-    return { ...planRead, previous, changes: changes?.view ?? null, setup: planSetupRoute(coach, 'planBuilder' in s) };
+    return { ...planRead, previous, changes: changes?.view ?? null, allBlocks, setup: planSetupRoute(coach, 'planBuilder' in s) };
   });
 
   useEffect(() => {
@@ -182,7 +186,7 @@ export function PlanTab({ scrollTopKey, planApplied, onPlanApplied }: { scrollTo
       ) : null;
     }
     if (data.state === 'error') return <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_TAB_COPY.loadFailed} action={<TextButton label={PLAN_TAB_COPY.tryAgain} onPress={reload} />} />;
-    const { plan, planFailed, previous, setup, changes } = data.value;
+    const { plan, planFailed, previous, setup, changes, allBlocks } = data.value;
     return (
       <View style={{ gap: theme.space['5'] }}>
         {planFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_COPY.loadFailed} action={<TextButton label={PLAN_TAB_COPY.tryAgain} onPress={reload} />} /> : null}
@@ -205,14 +209,16 @@ export function PlanTab({ scrollTopKey, planApplied, onPlanApplied }: { scrollTo
               <View accessibilityRole="header">
                 <Eyebrow>{PLAN_TAB_COPY.previous}</Eyebrow>
               </View>
-              {/* (Ben, 31 Oct; block-progress §4) Every block kept. */}
-              <TextButton
-                label={`${BLOCKS_COPY.blocksLink} ›`}
-                tone="secondary"
-                onPress={() => {
-                  navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressBlocks' } });
-                }}
-              />
+              {/* (Ben, 31 Oct; block-progress §4) Every block kept; (2 Nov) only once a block has finished. */}
+              {allBlocks ? (
+                <TextButton
+                  label={`${BLOCKS_COPY.blocksLink} ›`}
+                  tone="secondary"
+                  onPress={() => {
+                    navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressBlocks' } });
+                  }}
+                />
+              ) : null}
             </View>
             {previous.map((row, i) => (
               <PreviousRow

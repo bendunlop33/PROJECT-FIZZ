@@ -11,10 +11,11 @@ import { openYourPlan } from '../navigation/actions';
 import { useReloadOn } from './use-reload-on';
 
 /**
- * (Ben, 31 Oct; docs/design/block-progress.md §1) `This block` at the top of Progress › Lifts (and a past block's same
- * view from Blocks): `This block` · `Week 3 of 6` · `Blocks ›`, one row per main lift of the plan in use (name,
- * week-1 best → this block's best, six mini week bars, the change or `Stalled`), and the legend. A row opens the lift's
- * block detail. Lays out the service's view; computes nothing. Nothing when there is no block (no plan applied yet).
+ * (Ben, 31 Oct; docs/design/block-progress.md §1) A block's view: Progress › Lifts › Block (2 Nov: `Week 3 of 6 ›` ·
+ * `All blocks ›`, no heading) and a block opened from All blocks or Library (`This block` / `Block 2 · Muscle` · its
+ * week or dates): one row per main lift of the plan (name, week-1 best → this block's best, six mini week bars, the
+ * change or `Stalled`), and the legend. A row opens the lift's block detail. `All blocks ›` only once a block has
+ * finished (Ben, 2 Nov). Lays out the service's view; computes nothing. Nothing when there is no block.
  */
 
 /** Bar heights (pt): a trained week 10–24 by its level; grey 6; the deload dashed 8. */
@@ -95,15 +96,17 @@ function Legend({ view }: { view: ThisBlockView }) {
 }
 
 /** The section itself, from a loaded view (render tests and the Block screen share it). */
-export function ThisBlockList({ view, blocksLink, onOpen, onBlocks, onPlan = null }: { view: ThisBlockView; blocksLink: boolean; onOpen: (row: ThisBlockRow) => void; onBlocks: () => void; /** (Ben, 2 Nov) The current block's `Week 3 of 6 ›`: Library › Plan. */ onPlan?: (() => void) | null }) {
+export function ThisBlockList({ view, blocksLink, onOpen, onBlocks, onPlan = null, heading = true }: { view: ThisBlockView; blocksLink: boolean; onOpen: (row: ThisBlockRow) => void; onBlocks: () => void; /** (Ben, 2 Nov) The current block's `Week 3 of 6 ›`: Library › Plan. */ onPlan?: (() => void) | null; /** (Ben, 2 Nov) Off under Lifts › Block (the strip names it). */ heading?: boolean }) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space['3'] }}>
       <View style={{ minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'] }}>
-        <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-          {view.title}
-        </AppText>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'] }}>
+        {heading ? (
+          <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+            {view.title}
+          </AppText>
+        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], ...(heading ? {} : { flex: 1, justifyContent: 'space-between' }) }}>
           {onPlan !== null ? (
             <TextButton label={`${view.meta} ›`} tone="secondary" accessibilityLabel={`Your plan, ${view.meta}`} onPress={onPlan} />
           ) : (
@@ -111,7 +114,7 @@ export function ThisBlockList({ view, blocksLink, onOpen, onBlocks, onPlan = nul
               {view.meta}
             </AppText>
           )}
-          {blocksLink ? <TextButton label={`${BLOCKS_COPY.blocksLink} ›`} tone="secondary" onPress={onBlocks} /> : null}
+          {blocksLink && view.allBlocks ? <TextButton label={`${BLOCKS_COPY.blocksLink} ›`} tone="secondary" onPress={onBlocks} /> : null}
         </View>
       </View>
       {view.rows.length > 0 ? (
@@ -133,30 +136,37 @@ export function ThisBlockList({ view, blocksLink, onOpen, onBlocks, onPlan = nul
   );
 }
 
-/** Progress › Lifts' section (`blockKey` null: the current block), reading its own data. */
-export function ThisBlockSection({ blockKey = null, active = true, blocksLink = true }: { blockKey?: string | null; active?: boolean; blocksLink?: boolean }) {
+/** The view's taps: a row opens the lift's block detail, `All blocks ›`, the current block's week opens Library › Plan. */
+function useBlockTaps(view: ThisBlockView | null) {
   const navigation = useNavigation();
+  return {
+    onOpen: (r: ThisBlockRow) => {
+      navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressLiftBlock', params: { blockKey: view === null || view.current ? null : view.blockKey, exerciseId: r.exerciseId, name: r.name } } });
+    },
+    onBlocks: () => {
+      navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressBlocks' } });
+    },
+    onPlan:
+      view?.current === true
+        ? () => {
+            navigation.dispatch(openYourPlan(newUuid()));
+          }
+        : null,
+  };
+}
+
+/** Progress › Lifts › Block: the current block's view, loaded by the screen (which needs it for the strip). */
+export function CurrentBlock({ view }: { view: ThisBlockView }) {
+  const taps = useBlockTaps(view);
+  return <ThisBlockList view={view} blocksLink heading={false} {...taps} />;
+}
+
+/** A block's view reading its own data (`blockKey` null: the current block). */
+export function ThisBlockSection({ blockKey = null, active = true, blocksLink = true }: { blockKey?: string | null; active?: boolean; blocksLink?: boolean }) {
   const [data, reload] = useScreenData((s) => s.blockProgress.thisBlock(blockKey).catch(() => null), { enabled: active });
   useReloadOn(blockKey ?? '', reload);
   const view = data.state === 'ready' ? data.value : null;
+  const taps = useBlockTaps(view);
   if (view === null) return null;
-  return (
-    <ThisBlockList
-      view={view}
-      blocksLink={blocksLink}
-      onOpen={(r) => {
-        navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressLiftBlock', params: { blockKey: view.current ? null : view.blockKey, exerciseId: r.exerciseId, name: r.name } } });
-      }}
-      onBlocks={() => {
-        navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressBlocks' } });
-      }}
-      onPlan={
-        view.current
-          ? () => {
-              navigation.dispatch(openYourPlan(newUuid()));
-            }
-          : null
-      }
-    />
-  );
+  return <ThisBlockList view={view} blocksLink={blocksLink} {...taps} />;
 }

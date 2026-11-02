@@ -9,7 +9,7 @@ import { activitySavedToast } from '../../activity/activity-toast';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast, type ToastState } from '../../history/useDeleteToast';
 import { runCountIt, type CountItToast } from '../../progress/count-it';
-import { ResumeBar, Segmented } from '../../progress/components';
+import { ResumeBar, Segmented, TextTabs } from '../../progress/components';
 import { PeriodBar } from '../../progress/PeriodBar';
 import { useReloadOn } from '../../progress/use-reload-on';
 import type { ProgressStackParams } from '../../navigation/types';
@@ -22,7 +22,7 @@ import type { ActivitySaved } from '../activity/ActivitySheet';
 import { HealthTrends } from './HealthTrends';
 import { BodyweightCard } from './BodyweightCard';
 import { ExercisesTab } from './ExercisesTab';
-import { ThisBlockSection } from '../../progress/ThisBlockSection';
+import { CurrentBlock } from '../../progress/ThisBlockSection';
 import { TrainingTab } from './TrainingTab';
 import { HowCountedSheet, TimeSheet } from './sheets';
 
@@ -32,15 +32,25 @@ import { HowCountedSheet, TimeSheet } from './sheets';
  * The plan's This week card and Coach's changes live in Library now; the Overview tab and the Calendar segment are
  * replaced by Training's Month view. Local data only: identical offline and with no coach. The screen lays out the
  * services' view models and computes nothing.
+ *
+ * (Ben, 2 Nov) Lifts with a plan block running: a `Block | Overall` text strip under the tabs, opening on Block (the
+ * block's lifts week by week, no period bar); Overall is the period bar and the per-lift charts. No block: no strip,
+ * Overall. The choice lasts while the screen does (never saved across launches).
  */
 
 type Tab = 'lifts' | 'training' | 'body';
+type LiftsView = 'block' | 'overall';
 type Toasted = CountItToast | null;
 
 const TABS: readonly { key: Tab; label: string }[] = [
   { key: 'lifts', label: 'Lifts' },
   { key: 'training', label: 'Training' },
   { key: 'body', label: 'Body' },
+];
+
+const LIFTS_VIEWS: readonly { key: LiftsView; label: string }[] = [
+  { key: 'block', label: 'Block' },
+  { key: 'overall', label: 'Overall' },
 ];
 
 export function ProgressScreen() {
@@ -53,6 +63,10 @@ export function ProgressScreen() {
   const [choice, setChoice] = useState<PeriodChoice>({ span: 'month', offset: 0 });
   // (Perf, Ben 26 Oct) The shell (is there history, the period bar, the ResumeBar) always; each tab reads only while it shows.
   const [shellData, reloadShell] = useScreenData((s) => s.progress.shell(choice));
+  // (Ben, 2 Nov) The running block (null: no plan applied): the strip, and Block's view. Read while Lifts shows.
+  const [blockData] = useScreenData((s) => s.blockProgress.thisBlock(null).catch(() => null), { enabled: tab === 'lifts' });
+  const [liftsPick, setLiftsPick] = useState<LiftsView | null>(null);
+  const [overallSeen, setOverallSeen] = useState(false);
   useReloadOn(`${choice.span}:${String(choice.offset)}`, reloadShell);
   const [timeSheet, setTimeSheet] = useState<ActivityView['sheet'] | null>(null);
   const [howOpen, setHowOpen] = useState(false);
@@ -138,6 +152,15 @@ export function ProgressScreen() {
   const resume = shell?.resume ?? null;
   const bar = shell?.bar ?? null;
   const dates = bar === null ? null : { from: bar.window.from, to: bar.window.to };
+  const block = blockData.state === 'ready' ? blockData.value : null;
+  const blockKnown = blockData.state !== 'loading';
+  // Block whenever a block runs (unless Overall was picked this time); no block: Overall.
+  const liftsView: LiftsView = block === null ? 'overall' : (liftsPick ?? 'block');
+  const showBar = tab !== 'lifts' || (blockKnown && liftsView === 'overall');
+  const pickLiftsView = (v: LiftsView) => {
+    if (v === 'overall') setOverallSeen(true);
+    setLiftsPick(v);
+  };
 
   const pickTab = (k: Tab) => {
     setSeen((s) => (s.has(k) ? s : new Set([...s, k])));
@@ -171,7 +194,8 @@ export function ProgressScreen() {
       {shell?.hasData === true && bar !== null ? (
         <>
           <Segmented options={TABS} selected={tab} onSelect={pickTab} label="Progress" />
-          <PeriodBar bar={bar} onSpan={onSpan} onStep={onStep} />
+          {tab === 'lifts' && block !== null ? <TextTabs options={LIFTS_VIEWS} selected={liftsView} onSelect={pickLiftsView} label="Lifts" /> : null}
+          {showBar ? <PeriodBar bar={bar} onSpan={onSpan} onStep={onStep} /> : null}
         </>
       ) : null}
     </View>
@@ -209,9 +233,13 @@ export function ProgressScreen() {
     body = (
       <>
         <View style={tab === 'lifts' ? { gap: theme.space['5'] } : { display: 'none' }}>
-          {/* (Ben, 31 Oct; block-progress §1) This block at the top; the per-lift charts below, unchanged. */}
-          <ThisBlockSection active={tab === 'lifts'} />
-          <ExercisesTab active={tab === 'lifts'} shared={{ period: bar.preset, range: dates }} />
+          {/* (Ben, 2 Nov) Block: the running block's lifts; Overall: the per-lift charts (kept mounted once seen). */}
+          {liftsView === 'block' && block !== null ? <CurrentBlock view={block} /> : null}
+          {blockKnown && (liftsView === 'overall' || overallSeen) ? (
+            <View style={liftsView === 'overall' ? null : { display: 'none' }}>
+              <ExercisesTab active={tab === 'lifts' && liftsView === 'overall'} shared={{ period: bar.preset, range: dates }} />
+            </View>
+          ) : null}
         </View>
         {seen.has('training') ? (
           <View style={tab === 'training' ? null : { display: 'none' }}>

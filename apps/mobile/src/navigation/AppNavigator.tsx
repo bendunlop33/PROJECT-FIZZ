@@ -171,7 +171,7 @@ function ProgressNavigator() {
       {/* (Ben, 31 Oct) Block progress: a block's view, a lift's block detail, every block kept. */}
       <ProgressStack.Screen name="ProgressBlock" component={BlockScreen} options={{ title: '', headerBackTitle: 'Progress' }} />
       <ProgressStack.Screen name="ProgressLiftBlock" component={LiftBlockScreen} options={({ route }) => ({ title: route.params.name ?? '', headerBackTitle: 'Progress' })} />
-      <ProgressStack.Screen name="ProgressBlocks" component={BlocksScreen} options={{ title: 'Blocks', headerBackTitle: 'Progress' }} />
+      <ProgressStack.Screen name="ProgressBlocks" component={BlocksScreen} options={{ title: 'All blocks', headerBackTitle: 'Progress' }} />
     </ProgressStack.Navigator>
   );
 }

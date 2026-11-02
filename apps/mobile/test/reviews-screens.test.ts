@@ -25,8 +25,8 @@ describe('Progress v3 screens', () => {
     const tabs = ["{ key: 'lifts', label: 'Lifts' }", "{ key: 'training', label: 'Training' }", "{ key: 'body', label: 'Body' }"].map((t) => progress.indexOf(t));
     expect(tabs.every((i) => i > 0)).toBe(true);
     expect([...tabs].sort((a, b) => a - b)).toEqual(tabs);
-    // Each tab reads only while it shows (Ben, 26 Oct).
-    expect(progress).toContain("<ExercisesTab active={tab === 'lifts'} shared={{ period: bar.preset, range: dates }} />");
+    // Each tab reads only while it shows (Ben, 26 Oct); Lifts' charts only on Overall (Ben, 2 Nov).
+    expect(progress).toContain("<ExercisesTab active={tab === 'lifts' && liftsView === 'overall'} shared={{ period: bar.preset, range: dates }} />");
     expect(read('screens', 'progress', 'ExercisesTab.tsx')).toContain('focus.sessionId === null ? null');
     expect(charts).toContain('PROGRESS_COPY.allLiftsLink : PROGRESS_COPY.openLift(one.name)');
     expect(charts).toContain('onOpen(one === null ? null : one.exerciseId)');

@@ -112,6 +112,42 @@ export function Segmented<K extends string | number>({ options, selected, onSele
 }
 
 /**
+ * (Ben, 2 Nov) A plain text strip (Lifts' `Block | Overall`): selected `text.primary` Semibold with a 2 pt underline,
+ * the other `text.tertiary`; never a second pill bar. Each target ≥ 44 pt; VoiceOver reads tabs.
+ */
+export function TextTabs<K extends string>({ options, selected, onSelect, label }: { options: readonly { key: K; label: string }[]; selected: K; onSelect: (k: K) => void; label: string }) {
+  const theme = useTheme();
+  return (
+    <View accessibilityRole="tablist" accessibilityLabel={label} style={{ flexDirection: 'row', gap: theme.space['5'] }}>
+      {options.map((o, i) => {
+        const on = o.key === selected;
+        return (
+          <Pressable
+            key={o.key}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            accessibilityLabel={`${o.label}, ${String(i + 1)} of ${String(options.length)}`}
+            hitSlop={{ left: 8, right: 8 }}
+            onPress={() => {
+              if (on) return;
+              haptic('step');
+              onSelect(o.key);
+            }}
+            style={{ minHeight: theme.target.min.height, minWidth: theme.target.min.height, justifyContent: 'flex-end' }}
+          >
+            <View style={{ paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: on ? theme.colors['text.primary'] : 'transparent' }}>
+              <AppText variant="label" color={on ? 'text.primary' : 'text.tertiary'} style={{ fontWeight: on ? '600' : '400' }}>
+                {o.label}
+              </AppText>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
  * `PeriodPicker` (Ben, 13 Oct 2026): one dropdown button listing `1 month`,
  * `3 months`, `6 months`, `1 year` and `Custom`. Custom drops down a Start
  * and an End month list, scrolled to pick; `Show` applies it. Under the
