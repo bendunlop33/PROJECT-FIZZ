@@ -88,6 +88,66 @@ export function legRunNear(activities: readonly Activity[], day: string, today: 
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// The endurance switch (playbook rule G; rules 11–13)
+
+/** Days either side of today the switch reads: planned in the next 7, logged in the last 7. */
+export const ENDURANCE_SWITCH_DAYS = 7;
+
+/** What turned the switch on, as data (rule 6): only what Ben logged or Health recorded. */
+export interface EnduranceSwitchSession {
+  kind: ActivityKind;
+  /** Local date in Ben's zone. */
+  date: string;
+  status: 'done' | 'planned';
+  /** `long` by his word or a run's numbers (≥ 90 min or 15 km); `hard` by his word. */
+  effort: 'long' | 'hard';
+  /** `Apple Health (Garmin)` for a recorded workout (or one linked to his plan); `Ben` for his own entry. */
+  from: string;
+}
+
+export interface EnduranceSwitch {
+  on: boolean;
+  /** The session that turned it on (the nearest to today; done before planned on a tie). Null when off. */
+  session: EnduranceSwitchSession | null;
+}
+
+/**
+ * (Ben, 2 Nov: rules 11–13 follow the endurance switch) The switch, from real data only. On when a hard or long
+ * endurance-type session (run, ride, swim, sport, other) is planned in the next 7 days (`today` included) or logged
+ * done in the last 7 (`activities` already carries Apple Health's workouts, `activitiesWithHealth`). Easy, moderate
+ * or no-effort sessions never turn it on; a deleted (cancelled) one doesn't count; a past planned one with nothing
+ * linked or matched is missed and doesn't count (`isMissedActivity`, Ben 2 Nov). Pure.
+ *
+ * Not read, because the data has no field for them yet: a `key` mark on an activity, and usual other training on
+ * the profile (playbook "Endurance switch"). A Health workout has no effort word, so only a run's own numbers make
+ * it long.
+ */
+export function enduranceSwitch(activities: readonly Activity[], today: string): EnduranceSwitch {
+  const from = addDays(today, -ENDURANCE_SWITCH_DAYS);
+  const to = addDays(today, ENDURANCE_SWITCH_DAYS);
+  const counts = activities.filter((a) => {
+    if (!live(a) || isMissedActivity(a, today)) return false;
+    if (!isLongActivity(a.fields) && !isHardActivity(a.fields)) return false;
+    const d = a.fields.date;
+    return a.fields.status === 'done' ? d >= from && d <= today : d >= today && d <= to;
+  });
+  const dist = (a: Activity): number => Math.abs(daysBetween(today, a.fields.date));
+  const doneFirst = (a: Activity): number => (a.fields.status === 'done' ? 0 : 1);
+  const pick = [...counts].sort((x, y) => dist(x) - dist(y) || doneFirst(x) - doneFirst(y) || x.fields.date.localeCompare(y.fields.date))[0];
+  if (pick === undefined) return { on: false, session: null };
+  return {
+    on: true,
+    session: {
+      kind: pick.fields.kind,
+      date: pick.fields.date,
+      status: pick.fields.status,
+      effort: isLongActivity(pick.fields) ? 'long' : 'hard',
+      from: pick.health !== undefined ? `Apple Health (${pick.health.sourceName})` : pick.source === 'health' ? 'Apple Health' : 'Ben',
+    },
+  };
+}
+
 /** Body parts that make a day a leg day for the run rule. */
 export const LEG_PARTS: readonly SplitBodyPart[] = ['Quads', 'Hamstrings', 'Glutes', 'Calves'];
 
