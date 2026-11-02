@@ -52,7 +52,7 @@ The approval is recorded in [CHANGELOG 2026-10-09](../brief/CHANGELOG.md) and in
 | 6 | Easier than planned (rule T: logged effort ≤ target RPE − 2) on a working set: the coach **offers** the next achievable load up (+2–5%) or +1–2 reps. With no coach, the built-in rule offers the same, labelled. | Mid-session (rule T) | Practice | E7 |
 | 7 | The AI coach chooses load, reps, sets or a variant from Ben's goal, his history on this equipment and the selected gym's real increments and min/max. Changes are shown in kg/lb and %. | Ben asks, a rule T signal, the post-workout review, or planning the next session or block | Strong / Moderate / Weak / Practice, split by claim (see 7) | [equipment-aware-progression.md](equipment-aware-progression.md) EQ1–EQ8, EQ10 |
 | 7-F | Labelled, equipment-aware double progression. It uses the smallest achievable increment. If that jump is > ~10% or the machine is at its max, it progresses reps instead, up to the rep cap, then holds. It doesn't add sets (D2). | Next-session targets when the coach is unavailable, or when no coach target has been applied (D21) | Weak + Practice | EQ9, E8, ADR 0006 amendment |
-| 8 | A stall (2–3 sessions failing the same target): propose a 5–10% reset or a rep-scheme change. One bad session gets a note only. | Next-session targets | Practice | E13 |
+| 8 | A stall (ST1: 2 comparable sessions failing the same target ≥ 7 days apart, else a third; ST2: no new best for ≥ 3 sessions and ≥ 3 weeks): propose a rep-scheme change, then a 5–10% reset; 2+ lifts stalled in a fortnight → rule 10's deload. One bad session gets a note only. | Next-session targets, block view, weekly review | Practice | E13, ST1–ST3 |
 | 9 | Rest 2–3 min (up to 5) on heavy compounds and 1–2 min on isolation work. | Rest presets, shortening sessions | Moderate | E10 |
 | 10 | Deload when performance drops across ≥ 2 sessions (≈ halve sets, RPE ≤ 7, ~1 week), or every 4–8 weeks if Ben prefers. Always a proposal. | Future plan | Weak + Practice | E11 |
 | 11 | Same day with strength as the priority: lift first and keep the endurance part easy. If the day's endurance session is a key one, do it first and cut leg volume. | Daily plan, **only when the endurance switch is on**. The lift-first part only when lifting is the priority (see "Endurance switch") | Moderate | C1 |
@@ -493,13 +493,16 @@ With a strength goal on 3 days: each main lift gets 2–3 hard sets at its heavy
 
 ### Rule 8: Stalls (approved)
 
-**Rule.** A stall is 2–3 sessions failing the same target. Then propose a 5–10% reset or a rep-scheme change. One bad session gets a note only.
+**Rule** (reworded 2 Nov 2026 when Ben approved ST1–ST3, [frequency-and-volume-caps.md](frequency-and-volume-caps.md) §3; was "2–3 sessions failing the same target"):
+- **Miss stall (ST1):** 2 consecutive comparable sessions (same exercise, equipment and routine slot) missing the same target, with ≥ 7 days from the first miss to the second. Inside 7 days, wait for a third. One bad session gets a note only.
+- **No-progress stall (ST2):** no new best for ≥ 3 comparable sessions and ≥ 3 weeks. Deload, lead-in, return-ramp, pain-flag and planned light weeks are skipped; a lift held at a machine max or rep cap is a ceiling, not a stall.
+- **What it does (ST3):** shown as `Stalled`. When Ben opens a review or asks: one offer, a rep-scheme change or variation first, a 5–10% reset (snapped to achievable loads) second. 2+ lifts stalled in the same fortnight, or performance falling across 2+ sessions → rule 10's deload proposal instead. A pain flag gets no offer.
 
-**Applies when:** setting next-session targets.
+**Applies when:** setting next-session targets; Progress › block view; the weekly review.
 
-**Grade:** Practice.
+**Grade:** Practice (noise argument: Moderate data, applied by inference).
 
-**Sources:** E13; [StrongLifts](https://support.stronglifts.com/article/22-increments); [GZCLP](https://thefitness.wiki/routines/gzclp/).
+**Sources:** E13; ST1–ST3; [Grgic 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7367986/); [StrongLifts](https://support.stronglifts.com/article/22-increments); [GZCLP](https://thefitness.wiki/routines/gzclp/).
 
 **Guardrails:**
 - Resets are proposals.
