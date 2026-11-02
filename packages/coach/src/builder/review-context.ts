@@ -1,12 +1,17 @@
 import {
+  addDays,
   anchorE1rmOf,
   BUILDER_SET_RULES,
   dayMonthText,
   formulaApplies,
   infoOrDefault,
+  liftStall,
+  localDateOf,
   referenceE1rm,
   restClockText,
   slotsOf,
+  toMs,
+  WEEKLY_REVIEW,
   workingCount,
   workingRestS,
   type BuilderContext,
@@ -208,6 +213,23 @@ function setText(v: number, reps: number, rpe: number | null, unit: WeightUnit, 
   return `${builderLoadText(round1(v), unit, convention)} × ${String(reps)}${rpe === null ? '' : ` @ RPE ${fmt(rpe)}`}`;
 }
 
+/**
+ * ST2 over his comparable sessions (newest first in): est. 1RM per session, deload weeks skipped, within the weekly
+ * review's window before the newest; null when not stalled (a run too short, a new best, or nothing to read).
+ */
+function stallOf(sessions: readonly RefSession[], conv1: (v: number) => number): { sessions: number; weeks: number } | null {
+  const newest = sessions[0];
+  if (newest === undefined) return null;
+  const from = addDays(localDateOf(toMs(newest.performedAtUtc), newest.tz), -7 * WEEKLY_REVIEW.trendWeeks + 1);
+  const points = [...sessions].reverse().flatMap((x) => {
+    const v = referenceE1rm(x.sets);
+    const date = localDateOf(toMs(x.performedAtUtc), x.tz);
+    return v === null || date < from ? [] : [{ value: halfUp(conv1(v)), date, ...(x.deload === true ? { skip: true } : {}) }];
+  });
+  const st = liftStall(points, false);
+  return st.state === 'stalled' ? { sessions: st.sessionsWithoutBest, weeks: st.weeksWithoutBest } : null;
+}
+
 /** `reviewLiftFacts`: per exercise in the workout, the facts its numbers are judged by. */
 export function reviewLiftFacts(input: ReviewLiftInput): ReviewLiftFacts[] {
   const slots = slotsOf(input.workout.blocks);
@@ -269,9 +291,10 @@ export function reviewLiftFacts(input: ReviewLiftInput): ReviewLiftFacts[] {
         const newest = series[0] ?? 0;
         const oldest = series[series.length - 1] ?? 0;
         const pct = oldest > 0 ? Math.round(((newest - oldest) / oldest) * 100) : 0;
-        const stalled = newest <= Math.max(...series.slice(1, 3)) + EPS;
+        // ST2 (Ben, 2 Nov): the app's one stall definition, as the weekly review reads it (`liftStall`, its window).
+        const stall = stallOf(sessions, conv1);
         lines.push(`Est. 1RM by session, newest first: ${series.map(fmt).join(', ')} ${unit} (estimate)`);
-        lines.push(stalled ? 'No new best in his last 3 normal sessions (stalled)' : pct >= REVIEW_HISTORY.trendPct ? 'Trend: up' : pct <= -REVIEW_HISTORY.trendPct ? 'Trend: down' : 'Trend: flat');
+        lines.push(stall !== null ? `Stalled (rule 8, ST2): no new best in his last ${String(stall.sessions)} normal sessions over ${String(stall.weeks)} weeks` : pct >= REVIEW_HISTORY.trendPct ? 'Trend: up' : pct <= -REVIEW_HISTORY.trendPct ? 'Trend: down' : 'Trend: flat');
       }
     }
 

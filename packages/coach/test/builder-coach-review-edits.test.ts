@@ -156,14 +156,25 @@ describe('reviewLiftFacts: per exercise, code’s facts from his history', () =>
     expect(bench?.facts).toContain('Pain flag: shoulder flagged 6 Oct. Never heavier or harder.');
   });
 
-  it('stalled: no new best over his last 3 normal sessions', () => {
+  // ST2 (Ben, 2 Nov): the app's one stall definition, ≥ 3 sessions and ≥ 3 weeks with no new best.
+  const flatBench = (dates: readonly string[]): LoadReferences => {
+    const all = dates.map((d, i) => session(String.fromCharCode(97 + i), d, [{ value: 100, reps: 6, rpe: 8 }]));
+    return { ...benchRefs(), all, latest: all[0] ?? null, own: { sessions: all.slice(0, 3), e1rm: referenceE1rm(all.flatMap((s) => s.sets)), gapDays: 3, estOnly: false } };
+  };
+  const benchFacts = (refs: LoadReferences) => {
     const { ctx, mine, pain } = scene();
-    const flat = (): LoadReferences => {
-      const all = [session('a', '2026-10-13T10:00:00Z', [{ value: 100, reps: 6, rpe: 9 }]), session('b', '2026-10-09T10:00:00Z', [{ value: 100, reps: 6, rpe: 8 }]), session('c', '2026-10-06T10:00:00Z', [{ value: 100, reps: 6, rpe: 8 }])];
-      return { ...benchRefs(), all, latest: all[0] ?? null, own: { sessions: all, e1rm: referenceE1rm(all.flatMap((s) => s.sets)), gapDays: 3, estOnly: false } };
-    };
-    const bench = reviewLiftFacts({ workout: mine, ctx, refs: (id) => (id === 'bench' ? flat() : null), pain, targets: [], edits: null, drafted: null }).find((l) => l.exerciseId === 'bench');
-    expect(bench?.facts).toContain('No new best in his last 3 normal sessions (stalled)');
+    return reviewLiftFacts({ workout: mine, ctx, refs: (id) => (id === 'bench' ? refs : null), pain, targets: [], edits: null, drafted: null }).find((l) => l.exerciseId === 'bench')?.facts ?? [];
+  };
+
+  it('stalled (rule 8, ST2): no new best for 3 sessions over 3 weeks', () => {
+    const facts = benchFacts(flatBench(['2026-10-27T10:00:00Z', '2026-10-20T10:00:00Z', '2026-10-13T10:00:00Z', '2026-10-06T10:00:00Z']));
+    expect(facts).toContain('Stalled (rule 8, ST2): no new best in his last 3 normal sessions over 3 weeks');
+  });
+
+  it('not stalled when the flat sessions fall inside 3 weeks (was "3 sessions" alone before ST2)', () => {
+    const facts = benchFacts(flatBench(['2026-10-13T10:00:00Z', '2026-10-09T10:00:00Z', '2026-10-06T10:00:00Z']));
+    expect(facts.some((f) => f.startsWith('Stalled'))).toBe(false);
+    expect(facts).toContain('Trend: flat');
   });
 });
 
