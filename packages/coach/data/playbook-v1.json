@@ -69,8 +69,8 @@
     },
     {
       "id": "8",
-      "short": "A stall (2–3 sessions failing the same target): propose a 5–10% reset or a rep-scheme change. One bad session gets a note only.",
-      "appliesWhen": "Next-session targets",
+      "short": "A stall (ST1: 2 comparable sessions failing the same target ≥ 7 days apart, else a third; ST2: no new best for ≥ 3 sessions and ≥ 3 weeks): propose a rep-scheme change, then a 5–10% reset; 2+ lifts stalled in a fortnight → rule 10's deload. One bad session gets a note only.",
+      "appliesWhen": "Next-session targets, block view, weekly review",
       "grade": "Practice",
       "use": "in_use",
       "note": null
