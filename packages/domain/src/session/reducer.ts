@@ -2889,6 +2889,7 @@ function atVersion(step: CommandOf<'coach_edit_today'>['steps'][number], version
       return { ...step, at, expectedVersion: version };
     case 'add_exercise':
     case 'skip_exercise':
+    case 'edit_planned_set':
       return { ...step, at };
   }
 }
@@ -3045,7 +3046,15 @@ function undoTickAll(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs: 
 function handleRevertCoachEdit(state: SessionAggregate, cmd: CommandOf<'revert_coach_edit'>, nowMs: number): Handled {
   const prior = state.processedOps[cmd.targetOpId];
   if (prior?.commandType !== 'coach_edit_today') return fail('operation_not_found', 'Nothing to undo.');
-  const steps = editSteps(state, cmd.targetOpId).reverse();
+  // (Ben, 2 Nov) A rest a coach change set on a set logged (or edited) since stays as it is (rule 2), as a time fit's.
+  const steps = editSteps(state, cmd.targetOpId)
+    .reverse()
+    .filter((step) => {
+      if (step.commandType !== 'edit_planned_set') return true;
+      const set = state.sets.find((x) => x.planned.edit?.opId === step.opId);
+      return set?.status === 'pending' && set.version === set.planned.edit?.version;
+    });
+  if (steps.length === 0) return fail('stale_version', STALE_UNDO);
   return runAll(state, (s, i) => {
     const step = steps[i];
     if (step === undefined) return null;

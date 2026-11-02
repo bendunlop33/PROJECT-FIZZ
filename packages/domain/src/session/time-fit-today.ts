@@ -120,8 +120,8 @@ function pinnedRests(rows: readonly FitRow[], byId: ReadonlyMap<string, WorkoutS
   return out;
 }
 
-/** The main lifts: the draft's, or the plan day's (provenance), else one with a Top set, else the first compound in order. */
-function mainIds(a: SessionAggregate, live: readonly SessionExercise[], info: BuilderInfoLookup, fromDraft: ReadonlySet<string> | undefined): Set<string> {
+/** The main lifts: the draft's, or the plan day's (provenance), else one with a Top set, else the first compound in order. Exported for `restTodayCommand`. */
+export function todayMainIds(a: SessionAggregate, live: readonly SessionExercise[], info: BuilderInfoLookup, fromDraft: ReadonlySet<string> | undefined): Set<string> {
   // (Ben, 1 Nov) The main lift Ben picked today wins.
   const picked = pickedMainLift(a.session);
   const pickedRows = picked === null ? [] : live.filter((e) => e.exerciseId === picked);
@@ -173,7 +173,7 @@ const isWork = (r: BuilderSetRow): boolean => r.type !== 'warmup';
 function remainingWorkout(input: TimeFitInput): { w: BuilderWorkout; mainGroup: BuilderGroupName | null } {
   const a = input.aggregate;
   const live = liveOrdered(a);
-  const mains = mainIds(a, live, input.info, input.mainExerciseIds);
+  const mains = todayMainIds(a, live, input.info, input.mainExerciseIds);
   const byId = new Map(a.sets.map((s) => [s.id, s]));
   const blocks: BuilderBlock[] = [];
   let lastGroup: string | null = null;

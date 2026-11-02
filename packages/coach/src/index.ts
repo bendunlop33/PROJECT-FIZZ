@@ -34,6 +34,8 @@ export * from './find-exercises';
 export * from './gym-update';
 export * from './lift-target';
 export * from './warmup-prefs';
+export * from './rest-settings';
+export * from './plan-change';
 export * from './activity-tools';
 export * from './draft-tools';
 export * from './plan-swap';

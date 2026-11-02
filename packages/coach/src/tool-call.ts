@@ -78,6 +78,12 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'pause_plan':
       // The reason is explanation; pause or resume and the date are the change.
       return { action: call.args.action, until: call.args.until };
+    case 'update_rest_settings':
+      // (Ben, 2 Nov) The ask claim is explanation; each rest, the level and the switch are the change.
+      return { rests: [...call.args.rests].sort((x, y) => x.setType.localeCompare(y.setType)), whenShort: call.args.whenShort, shortenMain: call.args.shortenMain };
+    case 'propose_plan_change':
+      // (Ben, 2 Nov) The reason is explanation; the change is the change.
+      return call.args.change;
     case 'update_warmup_prefs':
       // (Ben, 1 Nov) The ask claim is explanation; the setting and the exercises (by name) are the change.
       return { simpleLoads: call.args.simpleLoads, exercises: call.args.exercises.map((e) => ({ exercise: e.exercise.trim().toLowerCase(), warmups: e.warmups })) };
@@ -182,6 +188,8 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'pause_plan':
     case 'set_lift_target':
     case 'update_warmup_prefs':
+    case 'update_rest_settings':
+    case 'propose_plan_change':
     case 'log_activity':
     case 'propose_week':
     case 'propose_workout_edit':
