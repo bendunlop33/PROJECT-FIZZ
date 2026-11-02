@@ -145,6 +145,7 @@ function exerciseRow(e: SessionExercise, ordinal: number): Record<string, SqlVal
     note: e.note ?? null,
     removed: e.removed === undefined ? null : JSON.stringify(e.removed),
     swapped_from: e.swappedFrom === undefined ? null : JSON.stringify(e.swappedFrom),
+    warmup: e.warmup === true ? 1 : null,
   };
 }
 
@@ -412,6 +413,7 @@ function buildAggregate(rows: AggregateRows): SessionAggregate {
       ...(e.note === null || e.note === undefined ? {} : { note: e.note }),
       ...(e.removed === null || e.removed === undefined ? {} : { removed: parseJson('session_exercises', rowId(e.id), 'removed', e.removed) }),
       ...(e.swapped_from === null || e.swapped_from === undefined ? {} : { swappedFrom: parseJson('session_exercises', rowId(e.id), 'swapped_from', e.swapped_from) }),
+      ...(e.warmup === 1 ? { warmup: true as const } : {}),
     })),
     sets: sets.map((x) => {
       const sid = rowId(x.id);

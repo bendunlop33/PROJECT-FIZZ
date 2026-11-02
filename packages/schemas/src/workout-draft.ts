@@ -324,6 +324,8 @@ export const DraftSlotSchema = z.object({
   restBySetType: z.partialRecord(SetTypeSchema, RestSettingSchema).optional(),
   /** (v3) The builder's own state for this slot; absent on coach slots. */
   builder: DraftSlotBuilderSchema.optional(),
+  /** (Ben, 2 Nov) The plan day's cardio row Ben asked for as a warm-up (`RoutineExercise.warmup`). */
+  warmup: z.literal(true).optional(),
 }).superRefine((slot, ctx) => {
   const t = slot.setTemplates;
   const drops = t.filter((x) => x.setType === 'drop').length;

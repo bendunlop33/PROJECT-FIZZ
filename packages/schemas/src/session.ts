@@ -498,6 +498,8 @@ export const SessionExerciseSchema = z.object({
    * Undo). Done sets stayed on that row.
    */
   swappedFrom: z.object({ sessionExerciseId: IdSchema, opId: OperationIdSchema }).optional(),
+  /** (Ben, 2 Nov) The plan day's row was a warm-up Ben asked for (`RoutineExercise.warmup`): `Warm-up` in its meta. */
+  warmup: z.literal(true).optional(),
 });
 export type SessionExercise = z.infer<typeof SessionExerciseSchema>;
 

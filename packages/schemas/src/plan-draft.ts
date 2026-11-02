@@ -340,6 +340,8 @@ export const PlanWeekExerciseEditSchema = z.object({
   /** (Ben, 2 Nov) `add` of a cardio or timed exercise: its work time per set (seconds) and distance (metres). */
   durationS: z.int().min(1).max(14_400).optional(),
   distanceM: z.int().min(1).max(100_000).optional(),
+  /** (Ben, 2 Nov) `add` of a cardio or timed exercise Ben asked for as a warm-up: the row's `warmup` mark. */
+  warmup: z.literal(true).optional(),
   opId: OperationIdSchema,
   atUtc: UtcTimestampSchema,
 });

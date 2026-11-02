@@ -71,6 +71,12 @@ export const RoutineExerciseSchema = z.object({
    */
   addedWeight: z.boolean().optional(),
   /**
+   * (Ben, 2 Nov: "yes if i ask for it … the warm-up could be any cardio exercise") A cardio or timed row Ben asked the
+   * coach for as a warm-up (`propose_plan_add`'s `warmup`): shown as `Warm-up`, carried to the workout it starts and
+   * kept in history. Its sets stay working sets (a warm-up set type would drop the row at Start). Absent: not marked.
+   */
+  warmup: z.literal(true).optional(),
+  /**
    * When Ben last changed this slot's structure in the editor (its exercise,
    * set types, count, reps, work time or Fixed loads; routines.md WL7). A
    * rename or a rotation toggle doesn't count. A coach next-session target
