@@ -9,7 +9,7 @@ import { assisted, at, exercise, GYM, id, idGen, kg, ms, profile, routine, routi
 import { apply, BENCH, HANG, ROW, logCmd, setsFor, startFixture } from '../../../packages/domain/test/session-fixture';
 import { dropTargetAt, visibleFrames } from '../src/ui/drag-logic';
 import { nextFieldByKey, popupRowByKey } from '../src/ui/exercise-popup-model';
-import { exerciseActions, popupCellWrite, POPUP_REFUSAL, removePrompt, sessionPopupView } from '../src/workout/exercise-popup';
+import { exerciseMenuMore, popupCellWrite, POPUP_REFUSAL, removePrompt, sessionPopupView } from '../src/workout/exercise-popup';
 import { buildRounds } from '../src/workout/rounds';
 
 /**
@@ -122,7 +122,9 @@ describe('Remove: the confirmation sends what Ben was shown (integrity B2, parit
     expect(removePrompt(s, rowIdOf(s, BENCH), { opId: 'r', at: at(1) })?.kind).toBe('now');
     for (const x of setsFor(s, BENCH)) s = apply(s, logCmd(x.id, values(x.planned.load, 8), 100));
     expect(removePrompt(s, rowIdOf(s, BENCH), { opId: 'r', at: at(1) })).toBeNull();
-    expect(exerciseActions(s, rowIdOf(s, BENCH)).map((a) => a.name)).not.toContain('remove');
+    // (Ben, 2 Nov) The round menu's Remove follows the same rule.
+    expect(exerciseMenuMore(s, rowIdOf(s, BENCH), false).canRemove).toBe(false);
+    expect(exerciseMenuMore(s, rowIdOf(s, ROW), false).canRemove).toBe(true);
     expect(popup(s, BENCH).canDeleteExercise).toBe(false);
     expect(popup(s, ROW).canDeleteExercise).toBe(true);
   });
@@ -151,7 +153,7 @@ describe('only what works is offered (parity S5, integrity B1)', () => {
     const s1 = apply(s0, up.command);
     const s2 = apply(s1, supersetNextCommand(s1, rowIdOf(s1, BENCH), { opId: 'p-1', at: at(6) }) as SessionCommand);
     expect(popup(s2, HANG).canSupersetNext).toBe(false);
-    expect(exerciseActions(s2, rowIdOf(s2, HANG)).map((x) => x.name)).not.toContain('superset_next');
+    expect(exerciseMenuMore(s2, rowIdOf(s2, HANG), false).more.supersetNext).toBe(false);
   });
 
   it('(Ben, 27 Oct) an assisted machine’s typed assistance past its most is kept as typed (never refused or rounded)', () => {
@@ -196,10 +198,9 @@ describe('drag drops only on rows Ben can see (parity S2)', () => {
   });
 });
 
-describe('pop-up edits to sets not done yet have Undo (parity S4)', () => {
-  it('a pending set’s Kg / Reps / RPE shows `Set N updated · Undo`; rest steps don’t (recorded decision)', () => {
+describe('rest steps have no Undo toast (parity S4, recorded decision)', () => {
+  it('the round menu’s Rest sheet steps rest without a toast per 15 s', () => {
     const src = read('screens', 'workout', 'WorkoutEdits.tsx');
-    expect(src).toMatch(/case 'planned': \{[\s\S]{0,600}undoToast\(UNDO_TOAST\.correctedNamed\(row\.spokenName\), opId\)/);
     expect(src).toContain('`set_rest_after` has no `undo_op`');
   });
 });

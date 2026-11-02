@@ -87,7 +87,6 @@ export interface RoundPageProps {
    * points, so the menu opens next to it (the header lifts).
    */
   onMenu: (sessionExerciseId: string, anchor?: MenuAnchor) => void;
-  onName: (card: { sessionExerciseId: string; exerciseId: string; name: string; isCurrent: boolean }) => void;
   /** `pinnedOpen`: the pinned line was tapped (the sheet opens on the pin; Ben, 26 Oct). */
   onNote: (sessionExerciseId: string, name: string, note: string | null, pinnedOpen?: boolean) => void;
   onPainBadge: (exerciseId: string) => void;
@@ -105,7 +104,7 @@ export interface RoundPageProps {
     onMove: (setId: string, dir: 'up' | 'down') => void;
     onChangeType: (setId: string) => void;
   };
-  /** v3 §6–§7: the exercise header's VoiceOver actions beyond next / previous (Swap, Move, Superset, Unlink, Remove). */
+  /** (Ben, 2 Nov) The exercise header's VoiceOver actions beyond next / previous: its menu's items, in order. */
   exerciseActions?: (sessionExerciseId: string) => { name: string; label: string }[];
   onExerciseAction?: (sessionExerciseId: string, name: string) => void;
   /** `＋ Add exercise` under the last round (v3 §7, the builder's add flow); null on other rounds. */
@@ -614,7 +613,6 @@ function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset
         <Pressable
           accessibilityRole="header"
           accessibilityLabel={`${ex.label}, ${ex.name}${ex.subline !== null ? `, ${ex.subline}` : ''}, ${String(ex.progress.done)} of ${String(ex.progress.total)} sets done${ex.painBadge ? ', pain flag' : ''}`}
-          accessibilityHint="Opens the exercise"
           accessibilityActions={[
             ...(p.canNext ? [{ name: 'next', label: 'Next exercise' }] : []),
             ...(p.canPrev ? [{ name: 'previous', label: 'Previous exercise' }] : []),
@@ -628,14 +626,12 @@ function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset
             else if (name === 'menu') openMenu();
             else p.onExerciseAction?.(ex.sessionExerciseId, name);
           }}
-          onPress={() => {
-            p.onName({ sessionExerciseId: ex.sessionExerciseId, exerciseId: ex.exerciseId, name: ex.name, isCurrent: ex.isCurrent });
-          }}
+          // (Ben, 2 Nov) A tap on the name opens nothing: everything is in the menu (`⋯` or a long press).
           onLongPress={() => {
             haptic('step');
             openMenu();
           }}
-          style={({ pressed }) => ({ flex: 1, flexDirection: 'row', gap: theme.space['2'], paddingTop: theme.space['1'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+          style={{ flex: 1, flexDirection: 'row', gap: theme.space['2'], paddingTop: theme.space['1'] }}
         >
           <AppText variant="headline" numeric style={{ minWidth: 22 }} importantForAccessibility="no" accessibilityElementsHidden>
             {ex.label}
