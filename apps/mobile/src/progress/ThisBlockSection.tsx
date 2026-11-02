@@ -93,7 +93,7 @@ function Legend({ view }: { view: ThisBlockView }) {
 }
 
 /** The section itself, from a loaded view (render tests and the Block screen share it). */
-export function ThisBlockList({ view, blocksLink, onOpen, onBlocks }: { view: ThisBlockView; blocksLink: boolean; onOpen: (row: ThisBlockRow) => void; onBlocks: () => void }) {
+export function ThisBlockList({ view, blocksLink, onOpen, onBlocks, onPlan = null }: { view: ThisBlockView; blocksLink: boolean; onOpen: (row: ThisBlockRow) => void; onBlocks: () => void; /** (Ben, 2 Nov; plan-summary.md) The current block's `Week 3 of 6 ›`: the plan summary. */ onPlan?: (() => void) | null }) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space['3'] }}>
@@ -102,9 +102,13 @@ export function ThisBlockList({ view, blocksLink, onOpen, onBlocks }: { view: Th
           {view.title}
         </AppText>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'] }}>
-          <AppText variant="callout" color="text.secondary" numeric>
-            {view.meta}
-          </AppText>
+          {onPlan !== null ? (
+            <TextButton label={`${view.meta} ›`} tone="secondary" accessibilityLabel={`Your plan, ${view.meta}`} onPress={onPlan} />
+          ) : (
+            <AppText variant="callout" color="text.secondary" numeric>
+              {view.meta}
+            </AppText>
+          )}
           {blocksLink ? <TextButton label={`${BLOCKS_COPY.blocksLink} ›`} tone="secondary" onPress={onBlocks} /> : null}
         </View>
       </View>
@@ -144,6 +148,13 @@ export function ThisBlockSection({ blockKey = null, active = true, blocksLink = 
       onBlocks={() => {
         navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressBlocks' } });
       }}
+      onPlan={
+        view.current
+          ? () => {
+              navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressPlan' } });
+            }
+          : null
+      }
     />
   );
 }
