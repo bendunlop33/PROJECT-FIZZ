@@ -79,9 +79,11 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
 
   it('no versioned update can write a finished session; a logged set only on Ben’s request, in the workout (11 Oct)', () => {
     for (const t of COACH_TOOLS.filter((x) => x.effect === 'versioned_update')) {
-      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target', 'warmup_prefs']).toContain(w);
+      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target', 'warmup_prefs', 'exercise_pref']).toContain(w);
       // (Ben, 1 Nov) Warm-up settings: only update_warmup_prefs.
       if (t.writes.includes('warmup_prefs')) expect([t.name, t.writes]).toEqual(['update_warmup_prefs', ['warmup_prefs']]);
+      // (Ben, 2 Nov) An exercise's preference on the plan's answers: only set_exercise_preference, never the plan's days.
+      if (t.writes.includes('exercise_pref')) expect([t.name, t.writes]).toEqual(['set_exercise_preference', ['exercise_pref']]);
       // (20 Oct, ADR 0029) A gym's equipment: only update_gym, offered only on Ben's words about a gym.
       if (t.writes.includes('gym_equipment')) expect([t.name, t.needs]).toEqual(['update_gym', 'ben_request']);
       // (Ben, 20 Oct) A lift target on his profile: only set_lift_target, never a workout's sets.
@@ -439,6 +441,8 @@ describe('listCoachCapabilities (check 11)', () => {
               "Change the order or sets of one day of your plan, as a proposal you apply or undo",
               "Set a lift target you ask for, with Undo",
               "Change your warm-up settings when you ask, with Undo",
+              "Mark an exercise you like or don’t, with Undo (a swap out of your plan as a proposal)",
+              "Rebalance your plan’s muscles, as a proposal you apply or undo",
               "Change your workout before you start it, as a change you apply or skip",
               "Set up today’s workout from what you say (day, length, main lift), with Undo on Set up",
               "Add a general training rule to your playbook to review",

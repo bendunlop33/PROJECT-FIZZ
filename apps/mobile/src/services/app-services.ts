@@ -77,6 +77,7 @@ import { createWarmupPrefsService } from './warmup-prefs-service';
 import { createPlanServices } from './plan-services';
 import { createPlanSwapService } from './plan-swap-service';
 import { createPlanMusclesService } from './plan-muscles-service';
+import { createExercisePrefsService } from './exercise-prefs-service';
 import { createPlanBuilderService } from './plan-builder-service';
 import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
@@ -671,6 +672,10 @@ export function createAppServices(deps: AppServicesDeps) {
     liftTargets: { on: () => liftTargets.on(), prepare: (args, at) => liftTargets.prepare(args, at) },
     // (Ben, 1 Nov) The coach's warm-up settings tool, in every chat.
     warmupPrefs: { prepare: (args, at) => warmupPrefs.prepare(args, at) },
+    // (Ben, 2 Nov) Exercise likes and dislikes on the plan's Any preferences, and Plan › Muscles' Rebalance, from every chat.
+    // `exercisePrefs` and `planMuscles` are made below.
+    exercisePrefs: { available: () => exercisePrefs.available(), prepare: (args, at) => exercisePrefs.prepare(args, at) },
+    rebalance: { prepare: () => planMuscles.coachProposal() },
     week: {
       view: () => weekly.week.contextView(),
       tool: async () => {
@@ -1123,6 +1128,14 @@ export function createAppServices(deps: AppServicesDeps) {
     revertRoutine: async (req) => ({ ok: (await loop.routines.revert(req)).ok }),
     swapToday: async (req) => ({ ok: (await loop.workout.swapExercise(req)).ok }),
     undoToday: async (req) => ({ ok: (await loop.workout.undoOp(req)).ok }),
+  });
+
+  /** (Ben, 2 Nov) The coach's `set_exercise_preference`: Any preferences on the plan in use, and its swap out of the plan. */
+  const exercisePrefs = createExercisePrefsService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    catalogueExercises,
+    swapOut: (req) => planSwap.swapOut(req),
   });
 
   /** (Plan builder, 23 Oct) Gym goals → Your week → Your plan, offline: the deterministic engine, Apply / Undo through `plans`. */

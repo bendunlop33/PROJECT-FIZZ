@@ -1173,3 +1173,15 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Effect on back-offs:** at a gym with two pairs of each plate, worked-out back-offs stay as they were (the top set is loaded so they come off). With one pair of each small plate some move one step down: 100 → 92.5 becomes 90 (one pair of everything); 102.5 → 95 becomes 92.5 (one pair of 5s, 2.5s, 1.25s).
 - **Ben to decide:** when nothing within 5 % is a plate removal, keep the top load with fewer reps instead (not built: it changes a set's target). Below about 80 kg two pairs of 5s can't always build the ladder by adding alone (one swap); from 80 to 220 kg every ladder only adds plates.
 - **Open:** not run on Ben's iPhone. Fewer warm-ups shorten bench-led days by about 2.5 min, so time fits keep about one more accessory set.
+
+## 2026-11-02: The coach sets exercise likes and dislikes, and rebalances the plan's muscles (Ben, 2 Nov)
+
+- **Ben's words (1 Nov):** his "remove leg extension" preference didn't change his plan; the coach couldn't set one.
+- **Where preferences live:** the plan builder's Any preferences on the plan in use (Plan setup › Edit plan), not Profile. The builder, the plan swap and Rebalance already read them.
+- **"I don't like leg extensions, take them out":** `set_exercise_preference` saves it at once (`Leg extension: not preferred`, Undo). When his plan has it, the same card shows the plan swap (`Leg extension → Split squat`, every day that has it, Apply / Skip, then Undo, `Today too`). The substitute is for the same muscles, doable at his gym, not pain-flagged, not itself disliked. Already disliked on Plan setup: no second write, the swap is offered on its own. Also `preferred` ("I like hack squats") and clearing one. Plan setup's `Replace` picks the same way (same-muscle now).
+- **"Am I doing enough biceps?", "rebalance my plan":** `propose_rebalance` puts Plan › Muscles' Rebalance card in the chat: the same engine and service, so the coach and the screen show the same lines, bars and day lengths; per-line skip, Apply, Undo; `Out of date` once the plan has moved on. Every group in range: no card, the coach says so. Ranges as approved (FQ/VC/ST not used); no "focus" input.
+- **Smaller turns:** both tools load only on like/dislike or muscle/balance words.
+- **Records:** migration 42 adds both record kinds to `coach_actions`. ADR 0039 amendment (2 Nov).
+- **Ben to decide:** a Profile entry for exercise likes and dislikes (today only in Plan setup); preferences when no builder plan is in use (they have nowhere to live; the coach says so).
+- **Open:** not run on Ben's iPhone.
+
