@@ -80,6 +80,7 @@ Entries: **T** Today, Plan (opens Today's thread), Progress, an exercise chart; 
 | `propose_rebalance` (2 Nov) | – | plan + muscle/balance words (proposal) |
 | `set_next_session_targets` | post-workout review only | unchanged (not a chat) |
 | `propose_workout_fix` (2 Nov: a past workout's date, a duplicate, a Health pairing) | – | words (proposal) |
+| `propose_plan_add` (2 Nov, revised: `also` for a second add; the coach names the days, e.g. cardio first on leg days and on the rest) | – | plan (proposal, Apply/Undo) |
 
 ## Consequences
 
@@ -303,5 +304,35 @@ exercise first.
 3. **Partial asks:** `PARTIAL_ASK_LINE` in the instructions: check the tools cover the whole ask, say what they can't
    in one line in the first reply, make the part they can once, and put the missing part in `notIncluded`
    (`propose_plan_add`), which the card shows as `Partial · not included: …`. Never the same partial proposal again.
+
+Not yet run on Ben's iPhone.
+
+## Amendment (2 Nov 2026, Ben's correction): cardio first is a plan proposal, not a setting
+
+Ben, on the amendment above: "no i am talking about the ability to add that with the coach for the plan. the coach
+should know when there are leg days. it just needs the ability to add it". This replaces parts 1 and 2 above; part 3
+(partial asks) stays.
+
+1. **`update_warmup_prefs` loses `general`.** The `Cardio first` setting is retired: no Profile › Training row or
+   screen, nothing added at Start, no leg-day rule in code (`workoutDayType`, `asksForGeneralWarmup` and
+   `packages/domain/src/warmup/general.ts` are gone). Profiles stored with `warmups.general` still parse (the schema
+   keeps it optional) and nothing reads it; the next warm-up write drops it. Undo of an older record restores simple
+   loads and per-exercise settings only.
+2. **`propose_plan_add` loses `dayType` and gains `also`:** up to three more adds in the same proposal, each with its own
+   days, place and minutes. The coach decides which plan days are leg days from `plan.inUse.days` and names them; "bike
+   for 8 minutes first on leg days, rowing for 4 minutes first on other days" is one call: the bike first on the leg
+   days, `also` the rower first on every other day. A day named for two adds is refused (one add per day, so each day
+   is one versioned write). The record (`propose_plan_swap`, `op: 'add'`) keeps the first add at the top level; each
+   day of a further add carries its own (`days[].add`: exercise, sets, reps, minutes, distance). One card lists each
+   day's change (`Legs A: Exercise bike · 8 min, first`), one Apply (a day changed since refuses all and puts back what
+   was written), one Undo. **No migration** (optional JSON on the existing record).
+3. **Routing:** the warm-up tool line and `PLAN_ADD_LINE` send that wording to `propose_plan_add`, never
+   `update_warmup_prefs`, and tell the coach not to ask which days are leg days.
+4. **The days then hold the cardio** as a normal timed exercise, first (one working bout of its minutes; no load, no
+   reps). Applying saves a catalogue exercise as Ben's row first, so every Start from the day includes it (before this,
+   a catalogue exercise added to a plan day was left out at Start).
+5. **Time:** counted like any exercise. A time fit (Your workout, plan-day fits) keeps the cardio a day starts with
+   whole while accessories can still be trimmed or left out; only with nothing else left does it go. It is a working
+   set, so it never enters D17's 10-minute warm-up-set budget.
 
 Not yet run on Ben's iPhone.
