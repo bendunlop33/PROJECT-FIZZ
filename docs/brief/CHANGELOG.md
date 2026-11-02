@@ -1292,6 +1292,16 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Entry:** Progress › Lifts › This block's `Week 3 of 6 ›` opens the summary (Progress stack). `Edit` (top right) and `Edit plan` open Plan setup at Gym goals on the plan in use, as Change plan › Goal does (finished block: `Start next block`; coach plan: Library › Plan).
 - **Contents:** `<Focus> · <N> weeks`, `Week 3 of 6 · ends Sun 13 Dec`, the week strip (done, now, deload `↓`), days / week · minutes · effort, the days (main lift · exercise count, done dot, `Next`; tap opens the day), main lifts now → plan-end `est.` (the Gym goals table's own numbers), sets per week (Plan › Muscles' own bars, below range amber, `Muscles ›`). A coach-built plan shows what it has.
 - **Open:** coach-built plans have no This block section, so no Progress entry yet. Not yet seen on Ben's iPhone. No migration.
+- **Superseded the same day:** merged into Library › Plan (next entry).
+
+## 2026-11-02: One plan screen and one plan time (Ben, 2 Nov)
+
+- **Why:** the separate plan summary duplicated Library › Plan, and Library › Plan's goal line showed Profile's session length while the plan builder kept its own minutes, so the two could disagree.
+- **One screen:** the plan summary screen, its routes (`ProgressPlan`, `ProgressPlanDay`, `ProgressPlanMuscles`), service and view are gone. Progress › This block's `Week 3 of 6 ›` opens Library › Plan.
+- **Library › Plan's top (builder plans):** title `<Focus> · <N> weeks`; line `Week 3 of 6 · ends Sun 6 Dec` (lead-in `Starts … · ends …`, paused `… · Paused · until …` with Resume, finished `Block done`); a week strip replaces the week circles (one bar per week with its number under it: done filled green with no tick, this week accent, later neutral, a deload week dashed with `↓`; each bar is a tap that shows that week's list as the circles did, an outline marks a picked week); then days / week · minutes · effort. The goal line and `deload in week N` are gone from the header (the title, strip and numbers say them). Everything else on the page stays. Coach-built plans keep their old header.
+- **One plan time:** with a builder plan in use, every plan screen shows the plan's own minutes. Profile › Training details' Days a week and Session length rows show the plan's numbers and open Change plan › Days and time (the plan's own versioned edit, with its Changes review and Undo); a coach plan's rows still say `Set by your plan`. After Plan setup's Apply, Change plan's Apply or Undo, or a plan put back in use, Profile's stored session length is set to the plan's minutes (one versioned training write, op ID derived from the plan write's). No plan in use: Profile's minutes as before.
+- **Open:** not seen on Ben's iPhone. Profile is not put back when a plan's Apply is undone (the builder starts from Profile's minutes, so they usually already match). On 8- and 12-week plans each week bar is 44 pt tall but narrower than 44 pt. No migration.
+
 ## 2026-11-02: Ben approved FQ1–3, VC1–4 (no 30-set backstop), ST1–3
 
 - **Approved** (Ben, 2 Nov): [frequency-and-volume-caps.md](../training-guides/frequency-and-volume-caps.md) FQ1, FQ2, FQ3, VC1, VC2, VC3, VC4, ST1, ST2, ST3. VC2's weak "> 30 total (direct + assisted)" backstop is **dropped**: assisted sets never flag a group.

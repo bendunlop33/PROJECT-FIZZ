@@ -1,5 +1,11 @@
 # Plan summary (Ben, 2 Nov 2026)
 
+> **Superseded (Ben, 2 Nov 2026): merged into Library › Plan.** The separate screen duplicated Library › Plan and was
+> removed. Progress › This block's `Week 3 of 6 ›` now opens Library › Plan, whose top took this screen's title, week
+> line with end date, week strip (tappable, done filled green, deload dashed `↓`) and days / week · minutes · effort.
+> The days list, Main lifts and Sets per week sections were not carried over (Library › Plan has its own day list,
+> Lift targets and Muscles line). See `docs/brief/CHANGELOG.md`, 2026-11-02 "One plan screen and one plan time".
+
 Prototype: `docs/design/prototypes/plan-summary-2nov.html` (dark Premium; the notes panel beside it is commentary).
 Ben's words: "When you click on plan in overview of progress I think it should include a very tidy summary of the
 plan"; sets per week as bars ("bars is fine"); Main lifts kept.
