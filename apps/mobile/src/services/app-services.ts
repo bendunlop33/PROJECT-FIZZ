@@ -74,6 +74,7 @@ import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
 import { createLiftTargetService } from './lift-target-service';
 import { createWarmupPrefsService } from './warmup-prefs-service';
+import { createWorkoutFixService } from './workout-fix-service';
 import { createPlanServices } from './plan-services';
 import { createPlanSwapService } from './plan-swap-service';
 import { createPlanChangeService } from './plan-change-service';
@@ -616,6 +617,15 @@ export function createAppServices(deps: AppServicesDeps) {
       const ids = new Set(own.map((e) => e.id));
       return [...own, ...catalogueExercises().filter((e) => !ids.has(e.id))];
     },
+    // (Ben, 2 Nov) A general warm-up's catalogue exercise is saved as his row when he sets it, so every Start finds it.
+    ensureExercise: async (exerciseId) => {
+      const stored = await repos().exercises.get(exerciseId).catch(() => null);
+      if (stored !== null) return stored;
+      const row = catalogueExercises().find((e) => e.id === exerciseId) ?? null;
+      if (row === null) return null;
+      await repos().exercises.save(row, null).catch(() => null);
+      return (await repos().exercises.get(exerciseId).catch(() => null)) ?? null;
+    },
     now: deps.now,
   });
 
@@ -664,6 +674,14 @@ export function createAppServices(deps: AppServicesDeps) {
     return { goal: t?.goal ?? (answers === null ? null : volumeGoalOfFocus(answers.focus)), priorities: priorityGroupsOf(answers?.priorities ?? []) };
   }
 
+  /** (Ben, 2 Nov) Past workouts fixed from the coach: a date moved, a duplicate deleted, a Health workout paired. */
+  const workoutFix = createWorkoutFixService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    healthActivity: (uuid) => health.activity(uuid),
+  });
+
   const coach = createCoachService({
     muscleGoal: muscleGoalNow,
     planMuscleLines: () => planMuscles.coachLines(),
@@ -687,6 +705,9 @@ export function createAppServices(deps: AppServicesDeps) {
     // (Ben, 2 Nov) Rest settings and plan-level changes from every chat. `planChange` is made below (used after startup).
     restSettings: { prepare: (args, at) => restSettings.prepare(args, at) },
     planChange: { prepare: (r) => planChange.prepare(r) },
+    // (Ben, 2 Nov) Fixing past workouts (as proposals), and a day's Health workouts in the coach's day read.
+    workoutFix: { prepare: (args) => workoutFix.prepare(args) },
+    healthDay: (date) => health.coachDay(date),
     // (Ben, 2 Nov) Exercise likes and dislikes on the plan's Any preferences, and Plan › Muscles' Rebalance, from every chat.
     // `exercisePrefs` and `planMuscles` are made below.
     exercisePrefs: { available: () => exercisePrefs.available(), prepare: (args, at) => exercisePrefs.prepare(args, at) },
@@ -1495,6 +1516,7 @@ export function createAppServices(deps: AppServicesDeps) {
     health,
     liftTargets,
     warmupPrefs,
+    workoutFix,
     gyms,
     imports,
     importLayouts,

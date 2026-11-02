@@ -79,6 +79,7 @@ Entries: **T** Today, Plan (opens Today's thread), Progress, an exercise chart; 
 | `set_exercise_preference` (2 Nov) | – | builder plan + like/dislike words (at once, Undo; swap as a proposal) |
 | `propose_rebalance` (2 Nov) | – | plan + muscle/balance words (proposal) |
 | `set_next_session_targets` | post-workout review only | unchanged (not a chat) |
+| `propose_workout_fix` (2 Nov: a past workout's date, a duplicate, a Health pairing) | – | words (proposal) |
 
 ## Consequences
 
@@ -232,7 +233,23 @@ Two tools join the registry, every chat (`general`, `workout`), never the post-w
   the card offers `Today too?`: one `coach_edit_today` of `edit_planned_set` rest steps (pending sets on the old default
   only) with its own Undo (`revert_coach_edit`, which now keeps a logged set's rest).
 
-Migration 43 adds both record kinds to `coach_actions` (after 42's). Not yet run on Ben's iPhone.
+Migration 44 adds both record kinds to `coach_actions` (after 42's and 43's). Not yet run on Ben's iPhone.
+## Amendment (2 Nov 2026, Ben approved coach tools for past workouts)
+
+- **`propose_workout_fix`** joins the registry in every chat, opened only by Ben's words about fixing a past workout
+  (`asksPastWorkoutFix`, gate `pastWorkoutWords`, like `update_gym`'s gym words), so an ordinary turn carries neither the
+  tool nor its prompt line. Ops: `move` (date or times), `delete` (a duplicate or wrong workout), `pair` (a Health workout
+  with an app workout, or with the planned run that day), `unpair`. Always a proposal (`fix_workout` record) with before →
+  after, Apply and Undo (rule 2); Apply writes a second, committed record with the change in one coach-store transaction,
+  through the existing writes (Summary's Edit times `update_session_timing` + `shift`, History's soft delete, the day
+  sheet's link changes via the shared `changeLinkIn`), on the versions proposed; stale is refused (rule 5). Undo is the
+  coach store's undo of that record (times back, Restore, Unpair / Pair back).
+- **Reads:** `get_recent_sessions` with a date lists each workout's ID and times and that day's Health workouts with their
+  pairing state, so the coach names the right one.
+- **Not built:** merging two app workouts (the store has none; the coach proposes deleting the duplicate), and pairing a
+  Health run by hand (a run pairs with the planned run on its own when it is the only one that day).
+- **Never list** now reads `Delete or change a past workout without your Apply`; `Delete or rewrite a set, an import or a
+  check-in`. Migration 43 adds `fix_workout` to `coach_actions`. Not yet run on Ben's iPhone.
 ## Amendment (2 Nov 2026, Ben's approval the same day): exercise likes and dislikes, and Rebalance, from every chat
 
 On 1 Nov Ben told the coach to remove leg extension as a preference and his plan didn't change: no tool could set one.
@@ -263,5 +280,28 @@ he wants a Profile entry to them).
 4. **Turn size:** both tools, their prompt lines and descriptions load only on the words that need them, so plan turns
    don't grow (1 Nov `planWorkContext` unchanged). `propose_rebalance` counts as a plan card for the plan-part nudge.
 5. **Migration 42** adds `set_exercise_preference` and `propose_rebalance` to `coach_actions` (rows kept, as 41 did).
+
+## Amendment (2 Nov 2026, Ben's build 513 report): cardio first as a setting, plan adds at a place with minutes, partial asks said once
+
+Ben asked for "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days". The coach offered
+incomplete `propose_plan_add` cards again and again, then said its tools couldn't set a timed warm-up or place a new
+exercise first.
+
+1. **`update_warmup_prefs` gains `general`** (nullable, optional for older calls): per kind of day (`legs`, `other`,
+   `all`) a cardio exercise (name or catalogueId) and minutes (0 turns that day's off). It is a standing setting on the
+   training profile (`warmups.general`), so it survives plan edits, a re-applied plan and a new plan, and every workout
+   Ben starts gets it first. The turn reads Ben's words (`asksForGeneralWarmup`: a cardio word, minutes, first/before,
+   and a kind of day or every day); applied at once with Undo when he asked, never on the coach's own idea. Its tool
+   line routes "X minutes of bike before every leg day" here and keeps "add a bike to today" a today edit. Recorded as
+   the existing `update_warmup_prefs` kind (**no migration**: the record's `before`/`after` are the profile's JSON).
+2. **`propose_plan_add` gains a place and timed targets:** `position` (`first`, `last`, `before` with `before`,
+   `after`), `minutes` and `distanceM` for cardio or timed work, and `dayType` (`legs`, `other`, `all`) to add to every
+   day of a kind in one proposal (leg days by the same rule as the setting). `days` may be empty when `dayType` is
+   given. The record (`propose_plan_swap`, `op: 'add'`) carries `position`, `beforeId`/`beforeName`, `durationS`,
+   `distanceM` and each day's `first`/`beforeRowId`; Apply passes them to `plans.editDayEveryWeek` (one versioned write
+   per day, a day changed since refuses all and puts back anything written). **No migration.**
+3. **Partial asks:** `PARTIAL_ASK_LINE` in the instructions: check the tools cover the whole ask, say what they can't
+   in one line in the first reply, make the part they can once, and put the missing part in `notIncluded`
+   (`propose_plan_add`), which the card shows as `Partial · not included: …`. Never the same partial proposal again.
 
 Not yet run on Ben's iPhone.

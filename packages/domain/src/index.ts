@@ -79,6 +79,7 @@ export * from './session/coach-undo';
 export * from './session/gym-command';
 export * from './session/discard';
 export * from './session/deletion';
+export * from './session/workout-fix';
 export * from './step-card';
 export * from './target-provenance';
 export * from './session/target-why';

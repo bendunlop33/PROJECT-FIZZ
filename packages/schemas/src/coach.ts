@@ -21,7 +21,7 @@ import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArg
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
 import { PLAN_BUILDER_LIMITS, PlanBuilderAnswersSchema, PlanPrefAnswerSchema } from './plan-builder';
-import { FitRestLevelSchema, RestDefaultKeySchema, RestSettingsSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
+import { FitRestLevelSchema, GeneralWarmupDaysSchema, RestDefaultKeySchema, RestSettingsSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
 import { ActivityEffortSchema, ActivityFieldsShapeSchema, ActivityKindSchema, ActivityStatusSchema, WeekBasisSchema, WeekMergeSchema, WeekRowSchema, WeekSkipSchema, type Activity } from './activity';
 import { LocalDateSchema } from './import';
 import { BuilderProposalSchema } from './builder-coach';
@@ -353,11 +353,31 @@ export type ProposePlanSwapArgs = z.infer<typeof ProposePlanSwapArgsSchema>;
  */
 export const ProposePlanAddArgsSchema = z.strictObject({
   add: z.string().min(1).max(80),
-  days: z.array(z.string().min(1).max(120)).min(1).max(7),
+  days: z.array(z.string().min(1).max(120)).max(7),
   after: z.string().min(1).max(80).nullable(),
   workingSets: z.int().min(1).max(10),
   reps: z.strictObject({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable(),
   load: z.number().min(0).max(1000).nullable(),
+  /**
+   * (Ben, 2 Nov: "bike for 8 minutes first on leg days") Where it goes in each day: `first` (before every exercise),
+   * `last`, `after` (straight after `after`; the default, null `after` = at the end) or `before` (straight before
+   * `before`). Null: `after`. Absent on calls made before them.
+   */
+  position: z.enum(['first', 'last', 'after', 'before']).nullable().optional(),
+  before: z.string().min(1).max(80).nullable().optional(),
+  /** (Ben, 2 Nov) A cardio or timed exercise's target: minutes per set and a distance (metres). Null: the app's default. */
+  minutes: z.number().min(0).max(240).nullable().optional(),
+  distanceM: z.int().min(0).max(100_000).nullable().optional(),
+  /**
+   * (Ben, 2 Nov) Days chosen by kind instead of (or as well as) by name: `legs` every leg day of the plan, `other` every
+   * other day, `all` every day. Leg days are decided by code from each day's exercises. Null: only `days`.
+   */
+  dayType: z.enum(['legs', 'other', 'all']).nullable().optional(),
+  /**
+   * (Ben, 2 Nov) The part of Ben's ask this proposal can't express, in a few words ("only every other week"); null when
+   * it does all of it. Shown on the card as partial (coach honesty).
+   */
+  notIncluded: z.string().max(160).nullable().optional(),
   reason,
 });
 export type ProposePlanAddArgs = z.infer<typeof ProposePlanAddArgsSchema>;
@@ -489,9 +509,39 @@ export const UpdateWarmupPrefsArgsSchema = z.strictObject({
   exercises: z
     .array(z.strictObject({ exercise: z.string().min(1).max(120), warmups: z.enum(['off', 'normal', 'default']) }))
     .max(20),
+  /**
+   * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") General (cardio)
+   * warm-up rules, first in every workout started: per kind of day (`legs`, `other`, `all`), the cardio exercise (a name
+   * or catalogueId) and minutes; minutes 0 turns that day's rule off. Days not named keep their rule; `all` replaces the
+   * `legs` and `other` rules not named with it. Null: unchanged. Absent on calls made before it.
+   */
+  general: z
+    .array(z.strictObject({ days: GeneralWarmupDaysSchema, exercise: z.string().min(1).max(120), minutes: z.int().min(0).max(120) }))
+    .max(3)
+    .nullable()
+    .optional(),
   ...askClaim,
 });
 export type UpdateWarmupPrefsArgs = z.infer<typeof UpdateWarmupPrefsArgsSchema>;
+
+/**
+ * (Ben, 2 Nov) Fix a past workout, always as a proposal with before/after, Apply and Undo (rule 2): `move` its date or
+ * times ("that Tuesday pull was actually Monday": `date` the new local day, `start`/`end` local `HH:MM`, null keeps the
+ * time of day / the length), `delete` a duplicate or wrong workout (a soft delete, restorable; Undo brings it back),
+ * `pair` a Health workout (`healthId`) with an app workout (`workoutId`), or with the planned run that day (`workoutId`
+ * null), `unpair` a Health workout. IDs come from get_recent_sessions (a day's read lists its Health workouts too).
+ * Two app workouts are never merged: the app can't; delete the duplicate instead.
+ */
+export const ProposeWorkoutFixArgsSchema = z.strictObject({
+  op: z.enum(['move', 'delete', 'pair', 'unpair']),
+  workoutId: z.string().min(1).max(64).nullable(),
+  healthId: z.string().min(1).max(64).nullable(),
+  date: LocalDateSchema.nullable(),
+  start: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  end: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  reason,
+});
+export type ProposeWorkoutFixArgs = z.infer<typeof ProposeWorkoutFixArgsSchema>;
 
 /**
  * (Ben, 2 Nov: "I don't like leg extensions, take them out") One exercise's preference on Any preferences (the plan in
@@ -780,6 +830,8 @@ export const CoachToolNameSchema = z.enum([
   'propose_plan_change',
   /** (Ben, 2 Nov) Default rests per set type, `Rest when short on time`, `Shorten main lift too`: applied with Undo when Ben asks. */
   'update_rest_settings',
+  /** (Ben, 2 Nov) A past workout's date moved, a duplicate deleted, a Health workout paired or unpaired: a proposal he applies, with Undo. */
+  'propose_workout_fix',
   /** (Ben, 2 Nov) One exercise's preference (not preferred / preferred / none), applied with Undo when Ben states it. */
   'set_exercise_preference',
   /** (Ben, 2 Nov) Plan › Muscles' Rebalance for the plan in use: the same proposal as the screen's, Apply and Undo. */
@@ -830,6 +882,7 @@ export const COACH_TOOL_ARGS = {
   propose_plan_day_edit: ProposePlanDayEditArgsSchema,
   propose_plan_change: ProposePlanChangeArgsSchema,
   update_rest_settings: UpdateRestSettingsArgsSchema,
+  propose_workout_fix: ProposeWorkoutFixArgsSchema,
   set_exercise_preference: SetExercisePreferenceArgsSchema,
   propose_rebalance: ProposeRebalanceArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
@@ -1309,6 +1362,34 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     lines: z.array(z.string().min(1).max(200)).max(12),
   }),
   /**
+   * (Ben, 2 Nov) A past workout fixed (`propose_workout_fix`). The coach's record is `proposed` (before/after, Apply,
+   * Undo); Ben's Apply writes a second `committed` record with `proposalId` and the change in one transaction (rule 5:
+   * on `sessionVersion` / `link.version` as proposed, else stale), and Undo reverts that one. `before`/`after`: app
+   * text for the card (`Tue 28 Oct · 18:04–19:02` → `Mon 27 Oct · 18:04–19:02`; `Deleted`; `Paired with Push A`).
+   * `move`: the new start and end. `link`: the Health write the day sheet's Pair, Same workout or Unpair makes.
+   */
+  z.object({
+    kind: z.literal('fix_workout'),
+    op: z.enum(['move', 'delete', 'pair', 'unpair']),
+    proposalId: IdSchema.optional(),
+    sessionId: IdSchema.nullable(),
+    sessionVersion: z.int().min(1).nullable(),
+    title: z.string().min(1).max(120),
+    before: z.string().min(1).max(200),
+    after: z.string().min(1).max(200),
+    move: z.object({ startedAt: ZonedTimestampSchema, endedAt: ZonedTimestampSchema.nullable() }).optional(),
+    link: z
+      .object({
+        mode: z.enum(['link', 'same', 'unlink', 'not_same']),
+        healthUuid: z.string().min(1).max(64),
+        /** The link record written to: the Health workout's own (`link`, `unlink`) or the paired one's (`same`, `not_same`). */
+        linkUuid: z.string().min(1).max(64),
+        /** That link's version as read; null: no record yet (`link` only). */
+        linkVersion: z.int().min(1).nullable(),
+      })
+      .optional(),
+  }),
+  /**
    * (Ben, 20 Oct) An activity the coach logged (committed: `activityId` names it) or offered (proposed:
    * the fields Ben's tap logs). `versionAfter`: the activity's version the write left (Undo only from it).
    */
@@ -1381,6 +1462,15 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     sets: z.int().min(1).max(10).optional(),
     reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable().optional(),
     load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).nullable().optional(),
+    /** (Ben, 2 Nov) An add's place: `first` in each day, or straight `before` `beforeId`. Absent: after `afterId` (or at the end). */
+    position: z.enum(['first', 'before']).optional(),
+    beforeId: z.string().min(1).max(64).optional(),
+    beforeName: z.string().min(1).max(120).optional(),
+    /** (Ben, 2 Nov) A cardio or timed add's work time per set (seconds) and a distance (metres). Absent: the default. */
+    durationS: z.int().min(1).max(14_400).optional(),
+    distanceM: z.int().min(1).max(100_000).optional(),
+    /** (Ben, 2 Nov) The part of Ben's ask this proposal leaves out, as the coach said it: the card reads `Partial`. */
+    notIncluded: z.string().min(1).max(160).optional(),
     days: z
       .array(
         z.object({
@@ -1389,7 +1479,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
           versionBefore: z.int().min(1),
           /** `add`: `rowId` is the new row's ID, `afterRowId` the row it goes after (null: at the end), `afterName` that row's exercise. */
           /** (Ben, 1 Nov) `edit` (`day_edit`): one write of the whole day's change (`dayEdit`); `rowId` is its first row. */
-          edits: z.array(z.object({ kind: z.enum(['swap', 'remove', 'add', 'edit']), rowId: IdSchema, afterRowId: IdSchema.nullable().optional(), afterName: z.string().max(120).nullable().optional() })).min(1).max(6),
+          /** (Ben, 2 Nov) `add`: `first` before every row, or `beforeRowId` the row it goes straight before. */
+          edits: z.array(z.object({ kind: z.enum(['swap', 'remove', 'add', 'edit']), rowId: IdSchema, afterRowId: IdSchema.nullable().optional(), afterName: z.string().max(120).nullable().optional(), first: z.boolean().optional(), beforeRowId: IdSchema.optional() })).min(1).max(6),
           /** The day's exercises before and after (names, in order): the card's before/after. */
           before: z.array(z.string().max(120)).max(30).optional(),
           after: z.array(z.string().max(120)).max(30).optional(),
@@ -1868,7 +1959,13 @@ export type CoachWrite =
   /** (Ben, 2 Nov) The plan in use with one exercise's preference changed (`set_exercise_preference`), on `expectedVersion` (rule 5), with its record. */
   | { kind: 'exercise_pref'; action: ActionRecord; plan: PlanDraft; expectedVersion: number }
   /** (Ben, 20 Oct) An activity the coach logged and its record, in one write (`expectedVersion` null: new). */
-  | { kind: 'activity'; action: ActionRecord; activity: Activity; expectedVersion: number | null };
+  | { kind: 'activity'; action: ActionRecord; activity: Activity; expectedVersion: number | null }
+  /**
+   * (Ben, 2 Nov) Ben's Apply on a past-workout fix: the `committed` `fix_workout` record (with `proposalId`) and its
+   * change in one transaction, through the same writes as Summary's Edit times, History's Delete and the day sheet's
+   * Pair / Same workout / Unpair. The proposal must still be `proposed`; a workout or link changed since is stale.
+   */
+  | { kind: 'workout_fix'; action: ActionRecord };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

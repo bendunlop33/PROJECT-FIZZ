@@ -331,6 +331,15 @@ export const PlanWeekExerciseEditSchema = z.object({
   sets: z.int().min(1).max(10).optional(),
   reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).optional(),
   load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).nullable().optional(),
+  /**
+   * (Ben, 2 Nov) `add`'s place: `first` before every row (wins over the rest), else straight before `beforeRowId`, else
+   * after `afterRowId`. Absent: as before.
+   */
+  first: z.boolean().optional(),
+  beforeRowId: IdSchema.optional(),
+  /** (Ben, 2 Nov) `add` of a cardio or timed exercise: its work time per set (seconds) and distance (metres). */
+  durationS: z.int().min(1).max(14_400).optional(),
+  distanceM: z.int().min(1).max(100_000).optional(),
   opId: OperationIdSchema,
   atUtc: UtcTimestampSchema,
 });

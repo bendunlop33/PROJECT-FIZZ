@@ -34,7 +34,8 @@ export interface WarmupPrefsDeps {
 
 /** Sent while the tool is offered. */
 export const WARMUP_PREFS_TOOL_LINE =
-  'Warm-ups are yours to change: update_warmup_prefs sets Simple warm-up weights (easy-to-load jumps: bar, then 10 kg steps; dumbbells in 5s) and turns warm-ups off or back to normal per exercise, and re-plans today’s warm-ups not yet done. Never say you can’t change warm-ups or a plan-wide warm-up rule. Prehab and rotator cuff work has no warm-ups by default. benAsked true only when his message this turn asks, with benQuote his words copied exactly.';
+  'Warm-ups are yours to change: update_warmup_prefs sets Simple warm-up weights (easy-to-load jumps: bar, then 10 kg steps; dumbbells in 5s) and turns warm-ups off or back to normal per exercise, and re-plans today’s warm-ups not yet done. Never say you can’t change warm-ups or a plan-wide warm-up rule. Prehab and rotator cuff work has no warm-ups by default. benAsked true only when his message this turn asks, with benQuote his words copied exactly.\n' +
+  'A standing cardio-first rule ("bike for 8 minutes first on leg days, rowing for 4 minutes first on other days", "5 min row before every workout") is update_warmup_prefs general, in one call: one entry per kind of day (legs, other, all) with the cardio exercise and minutes. It goes first in every workout he starts, whatever plan he is on, and counts in the workout’s time. Never a plan add or a plan-day edit for this, and never ask which days are leg days: code decides from each day’s exercises. A one-off for today only ("add a bike to today") is today’s workout edit, not this.';
 
 /** Fed back when Ben didn't ask: nothing changed (rule 3). */
 export const WARMUP_PREFS_NOT_ASKED_LINE = 'Not changed: Ben did not ask for this warm-up change. In reply, ask briefly if he wants it ("Want me to change your warm-ups?").';
@@ -47,7 +48,25 @@ const QUESTION_ONLY = /^\s*(?:what|why|how|should i|do you think|is it|are)\b[^.
 export function asksForWarmupChange(words: string): boolean {
   const w = words.trim();
   if (w === '' || QUESTION_ONLY.test(w)) return false;
-  return WARMUP_WORD.test(w) && CHANGE_WORD.test(w);
+  return (WARMUP_WORD.test(w) && CHANGE_WORD.test(w)) || asksForGeneralWarmup(w);
+}
+
+/** Cardio machines and words Ben uses for them. */
+const CARDIO_WORD = /\b(?:bike|biking|cycle|cycling|spin|row|rowing|rower|erg|ski ?erg|treadmill|run|jog|walk|incline walk|cross ?trainer|elliptical|stair ?master|stairs|stepper|air ?bike|assault bike|cardio)\b/i;
+const MINUTES_WORD = /\b\d+(?:[.,]\d+)?\s*(?:-|to)?\s*(?:min|mins|minute|minutes)\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty) (?:min|mins|minute|minutes)\b/i;
+const FIRST_WORD = /\b(?:first|before|start(?:ing)? with|to start|begin(?:ning)? with|at the start|warm(?:ing)? up)\b/i;
+const EVERY_DAY_WORD = /\b(?:(?:leg|legs|push|pull|upper|lower|other|all|non[- ]?leg|training|gym) days|every (?:\w+ )?(?:day|session|workout|time)|each (?:\w+ )?(?:day|session|workout)|from now on|always|going forward|(?:in|on|to) (?:my|the) plan)\b/i;
+
+/**
+ * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") A standing general
+ * (cardio) warm-up rule: a cardio word, minutes, first or before, and every day or a kind of day. Today only ("add a
+ * bike to today") is not one. Code's reading of his words (rule 3).
+ */
+export function asksForGeneralWarmup(words: string): boolean {
+  const w = words.trim();
+  if (w === '' || QUESTION_ONLY.test(w)) return false;
+  if (/\b(?:today|tonight|this (?:session|workout)|right now)\b/i.test(w) && !EVERY_DAY_WORD.test(w)) return false;
+  return CARDIO_WORD.test(w) && MINUTES_WORD.test(w) && FIRST_WORD.test(w) && EVERY_DAY_WORD.test(w);
 }
 
 export function createWarmupPrefsExecutors(deps: WarmupPrefsDeps): CoachExecutors {

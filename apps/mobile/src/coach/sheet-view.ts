@@ -9,7 +9,7 @@
  */
 
 import { failureWhy, memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
-import { customExerciseLine, isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
+import { customExerciseLine, cardioDistanceText, formatDuration, isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
 import type { ActionRecord, BenInput, CustomExerciseFields, CoachMessage, CoachTurn, CoachTurnError, CoachTurnFailure, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, GymProposalState, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
@@ -238,6 +238,8 @@ export interface CardView {
   planChange?: ActionRecord;
   /** (Ben, 2 Nov) Rest settings changed with a live workout whose rests it moves: the card adds `Today too?` (own Undo). */
   restToday?: ActionRecord;
+  /** (Ben, 2 Nov) A past workout's fix: before → after, Apply (Delete, with a confirm) / Skip, then Undo. */
+  workoutFix?: ActionRecord;
   /** (Ben, 2 Nov) An exercise's preference saved with its plan swap proposal: one card, the line and Undo, the swap under it. */
   prefSwap?: { swapActionId: string };
   /** (Ben, 2 Nov) Plan › Muscles' Rebalance from the coach: the screen's card (per-line skip, Apply, Undo). */
@@ -430,6 +432,7 @@ export function cardView(r: ActionRecord): CardView {
     ...(r.detail.kind === 'propose_plan_swap' && r.status === 'proposed' ? { planSwap: r } : {}),
     ...(r.detail.kind === 'propose_plan_change' && r.status === 'proposed' ? { planChange: r } : {}),
     ...(r.detail.kind === 'update_rest_settings' && r.status === 'committed' && r.detail.today !== null ? { restToday: r } : {}),
+    ...(r.detail.kind === 'fix_workout' && r.status === 'proposed' ? { workoutFix: r } : {}),
     ...(r.detail.kind === 'set_exercise_preference' && r.status === 'committed' && r.detail.swapActionId !== null ? { prefSwap: { swapActionId: r.detail.swapActionId } } : {}),
     ...(r.detail.kind === 'propose_rebalance' && r.status === 'proposed' ? { rebalance: r } : {}),
   };
@@ -816,7 +819,23 @@ export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<B
  * (Ben, 30 Oct) A plan swap's lines from its record: `Leg extension → Leg press`, then each day (`Legs B: − Leg
  * extension` where the day already has the exercise coming in). App text only.
  */
-export function planSwapLines(r: ActionRecord): { head: string; days: string[] } | null {
+/**
+ * (Ben, 2 Nov) A past-workout fix card: `Pull A`, then `Tue 28 Oct · 18:04–19:02 → Mon 27 Oct · 18:04–19:02`. Its icon
+ * and the Apply word (`Delete` for a delete, behind a confirm). From the record only.
+ */
+export function workoutFixLines(r: ActionRecord): { icon: 'calendar' | 'trash' | 'link'; head: string; change: string; applyLabel: 'Apply' | 'Delete'; destructive: boolean } | null {
+  if (r.detail.kind !== 'fix_workout') return null;
+  const d = r.detail;
+  return {
+    icon: d.op === 'move' ? 'calendar' : d.op === 'delete' ? 'trash' : 'link',
+    head: d.title,
+    change: `${d.before} → ${d.after}`,
+    applyLabel: d.op === 'delete' ? 'Delete' : 'Apply',
+    destructive: d.op === 'delete',
+  };
+}
+
+export function planSwapLines(r: ActionRecord): { head: string; days: string[]; partial?: string } | null {
   if (r.detail.kind !== 'propose_plan_swap') return null;
   const d = r.detail;
   // (Ben, 1 Nov) A day edit: the day, then one line per change (`Order: …`, `Dumbbell bench press: 3 → 2 sets · secondary`).
@@ -825,8 +844,13 @@ export function planSwapLines(r: ActionRecord): { head: string; days: string[] }
   if (d.op === 'add') {
     const reps = d.reps == null ? '' : d.reps.min === d.reps.max ? ` × ${String(d.reps.min)}` : ` × ${String(d.reps.min)}–${String(d.reps.max)}`;
     const load = d.load == null ? '' : ` @ ${String(d.load.value)} ${d.load.unit}${d.load.convention === 'per_hand' ? ' each' : ''}`;
-    const head = `+ ${d.addName}${d.sets === undefined ? '' : ` · ${String(d.sets)}${reps}`}${load}`;
-    return { head, days: d.days.map((x) => `${x.routineName}: ${x.edits.map((e) => (e.afterName == null ? 'at the end' : `after ${e.afterName}`)).join(', ')}`) };
+    // (Ben, 2 Nov) A cardio or timed add: `+ Exercise bike · 8 min` (one bout), `· 4 × 1:30`, `· 2,000 m`.
+    const work = d.durationS === undefined ? null : d.durationS % 60 === 0 ? `${String(d.durationS / 60)} min` : formatDuration(d.durationS);
+    const dist = d.distanceM === undefined ? null : cardioDistanceText(d.distanceM);
+    const timed = [work, dist].filter((x): x is string => x !== null).join(' · ');
+    const head = timed !== '' ? `+ ${d.addName} · ${d.sets === undefined || d.sets === 1 ? '' : `${String(d.sets)} × `}${timed}` : `+ ${d.addName}${d.sets === undefined ? '' : ` · ${String(d.sets)}${reps}`}${load}`;
+    const place = (e: (typeof d.days)[number]['edits'][number]): string => (e.first === true ? 'first' : e.beforeRowId !== undefined && d.beforeName !== undefined ? `before ${d.beforeName}` : e.afterName == null ? 'at the end' : `after ${e.afterName}`);
+    return { head, days: d.days.map((x) => `${x.routineName}: ${x.edits.map(place).join(', ')}`), ...(d.notIncluded === undefined ? {} : { partial: `Partial · not included: ${d.notIncluded}` }) };
   }
   const out = d.removeName ?? 'Exercise';
   return { head: `${out} → ${d.addName}`, days: d.days.map((x) => (x.edits.every((e) => e.kind === 'remove') ? `${x.routineName}: − ${out}` : x.routineName)) };

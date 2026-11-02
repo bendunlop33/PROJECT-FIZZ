@@ -61,7 +61,8 @@ export interface MuscleSetCredit {
 /** Per set, for each group the exercise counts towards. */
 export function muscleSetCredits(info: MuscleCreditInfo | null | undefined): Map<MuscleGroup, MuscleSetCredit> {
   const out = new Map<MuscleGroup, MuscleSetCredit>();
-  if (info == null) return out;
+  // (Ben, 2 Nov) Cardio (a general warm-up's bike or rower) is never a muscle set.
+  if (info == null || info.measurement === 'cardio') return out;
   const lead = directMuscleGroup(info);
   for (const [g, v1] of muscleGroupCredits(info)) {
     const direct: 0 | 1 = g === lead ? 1 : 0;

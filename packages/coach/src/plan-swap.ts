@@ -58,6 +58,16 @@ export interface PlanAddRequest {
   sets: number;
   reps: { min: number; max: number } | null;
   load: number | null;
+  /** (Ben, 2 Nov) Where in each day: `first`, `last`, straight `before` `before`, or after `after` (absent: after). */
+  position?: 'first' | 'last' | 'after' | 'before';
+  before?: string | null;
+  /** (Ben, 2 Nov) A cardio or timed add's minutes per set and a distance in metres (absent: the app's default). */
+  minutes?: number | null;
+  distanceM?: number | null;
+  /** (Ben, 2 Nov) Days by kind as well as by name: every leg day, every other day, or every day of the plan. */
+  dayType?: 'legs' | 'other' | 'all' | null;
+  /** (Ben, 2 Nov) The part of Ben's ask this add leaves out (the card reads `Partial`). */
+  notIncluded?: string | null;
 }
 
 export interface PlanAddDeps {
@@ -81,7 +91,20 @@ export function createPlanAddExecutor(deps: PlanAddDeps): CoachExecutors {
     if (call.tool !== 'propose_plan_add') throw new TypeError(call.tool);
     const a = call.args;
     const reps = a.reps === null ? null : { min: Math.min(a.reps.min, a.reps.max), max: Math.max(a.reps.min, a.reps.max) };
-    const req: PlanAddRequest = { add: a.add.trim(), days: a.days.map((d) => d.trim()), after: a.after === null ? null : a.after.trim(), sets: a.workingSets, reps, load: namedLoadIn(a.load, ctx.benWords) };
+    const req: PlanAddRequest = {
+      add: a.add.trim(),
+      days: a.days.map((d) => d.trim()),
+      after: a.after === null ? null : a.after.trim(),
+      sets: a.workingSets,
+      reps,
+      load: namedLoadIn(a.load, ctx.benWords),
+      ...(a.position == null ? {} : { position: a.position }),
+      ...(a.before == null ? {} : { before: a.before.trim() }),
+      ...(a.minutes == null || a.minutes <= 0 ? {} : { minutes: a.minutes }),
+      ...(a.distanceM == null || a.distanceM <= 0 ? {} : { distanceM: a.distanceM }),
+      ...(a.dayType == null ? {} : { dayType: a.dayType }),
+      ...(a.notIncluded == null || a.notIncluded.trim() === '' ? {} : { notIncluded: a.notIncluded.trim() }),
+    };
     const r = await deps.prepare(req).catch((): PlanSwapPrepared => ({ kind: 'refused', line: 'Not proposed: the plan couldn’t be read just now.' }));
     if (r.kind === 'refused') {
       const detail: ActionDetail = { kind: 'propose_plan_swap', op: 'add', planId: NO_PLAN, planName: '', addId: a.add.slice(0, 64), addName: (r.names?.add ?? a.add).slice(0, 120), days: [] };
@@ -138,11 +161,19 @@ export function createPlanDayEditExecutor(deps: PlanDayEditDeps): CoachExecutors
 
 /** Sent when `propose_plan_day_edit` is offered (a plan in use). */
 export const PLAN_DAY_EDIT_LINE =
-  'When the order of a plan day tires a later lift ("Push B is shoulder-led and bench comes after", "pre-fatigued"), or Ben asks for a day to be different from now on, call propose_plan_day_edit with a concrete fix for that day: reorder it (the tired lift earlier), or keep the order and make the later lift secondary (main false, fewer sets, a lower targetRpe), or swap it with propose_plan_swap. YOUR DATA plan.inUse.days has each day’s exercises with their sets and reps. It is a proposal Ben applies with Undo: never say it changed, never answer in text only.';
+  'When the order of a plan day tires a later lift ("Push B is shoulder-led and bench comes after", "pre-fatigued"), or Ben asks for a day to be different from now on, call propose_plan_day_edit with a concrete fix for that day: reorder it (the tired lift earlier), or keep the order and make the later lift secondary (main false, fewer sets, a lower targetRpe), or swap it with propose_plan_swap. A new exercise in a day (at any place, with minutes for cardio) is propose_plan_add. YOUR DATA plan.inUse.days has each day’s exercises with their sets and reps. It is a proposal Ben applies with Undo: never say it changed, never answer in text only.';
 
 /** Sent when `propose_plan_add` is offered (a plan in use). */
 export const PLAN_ADD_LINE =
-  'To add an exercise to days of Ben’s plan from now on ("add curls to my pull days", "fix the plan too" after you found a gap), call propose_plan_add: the days by their names in YOUR DATA plan.inUse.days, `after` the exercise it goes after (null: at the end), your sets and reps. It is a proposal Ben applies with Undo: never say it changed.';
+  'To add an exercise to days of Ben’s plan from now on ("add curls to my pull days", "fix the plan too" after you found a gap), call propose_plan_add: the days by their names in YOUR DATA plan.inUse.days, or dayType (legs, other, all) for every leg day, every other day or every day; position first, last, before (with `before`) or after (with `after`; null: at the end); your sets and reps, or minutes (and distanceM) for cardio and timed work. It is one proposal for all those days, which Ben applies with Undo: never say it changed. A standing cardio-first warm-up ("bike 8 min first on leg days") is update_warmup_prefs, not a plan add.';
+
+/**
+ * (Ben, 2 Nov: the coach offered incomplete plan adds again and again before saying it couldn't encode his rule) Before
+ * a proposal, check the tools can do all of Ben's ask; say what they can't in one line in the first reply, and label a
+ * proposal that does only part of it (`notIncluded`), never offering the same partial proposal again.
+ */
+export const PARTIAL_ASK_LINE =
+  'Before you make a proposal, check that your tools can do all of what Ben asked. If part of it can’t be done with any tool, say so in one short line in this first reply, make the part that can be done once, and put the missing part in its notIncluded (the card reads Partial). Never offer the same incomplete proposal again, and never offer several partial ones in a row.';
 
 /** Sent when `propose_plan_swap` is offered (a plan in use). */
 export const PLAN_SWAP_LINE = [

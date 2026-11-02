@@ -1,5 +1,5 @@
 import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
-import { BUILDER_TIME, betweenSecondsOf, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
+import { BUILDER_TIME, betweenSecondsOf, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds, generalWarmupSecondsFor } from './estimate';
 import { DEFAULT_FIT_REST_LEVEL } from './rest';
 import { makeSlot } from './slot';
 import { autoPickClash, BUILDER_SUB_ROLES, subRoleOf } from './similar';
@@ -426,7 +426,8 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, w
 function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, weigh: FitWeigh, guard: ReadonlyMap<string, GuardMode>, mayLeaveOut = true): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
   const choices = w.blocks.map((b) => blockChoices(b, w, ctx, weigh, guard, mayLeaveOut));
   // The blocks' seconds (with a changeover each) against the limit: setup is once, and the first block has no changeover.
-  const room = limitS - BUILDER_TIME.setupS + betweenSecondsOf(ctx);
+  // (Ben, 2 Nov) His general warm-up's minutes come off the room first: the fit makes room for it, never cuts it.
+  const room = limitS - BUILDER_TIME.setupS + betweenSecondsOf(ctx) - generalWarmupSecondsFor(w, ctx);
   const minAfter: number[] = new Array<number>(choices.length + 1).fill(0);
   for (let i = choices.length - 1; i >= 0; i -= 1) minAfter[i] = (minAfter[i + 1] ?? 0) + Math.min(...(choices[i] ?? []).map((c) => c.secs));
   // By total seconds, the state that keeps most. States that can't fit any more are dropped as they arise.

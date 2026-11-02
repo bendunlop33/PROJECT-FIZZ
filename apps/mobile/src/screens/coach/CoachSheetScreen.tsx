@@ -52,6 +52,7 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SecondaryButton, SheetKeyboardAvoidingView, TEXT_PRESSED_OPACITY, TextButton, TextField, useKeyboardVisible } from '../../ui';
+import { WorkoutFixCard } from './WorkoutFixCard';
 import { PlanSwapCard, PlanSwapCardById } from './PlanSwapCard';
 import { PlanChangeCard } from './PlanChangeCard';
 import { RestTodayRow } from './RestTodayRow';
@@ -1001,6 +1002,7 @@ function Row({
       if (row.card.draftEdit !== undefined && onDraft !== undefined) return <DraftEditCard record={row.card.draftEdit} onChanged={onDraft.changed} />;
       if (row.card.planSwap !== undefined) return <PlanSwapCard record={row.card.planSwap} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
       if (row.card.planChange !== undefined) return <PlanChangeCard record={row.card.planChange} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
+      if (row.card.workoutFix !== undefined) return <WorkoutFixCard record={row.card.workoutFix} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
       if (row.card.rebalance !== undefined) return <RebalanceCard record={row.card.rebalance} {...(onDraft === undefined ? {} : { onChanged: onDraft.changed })} />;
       if (row.card.prefSwap !== undefined) {
         // (Ben, 2 Nov) One card: the preference (Undo) with its plan swap proposal under it (Apply / Skip, then Undo).

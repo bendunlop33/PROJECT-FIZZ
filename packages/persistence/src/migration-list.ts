@@ -46,7 +46,8 @@ import { MIGRATION_0039 } from './schema/0039-coach-builder-powers';
 import { MIGRATION_0040 } from './schema/0040-coach-plan-swap';
 import { MIGRATION_0041 } from './schema/0041-coach-warmup-prefs';
 import { MIGRATION_0042 } from './schema/0042-coach-prefs-rebalance';
-import { MIGRATION_0043 } from './schema/0043-coach-plan-change';
+import { MIGRATION_0043 } from './schema/0043-coach-workout-fix';
+import { MIGRATION_0044 } from './schema/0044-coach-plan-change';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -114,8 +115,10 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(41, 'coach-warmup-prefs', MIGRATION_0041),
   // (Ben, 2 Nov) Exercise preferences and Rebalance from the coach (`set_exercise_preference`, `propose_rebalance` records).
   sqlMigration(42, 'coach-prefs-rebalance', MIGRATION_0042),
+  // (Ben, 2 Nov) Past workouts fixed from the coach (`fix_workout` records).
+  sqlMigration(43, 'coach-workout-fix', MIGRATION_0043),
   // (Ben, 2 Nov) Plan-level changes and rest settings from the coach (`propose_plan_change`, `update_rest_settings` records).
-  sqlMigration(43, 'coach-plan-change', MIGRATION_0043),
+  sqlMigration(44, 'coach-plan-change', MIGRATION_0044),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */

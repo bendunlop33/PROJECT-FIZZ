@@ -1,7 +1,9 @@
 import { WARMUP_REP_S, warmupTimeS } from '../warmup/plan';
 import { PACE_DEFAULT, type BuilderPace } from './pace';
 import { restAfterRows, roundRestOf, type RestDefaults } from './rest';
-import type { BuilderBlock, BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
+import type { ResolvedWarmupPrefs } from '../training-profile';
+import { generalWarmupRuleFor, workoutDayType } from '../warmup/general';
+import type { BuilderBlock, BuilderExtraInfo, BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
 
 /**
  * Time estimate (workout-builder-v3 §3.6, §9 Q15–Q16):
@@ -33,6 +35,10 @@ export interface EstimateContext {
    * 60 s. Absent: the defaults (so a context without it times exactly as before).
    */
   pace?: BuilderPace;
+  /** (Ben, 2 Nov) His general (cardio) warm-up rules (`warmupPrefs.general`): counted first in the estimate. */
+  warmupPrefs?: Pick<ResolvedWarmupPrefs, 'general'>;
+  /** Cardio and other extras (`BuilderContext.extra`): a workout that already starts with cardio gets no general warm-up. */
+  extra?: (exerciseId: string) => BuilderExtraInfo | null;
 }
 
 /** The pace an estimate uses: Ben's (`ctx.pace`) or the defaults. */
@@ -85,11 +91,37 @@ export function betweenSecondsOf(ctx: Pick<EstimateContext, 'pace'>): number {
   return paceOf(ctx).betweenS;
 }
 
-/** Estimated seconds for the whole workout; 0 when it's empty. */
+/**
+ * (Ben, 2 Nov) The general warm-up Start will put first (`withGeneralWarmup`): its rule for this workout's day type
+ * (`workoutDayType` on each slot's lead group and working sets), or null: none set, no strength work, or the workout
+ * already starts with cardio (a bike the coach or Ben put first) or has the rule's exercise.
+ */
+export function builderGeneralWarmup(w: BuilderWorkout, ctx: Pick<EstimateContext, 'info' | 'warmupPrefs' | 'extra'>): { exerciseId: string; minutes: number } | null {
+  const rules = ctx.warmupPrefs?.general;
+  if (rules === undefined || rules.length === 0) return null;
+  const slots = w.blocks.flatMap((b) => b.slots);
+  const head = slots[0];
+  if (head === undefined) return null;
+  // Already starts with cardio: the extras say so, or (no extras given) a slot with no group whose sets are all timed.
+  const cardioHead = ctx.extra !== undefined ? ctx.extra(head.exerciseId)?.measurement === 'cardio' : ctx.info(head.exerciseId) === null && head.rows.some((r) => r.type !== 'warmup') && head.rows.every((r) => r.type === 'warmup' || r.durationS !== undefined);
+  if (cardioHead) return null;
+  const day = workoutDayType(slots.map((s) => ({ group: ctx.info(s.exerciseId)?.group ?? null, sets: s.rows.filter((r) => r.type !== 'warmup').length })));
+  const rule = generalWarmupRuleFor(rules, day);
+  if (rule === null || slots.some((s) => s.exerciseId === rule.exerciseId)) return null;
+  return { exerciseId: rule.exerciseId, minutes: rule.minutes };
+}
+
+/** (Ben, 2 Nov) The general warm-up's time: its minutes and the changeover to the first exercise; 0 with none. */
+export function generalWarmupSecondsFor(w: BuilderWorkout, ctx: EstimateContext): number {
+  const g = builderGeneralWarmup(w, ctx);
+  return g === null ? 0 : g.minutes * 60 + betweenSecondsOf(ctx);
+}
+
+/** Estimated seconds for the whole workout (the general warm-up included); 0 when it's empty. */
 export function estimateBuilderSeconds(w: BuilderWorkout, ctx: EstimateContext): number {
   const blocks = w.blocks.filter((b) => b.slots.length > 0);
   if (blocks.length === 0) return 0;
-  return T.setupS + betweenSecondsOf(ctx) * (blocks.length - 1) + blocks.reduce((m, b) => m + blockSeconds(b, w, ctx), 0);
+  return T.setupS + betweenSecondsOf(ctx) * (blocks.length - 1) + blocks.reduce((m, b) => m + blockSeconds(b, w, ctx), 0) + generalWarmupSecondsFor(w, ctx);
 }
 
 /** `about N min`: the estimate rounded to the minute. */

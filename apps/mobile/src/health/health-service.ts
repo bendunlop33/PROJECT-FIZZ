@@ -1,4 +1,7 @@
 import {
+  addDays,
+  clockText,
+  type HealthDayLine,
   localMidnightUtcMs,
   autoLinkPairs,
   ownCopyLinks,
@@ -843,6 +846,54 @@ export function createHealthService(deps: HealthServiceDeps) {
         };
       } catch {
         return NO_DAY_PAIRS;
+      }
+    },
+
+    /**
+     * (Ben, 2 Nov) The coach's read of one day's Health workouts (`get_recent_sessions` with a date), so a past-workout
+     * fix can name one: its source, type, time and how it is paired (with an app workout, as the same workout recorded
+     * again, as Ben's planned or logged run that day, or on its own). Never the app's own copies. Local reads only;
+     * nothing while reading is off or paused.
+     */
+    async coachDay(date: string): Promise<HealthDayLine[]> {
+      const p = await owner();
+      if (p === null || paused() !== null || (await cap()) !== 'available') return [];
+      const s = await settings(p.id);
+      if (s === null || !s.readActivities) return [];
+      const from = toIso(localMidnightUtcMs(date, p.timezone) - 86_400_000);
+      const to = toIso(localMidnightUtcMs(date, p.timezone) + 2 * 86_400_000);
+      try {
+        const all = await repo().workoutSamples(p.id, from, to);
+        const own = await ownCopies(p.id, all);
+        const samples = linkableSamples(all, own.written, own.sessions).filter((x) => localDateOf(toMs(x.startUtc), x.tz) === date);
+        const links = (await repo().links(p.id)).filter((l) => l.status === 'linked');
+        const acts = deps.store().repos.activities;
+        // Ben's own activities that day as stored (planned or done), and as every list shows them (paired with Health's).
+        const ownDay = await acts.listOwnBetween(p.id, date, addDays(date, 1)).catch(() => []);
+        const shown = await acts.listBetween(p.id, date, addDays(date, 1)).catch(() => []);
+        return samples.map((x): HealthDayLine => {
+          const uuid = x.uuid.toLowerCase();
+          const c = classifyHealthWorkout(x.activityType);
+          const prov = healthProvenanceOf(x);
+          const linked = links.find((l) => l.healthUuid === uuid);
+          const twin = links.find((l) => (l.also ?? []).includes(uuid));
+          const ben = shown.find((a) => a.source !== 'health' && a.health?.uuid.toLowerCase() === uuid);
+          const planned = ben !== undefined && ownDay.find((a) => a.id === ben.id)?.fields.status === 'planned';
+          const link: HealthDayLine['link'] = linked !== undefined ? 'paired' : twin !== undefined ? 'same_workout' : ben !== undefined ? (planned ? 'counts_as_planned' : 'counts_as_logged') : c.strength || x.activityType === HK_OTHER_TYPE ? 'not_paired' : 'on_its_own';
+          return {
+            healthId: uuid,
+            source: prov.sourceName,
+            type: c.label,
+            // 24-hour clock in the workout's zone, as the coach's other reads (not the phone's display format).
+            time: `${clockText(toMs(x.startUtc), x.tz)}–${clockText(toMs(x.endUtc), x.tz)}`,
+            minutes: Math.round((toMs(x.endUtc) - toMs(x.startUtc)) / 60_000),
+            distanceKm: x.distanceM === null ? null : Math.round(x.distanceM / 10) / 100,
+            link,
+            workoutId: linked?.sessionId ?? twin?.sessionId ?? null,
+          };
+        });
+      } catch {
+        return [];
       }
     },
 

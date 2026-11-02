@@ -36,6 +36,7 @@ export * from './lift-target';
 export * from './warmup-prefs';
 export * from './rest-settings';
 export * from './plan-change';
+export * from './workout-fix';
 export * from './exercise-prefs';
 export * from './plan-rebalance';
 export * from './activity-tools';

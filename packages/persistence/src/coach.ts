@@ -31,6 +31,7 @@ import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId
 import { getWorkoutDraftIn, WORKOUT_DRAFT_SPEC } from './workout-drafts';
 import { getPlanDraftIn, PLAN_DRAFT_SPEC } from './plan-drafts';
 import { changeTrainingProfileIn, readTrainingProfileIn } from './training-profiles';
+import { applyWorkoutFixIn, revertWorkoutFixIn } from './workout-fix';
 
 /** A training-profile write from a coach record. `today` only dates weights, which these never write. */
 const profileWrite = (opId: string, expectedVersion: number, atUtc: string, today: string) => ({ opId, expectedVersion, atUtc, nowYear: Number(atUtc.slice(0, 4)), today });
@@ -124,6 +125,9 @@ function sessionOf(record: ActionRecord): string | null {
       return null;
     case 'update_warmup_prefs':
       return record.detail.sessionId;
+    // (Ben, 2 Nov) A past-workout fix belongs to no workout's thread (a deleted one may be purged later).
+    case 'fix_workout':
+      return null;
   }
 }
 
@@ -670,6 +674,14 @@ export class SqliteCoachStore {
         if (r.status === 'stale' || r.status === 'invalid') throw new Rollback('stale_version');
         return null;
       }
+      case 'workout_fix': {
+        // (Ben, 2 Nov) Ben's Apply on a past-workout fix: the proposal still open, the change on the versions proposed.
+        const proposalId = write.action.detail.kind === 'fix_workout' ? write.action.detail.proposalId : undefined;
+        const proposal = proposalId === undefined ? null : await actionById(tx, proposalId);
+        if (proposal === null || proposal.ownerId !== ownerId || proposal.record.status !== 'proposed' || proposal.record.detail.kind !== 'fix_workout') throw new Rollback('missing');
+        if ((await applyWorkoutFixIn(tx, ownerId, write.action)) !== 'ok') throw new Rollback('stale_version');
+        return null;
+      }
       case 'activity': {
         // (Ben, 20 Oct) An activity the coach logged (Ben asked, or tapped its offer), with its record.
         if (write.activity.ownerId !== ownerId) throw new Error('Activity owner differs from the store owner');
@@ -928,6 +940,9 @@ export class SqliteCoachStore {
       case 'propose_plan_swap':
       case 'propose_plan_change':
         return 'unsupported';
+      // (Ben, 2 Nov) Ben's applied past-workout fix: put back while nothing changed since (the proposal itself is never undone).
+      case 'fix_workout':
+        return revertWorkoutFixIn(tx, ownerId, target, atUtc);
       // (Ben, 2 Nov) Rebalance's Apply and Undo are Ben's own plan edits (`planMuscles.apply` / `undo`), as on Plan › Muscles.
       case 'propose_rebalance':
         return 'unsupported';
