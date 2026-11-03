@@ -90,7 +90,7 @@ describe('timedTargetText', () => {
 // ---------------------------------------------------------------------------
 // The coach's plan-day edit on a cardio row (propose_plan_day_edit: minutes, warm-up, first)
 
-const st = (over: Partial<SetTemplate>): SetTemplate => ({ id: 'set', setType: 'working', targetReps: null, targetLoad: null, targetRpe: null, targetRir: null, targetDurationS: null, restOverrideS: null, ...over }) as SetTemplate;
+const st = (over: Partial<SetTemplate>): SetTemplate => ({ id: 'set', setType: 'working', targetReps: null, targetLoad: null, targetRpe: null, targetRir: null, targetDurationS: null, restOverrideS: null, ...over });
 const row = (id: string, exerciseId: string, order: number, templates: SetTemplate[], extra: Partial<RoutineExercise> = {}): RoutineExercise => ({ id, exerciseId, order, supersetGroup: null, setTemplates: templates, restBySetType: {}, notes: null, ...extra }) as unknown as RoutineExercise;
 const squat = row('r-squat', 'ex-squat', 0, [st({ id: 's1', targetReps: { min: 6, max: 8 } }), st({ id: 's2', targetReps: { min: 6, max: 8 } })], { main: true });
 const curl = row('r-curl', 'ex-curl', 1, [st({ id: 'c1', targetReps: { min: 10, max: 12 } })]);

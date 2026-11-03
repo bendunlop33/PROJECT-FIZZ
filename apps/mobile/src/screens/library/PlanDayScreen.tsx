@@ -2,7 +2,7 @@ import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { compactEachText, compactExerciseName, libraryChangeMarks, type LibraryChangeMark } from '@fizz/domain';
+import { compactEachText, compactExerciseName, libraryChangeMarks, pbRowLine, type LibraryChangeMark } from '@fizz/domain';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
@@ -162,7 +162,7 @@ export function PlanDayScreen() {
                 <View
                   key={r.key}
                   accessible
-                  accessibilityLabel={`${r.superset === null ? '' : `${r.superset}, superset, `}${r.name}, ${r.line}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
+                  accessibilityLabel={`${r.superset === null ? '' : `${r.superset}, superset, `}${r.name}, ${pbRowLine(r)}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
                   style={{ minHeight: 48, paddingVertical: theme.space['2'], flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['3'], borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
                 >
                   {r.superset !== null ? (
@@ -175,7 +175,7 @@ export function PlanDayScreen() {
                     {compactExerciseName(r.name)}
                   </AppText>
                   <AppText variant="callout" color="text.secondary" numeric style={COMPACT_VALUE}>
-                    {`${compactEachText(r.line)}${r.kg === null && r.est ? ' est.' : ''}`}
+                    {`${compactEachText(pbRowLine(r))}${r.kg === null && r.est ? ' est.' : ''}`}
                   </AppText>
                   {r.kg !== null ? (
                     <AppText variant="callout" numeric style={{ ...COMPACT_VALUE, minWidth: 56, textAlign: 'right' }}>

@@ -186,8 +186,9 @@ export function applyPlanDayEdit<R extends Row>(rows: readonly R[], edit: PlanDa
     const next = { ...r, order: i, setTemplates: templates, ...(c.main !== undefined ? { main: c.main } : {}) };
     if (c.warmup === true) return { ...next, warmup: true as const };
     if (c.warmup === false) {
-      const { warmup: _off, ...rest } = next;
-      return rest as typeof next;
+      const off = { ...next };
+      delete off.warmup;
+      return off;
     }
     return next;
   });

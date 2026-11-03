@@ -119,7 +119,7 @@ describe('Library › Plan v2: one list', () => {
     // A day opened from week 6: that week's planned targets (the old inline day card); from this week: Start's plan.
     const pushId = page.rows.find((r) => r.name === 'Push')?.routineId ?? '';
     const day6 = await s.plans.planDay(pushId, { targetsHit: false, week: 6 });
-    expect(day6?.week?.header).toBe('Week 6 of 6 · Deload');
+    expect(day6?.week?.header).toBe('Week 6 of 6 · Deload · In 4 weeks'); // (Ben, 3 Nov) the picked week says when it is
     expect(day6?.week?.note).toBe('Deload: lighter, fewer sets');
     expect(day6?.week?.rows.map((r) => r.name)).toEqual(ov?.block?.views[5]?.days.find((d) => d.name === 'Push')?.rows.map((r) => r.name));
     expect((await s.plans.planDay(pushId, { targetsHit: false, week: 2 }))?.week).toBeNull();

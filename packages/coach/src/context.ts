@@ -272,6 +272,10 @@ export interface PlanDayExerciseView {
   reps?: string;
   targetRpe?: number;
   main?: boolean;
+  /** (Ben, 3 Nov) A cardio or timed row: its minutes per set, distance (metres) and warm-up mark. */
+  minutes?: number;
+  distanceM?: number;
+  warmup?: true;
 }
 
 /** The plan in use as `pause_plan` reads it (Your data). `inUse: null`: no plan is in use. */
