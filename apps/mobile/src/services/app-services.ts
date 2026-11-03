@@ -1088,6 +1088,8 @@ export function createAppServices(deps: AppServicesDeps) {
 
   /** Coach-built plans (19 Oct): the card, Apply and Undo, the consistency card. Local only. */
   const plans = createPlanServices({
+    // (Ben, 3 Nov) Consistency counts Garmin-only strength workouts as sessions (never a plan day).
+    healthSessions: () => progress.healthSessions(),
     muscleGapsOf: async (days) => {
       const g = await muscleGoalNow();
       if (g === null) return [];

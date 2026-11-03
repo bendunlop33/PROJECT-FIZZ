@@ -7,6 +7,7 @@ import { countRowSets, type MuscleInfo } from './muscles';
 import { mondayOf } from './exercise';
 import type { PeriodBarView } from './period-bar';
 import { planDayColour, planDayHues, planDayKey, type PlanDayColour } from './plan-day-colours';
+import type { CountedSession, HealthStrengthSession } from './health-sessions';
 import type { ProgressSession } from './projection';
 import { countNoun, dayMonth, gymTimeText, gymTimeWords, monthName, weekdayDayMonthLong, WEEKDAY_LETTER } from './text';
 import { inRange, type DateRange } from './window';
@@ -40,6 +41,11 @@ export interface TrainingActivityInput {
 export interface TrainingPeriodInput {
   /** Every finished workout, any order. */
   sessions: readonly ProgressSession[];
+  /**
+   * (Ben, 3 Nov) Health strength workouts of their own (`healthStrengthSessions`), any order: counted in Sessions, Time,
+   * A week, the bars and the month's count only (no sets); the tiles show them as their Health activity. Absent: none.
+   */
+  healthSessions?: readonly HealthStrengthSession[];
   exercises: ReadonlyMap<string, MuscleInfo>;
   gymNames?: Readonly<Record<string, string>>;
   today: string;
@@ -175,8 +181,9 @@ export function buildTrainingPeriodView(input: TrainingPeriodInput): TrainingPer
   const inWindow = input.sessions.filter((s) => inRange(s.date, window)).sort((a, b) => a.startedMs - b.startedMs);
 
   // Totals against the whole previous period. Nothing to compare when it lies wholly before the first log.
-  const counts = countSessions(input.sessions, window);
-  const time = timeInGym(input.sessions, window);
+  const counted: readonly CountedSession[] = input.healthSessions === undefined || input.healthSessions.length === 0 ? input.sessions : [...input.sessions, ...input.healthSessions];
+  const counts = countSessions(counted, window);
+  const time = timeInGym(counted, window);
   const comparable = window.previous.to >= input.earliest;
   let sets = 0;
   for (const s of inWindow) sets += workingSets(s);
@@ -283,11 +290,13 @@ export function buildTrainingPeriodView(input: TrainingPeriodInput): TrainingPer
     }
     if (row.length > 0) weeks.push([...row, ...Array.from({ length: 7 - row.length }, () => null)]);
     const name = monthName(first.slice(0, 7));
-    month = { weeks, workouts: { label: `${name} workouts`, count: inWindow.length, month: first.slice(0, 7), words: `${name} workouts, ${String(inWindow.length)}` } };
+    // The month's list shows the Health ones too (as their Health rows), so its count does.
+    const listed = inWindow.length + (input.healthSessions ?? []).filter((s) => inRange(s.date, window)).length;
+    month = { weeks, workouts: { label: `${name} workouts`, count: listed, month: first.slice(0, 7), words: `${name} workouts, ${String(listed)}` } };
   } else if (bar.span === 'week') {
     week = Array.from({ length: 7 }, (_, i) => tile(addDays(bar.full.from, i)));
   } else {
-    bars = weekBars(input.sessions, bar.full, today, input.aim);
+    bars = weekBars(counted, bar.full, today, input.aim);
   }
 
   const legend: LegendItem[] = [];
@@ -306,7 +315,7 @@ function sessionTitle(s: ProgressSession, exercises: ReadonlyMap<string, MuscleI
 }
 
 /** One bar per Monday–Sunday week whose Monday is in `full`, up to this week; weeks under the aim greyed once over. */
-export function weekBars(sessions: readonly ProgressSession[], full: DateRange, today: string, aim: number | null): NonNullable<TrainingPeriodView['bars']> {
+export function weekBars(sessions: readonly CountedSession[], full: DateRange, today: string, aim: number | null): NonNullable<TrainingPeriodView['bars']> {
   const firstMonday = weekdayIndexOfDate(full.from) === 0 ? full.from : addDays(mondayOf(full.from), 7);
   const lastDay = full.to < today ? full.to : today;
   const thisMonday = mondayOf(today);

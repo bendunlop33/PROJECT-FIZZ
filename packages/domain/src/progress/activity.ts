@@ -1,11 +1,12 @@
 import { addDays, addMonths, daysBetween, weekdayIndexOfDate } from '../calendar';
-import type { ProgressSession } from './projection';
+import type { CountedSession } from './health-sessions';
 import { inRange, type DateRange, type ProgressWindow } from './window';
 
 /**
  * Sessions and time in gym over a Progress window (progress.md PG24, PG24a,
  * PG24b, PG25). Pure. Every finished workout counts as a session, logged or
  * imported (their dates are real); only workouts with real times add time.
+ * (Ben, 3 Nov) So does a Health strength workout of its own (`healthStrengthSessions`), with its recorded time.
  */
 
 export interface WeekCount {
@@ -63,13 +64,13 @@ export function oneDecimal(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-function countBy(sessions: readonly ProgressSession[], range: DateRange): Map<string, number> {
+function countBy(sessions: readonly CountedSession[], range: DateRange): Map<string, number> {
   const out = new Map<string, number>();
   for (const s of sessions) if (inRange(s.date, range)) out.set(s.date, (out.get(s.date) ?? 0) + 1);
   return out;
 }
 
-export function countSessions(sessions: readonly ProgressSession[], window: ProgressWindow): SessionCounts {
+export function countSessions(sessions: readonly CountedSession[], window: ProgressWindow): SessionCounts {
   const byDate = countBy(sessions, window);
   const count = [...byDate.values()].reduce((a, b) => a + b, 0);
   const previousCount = [...countBy(sessions, window.previous).values()].reduce((a, b) => a + b, 0);
@@ -145,17 +146,19 @@ export interface TimeInGym {
   };
 }
 
-type TimeKind = { kind: 'timed'; ms: number } | { kind: 'imported' } | { kind: 'no_end' } | { kind: 'over_cap'; ms: number };
+type TimeKind = { kind: 'timed'; ms: number } | { kind: 'imported' } | { kind: 'no_end' } | { kind: 'over_cap'; ms: number } | { kind: 'health_untimed' };
 
 /** How one session counts for time (PG25). A confirmed long session counts in full. */
-export function sessionTimeKind(s: ProgressSession): TimeKind {
+export function sessionTimeKind(s: CountedSession): TimeKind {
   if (s.dateOnly) return { kind: 'imported' };
+  // A Health workout's time is as recorded; one with none to count (over the cap) can't be confirmed, so isn't listed.
+  if (s.fromHealth !== undefined) return s.durationMs === null ? { kind: 'health_untimed' } : { kind: 'timed', ms: s.durationMs };
   if (s.durationMs === null) return { kind: 'no_end' };
   if (s.durationMs > PROGRESS_DURATION_CAP_MS && !s.durationConfirmed) return { kind: 'over_cap', ms: s.durationMs };
   return { kind: 'timed', ms: s.durationMs };
 }
 
-export function timeInGym(sessions: readonly ProgressSession[], window: ProgressWindow): TimeInGym {
+export function timeInGym(sessions: readonly CountedSession[], window: ProgressWindow): TimeInGym {
   let totalMs = 0;
   let timedCount = 0;
   let sessionCount = 0;
@@ -164,7 +167,7 @@ export function timeInGym(sessions: readonly ProgressSession[], window: Progress
   let imported = 0;
   const noEnd: LeftOutSession[] = [];
   const overCap: LeftOutSession[] = [];
-  const leftOut = (s: ProgressSession, durationMs: number | null): LeftOutSession => ({ sessionId: s.sessionId, version: s.version, name: s.name, date: s.date, durationMs });
+  const leftOut = (s: CountedSession, durationMs: number | null): LeftOutSession => ({ sessionId: s.sessionId, version: s.version, name: s.name, date: s.date, durationMs });
   for (const s of sessions) {
     const kind = sessionTimeKind(s);
     if (inRange(s.date, window)) {
@@ -182,6 +185,8 @@ export function timeInGym(sessions: readonly ProgressSession[], window: Progress
           break;
         case 'over_cap':
           overCap.push(leftOut(s, kind.ms));
+          break;
+        case 'health_untimed':
           break;
       }
     } else if (inRange(s.date, window.previous) && kind.kind === 'timed') {

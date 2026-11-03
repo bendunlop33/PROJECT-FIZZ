@@ -115,6 +115,8 @@ import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, P
 
 export interface PlanServicesDeps {
   store: () => Store;
+  /** (Ben, 3 Nov) Health strength workouts of their own (Progress's `healthSessions`): Consistency counts them; absent: none. */
+  healthSessions?: () => Promise<readonly { startedMs: number }[]>;
   /** (Ben, 1 Nov) The weekly muscle check on a version's days (`planMuscleGapLines`); absent: not shown. */
   muscleGapsOf?: (days: readonly PlanDayDraft[]) => Promise<string[]>;
   profile: () => Promise<UserProfile | null>;
@@ -1287,7 +1289,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     /**
      * `Consistency` on Progress (plan tracker v1): the last 8 weeks against
      * Profile's days-a-week aim (none: counts only) and, with a plan, its
-     * days done this week. Counts from finished workouts only.
+     * days done this week. Counts from finished workouts and (Ben, 3 Nov) Health strength workouts of their own.
      */
     async consistency(): Promise<ConsistencyView | null> {
       const p = await owner();
@@ -1335,7 +1337,9 @@ export function createPlanServices(deps: PlanServicesDeps) {
         return { ...r, routineId: linkedRoutineId(links, r.sessionId, r.routineId), ...(v === null ? {} : { variantRoutineIds: v }) };
       });
       const weekdays = applied === null ? null : planWeekdaysNow(applied, pbBlockOfPlan(applied, variantRefs, nowMs, tz), dayRefs);
+      const healthSessions = (await deps.healthSessions?.().catch(() => [])) ?? [];
       return consistency({
+        healthSessions: healthSessions.filter((h) => h.startedMs >= from),
         workouts: refs.map((r) => ({ sessionId: r.sessionId, routineId: linkedRoutineId(links, r.sessionId, r.routineId), startedAtUtc: r.startedAtUtc, groups: isNotPlanDay(links, r.sessionId) ? undefined : groups.get(r.sessionId), ...(r.planDay === undefined ? {} : { planDay: r.planDay }), leadExerciseId: thisWeek.get(r.sessionId)?.leadExerciseId ?? null, variants: linkedVariants(links, r.sessionId) })),
         nowMs,
         tz,

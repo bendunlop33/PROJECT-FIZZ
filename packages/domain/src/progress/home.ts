@@ -6,6 +6,7 @@ import { muscleFrequency, type MuscleInfo } from './muscles';
 import { directRange, MUSCLE_FLAG_CEILING, PLAN_MUSCLE_GROUPS, type MuscleRange, type VolumeGoal } from './muscle-sets';
 import { muscleBarLook, muscleWhyText, PLAN_MUSCLES_COPY, type MuscleBarLook } from './plan-muscles';
 import { oneDecimal } from './activity';
+import type { CountedSession, HealthStrengthSession } from './health-sessions';
 import type { ProgressSession } from './projection';
 import { recordsInWindow, type ProgressRecord } from './records';
 import type { NewBestRecords } from '../review/progress-page';
@@ -40,6 +41,8 @@ import { customProgressWindow, periodProgressWindow, progressPeriodLabel, progre
 export interface ProgressHomeInput {
   /** Every finished workout (logged and imported), any order. */
   sessions: readonly ProgressSession[];
+  /** (Ben, 3 Nov) Health strength workouts of their own (`healthStrengthSessions`): in the activity counts and time only. */
+  healthSessions?: readonly HealthStrengthSession[];
   exercises: ReadonlyMap<string, MuscleInfo>;
   /** Today's local date in the owner's zone. */
   today: string;
@@ -282,8 +285,9 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   };
 
   // Activity (PG24, PG25)
-  const counts = countSessions(input.sessions, window);
-  const time = timeInGym(input.sessions, window);
+  const counted: readonly CountedSession[] = input.healthSessions === undefined || input.healthSessions.length === 0 ? input.sessions : [...input.sessions, ...input.healthSessions];
+  const counts = countSessions(counted, window);
+  const time = timeInGym(counted, window);
   const timeValue = time.timedCount === 0 ? '—' : gymTimeText(time.totalMs);
   // F17 (rule 6): a total from some sessions never reads as the total for all of them.
   const partlyTimed = time.timedCount > 0 && time.timedCount < time.sessionCount;

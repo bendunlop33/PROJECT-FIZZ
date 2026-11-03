@@ -62,6 +62,8 @@ import {
   type TrainingPeriodView,
   type TrainingPlanDays,
   daysBetween,
+  healthStrengthSessions,
+  type HealthStrengthSession,
   muscleFrequency,
   type MuscleSetTotals,
   type ProgressWindow,
@@ -70,7 +72,7 @@ import {
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
 
 import { createVersionMemo } from './version-memo';
-import type { Exercise, ImplementCount, ProgressGrouping, ProgressPeriodKey, SessionAggregate, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Activity, Exercise, ImplementCount, ProgressGrouping, ProgressPeriodKey, SessionAggregate, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Progress (progress.md v1.0, slice A). Local reads only: nothing here waits
@@ -260,6 +262,9 @@ interface Cached {
 
 const COULDNT_SAVE = 'Couldn’t save. Try again.';
 
+/** Health strength workouts are read from all that is stored (Health's own read window bounds it). */
+const HEALTH_SESSIONS_FROM = '2000-01-01';
+
 /** What Progress knows about each exercise: the stored row, with the catalogue's helpers when the row has none (starter rows were saved without them). */
 export function muscleInfoFor(rows: readonly Exercise[], catalogue: readonly Exercise[]): Map<string, MuscleInfo> {
   const byKey = new Map(catalogue.flatMap((c) => (c.catalogueKey ? [[c.catalogueKey, c] as const] : [])));
@@ -328,6 +333,26 @@ export function createProgressService(deps: ProgressServiceDeps) {
    * domain's per-history memos (records) hold across periods, tabs and returns to Progress.
    */
   let lastPass: { store: Store; ownerId: string; tz: string; out: { sessions: ProgressSession[]; unreadable: number } } | null = null;
+
+  /**
+   * (Ben, 3 Nov) Every Health strength workout of its own (no linked or overlapping app or imported workout; not one
+   * Ben kept apart with `Unlink` / `Not it`), as read from Health and stored: each counts as one session in Progress ›
+   * Training's counts and time, never in sets, muscles, lifts or plan days. Kept while nothing is written. Empty when
+   * nothing was read from Health (or the read fails: counts are then the app's alone, never a guess).
+   */
+  async function healthSessionsOf(profile: UserProfile, sessions: readonly ProgressSession[]): Promise<HealthStrengthSession[]> {
+    const today = localDateOf(toMs(deps.now().utc), profile.timezone);
+    const read = await healthMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, today]), async () => {
+      try {
+        const [activities, links] = await Promise.all([repos().activities.listBetween(profile.id, HEALTH_SESSIONS_FROM, addDays(today, 2)), repos().health.links(profile.id)]);
+        const excludedUuids = new Set(links.filter((l) => l.status !== 'linked' && l.by === 'ben').map((l) => l.healthUuid.toLowerCase()));
+        return { activities, excludedUuids };
+      } catch {
+        return null;
+      }
+    });
+    return read === null ? [] : healthStrengthSessions({ ...read, sessions });
+  }
 
   /** Every finished workout, projected; reads only sessions whose revision changed. One pass at a time. */
   function finishedSessions(profile: UserProfile): Promise<{ sessions: ProgressSession[]; unreadable: number }> {
@@ -458,6 +483,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
   const shellMemo = createVersionMemo<ProgressShell>(4);
   const recapMemo = createVersionMemo<RecapCard | null>(2);
   const trainingMemo = createVersionMemo<ProgressTraining | null>(8);
+  const healthMemo = createVersionMemo<{ activities: Activity[]; excludedUuids: Set<string> } | null>(2);
   const activeOf = (ownerId: string): Promise<SessionAggregate | null> =>
     activeMemo.get(deps.store(), ownerId, () =>
       repos()
@@ -483,10 +509,11 @@ export function createProgressService(deps: ProgressServiceDeps) {
     // (Perf, Ben 26 Oct) Kept while nothing is written: a return to Progress or a period picked before reads nothing.
     const base = await homeMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, today, period, grouping, range]), async () => {
       const [ctx, bests] = await Promise.all([context(profile), bestsNow()]);
+      const healthSessions = await healthSessionsOf(profile, ctx.sessions);
       let earliest = today;
       for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
       const home: ProgressHome = {
-        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range, bests, ...(await volumeOf()) }),
+        view: buildProgressHomeView({ sessions: ctx.sessions, healthSessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range, bests, ...(await volumeOf()) }),
         period,
         range,
         today,
@@ -626,7 +653,9 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const { period, range } = periodNow(profile, {}, today);
       const base = await shellMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, today, period, range, choice.span, choice.offset]), async () => {
         const [refs, first] = await Promise.all([repos().sessions.listFinishedRevisions(profile.id), repos().sessions.earliestFinishedStartUtc(profile.id).catch(() => null)]);
-        const earliest = first === null ? today : localDateOf(toMs(first), profile.timezone);
+        let earliest = first === null ? today : localDateOf(toMs(first), profile.timezone);
+        // (Ben, 3 Nov) Back to a Garmin-only month too. One that overlaps a workout is on that workout's day, never earlier, so no workout is needed here.
+        for (const h of await healthSessionsOf(profile, [])) if (h.date < earliest) earliest = h.date;
         return { hasData: refs.length > 0, period, range, resume: null, today, bar: periodBar({ today, span: choice.span, offset: choice.offset, earliest: earliest < today ? earliest : today }) };
       });
       const resume = resumeBar(await activeOf(profile.id), nowMs);
@@ -646,10 +675,13 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const { grouping } = periodNow(profile, {}, today);
       const base = await trainingMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, today, grouping, choice.span, choice.offset]), async () => {
         const [ctx, bests, plan, aim] = await Promise.all([context(profile), bestsNow(), deps.planDays?.().catch(() => null) ?? Promise.resolve(null), deps.aim?.().catch(() => null) ?? Promise.resolve(null)]);
+        const healthSessions = await healthSessionsOf(profile, ctx.sessions);
         let earliest = today;
         for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
+        // (Ben, 3 Nov) A Garmin-only month before the first app workout is still his training: the bar steps back to it.
+        for (const s of healthSessions) if (s.date < earliest) earliest = s.date;
         const bar = periodBar({ today, span: choice.span, offset: choice.offset, earliest });
-        const view = buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period: bar.preset, grouping, bests, ...(await volumeOf()), bar: { window: bar.window, title: bar.title, phrase: bar.phrase } });
+        const view = buildProgressHomeView({ sessions: ctx.sessions, healthSessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period: bar.preset, grouping, bests, ...(await volumeOf()), bar: { window: bar.window, title: bar.title, phrase: bar.phrase } });
         const tiled = choice.span === 'week' || choice.span === 'month';
         const acts = tiled
           ? await repos()
@@ -665,6 +697,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
               ? null
               : buildTrainingPeriodView({
                   sessions: ctx.sessions,
+                  healthSessions,
                   exercises: ctx.exercises,
                   gymNames: ctx.gymNames,
                   today,
@@ -800,6 +833,14 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const ctx = await context(profile);
       const f = muscleFrequency(ctx.sessions, ctx.exercises, { from, to, days: daysBetween(from, to) + 1 } as ProgressWindow, 'body_part');
       return new Map(f.rows.map((r) => [r.key as MuscleGroup, { direct: r.direct, assisted: r.assisted }]));
+    },
+
+    /** (Ben, 3 Nov) The Health strength workouts that count as sessions (`healthSessionsOf`), for Consistency. Empty with no profile. */
+    async healthSessions(): Promise<readonly HealthStrengthSession[]> {
+      const profile = await deps.profile();
+      if (!profile) return [];
+      const ctx = await context(profile);
+      return healthSessionsOf(profile, ctx.sessions);
     },
 
     async projected(): Promise<{ sessions: readonly ProgressSession[]; nameOf: (exerciseId: string) => string | null } | null> {

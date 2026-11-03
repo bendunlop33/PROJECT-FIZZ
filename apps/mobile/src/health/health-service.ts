@@ -69,13 +69,20 @@ import { formatTime } from '../format/dates';
  *   (it is read again when turned on); turning writing off stops writes (Health keeps what it has).
  * - Writes: `syncWrites` runs `planHealthWrites` over the workouts that changed (by revision) and does each op once
  *   (deterministic op IDs; the module adopts a sample already written for a retried op).
- * - Reads: as far back as `How far back` says (Ben, 27 Oct, Q6; default 8 weeks), bodyweight at least 2 years. A read
- *   replaces its window. Clear overlaps of strength workouts are linked automatically afterwards; a linked watch
- *   workout then replaces the app's own Health write (Q1). Resting heart rate and sleep (Q8) are raw values.
+ * - Reads: as far back as `How far back` says (Ben, 27 Oct, Q6; default 8 weeks), bodyweight at least 2 years, and
+ *   workouts at least a year on the first read of each run (Ben, 3 Nov: `WORKOUT_BACKFILL_DAYS`). A read replaces its
+ *   window. Clear overlaps of strength workouts are linked automatically afterwards; a linked watch workout then
+ *   replaces the app's own Health write (Q1). Resting heart rate and sleep (Q8) are raw values.
  */
 
 /** Bodyweight reads at least this far back whatever the window (Q6). */
 export const WEIGHT_MIN_DAYS = 2 * 365;
+/**
+ * (Ben, 3 Nov) The first workouts read of each app run goes back at least this far whatever the window, so Progress's
+ * 6M and 1Y views have Garmin-only strength sessions; later reads that run read the window (a read replaces only its
+ * own window, so older ones stay stored).
+ */
+export const WORKOUT_BACKFILL_DAYS = 365;
 /** Progress's trend lines and the coach see this many days of resting heart rate and sleep. */
 export const SIGNAL_DAYS = 30;
 /** A read on return to the foreground waits this long since the last one. */
@@ -131,6 +138,8 @@ export function createHealthService(deps: HealthServiceDeps) {
   let notSaved = 0;
   let syncing: Promise<void> | null = null;
   let lastReadStartMs = 0;
+  /** (Ben, 3 Nov) This run's workouts back-fill (`WORKOUT_BACKFILL_DAYS`) has been read. */
+  let workoutsBackfilled = false;
   /** The capability as last answered: only `available` is kept; anything else is asked again (Ben, 1 Nov). */
   let capabilityKnown: HealthCapability | null = null;
   /** (Ben, 1 Nov) Told when a read has stored what it read, so the screens reload (HealthHost: `changed`). */
@@ -304,13 +313,14 @@ export function createHealthService(deps: HealthServiceDeps) {
     let fresh = 0;
     try {
       if (s.readActivities) {
-        const sinceMs = readSinceMs(s.readWindow, nowMs);
+        const sinceMs = readSinceMs(s.readWindow, nowMs, workoutsBackfilled ? 0 : WORKOUT_BACKFILL_DAYS);
         const before = new Set((await repo().workoutSamples(p.id, toIso(sinceMs), toIso(nowMs + 86_400_000))).map((x) => x.uuid));
         const rows = await port.readWorkouts(sinceMs, nowMs + 60_000, s.readHeartRate);
         const samples = workoutSamplesFrom(rows, port.bundleId, tz);
         await repo().replaceSamples(p.id, 'workout', toIso(sinceMs), samples);
         fresh += samples.filter((x) => !before.has(x.uuid)).length;
         // (Ben, 1 Nov) Pairing is optional: the samples are stored above and show whatever it does.
+        workoutsBackfilled = true;
         await autoLink(p, samples, toIso(sinceMs)).catch((e: unknown) => {
           logError(e, 'health-autolink');
         });
@@ -538,7 +548,11 @@ export function createHealthService(deps: HealthServiceDeps) {
         .updateSettings(p.id, cur.version, (x) => ({ ...x, [key]: on, ...(key === 'writeWorkouts' ? { writeSinceUtc: on ? at : null } : {}) }))
         .catch(() => null);
       if (r === null || !r.ok) return { ok: false, message: 'Changed since. Try again.' };
-      if (!on && key === 'readActivities') await repo().clearSamples(p.id, 'workout').catch(() => undefined);
+      if (!on && key === 'readActivities') {
+        await repo().clearSamples(p.id, 'workout').catch(() => undefined);
+        // Read a year again when it is turned back on.
+        workoutsBackfilled = false;
+      }
       if (!on && key === 'readWeight') await repo().clearSamples(p.id, 'weight').catch(() => undefined);
       if (!on && key === 'readRestingHeartRate') await repo().clearSamples(p.id, 'resting_hr').catch(() => undefined);
       if (!on && key === 'readSleep') await repo().clearSamples(p.id, 'sleep').catch(() => undefined);

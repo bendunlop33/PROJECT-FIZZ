@@ -14,8 +14,9 @@ import { answerPreview } from './import-layout-helpers';
  * import with real times (Tue 27) and a date-only FitNotes import (Mon 12): 17 gym sessions. Garmin Connect (named
  * `Connect` in Health) recorded a `Strength` on most of those days, a run on Thu 29.
  *
- * Totals never counted Health workouts (Sessions and `October workouts` come from gym sessions only); the extra rings
- * were Garmin workouts that had never been paired. The read now pairs every clear-cut day in the window.
+ * The extra rings were Garmin workouts that had never been paired. The read now pairs every clear-cut day in the window.
+ * (Ben, 3 Nov) A Garmin strength workout no workout overlaps (the 21st's 06:30, the 24th's 22:10) now counts as a
+ * session too; one a workout overlaps, or on the date-only import's day, never does: 17 + 2 = 19.
  */
 
 let h: Harness;
@@ -115,8 +116,8 @@ async function dayRows(s: AppServices, date: string) {
   return pairedDaySheetRows(daySheetRows(tile, d.week.feed, () => null), await s.health.dayPairs(date));
 }
 
-describe('Ben’s October (build 490): Garmin strength already a workout never shows apart; totals gym sessions only', () => {
-  it('back-fills the clear-cut days; no rings for them; one row; Sessions and October workouts stay 17; ambiguous days stay apart', async () => {
+describe('Ben’s October (build 490): Garmin strength already a workout never shows apart or counts twice', () => {
+  it('back-fills the clear-cut days; no rings for them; one row; Sessions and October workouts count only Garmin-only ones extra; ambiguous days stay apart', async () => {
     const s = await launch();
     const o = await october(s);
     h.clockMs = SAT;
@@ -138,9 +139,9 @@ describe('Ben’s October (build 490): Garmin strength already a workout never s
     expect((await s.health.forWorkout(o.ids.get(24) ?? '')).kind).not.toBe('linked');
 
     const after = await month(s);
-    // Totals unchanged: Health workouts, paired or not, never count as gym sessions or sets.
-    expect(after.workouts.count).toBe(17);
-    expect(after.sessions).toBe('17');
+    // (Ben, 3 Nov) Only the two no workout overlaps add a session; none adds a set.
+    expect(after.workouts.count).toBe(19);
+    expect(after.sessions).toBe('19');
     expect(after.sets).toBeDefined();
     expect(after.sets).toBe(before.sets);
     // Paired days: the dot only. Unpaired strength and runs: their rings.
@@ -170,11 +171,11 @@ describe('Ben’s October (build 490): Garmin strength already a workout never s
     const pairs21 = await s.health.dayPairs(day(21));
     expect(Object.keys(pairs21.unpaired).sort()).toEqual([...o.two21].sort());
     for (const choices of Object.values(pairs21.unpaired)) expect(choices.map((c) => c.sessionId)).toEqual([o.ids.get(21)]);
-    // The date-only import pairs by hand; then its ring goes and the count stays 17.
+    // The date-only import pairs by hand; then its ring goes and the count stays 19.
     expect((await s.health.link({ healthUuid: o.noon12, sessionId: o.imported12, opId: 'pair-12' })).ok).toBe(true);
     const paired = await month(s);
     expect(paired.marks[day(12)]).toEqual(['dot']);
-    expect(paired.workouts.count).toBe(17);
+    expect(paired.workouts.count).toBe(19);
   });
 
   it('idempotent across reads and a restart; an Unpair is never auto-linked again', async () => {
@@ -196,7 +197,8 @@ describe('Ben’s October (build 490): Garmin strength already a workout never s
     expect((await s.health.forWorkout(o.ids.get(28) ?? '')).kind).not.toBe('linked');
     const m = await month(s);
     expect(m.marks[day(28)]).toEqual(['dot', 'ring']);
-    expect(m.workouts.count).toBe(17);
+    // Unpaired by Ben (and overlapping its workout): never a session of its own.
+    expect(m.workouts.count).toBe(19);
     // The others stay linked at the same version (no rewrite on a later read).
     const again = await s.health.dayPairs(day(26));
     expect(again.paired[o.ids.get(26) ?? '']).toMatchObject({ healthUuid: o.clear[26], linkVersion: 1 });

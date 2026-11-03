@@ -290,6 +290,11 @@ export interface ConsistencyView {
 export interface ConsistencyInput {
   /** Finished workouts in history (any source), any order. */
   workouts: readonly ConsistencyWorkout[];
+  /**
+   * (Ben, 3 Nov) Health strength workouts of their own (`healthStrengthSessions`): their starts count in the weeks'
+   * workouts and days trained, never as a plan day done. Absent: none.
+   */
+  healthSessions?: readonly { startedMs: number }[];
   nowMs: number;
   tz: string;
   /** Profile's `Days a week you lift`; null: not set. */
@@ -434,8 +439,7 @@ export function consistency(input: ConsistencyInput): ConsistencyView {
   const mondays = Array.from({ length: CONSISTENCY_WEEKS }, (_, i) => addDays(mondayLocalDate, -7 * (CONSISTENCY_WEEKS - i)));
   const counts = new Map<string, number>();
   const dates = new Map<string, Set<string>>();
-  for (const w of input.workouts) {
-    const ms = toMs(w.startedAtUtc);
+  for (const ms of [...input.workouts.map((w) => toMs(w.startedAtUtc)), ...(input.healthSessions ?? []).map((h) => h.startedMs)]) {
     if (ms > input.nowMs) continue;
     const monday = localWeekBounds(ms, input.tz).mondayLocalDate;
     counts.set(monday, (counts.get(monday) ?? 0) + 1);

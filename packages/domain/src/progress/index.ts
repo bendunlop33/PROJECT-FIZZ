@@ -25,3 +25,4 @@ export * from './training-period';
 export * from './block-lifts';
 export * from './block-history';
 export * from './plan-muscles';
+export * from './health-sessions';

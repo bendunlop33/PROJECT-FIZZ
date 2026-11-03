@@ -2,6 +2,7 @@ import type { Activity } from '@fizz/schemas';
 import { ACTIVITY_WORD, activityDetail, dateWeekdayShort } from '../activity';
 import { addDays, localDateOf } from '../calendar';
 import type { HistoryLike } from '../history-summary';
+import { healthStrengthSessions } from '../progress/health-sessions';
 import { toMs } from '../time';
 import { READ_NOTE, recentSessionsView, YOUR_DATA, type DELOAD_NOTE, type IMPORTED_NOTE } from './training-view';
 
@@ -121,11 +122,14 @@ function workingSetCount(sets: readonly string[]): number {
   return sets.filter((s) => !s.startsWith('warm-up ')).length;
 }
 
-function activityLine(a: Activity): string {
+/** (Ben, 3 Nov) A Health strength workout with no workout of its own counts as a session (Progress does): said so, with no sets. */
+export const HEALTH_SESSION_WORDS = 'counts as a session, no sets';
+
+function activityLine(a: Activity, session = false): string {
   const h = a.health;
   const word = h !== undefined && h.label.trim() !== '' ? h.label : ACTIVITY_WORD[a.fields.kind];
   const detail = activityDetail(a.fields);
-  return [word, ...(detail === '' ? [] : [detail]), ...(h === undefined ? [] : [`Apple Health (${h.sourceName})`])].join(' · ');
+  return [word, ...(detail === '' ? [] : [detail]), ...(h === undefined ? [] : [`Apple Health (${h.sourceName})`]), ...(session ? [HEALTH_SESSION_WORDS] : [])].join(' · ');
 }
 
 /** The section in full, then trimmed to the budget: oldest days summarised first, then left out. */
@@ -178,10 +182,17 @@ export function lastDaysView(input: LastDaysInput): LastDaysView {
     full.set(w, s.exercises.map((e) => ({ name: e.name, sets: workingSetCount(e.sets) })).filter((e) => e.sets > 0));
     dayOf(dateOf(agg)).workouts.push(w);
   }
-  for (const a of input.activities.slice(0, MAX_ACTIVITIES)) {
+  const acts = input.activities.slice(0, MAX_ACTIVITIES);
+  // The same rule as Progress (`healthStrengthSessions`): not on a day a workout overlaps it or has no times.
+  const sessionTimes = input.workouts.slice(0, MAX_WORKOUTS * 2).map((w) => {
+    const ended = w.session.endedAt?.utc ?? null;
+    return { date: dateOf(w), startedMs: toMs(w.session.startedAt.utc), durationMs: null, dateOnly: w.session.localDate !== undefined, endedAtUtc: ended };
+  });
+  const asSessions = new Set(healthStrengthSessions({ activities: acts, sessions: sessionTimes }).map((x) => x.fromHealth.activityId));
+  for (const a of acts) {
     if (a.deletedAtUtc !== null || a.fields.status !== 'done') continue;
     if (a.fields.date < from || a.fields.date > input.today) continue;
-    dayOf(a.fields.date).activities.push(activityLine(a));
+    dayOf(a.fields.date).activities.push(activityLine(a, asSessions.has(a.id)));
   }
 
   const ordered = [...days.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));

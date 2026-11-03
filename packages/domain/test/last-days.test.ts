@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Activity, Load, SessionAggregate } from '@fizz/schemas';
-import { LAST_DAYS_BUDGET_CHARS, lastDaysDetail, lastDaysView, toIso, toMs } from '../src/index';
+import { HEALTH_SESSION_WORDS, LAST_DAYS_BUDGET_CHARS, lastDaysDetail, lastDaysView, localDateOf, toIso, toMs } from '../src/index';
 import { at, barbell, id, kg, OWNER, T0, TZ, values } from './fixtures';
 import { apply, BENCH, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -145,5 +145,22 @@ describe('lastDaysView (Ben, 28 Oct: every coach surface sees the last 7 days)',
     const week = lastDaysView({ workouts: many, activities: [], today: TODAY, ...NAMES });
     expect(JSON.stringify(week).length).toBeLessThanOrEqual(LAST_DAYS_BUDGET_CHARS);
     expect(week.days).toHaveLength(8);
+  });
+});
+
+describe('(Ben, 3 Nov) a Garmin-only strength workout counts as a session', () => {
+  const strength = (n: number, startUtc: string, minutes: number): Activity => {
+    const endUtc = toIso(toMs(startUtc) + minutes * 60_000);
+    return activity(n, localDateOf(toMs(startUtc), TZ), { kind: 'other', durationS: minutes * 60, distanceM: null, effort: null }, { uuid: id(9000 + n), activityType: 50, label: 'Strength', sourceName: 'Garmin', startUtc, endUtc, avgHeartRate: null, maxHeartRate: null, strength: true });
+  };
+
+  it('says so with no sets; one a workout overlaps (or a workout that day with no times) doesn’t', () => {
+    const w = workout(5, [{ load: kg(100), reps: 5 }]);
+    const overlapping = strength(1, toIso(toMs(w.session.startedAt.utc) + 5 * 60_000), 40);
+    const alone = strength(2, toIso(toMs(w.session.startedAt.utc) - 2 * 86_400_000), 50);
+    const v = lastDaysView({ workouts: [w], activities: [overlapping, alone], today: TODAY, ...NAMES });
+    const lines = v.days.flatMap((d) => d.activities.map((a) => nbsp(a)));
+    expect(lines).toContain(`Strength · 50 min · Apple Health (Garmin) · ${HEALTH_SESSION_WORDS}`);
+    expect(lines).toContain('Strength · 40 min · Apple Health (Garmin)');
   });
 });
