@@ -5,7 +5,7 @@ import { estimateBuilderMinutes } from '../builder/estimate';
 import { absOff, clampMinutes, fitToMinutes, type BuilderFitResult, type BuilderFitStep } from '../builder/fit';
 import { mixItUpShortlist, mixItUpTarget } from '../builder/mix';
 import { workingCount } from '../builder/set-rows';
-import { makeSlot } from '../builder/slot';
+import { makeExtraSlot, makeSlot } from '../builder/slot';
 import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout, type RestKind } from '../builder/types';
 import { landCarryOver, type CarryItem } from '../builder/carry';
 import { withCoachSetCounts } from '../builder/carried';
@@ -75,6 +75,13 @@ export interface TodayTemplateSlot {
   reps?: { min: number; max: number };
   /** (Ben, 27 Oct) The plan day's stored rests per kind (seconds), drafted as the slot's `planRestS`. */
   restS?: Partial<Record<RestKind, number>>;
+  /**
+   * (Ben, 3 Nov: the day sheet left out the bike) A cardio or timed row (no builder group): drafted as a timed slot
+   * (`makeExtraSlot`) with its stored work time per set, as Your workout opens it. Absent: a strength exercise.
+   */
+  timed?: { workS: number | null };
+  /** (Ben, 2 Nov) The row is a warm-up Ben asked for (`RoutineExercise.warmup`). */
+  warmup?: true;
 }
 
 export interface TodayDay {
@@ -257,6 +264,15 @@ export function storedTemplateWorkout(t: TodayTemplate, c: Pick<TodayControls, '
   const taken = new Set(stored.map((x) => x.exerciseId));
   const placed: { slot: BuilderSlot; group: string | null }[] = [];
   for (const x of stored) {
+    // (Ben, 3 Nov) A cardio or timed row (the coach's bike first on leg days) is drafted as stored: its time, its
+    // place and its warm-up mark, as Your workout and Start have it. Not here (no such exercise): left out.
+    if (x.timed !== undefined) {
+      const info = ctx.extra?.(x.exerciseId) ?? null;
+      if (info === null || !usable(x.exerciseId) || placed.some((p) => p.slot.exerciseId === x.exerciseId)) continue;
+      const made = makeExtraSlot(x.exerciseId, { workS: x.timed.workS, sets: x.workingSets }, ctx);
+      placed.push({ slot: { ...made, origin: x.exerciseId, ...(x.warmup === true && info.measurement !== 'reps' ? { warmup: true as const } : {}) }, group: x.group });
+      continue;
+    }
     const main = t.mainLiftExerciseId !== null && x.exerciseId === t.mainLiftExerciseId;
     let id: string | null = x.exerciseId;
     if (!main && (ctx.info(x.exerciseId) === null || !usable(x.exerciseId))) {
@@ -271,9 +287,11 @@ export function storedTemplateWorkout(t: TodayTemplate, c: Pick<TodayControls, '
     placed.push({ slot: same && x.restS !== undefined && Object.keys(x.restS).length > 0 ? { ...made, planRestS: { ...x.restS } } : made, group: x.group });
   }
   if (placed.length === 0) return null;
-  // The main lift leads (it names the day); the rest keep their stored order.
+  // The main lift leads (it names the day); the rest keep their stored order. (Ben, 3 Nov) Cardio or timed rows stored
+  // before it (a warm-up bike first) stay in front of it.
   const mainAt = placed.findIndex((p) => p.slot.main);
-  if (mainAt > 0) placed.unshift(...placed.splice(mainAt, 1));
+  const lead = placed.findIndex((p) => !isExtraSlot(p.slot, ctx));
+  if (mainAt > 0 && lead >= 0 && mainAt > lead) placed.splice(lead, 0, ...placed.splice(mainAt, 1));
   let blocks: BuilderBlock[] = [];
   for (const p of placed) {
     const last = blocks[blocks.length - 1];
@@ -284,6 +302,11 @@ export function storedTemplateWorkout(t: TodayTemplate, c: Pick<TodayControls, '
   blocks = blocks.map((b) => ({ ...b, slots: [...b.slots] }));
   if (c.supersets && !t.supersetsPlan) blocks = pairSlots(blocks, ctx.info);
   return settleWarmups({ blocks, restLevel: 'normal' }, ctx);
+}
+
+/** A slot with no builder group (cardio, timed or other extra work): it never leads as the main lift does. */
+function isExtraSlot(s: BuilderSlot, ctx: Pick<BuilderContext, 'info'>): boolean {
+  return ctx.info(s.exerciseId) === null;
 }
 
 /** (Ben, 27 Oct) Another Accessories style keeps the plan day's main lift as stored (only the accessories change). */

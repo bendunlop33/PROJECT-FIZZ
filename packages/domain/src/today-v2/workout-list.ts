@@ -1,7 +1,7 @@
 import type { LoadConvention, WeightUnit } from '@fizz/schemas';
 import { infoOrDefault } from '../builder/arrange';
 import type { BuilderInfoLookup, BuilderSlot, BuilderWorkout } from '../builder/types';
-import { formatDuration, formatNumber, NBSP } from '../display';
+import { formatDuration, formatNumber, NBSP, timedTargetText } from '../display';
 
 /**
  * (Redesign v3 §A5, §B; Ben, 27 Oct) The compact read-only WorkoutList: `Exercise · Sets · Target kg`, one row per
@@ -163,12 +163,46 @@ export function coachRowLoads(before: BuilderWorkout, after: BuilderWorkout): Co
 }
 
 /** The workout's rows in order, supersets grouped by block. */
-export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit: WeightUnit, o: { pained?: (exerciseId: string) => boolean; coach?: CoachRowLoads; /** (Ben, 29 Oct) Exercises whose first-time estimate (`startLight`) shows as `40 est.` when they have no target. */ estimateFor?: ReadonlySet<string> } = {}): WorkoutListRow[] {
+export function workoutListRows(
+  w: BuilderWorkout,
+  info: BuilderInfoLookup,
+  unit: WeightUnit,
+  o: {
+    pained?: (exerciseId: string) => boolean;
+    coach?: CoachRowLoads;
+    /** (Ben, 29 Oct) Exercises whose first-time estimate (`startLight`) shows as `40 est.` when they have no target. */
+    estimateFor?: ReadonlySet<string>;
+    /** (Ben, 3 Nov) A cardio or timed exercise's name (no builder info): `Exercise bike`. */
+    extraName?: (exerciseId: string) => string | null;
+  } = {},
+): WorkoutListRow[] {
   const out: WorkoutListRow[] = [];
   w.blocks.forEach((b, bi) => {
     const ss = b.slots.length > 1;
     for (const s of b.slots) {
-      const fullName = infoOrDefault(info, s.exerciseId).name;
+      const fullName = info(s.exerciseId)?.name ?? o.extraName?.(s.exerciseId) ?? infoOrDefault(info, s.exerciseId).name;
+      // (Ben, 3 Nov: the day sheet left out the bike) A cardio or timed slot with no builder group (bike, rower): its
+      // time in SETS (`8 min`), `—` for kg. A plank (a builder exercise) keeps its own line.
+      const timedRows = info(s.exerciseId) === null ? working(s).filter((r) => r.durationS !== undefined || r.distanceM !== undefined) : [];
+      const timed = timedRows.length > 0 && timedRows.length === working(s).length ? timedRows[0] : undefined;
+      if (timed !== undefined) {
+        const sets = timedTargetText(timedRows.length, timed.durationS ?? null, timed.distanceM ?? null);
+        const held = o.pained?.(s.exerciseId) ?? false;
+        out.push({
+          key: s.key,
+          exerciseId: s.exerciseId,
+          name: compactExerciseName(fullName),
+          fullName,
+          main: false,
+          sets,
+          target: '—',
+          coach: null,
+          superset: ss ? bi : null,
+          held,
+          accessibilityLabel: [fullName, ss ? 'superset' : null, held ? 'pain flag, held' : null, s.warmup === true ? 'warm-up' : null, spokenSets(s)].filter((x): x is string => x !== null).join(', '),
+        });
+        continue;
+      }
       const plates = info(s.exerciseId)?.platesAdded === true;
       const n = working(s).length;
       const own = topLoad(s);
