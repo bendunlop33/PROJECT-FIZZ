@@ -3,7 +3,7 @@ import { View } from 'react-native';
 
 import type { ActionRecord } from '@fizz/schemas';
 
-import { planSwapLines } from '../../coach/sheet-view';
+import { planSwapLines, planSwapWhen } from '../../coach/sheet-view';
 import { newUuid } from '../../device/runtime';
 import { PLAN_SWAP_COPY, type PlanSwapCardState } from '../../services/plan-swap-service';
 import { useServices } from '../../shell/context';
@@ -13,7 +13,7 @@ import { CardActions, CoachCardFrame } from './CoachCardFrame';
 
 /**
  * (Ben, 30 Oct, build 486) One exercise swapped in every plan day: `Leg extension → Leg press`, then each day it
- * changes, `Every week`. `Skip` · `Apply` (rule 3: a structural change is a proposal), then `Undo`. `Today too` swaps the
+ * changes, `From this week` (Ben, 3 Nov: the days not done yet this week too). `Skip` · `Apply` (rule 3: a structural change is a proposal), then `Undo`. `Today too` swaps the
  * live workout's row when none of it is done (its own change, its own Undo). The coach's card in the thread and
  * Settings' Replace show the same card. Every value is from the record.
  */
@@ -39,6 +39,7 @@ export function PlanSwapCard({ record, onChanged }: { record: ActionRecord; onCh
   }, [services, record.actionId]);
 
   const lines = planSwapLines(record);
+  const when = planSwapWhen(record);
   if (lines === null || state === null || state.kind === 'gone') return null;
   const today = state.today;
 
@@ -62,7 +63,7 @@ export function PlanSwapCard({ record, onChanged }: { record: ActionRecord; onCh
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
         <Icon name="arrow.triangle.2.circlepath" color="text.secondary" size={18} />
         <AppText variant="label" color="text.secondary">
-          Every week
+          {when}
         </AppText>
       </View>
       <AppText variant="callout">{lines.head}</AppText>

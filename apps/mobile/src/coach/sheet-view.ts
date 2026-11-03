@@ -835,6 +835,16 @@ export function workoutFixLines(r: ActionRecord): { icon: 'calendar' | 'trash' |
   };
 }
 
+/**
+ * (Ben, 3 Nov: "it showed up in week 3 onwards but not week 2, and it's not clear why") The plan swap / add / day-edit
+ * card's header: from when Apply changes the plan. Apply writes the plan day's workout, so it is on every day not done
+ * yet, this week's included; done workouts never change (rule 2). Null: not a plan card.
+ */
+export function planSwapWhen(r: ActionRecord): string | null {
+  return r.detail.kind === 'propose_plan_swap' ? PLAN_CARD_WHEN : null;
+}
+export const PLAN_CARD_WHEN = 'From this week';
+
 export function planSwapLines(r: ActionRecord): { head: string; days: string[]; partial?: string } | null {
   if (r.detail.kind !== 'propose_plan_swap') return null;
   const d = r.detail;
