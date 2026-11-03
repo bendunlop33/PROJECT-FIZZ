@@ -54,7 +54,7 @@ describe('Any preferences: In your plan … · Replace', () => {
     });
     await r.waitFor((t) => t.includes('Leg extension · In your plan: Legs A, Legs B') && t.includes('Replace'), 'the not-preferred line');
     await r.press('Replace');
-    await r.waitFor((t) => t.includes('Every week') && t.includes('Leg extension → ') && t.includes('Apply'), 'the swap card');
+    await r.waitFor((t) => t.includes('From this week') && t.includes('Leg extension → ') && t.includes('Apply'), 'the swap card');
     await r.press('Apply');
     await r.waitFor((t) => t.includes('Applied') && t.includes('Undo') && !t.includes('In your plan: Legs A'), 'applied, the line gone');
     for (const d of legs) expect((await s.routines.editor({ routineId: d.routineId, gymId: null }))?.routine?.exercises.map((e) => e.exerciseId)).not.toContain(le);
