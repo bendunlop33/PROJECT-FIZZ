@@ -2,9 +2,11 @@ import { supersetLabels } from '../superset-labels';
 import { PLAN_LIMITS } from '@fizz/schemas';
 import type { DraftSlot, PlanBuilderAnswers, PlanBuilderRecord, PlanDraft, PlanDraftVersion, PlanPause, SessionDeload } from '@fizz/schemas';
 import { addDays, localDateOf, localWeekBounds } from '../calendar';
+import { WARMUP_ROW_TEXT } from '../progress/plan-overview';
 import { pausedInWeek } from '../progress/plan-tracker';
 import { weekdayDayMonth, weekdayDayMonthLong } from '../progress/text';
 import { activePause, pausedDates } from '../session/plan-adapt';
+import { timedTargetText } from '../display';
 import { deriveId } from '../stable';
 import { toMs } from '../time';
 import type { PbExercise, PbLoad } from './engine';
@@ -39,7 +41,26 @@ export const PB_BLOCK_COPY = {
   deloadNote: 'Deload: lighter, fewer sets',
   dayDone: '✓ Done',
   weekLabel: 'Week',
+  /** (Ben, 3 Nov) A picked week's relation to now, on a plan day opened from it: `Done`, `Next week`, `In 3 weeks`. */
+  weekDone: 'Done',
+  nextWeek: 'Next week',
+  inWeeks: (n: number) => `In ${String(n)} weeks`,
 } as const;
+
+/**
+ * (Ben, 3 Nov: Legs A said `Week 3 of 6` while the strip had week 2 as this week) A plan day opened from a picked week
+ * says which week it shows and when that is: `Week 3 of 6 · Next week`, `Week 6 of 6 · Deload · In 4 weeks`,
+ * `Week 1 of 6 · Done`. Null for the current week (the day screen shows today's plan then). Pure.
+ */
+export function pbPickedWeekLine(w: number, block: Pick<PbBlockWeek, 'week' | 'of' | 'done' | 'leadIn'>, deload: boolean): string | null {
+  if (w < 1 || w > block.of) return null;
+  const doneWeek = block.done || w < block.week;
+  // In a lead-in week, week 1 starts next Monday.
+  const ahead = block.leadIn !== undefined ? w : w - block.week;
+  if (!doneWeek && ahead === 0) return null;
+  const when = doneWeek ? PB_BLOCK_COPY.weekDone : ahead === 1 ? PB_BLOCK_COPY.nextWeek : PB_BLOCK_COPY.inWeeks(ahead);
+  return [PB_BLOCK_COPY.week(w, block.of), ...(deload ? [PB_BLOCK_COPY.deload] : []), when].join(' · ');
+}
 
 /** A plan workout as the block counts it: when it started and, when known, which plan day it was. */
 export interface PbBlockWorkout {
@@ -336,6 +357,10 @@ export interface PbBlockRow {
   est: boolean;
   /** (Ben, 27 Oct) Its superset label (`A1`, `A2`); null: on its own. */
   superset: string | null;
+  /** (Ben, 3 Nov) A cardio or timed row: `line` is its time (`8 min`), never reps or `BW`; `kg` is null. Absent: a lift. */
+  timed?: true;
+  /** (Ben, 2 Nov) The row is a warm-up Ben asked for: `· Warm-up` after its line. Absent: not one. */
+  warmup?: true;
 }
 
 export interface PbBlockDay {
@@ -397,6 +422,28 @@ function rowOf(slot: DraftSlot, t: PbWeekTarget, kit: PlanKit | null, e: PbExerc
   return { key: slot.slotKey, exerciseId: slot.exerciseId, name, main: slot.main, line: t.line, kg, est: e.estimate, superset };
 }
 
+/**
+ * (Ben, 3 Nov: Legs A read `Exercise bike 1 × 12 BW`) A cardio or timed slot: its working sets carry a work time or a
+ * distance and no reps. Such a slot is not a lift: the engine's double progression (reps 10 → 12 by week 3) and
+ * `BW` never apply to it.
+ */
+export function pbSlotIsTimed(slot: Pick<DraftSlot, 'setTemplates'>): boolean {
+  const work = workingTemplates(slot);
+  return work.length > 0 && work.every((t) => t.reps === null && (t.durationS !== null || t.distanceM != null));
+}
+
+/** (Ben, 3 Nov) A row's sets line as the plan screens show it: `8 min · Warm-up` on a marked warm-up row. */
+export function pbRowLine(r: Pick<PbBlockRow, 'line' | 'warmup'>): string {
+  return r.warmup === true ? `${r.line} · ${WARMUP_ROW_TEXT}` : r.line;
+}
+
+/** A timed slot's row: its stored time (and distance) every week, as stored; `Warm-up` when marked. */
+function timedRowOf(slot: DraftSlot, name: string, superset: string | null): PbBlockRow {
+  const work = workingTemplates(slot);
+  const first = work[0];
+  return { key: slot.slotKey, exerciseId: slot.exerciseId, name, main: false, line: timedTargetText(work.length, first?.durationS ?? null, first?.distanceM ?? null), kg: null, est: false, superset, timed: true, ...(slot.warmup === true ? { warmup: true as const } : {}) };
+}
+
 /** (Ben, 27 Oct) Superset labels for a day's slots in order (`A1`, `A2`; null on its own). */
 export const pbSupersetLabels = supersetLabels;
 
@@ -422,6 +469,8 @@ export function pbBlockView(input: PbBlockViewInput): PbBlockView {
     const sorted = [...d.plan.slots].sort((x, y) => x.order - y.order);
     const labels = pbSupersetLabels(sorted);
     const rows = sorted.map((slot, i) => {
+      // (Ben, 3 Nov) Cardio and timed rows keep their stored minutes every week (never reps, never `BW`).
+      if (pbSlotIsTimed(slot)) return timedRowOf(slot, input.nameOf(slot.exerciseId), labels[i] ?? null);
       const kit = input.kitOf(slot);
       const e = pbExerciseOfSlot(slot, kit, week.startReps?.[slot.slotKey] ?? builder.startReps?.[slot.slotKey]);
       return rowOf(slot, pbAtWeek(a, e, kit, viewed), kit, e, input.nameOf(slot.exerciseId), labels[i] ?? null);

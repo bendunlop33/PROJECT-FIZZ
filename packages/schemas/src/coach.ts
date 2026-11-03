@@ -416,6 +416,11 @@ export type ProposePlanAddArgs = z.infer<typeof ProposePlanAddArgsSchema>;
  */
 export const ProposePlanDayEditArgsSchema = z.strictObject({
   day: z.string().min(1).max(120),
+  /**
+   * (Ben, 3 Nov: "set the bike to 8 min on leg days") More plan days that get the same `changes` in the same proposal
+   * (one card, one Apply, one Undo); each must have every changed exercise. Never with `order`. Null or absent: none.
+   */
+  alsoDays: z.array(z.string().min(1).max(120)).max(6).nullable().optional(),
   order: z.array(z.string().min(1).max(80)).min(1).max(20).nullable(),
   changes: z
     .array(
@@ -426,12 +431,35 @@ export const ProposePlanDayEditArgsSchema = z.strictObject({
         targetRpe: z.number().min(5).max(10).nullable(),
         main: z.boolean().nullable(),
         load: z.number().min(0).max(1000).nullable(),
+        /** (Ben, 3 Nov) A cardio or timed exercise's minutes per set and distance (metres). Null or absent: kept. */
+        minutes: z.number().min(0).max(240).nullable().optional(),
+        distanceM: z.int().min(0).max(100_000).nullable().optional(),
+        /** (Ben, 3 Nov) The `Warm-up` mark on a cardio or timed row: true only when Ben calls it a warm-up, false to take it off. */
+        warmup: z.boolean().nullable().optional(),
+        /** (Ben, 3 Nov) Put this exercise first in the day. Null or absent: its place stays. */
+        first: z.boolean().nullable().optional(),
       }),
     )
     .max(12),
   reason,
 });
 export type ProposePlanDayEditArgs = z.infer<typeof ProposePlanDayEditArgsSchema>;
+
+/** (Ben, 1 Nov; 3 Nov) One row's change in a plan day edit proposal (`dayEdit.rows`), as written on Apply. */
+export const PlanDayEditRowSchema = z.object({
+  rowId: IdSchema,
+  sets: z.int().min(1).max(10).optional(),
+  reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).optional(),
+  targetRpe: z.number().min(1).max(10).optional(),
+  main: z.boolean().optional(),
+  load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).optional(),
+  /** (Ben, 3 Nov) A cardio or timed row's work time per set (seconds), distance (metres) and warm-up mark. */
+  durationS: z.int().min(1).max(14_400).optional(),
+  distanceM: z.int().min(1).max(100_000).optional(),
+  warmup: z.boolean().optional(),
+  /** (Ben, 3 Nov) Moved first (the edit's order carries it). */
+  first: z.literal(true).optional(),
+});
 
 /** ADR 0039: today's Set up filled from Ben's own words this turn (the builder reads them); `reason` is the coach's one line. */
 export const FillSetupTodayArgsSchema = z.strictObject({ reason });
@@ -1526,6 +1554,11 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
               warmup: z.literal(true).optional(),
             })
             .optional(),
+          /**
+           * (Ben, 3 Nov) `day_edit` over several days (`alsoDays`): this day's own change (its row IDs). Absent: the
+           * top-level `dayEdit` (one day).
+           */
+          dayEdit: z.object({ order: z.array(IdSchema).max(30).nullable(), rows: z.array(PlanDayEditRowSchema).max(20) }).optional(),
           /** The day's exercises before and after (names, in order): the card's before/after. */
           before: z.array(z.string().max(120)).max(30).optional(),
           after: z.array(z.string().max(120)).max(30).optional(),
@@ -1543,18 +1576,7 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     dayEdit: z
       .object({
         order: z.array(IdSchema).max(30).nullable(),
-        rows: z
-          .array(
-            z.object({
-              rowId: IdSchema,
-              sets: z.int().min(1).max(10).optional(),
-              reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).optional(),
-              targetRpe: z.number().min(1).max(10).optional(),
-              main: z.boolean().optional(),
-              load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).optional(),
-            }),
-          )
-          .max(20),
+        rows: z.array(PlanDayEditRowSchema).max(20),
         lines: z.array(z.string().max(200)).max(21),
       })
       .optional(),

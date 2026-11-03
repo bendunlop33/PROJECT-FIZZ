@@ -64,6 +64,7 @@ import {
   planDayOf,
   PB_BLOCK_COPY,
   type PbBlockRow,
+  pbPickedWeekLine,
   movePlanDay,
   undoMovePlanDay,
   oneExerciseChange,
@@ -395,7 +396,9 @@ export function createPlanServices(deps: PlanServicesDeps) {
     const day = view?.days.find((d) => d.index === dayIndex);
     if (view === undefined || day === undefined) return null;
     const deload = view.deloadWeeks.includes(w);
-    return { header: `${PB_BLOCK_COPY.week(w, a.weeks)}${deload ? ` · ${PB_BLOCK_COPY.deload}` : ''}`, note: view.note, rows: day.rows };
+    // (Ben, 3 Nov) The week shown and when it is (`Week 3 of 6 · Next week`), never read as this week.
+    const header = pbPickedWeekLine(w, block, deload) ?? `${PB_BLOCK_COPY.week(w, a.weeks)}${deload ? ` · ${PB_BLOCK_COPY.deload}` : ''}`;
+    return { header, note: view.note, rows: day.rows };
   }
 
   /** (Ben, 29 Oct) This week's skipped plan days not done anyway (a skipped day done after all counts as done). */

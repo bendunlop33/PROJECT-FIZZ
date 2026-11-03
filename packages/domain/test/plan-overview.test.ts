@@ -253,7 +253,7 @@ describe('planDayDetail: a plan day’s lines', () => {
       ['Chest-supported row', '3 × 10–12 · 22.5 kg each'],
       ['Assisted pull-up', '2 × 8 · Assist 30 kg'],
       ['Rear-delt fly', '2 × 12–15 · 7.5 kg each'],
-      ['Rowing machine', '1 × 10:00'],
+      ['Rowing machine', '10 min'],
       ['EZ-bar curl', '1 × 8–10 · 30 kg'],
     ]);
   });
@@ -289,7 +289,7 @@ describe('planDayDetail: a plan day’s lines', () => {
     expect(d.header).toBe('Day 2 of 4');
     expect(d.rows.map((x) => [x.name, plain(x.line), plain(x.sub)])).toEqual([
       ['Barbell row', 'Top set, 3 × 6–8', 'Last 7 Oct: 80 × 12, 12, 75 × 10 · Targets hit 1 of last 2'],
-      ['Rowing machine', '1 × 10:00', 'Last 2 Oct: 10:00 · 2,450 m · 2:02 /500 m'],
+      ['Rowing machine', '10 min', 'Last 2 Oct: 10:00 · 2,450 m · 2:02 /500 m'],
       ['Chest-supported row', '2 sets', 'Last 2 Oct: 20 × 12, 12, 11'],
     ]);
     // Setting off: no `Targets hit` on any row.

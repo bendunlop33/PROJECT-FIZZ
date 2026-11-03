@@ -261,7 +261,7 @@ export function templatePopupView(list: readonly RoutineExercise[], slotId: stri
       ...(t.targetLoad !== null && !lf.bodyweight ? [{ name: 'auto_load' as const, label: TEMPLATE_COPY.autoLoad }] : []),
       { name: 'rest_after', label: TEMPLATE_COPY.restAfter },
     ];
-    const loadWords = lf.bodyweight ? 'bodyweight' : t.targetLoad === null ? 'auto load' : loadSpoken(t.targetLoad.value, t.targetLoad.unit, t.targetLoad.convention);
+    const loadWords = cardio && timed && t.targetLoad === null ? 'no load' : lf.bodyweight ? 'bodyweight' : t.targetLoad === null ? 'auto load' : loadSpoken(t.targetLoad.value, t.targetLoad.unit, t.targetLoad.convention);
     return {
       key: t.id,
       index: i,
@@ -270,10 +270,11 @@ export function templatePopupView(list: readonly RoutineExercise[], slotId: stri
       typeText: `${SET_TYPE_LABEL[t.setType]}${t.restOverrideS === null ? '' : ` · ${restText(t.restOverrideS)}`}`,
       reps: t.targetReps === null ? null : t.targetReps.min,
       repsText: reps,
-      kgText: loadCell(t, lf.bodyweight, lf.frame.unit),
+      // (Ben, 3 Nov) A cardio row's set is its time (Reps column, `Time`): no load, never `BW`.
+      kgText: cardio && timed && t.targetLoad === null ? '—' : loadCell(t, lf.bodyweight, lf.frame.unit),
       load,
-      kgEditable: !lf.bodyweight,
-      kgPlaceholder: lf.bodyweight ? 'BW' : otherUnit ? loadCell(t, false, lf.frame.unit) : TEMPLATE_COPY.auto,
+      kgEditable: !lf.bodyweight && !(cardio && timed),
+      kgPlaceholder: cardio && timed ? '—' : lf.bodyweight ? 'BW' : otherUnit ? loadCell(t, false, lf.frame.unit) : TEMPLATE_COPY.auto,
       rpeText: rpe === null ? '–' : String(rpe),
       rpe,
       done: false,

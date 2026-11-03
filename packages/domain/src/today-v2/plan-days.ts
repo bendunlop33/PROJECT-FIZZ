@@ -1,6 +1,6 @@
 import { BUILD_LIMITS, type Routine, type RoutineExercise, type SetType, type SplitDay } from '@fizz/schemas';
 import { BUILDER_DAY_MIXES, type GroupCount } from '../builder/build';
-import type { BuilderGroupName, BuilderInfoLookup, RestKind } from '../builder/types';
+import type { BuilderExtraInfo, BuilderGroupName, BuilderInfoLookup, RestKind } from '../builder/types';
 import { planDayKeyOf, planDayOf, type PlanDayKeySplit } from '../session/coach-plan';
 import type { FinishedRef } from '../session/routines';
 import type { TodayDay, TodayTemplate } from './session';
@@ -36,6 +36,8 @@ export interface TodayPlanDaysInput {
   split: { days: readonly Pick<SplitDay, 'id' | 'name' | 'mainLiftExerciseId'>[] } | null;
   mainLifts?: PlanDayKeySplit['mainLifts'];
   info: BuilderInfoLookup;
+  /** (Ben, 3 Nov) Cardio and timed exercises (no builder group): kept on the day as timed slots. Absent: left out. */
+  extra?: (exerciseId: string) => BuilderExtraInfo | null;
   /** Ben's usual length (Profile), when the template has none. */
   defaultMinutes: number;
   /** (Ben, 27 Oct) The plan's own length for a template's day (the plan builder's session length); null: none. */
@@ -68,7 +70,7 @@ export function todayPlanDays(input: TodayPlanDaysInput): TodayDay[] {
       label: templateLabel(r, mainLift === null ? null : (input.info(mainLift)?.name ?? null)),
       mainLiftExerciseId: mainLift,
       minutes: r.planDay?.minutes ?? input.planMinutesOf?.(r) ?? input.defaultMinutes,
-      ...storedTemplateFields(r.exercises, mainLift, input.info, key.splitDayId),
+      ...storedTemplateFields(r.exercises, mainLift, input.info, key.splitDayId, input.extra),
     };
     const name = splitDay?.name ?? r.name.split('·')[0]?.trim() ?? r.name;
     const entry = days.get(dayKey) ?? { day: { key: dayKey, kind: 'plan' as const, name, planId: key.planId, dayIndex: key.dayIndex, splitDayId: key.splitDayId }, templates: [] as TodayTemplate[] };
@@ -123,9 +125,12 @@ export function storedRests(e: Pick<RoutineExercise, 'setTemplates' | 'restBySet
  * A plan day's exercises as Today drafts them (`TodayTemplate`'s stored fields): in order, its groups (else the split
  * day's mix), abs and supersets as stored, and each exercise's set count and superset letter. Pure.
  */
-function storedTemplateFields(exercises: readonly RoutineExercise[], mainLift: string | null, info: BuilderInfoLookup, splitDayId: string): Pick<TodayTemplate, 'exerciseIds' | 'absPlan' | 'supersetsPlan' | 'groups' | 'slots'> {
-  const sorted = [...exercises].sort((a, b) => a.order - b.order).filter((e) => info(e.exerciseId) !== null);
+function storedTemplateFields(exercises: readonly RoutineExercise[], mainLift: string | null, info: BuilderInfoLookup, splitDayId: string, extra?: (exerciseId: string) => BuilderExtraInfo | null): Pick<TodayTemplate, 'exerciseIds' | 'absPlan' | 'supersetsPlan' | 'groups' | 'slots'> {
+  const ordered = [...exercises].sort((a, b) => a.order - b.order);
+  const sorted = ordered.filter((e) => info(e.exerciseId) !== null);
   const exerciseIds = sorted.map((e) => e.exerciseId);
+  // (Ben, 3 Nov: the day sheet left out the bike) Cardio and timed rows stay on the day, in their place, as stored.
+  const kept = ordered.filter((e) => info(e.exerciseId) !== null || (extra?.(e.exerciseId) ?? null) !== null);
   const groups = templateGroups(exerciseIds, mainLift, info);
   const mix = MIX_OF[splitDayId];
   return {
@@ -135,10 +140,15 @@ function storedTemplateFields(exercises: readonly RoutineExercise[], mainLift: s
     groups: groups.length > 0 ? groups : mix !== undefined ? BUILDER_DAY_MIXES[mix].map((g) => ({ ...g })) : [],
     // (Ben, 27 Oct) The day as stored: Today drafts these (order, set counts, superset pairs) at the plan's controls.
     // (Ben, 27 Oct) …and its reps and rests as Ben set them in Library › Plan › day › Edit.
-    slots: sorted.map((e) => {
+    slots: kept.map((e) => {
+      const workingSets = Math.max(1, e.setTemplates.filter((x) => x.setType !== 'warmup').length);
+      if (info(e.exerciseId) === null) {
+        const workS = e.setTemplates.find((t) => t.setType !== 'warmup' && t.targetDurationS !== null)?.targetDurationS ?? null;
+        return { exerciseId: e.exerciseId, workingSets, group: e.supersetGroup, timed: { workS }, ...(e.warmup === true ? { warmup: true as const } : {}) };
+      }
       const reps = storedReps(e);
       const restS = storedRests(e);
-      return { exerciseId: e.exerciseId, workingSets: Math.max(1, e.setTemplates.filter((x) => x.setType !== 'warmup').length), group: e.supersetGroup, ...(reps === null ? {} : { reps }), ...(restS === null ? {} : { restS }) };
+      return { exerciseId: e.exerciseId, workingSets, group: e.supersetGroup, ...(reps === null ? {} : { reps }), ...(restS === null ? {} : { restS }) };
     }),
   };
 }
@@ -148,11 +158,11 @@ function storedTemplateFields(exercises: readonly RoutineExercise[], mainLift: s
  * the workout editor has them (unsaved): what Today would draft from it once saved. Its main lift stays the template's
  * while the list still has it, else the list's `Main`. Pure.
  */
-export function todayTemplateWithExercises(t: TodayTemplate, exercises: readonly RoutineExercise[], info: BuilderInfoLookup, splitDayId: string): TodayTemplate {
+export function todayTemplateWithExercises(t: TodayTemplate, exercises: readonly RoutineExercise[], info: BuilderInfoLookup, splitDayId: string, extra?: (exerciseId: string) => BuilderExtraInfo | null): TodayTemplate {
   const keep = t.mainLiftExerciseId !== null && exercises.some((e) => e.exerciseId === t.mainLiftExerciseId) ? t.mainLiftExerciseId : null;
   const main = keep ?? exercises.find((e) => e.main === true)?.exerciseId ?? null;
   const mainLift = main !== null && info(main) !== null ? main : null;
-  return { ...t, mainLiftExerciseId: mainLift, ...storedTemplateFields(exercises, mainLift, info, splitDayId) };
+  return { ...t, mainLiftExerciseId: mainLift, ...storedTemplateFields(exercises, mainLift, info, splitDayId, extra) };
 }
 
 /**

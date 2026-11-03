@@ -2,7 +2,7 @@ import { supersetLabels } from '../superset-labels';
 import type { Exercise, Load, PlanDraftStatus, Routine, SessionAggregate, SessionExercise, TrainingGoal, WorkoutSet } from '@fizz/schemas';
 import { localDateOf, weekdayOf } from '../calendar';
 import { paceText } from '../cardio';
-import { cardioValuesText, dayMonthText, formatDistance, formatDuration, formatNumber, loadText, localDateText, repRangeText } from '../display';
+import { cardioValuesText, dayMonthText, formatDistance, formatDuration, formatNumber, loadText, localDateText, repRangeText, timedTargetText } from '../display';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { toMs } from '../time';
 import { dayOf, exerciseTargetHistory, planDaysDoneThisWeek, plannedVsDone, planWeekExpectedNow, planWeekOf, planWeekStartMs, type PlanWeekDay, type PlanWeekWorkout } from './plan-tracker';
@@ -367,7 +367,10 @@ export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
         const n = String(rest.length);
         parts.push(`${scheme === null ? `${n} ${rest.length === 1 ? 'set' : 'sets'}` : `${n} × ${scheme}`}${load === null ? '' : ` · ${load}`}`);
       }
-      const line = parts.join(', ');
+      // (Ben, 3 Nov) A cardio or timed row reads its time as every plan view does (`8 min`, `3 × 0:45`).
+      const firstRest = rest[0];
+      const timedLine = (ex.measurement === 'cardio' || ex.measurement === 'duration') && tops.length === 0 && firstRest !== undefined && rest.every((s) => s.planned.durationS === firstRest.planned.durationS && (s.planned.distanceM ?? null) === (firstRest.planned.distanceM ?? null)) ? timedTargetText(rest.length, firstRest.planned.durationS, ex.measurement === 'cardio' ? (firstRest.planned.distanceM ?? null) : null) : null;
+      const line = timedLine !== null && timedLine !== '—' ? timedLine : parts.join(', ');
       const unit = sets.find((s) => s.planned.load !== null)?.planned.load?.unit ?? null;
       const sub = lastTimeSub(ex.exerciseId, input.history(ex.exerciseId), unit, input.targetsHit(ex.exerciseId)) ?? (sets.some((s) => s.planned.provenance?.estimate === true) ? 'est.' : null);
       return detailRow(ex.id, ex.exerciseId, ex.exerciseName, line, withWarmupMark(sub, ex.warmup === true), labels[i] ?? null);
@@ -438,6 +441,10 @@ export function planDayFromTemplates(input: PlanDayTemplateInput): PlanDayDetail
       });
       const scheme = sameOf(values, rest.length);
       const parts = [...(tops.length === 0 ? [] : [tops.length === 1 ? 'Top set' : `${String(tops.length)} top sets`]), ...(rest.length > 0 || tops.length === 0 ? [scheme === null ? `${String(rest.length)} ${rest.length === 1 ? 'set' : 'sets'}` : `${String(rest.length)} × ${scheme}`] : [])];
+      // (Ben, 3 Nov) A cardio or timed row reads its time as every plan view does (`8 min`, `3 × 0:45`).
+      const r0 = rest[0];
+      const timedLine = (ex?.measurement === 'cardio' || ex?.measurement === 'duration') && tops.length === 0 && r0 !== undefined && rest.every((t) => t.targetReps === null && t.targetDurationS === r0.targetDurationS && (t.targetDistanceM ?? null) === (r0.targetDistanceM ?? null)) ? timedTargetText(rest.length, r0.targetDurationS, ex.measurement === 'cardio' ? (r0.targetDistanceM ?? null) : null) : null;
+      if (timedLine !== null && timedLine !== '—') parts.splice(0, parts.length, timedLine);
       return detailRow(re.id, re.exerciseId, name, parts.join(', '), withWarmupMark(lastTimeSub(re.exerciseId, input.history(re.exerciseId), input.unit, input.targetsHit(re.exerciseId)), re.warmup === true && (ex?.measurement === 'cardio' || ex?.measurement === 'duration')), labels[i] ?? null);
     });
   return { header: planDayHeader(input.dayN, input.of, input.gymName, null), rows };

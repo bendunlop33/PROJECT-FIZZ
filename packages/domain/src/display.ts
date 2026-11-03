@@ -86,6 +86,18 @@ export function cardioDistanceText(metres: number): string {
   return `${grouped}${frac === undefined ? '' : `.${frac}`}${NBSP}m`;
 }
 
+/**
+ * (Ben, 3 Nov: "Exercise bike 1 × 12 BW") A plan row's cardio or timed target, as every plan view shows it: `8 min`,
+ * `8 min · 2,000 m`, `0:45`, `3 × 1:30`, `2,000 m`; whole minutes read `N min`. `—` with no time and no distance.
+ */
+export function timedTargetText(sets: number, durationS: number | null, distanceM: number | null): string {
+  const time = durationS === null || durationS <= 0 ? null : durationS % 60 === 0 ? `${String(durationS / 60)} min` : formatDuration(durationS);
+  const dist = distanceM === null || distanceM <= 0 ? null : cardioDistanceText(distanceM);
+  const one = [time, dist].filter((x): x is string => x !== null).join(' · ');
+  if (one === '') return '—';
+  return sets > 1 ? `${String(sets)} × ${one}` : one;
+}
+
 /** `20:00 · 4,800 m`, `20:00`, `4,800 m`, or `—` with neither. */
 export function cardioValuesText(values: Pick<SetValues, 'durationS' | 'distanceM'>): string {
   const parts: string[] = [];

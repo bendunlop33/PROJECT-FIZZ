@@ -169,8 +169,24 @@ export function createPlanAddExecutor(deps: PlanAddDeps): CoachExecutors {
 /** (Ben, 1 Nov) What the app's port is asked to check for `propose_plan_day_edit`; `load` only a weight Ben named. */
 export interface PlanDayEditRequest {
   day: string;
+  /** (Ben, 3 Nov: "set the bike to 8 min on leg days") More days with the same changes, in the same proposal. */
+  alsoDays?: string[];
   order: string[] | null;
-  changes: { exercise: string; sets: number | null; reps: { min: number; max: number } | null; targetRpe: number | null; main: boolean | null; load: number | null }[];
+  changes: {
+    exercise: string;
+    sets: number | null;
+    reps: { min: number; max: number } | null;
+    targetRpe: number | null;
+    main: boolean | null;
+    load: number | null;
+    /** (Ben, 3 Nov) A cardio or timed row's work time per set (seconds) and distance (metres); absent: kept. */
+    durationS?: number;
+    distanceM?: number;
+    /** (Ben, 3 Nov) The warm-up mark: on only when his words call it a warm-up (`warmupAskedIn`); off any time. */
+    warmup?: boolean;
+    /** (Ben, 3 Nov) Put it first in the day. */
+    first?: true;
+  }[];
 }
 
 export interface PlanDayEditDeps {
@@ -187,10 +203,25 @@ export function createPlanDayEditExecutor(deps: PlanDayEditDeps): CoachExecutors
   const propose: ToolExecutor = async (call, ctx): Promise<ToolResult> => {
     if (call.tool !== 'propose_plan_day_edit') throw new TypeError(call.tool);
     const a = call.args;
+    // (Ben, 3 Nov) The warm-up mark goes on only when his words this turn call it a warm-up (as propose_plan_add).
+    const warmupAsked = warmupAskedIn(ctx.benWords);
+    const also = (a.alsoDays ?? []).map((d) => d.trim()).filter((d) => d !== '' && d.toLowerCase() !== a.day.trim().toLowerCase());
     const req: PlanDayEditRequest = {
       day: a.day.trim(),
+      ...(also.length === 0 ? {} : { alsoDays: [...new Set(also)] }),
       order: a.order === null ? null : a.order.map((x) => x.trim()),
-      changes: a.changes.map((c) => ({ exercise: c.exercise.trim(), sets: c.workingSets, reps: c.reps === null ? null : { min: Math.min(c.reps.min, c.reps.max), max: Math.max(c.reps.min, c.reps.max) }, targetRpe: c.targetRpe, main: c.main, load: namedLoadIn(c.load, ctx.benWords) })),
+      changes: a.changes.map((c) => ({
+        exercise: c.exercise.trim(),
+        sets: c.workingSets,
+        reps: c.reps === null ? null : { min: Math.min(c.reps.min, c.reps.max), max: Math.max(c.reps.min, c.reps.max) },
+        targetRpe: c.targetRpe,
+        main: c.main,
+        load: namedLoadIn(c.load, ctx.benWords),
+        ...(c.minutes == null || c.minutes <= 0 ? {} : { durationS: Math.max(1, Math.round(c.minutes * 60)) }),
+        ...(c.distanceM == null || c.distanceM <= 0 ? {} : { distanceM: c.distanceM }),
+        ...(c.warmup === false || (c.warmup === true && warmupAsked) ? { warmup: c.warmup } : {}),
+        ...(c.first === true ? { first: true as const } : {}),
+      })),
     };
     const r = await deps.prepare(req).catch((): PlanSwapPrepared => ({ kind: 'refused', line: 'Not proposed: the plan couldn’t be read just now.' }));
     if (r.kind === 'refused') {
@@ -208,7 +239,9 @@ export function createPlanDayEditExecutor(deps: PlanDayEditDeps): CoachExecutors
 
 /** Sent when `propose_plan_day_edit` is offered (a plan in use). */
 export const PLAN_DAY_EDIT_LINE =
-  'When the order of a plan day tires a later lift ("Push B is shoulder-led and bench comes after", "pre-fatigued"), or Ben asks for a day to be different from now on, call propose_plan_day_edit with a concrete fix for that day: reorder it (the tired lift earlier), or keep the order and make the later lift secondary (main false, fewer sets, a lower targetRpe), or swap it with propose_plan_swap. A new exercise in a day (at any place, with minutes for cardio) is propose_plan_add. YOUR DATA plan.inUse.days has each day’s exercises with their sets and reps. It is a proposal Ben applies with Undo: never say it changed, never answer in text only.';
+  'When the order of a plan day tires a later lift ("Push B is shoulder-led and bench comes after", "pre-fatigued"), or Ben asks for a day to be different from now on, call propose_plan_day_edit with a concrete fix for that day: reorder it (the tired lift earlier), or keep the order and make the later lift secondary (main false, fewer sets, a lower targetRpe), or swap it with propose_plan_swap. A new exercise in a day (at any place, with minutes for cardio) is propose_plan_add. YOUR DATA plan.inUse.days has each day’s exercises with their sets and reps (cardio and timed work: minutes).\n' +
+  'To change a cardio or timed exercise already in the plan ("set the bike to 8 min on leg days", "make the bike 10 min", "bike first", "it’s a warm-up"), call propose_plan_day_edit: day plus alsoDays for every other day it is in (one card for all of them), and in changes for that exercise minutes (and distanceM), first true to put it first, warmup true only when Ben calls it a warm-up (false to take the mark off), everything else null. Never tell Ben to edit it himself.\n' +
+  'It is a proposal Ben applies with Undo: never say it changed, never answer in text only.';
 
 /** Sent when `propose_plan_add` is offered (a plan in use). */
 export const PLAN_ADD_LINE =

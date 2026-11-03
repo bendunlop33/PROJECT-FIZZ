@@ -452,10 +452,10 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     needs: 'none',
     structural: false,
     turnKinds: CHAT,
-    plainLabel: 'Change the order or sets of one day of your plan, as a proposal you apply or undo',
+    plainLabel: 'Change the order, sets or cardio minutes of days of your plan, as a proposal you apply or undo',
     capabilitySection: 'when_you_ask',
     description:
-      'Change one day of the plan in use every week from now on ("Push B should be different, my shoulders are pre-fatigued for bench", "put bench first on Push B", "fewer sets of bench on Push B"). day: the plan day name from YOUR DATA plan.inUse.days. order: every exercise of that day once (catalogueIds), in the new order; null to keep it. changes: per exercise (catalogueId in that day) its workingSets, reps, targetRpe and main (false: a secondary lift after a pre-fatiguing one); null keeps that part. load: only a weight Ben named this turn, else null (the app plans loads from his history). Ben sees the day before and after and taps Apply; never say it changed. reason: one short line.',
+      'Change one day of the plan in use every week from now on ("Push B should be different, my shoulders are pre-fatigued for bench", "put bench first on Push B", "fewer sets of bench on Push B"). day: the plan day name from YOUR DATA plan.inUse.days. order: every exercise of that day once (catalogueIds), in the new order; null to keep it. changes: per exercise (catalogueId in that day) its workingSets, reps, targetRpe and main (false: a secondary lift after a pre-fatiguing one); null keeps that part. Cardio or timed exercises already in the day ("set the bike to 8 min on leg days"): minutes per set (and distanceM in metres), first true to put it first, warmup true only when Ben calls it a warm-up (false takes the mark off); alsoDays: the other plan days to change the same way in this one proposal (e.g. Legs B with day Legs A), else null; never with order. load: only a weight Ben named this turn, else null (the app plans loads from his history). Ben sees each day before and after and taps Apply; never say it changed, and never tell him to edit the plan himself. reason: one short line.',
   },
   {
     // (Ben, 20 Oct) Offered only while Lift targets is on (the app wires the executor then). Applies with Undo

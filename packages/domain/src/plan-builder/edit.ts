@@ -727,7 +727,10 @@ export function pbDayAsWorkout(day: PlanDayDraft, template: readonly RoutineExer
     .sort((a, b) => a.order - b.order)
     .forEach((e, order) => {
       const own = day.plan.slots.find((x) => x.exerciseId === e.exerciseId && !used.has(x.slotKey));
-      if (own !== undefined) {
+      // (Ben, 3 Nov) A cardio or timed row shows the template's own time (what Ben or the coach set), its mark kept.
+      const timed = e.setTemplates.some((t) => t.setType !== 'warmup') && e.setTemplates.every((t) => t.setType === 'warmup' || (t.targetReps === null && (t.targetDurationS !== null || t.targetDistanceM != null)));
+      const warm = e.warmup === true ? { warmup: true as const } : {};
+      if (own !== undefined && !timed) {
         used.add(own.slotKey);
         const n = Math.max(1, Math.min(10, workingOf(e.setTemplates)));
         slots.push({ ...own, order, supersetGroup: e.supersetGroup, setTemplates: n === pbSlotSets(own) ? own.setTemplates : pbResizeSlot(own.setTemplates, n) });
@@ -740,7 +743,8 @@ export function pbDayAsWorkout(day: PlanDayDraft, template: readonly RoutineExer
       // Its load is the workout's own (`Auto`, from what Ben lifts): no plan load to show, and not bodyweight unless it is.
       const u = unitOf(e.exerciseId);
       const meta = u === null ? {} : { builder: { repRange: setTemplates.find((t) => t.reps !== null)?.reps ?? { min: 8, max: 12 }, unit: u.unit, convention: u.convention, source: 'none' as const, anchorE1rm: null, startLight: null } };
-      slots.push({ slotKey: deriveId(`plan-day-workout:${e.id}`), exerciseId: e.exerciseId, catalogueId: e.exerciseId, order, main: e.main === true, supersetGroup: e.supersetGroup, setTemplates, checkedOn: null, ...meta });
+      if (own !== undefined) used.add(own.slotKey);
+      slots.push({ slotKey: own?.slotKey ?? deriveId(`plan-day-workout:${e.id}`), exerciseId: e.exerciseId, catalogueId: own?.catalogueId ?? e.exerciseId, order, main: e.main === true, supersetGroup: e.supersetGroup, setTemplates, checkedOn: null, ...meta, ...warm });
     });
   return slots.length === 0 ? day : { ...day, plan: { ...day.plan, slots } };
 }

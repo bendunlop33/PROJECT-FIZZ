@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { PB_BLOCK_COPY, PB_EDIT_COPY, planTabChips, pbWeekdayName, type PbBlockDay } from '@fizz/domain';
+import { PB_BLOCK_COPY, PB_EDIT_COPY, planTabChips, pbRowLine, pbWeekdayName, type PbBlockDay } from '@fizz/domain';
 
 import type { PlanBlockOverview } from '../../services/plan-services';
 import { useTheme } from '../../theme';
@@ -152,7 +152,7 @@ function DayCard({
             <View
               key={r.key}
               accessible
-              accessibilityLabel={`${r.superset === null ? '' : `${r.superset}, superset, `}${r.name}, ${r.line}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
+              accessibilityLabel={`${r.superset === null ? '' : `${r.superset}, superset, `}${r.name}, ${pbRowLine(r)}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
               style={{ minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
             >
               {r.kg === null ? (
@@ -161,7 +161,7 @@ function DayCard({
                     {r.superset === null ? r.name : `${r.superset}  ${r.name}`}
                   </AppText>
                   <AppText variant="label" color="text.secondary" numeric>
-                    {`${r.line}${r.est ? ' est.' : ''}`}
+                    {`${pbRowLine(r)}${r.est ? ' est.' : ''}`}
                   </AppText>
                 </View>
               ) : (
@@ -170,7 +170,7 @@ function DayCard({
                     {r.superset === null ? r.name : `${r.superset}  ${r.name}`}
                   </AppText>
                   <AppText variant="callout" color="text.secondary" numeric>
-                    {r.line}
+                    {pbRowLine(r)}
                   </AppText>
                   <AppText variant="callout" numeric style={{ minWidth: 64, textAlign: 'right' }}>
                     {`${r.kg}${r.est ? ' est.' : ''}`}

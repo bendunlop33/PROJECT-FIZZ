@@ -11,6 +11,7 @@ import {
   addDays,
   assembleTodayDraft,
   breakdownUnit,
+  builderExtraOf,
   builderInfoOf,
   builderSetupOf,
   builderUsable,
@@ -109,6 +110,7 @@ import {
   type AnchorLoad,
   type BuilderContext,
   type BuilderExerciseInfo,
+  type BuilderExtraInfo,
   type BuilderFitStep,
   type BuilderGroupName,
   type BuilderTimeFit,
@@ -856,6 +858,11 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       }
       return infoCache.get(id) ?? null;
     };
+    // (Ben, 3 Nov: the day sheet left out the bike) Cardio and timed exercises (no builder group): drafted as timed slots.
+    const extra = (id: string): BuilderExtraInfo | null => {
+      const e = exercises.get(id);
+      return e === undefined ? null : builderExtraOf(e);
+    };
     const split = training?.split ?? (plan !== null ? splitInUse(training) : null);
     // (Ben, 27 Oct: "I set the plan to be 45 mins") A plan day's length is the plan's own for that day (the version its
     // workout was last made to match), before Profile's usual length.
@@ -889,7 +896,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
             return { ...r, exercises: made.rows };
           });
     const skippedDays = plan === null || changeWeek === null ? new Set<number>() : pbSkipsOf(plan, changeWeek);
-    const planDays = plan === null ? [] : todayPlanDays({ planId: plan.id, templates: weekTemplates, split, mainLifts: training?.mainLifts, info, defaultMinutes: training?.sessionMinutes ?? 60, planMinutesOf });
+    const planDays = plan === null ? [] : todayPlanDays({ planId: plan.id, templates: weekTemplates, split, mainLifts: training?.mainLifts, info, extra, defaultMinutes: training?.sessionMinutes ?? 60, planMinutesOf });
     // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
     const status: TodaySessionStatus = plan === null || planDays.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan';
 
@@ -1006,6 +1013,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const fallbackLoad = (id: string): SlotLoadInput => ({ mainFocus, unit: p.preferredUnit, convention: exercises.get(id)?.defaultLoadConvention ?? 'total', equipment: null, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: null, painCap: null, ...(deload ? { deload: true as const } : {}) });
     const ctx: BuilderContext = {
       info,
+      extra,
       loads: (id) => loads.get(id) ?? fallbackLoad(id),
       newKey: (id) => deriveId(`today-slot:${today}:${id}`),
       // (Ben, 23 Oct) The plan's Warm-ups setting (Full / Short / None), as Your workout and Start plan them.
@@ -1293,8 +1301,9 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
    * gym has and isn't pain-flagged.
    */
   function storedOpts(data: TodaySessionData): { planAccessories: TodayControls['accessories']; usable: (id: string) => boolean } {
-    const { info, here, pained } = data.internal;
-    return { planAccessories: data.goal === 'muscle' || data.goal === 'both' ? 'varied' : 'focused', usable: (id) => info(id) !== null && here(id) && !pained(id) };
+    const { info, here, pained, ctx } = data.internal;
+    // (Ben, 3 Nov) A cardio or timed row (no builder group) is usable too, as Your workout's `usable`.
+    return { planAccessories: data.goal === 'muscle' || data.goal === 'both' ? 'varied' : 'focused', usable: (id) => (info(id) !== null || ctx.extra?.(id) != null) && here(id) && !pained(id) };
   }
 
   function poolFor(data: TodaySessionData, t: TodayTemplate) {
@@ -1327,7 +1336,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const n = coach.nudge;
     const offer = n?.kind === 'line' ? n.offer : null;
     const changes = offer === null ? 0 : offer.proposal.lines.length;
-    const list = workoutListRows(w, data.internal.info, unit, { pained: data.internal.pained, ...(changes > 0 && offer !== null ? { coach: offer.proposal.topLoadsAfter ?? {} } : {}), ...(changed === undefined || changed.length === 0 ? {} : { estimateFor: new Set(changed) }) });
+    const list = workoutListRows(w, data.internal.info, unit, { pained: data.internal.pained, extraName: (id) => data.internal.ctx.extra?.(id)?.name ?? null, ...(changes > 0 && offer !== null ? { coach: offer.proposal.topLoadsAfter ?? {} } : {}), ...(changed === undefined || changed.length === 0 ? {} : { estimateFor: new Set(changed) }) });
     return { list, listTarget: workoutListTargetHeader(unit, w.blocks.flatMap((b) => b.slots.map((x) => x.convention))), coachChanges: changes };
   }
 
@@ -1800,7 +1809,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     if (day === undefined || t === undefined || c === undefined) return null;
     const { ctx, info } = data.internal;
     const timer = (exercises: readonly RoutineExercise[]): number => {
-      const edited = todayTemplateWithExercises(t, exercises, info, day.splitDayId);
+      const edited = todayTemplateWithExercises(t, exercises, info, day.splitDayId, ctx.extra);
       const controls = { ...c, mainLiftExerciseId: edited.mainLiftExerciseId, abs: null, supersets: edited.supersetsPlan, mix: 0 };
       const d = assembleTodayDraft({ day: { ...day, templates: [edited] }, controls, ctx, pool: poolFor(data, edited), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day), ...storedOpts(data) });
       return d === null ? 0 : estimateBuilderSeconds(d.unfitted, ctx);

@@ -61,7 +61,7 @@ describe('the plan day row', () => {
     const day = oneExerciseChange(rows, { kind: 'add', rowId: id(994), fromExerciseId: null, toExerciseId: BIKE.id, afterRowId: null, first: true, sets: 1, durationS: 480, warmup: true }, measurementOf);
     const d = planDayFromTemplates({ dayN: 1, of: 3, gymName: null, routine: { exercises: day }, exerciseOf: (x) => ALL.get(x) ?? null, unit: 'kg', history: () => [], targetsHit: () => false });
     expect(d.rows.map((r) => [r.name, r.line, r.sub])).toEqual([
-      ['Exercise bike', '1 × 8:00', 'Warm-up'],
+      ['Exercise bike', '8 min', 'Warm-up'],
       ['Back squat', expect.any(String), null],
     ]);
   });
