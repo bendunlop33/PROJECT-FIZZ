@@ -13,6 +13,7 @@ import {
   lineLimit,
   minimumScaleFactor,
   monospacedDigit,
+  multilineTextAlignment,
   padding,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
@@ -44,6 +45,8 @@ import type { WorkoutActivityProps } from './controller';
  * Device-checked: the probe's countdown (build with the App Group fix). Not
  * yet device-checked: this layout (Spacer, sizes) and the update path; see
  * docs/device-tests/2026-10-12-live-activity-rest.md.
+ *
+ * (Ben, 3 Nov) The banner's countdown is 48pt again, right of the text lines in a 112pt right-aligned column.
  *
  * Sizes: 56pt banner / 44pt expanded is the build's answer to Ben's "a bit
  * bigger"; the spec's `type.liveCountdown` still says 28/24pt and waits for
@@ -86,10 +89,18 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
   const numeralWeight = dim ? 'ultraLight' : 'light';
   const icon = p.state === 'paused' ? 'pause.circle.fill' : p.state === 'ready' ? 'figure.strengthtraining.traditional' : 'timer';
   const iconColour = p.state === 'paused' ? '#F2B84B' : '#EDE5DA';
-  // (Ben, 1 Nov) Top right of line 1, smaller than before (was 56pt beside the lines).
-  const corner = counting ? (
-    <Text timerInterval={range} countsDown modifiers={[font({ size: 28, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.6), frame({ minWidth: 64 })]} />
-  ) : p.side !== '' ? (
+  // (Ben, 3 Nov, build 534: "the timer is now tiny") The countdown is big again, in its own fixed-width column on the
+  // right of the text lines, right-aligned, so it never squeezes the exercise name. A timer Text otherwise takes all
+  // the width it's offered (that is what pushed it to the middle of line 1), hence the fixed frame.
+  const bigTimer = counting ? (
+    <Text
+      timerInterval={range}
+      countsDown
+      modifiers={[font({ size: 48, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), multilineTextAlignment('trailing'), lineLimit(1), minimumScaleFactor(0.5), frame({ width: 112, alignment: 'trailing' })]}
+    />
+  ) : null;
+  // Not counting: the side text (e.g. Ready's set count) stays top right of line 1.
+  const corner = counting ? null : p.side !== '' ? (
     <Text modifiers={[font({ size: 17, weight: 'semibold' }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.side}</Text>
   ) : null;
 
@@ -114,17 +125,20 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
   return {
     banner: (
       <VStack alignment="leading" spacing={8} modifiers={[padding({ horizontal: 18, vertical: controls === null ? 14 : 12 }), activityBackgroundTint('#0D0C0B')]}>
-        <VStack alignment="leading" spacing={4} modifiers={[accessibilityElement('ignore'), accessibilityLabel(p.a11y)]}>
-          <HStack alignment="center" spacing={6}>
-            <Image systemName={icon} color={iconColour} />
-            <Text modifiers={[font({ size: 17, weight: 'semibold' }), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.title}</Text>
-            <Spacer />
-            {corner}
-          </HStack>
-          {p.line1 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line1}</Text> : null}
-          {p.line2 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line2}</Text> : null}
-          {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line3}</Text> : null}
-        </VStack>
+        <HStack alignment="center" spacing={10} modifiers={[accessibilityElement('ignore'), accessibilityLabel(p.a11y)]}>
+          <VStack alignment="leading" spacing={4}>
+            <HStack alignment="center" spacing={6}>
+              <Image systemName={icon} color={iconColour} />
+              <Text modifiers={[font({ size: 17, weight: 'semibold' }), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.title}</Text>
+              <Spacer />
+              {corner}
+            </HStack>
+            {p.line1 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line1}</Text> : null}
+            {p.line2 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line2}</Text> : null}
+            {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1), minimumScaleFactor(0.7)]}>{p.line3}</Text> : null}
+          </VStack>
+          {bigTimer}
+        </HStack>
         {controls}
       </VStack>
     ),
