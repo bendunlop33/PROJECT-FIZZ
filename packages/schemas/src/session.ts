@@ -547,6 +547,14 @@ export const GymChangeSchema = z.object({
     .array(z.object({ id: IdSchema, version: z.int().min(1) }))
     .max(500)
     .optional(),
+  /**
+   * (Ben, 7 Nov) `change` only: the whole workout moved to the new gym. Done sets'
+   * rows moved to the new gym's items too (values unchanged) wherever it has one in
+   * the same unit and convention, and the workout reads as at one gym (no
+   * `Main → Battersea` route). Absent on older switches, where done sets stayed on
+   * the old gym's items.
+   */
+  wholeWorkout: z.literal(true).optional(),
   /** `change` only: every exercise row and moved set as they were before. */
   before: z
     .object({

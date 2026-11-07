@@ -744,6 +744,36 @@ export function TodayScreen() {
     }, [services, healthShows, dataVersion]),
   );
 
+  // (Ben, 7 Nov; ADR 0041) Today opened: one quiet location fix. At another saved gym (within 200 m) before Start,
+  // Today's gym becomes it, `At Battersea · Undo`. No location saved, no permission, no fix: nothing at all.
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void services.gymLocation.checkToday().then(
+        (r) => {
+          if (!alive || r.kind !== 'switched') return;
+          changed();
+          reload();
+          setToast({
+            text: `At ${r.gymName}`,
+            action: 'Undo',
+            onAction: () => {
+              setToast(null);
+              void services.gymLocation.undoToday(r).then(() => {
+                changed();
+                reload();
+              });
+            },
+          });
+        },
+        () => undefined,
+      );
+      return () => {
+        alive = false;
+      };
+    }, [services, changed, reload]),
+  );
+
   // (Option C) The done card's `New best` count: the Summary's own definition (tracked lifts' new bests).
   const doneId = data.state === 'ready' && data.value.view?.main.kind === 'done_today' ? data.value.view.main.sessionId : null;
   const [doneBests, setDoneBests] = useState<{ id: string; n: number } | null>(null);

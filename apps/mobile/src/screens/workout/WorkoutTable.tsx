@@ -17,7 +17,7 @@ import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { ROUND_TABLE_KEYBOARD } from '../../workout/keyboard';
 import type { MenuAnchor } from '../../workout/exercise-menu';
-import { GymPartDivider, SnapNote } from './GymSwitch';
+import { SnapNote } from './GymSwitch';
 import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
 import { dropIndex } from '../../ui/drag-logic';
 
@@ -453,7 +453,6 @@ function ExerciseBlock({
                 onLayout={onRowLaidOut}
               >
                 <DragItem dragKey={r.setId} draggable={movable.includes(r.setId)}>
-                  {r.row.partStart !== null ? <GymPartDivider label={r.row.partStart} /> : null}
                   <SwipeRow enabled onDelete={() => { actions.del(r); }}>
                     <OpenRowContext.Provider value={{ row: r, loadHeader: ex.loadHeader, cols, onCopyLast: p.onCopyLast === undefined ? undefined : () => { actions.copyLast(r.setId); }, onRir: p.onRir === undefined ? undefined : () => { actions.rir(r.setId); } }}>{p.openRow}</OpenRowContext.Provider>
                   </SwipeRow>
@@ -547,7 +546,6 @@ const SetRowShell = memo(function SetRowShell(s: ShellProps) {
       onLayout={s.onLaidOut}
     >
       <DragItem dragKey={r.setId} draggable={s.draggable}>
-        {r.row.partStart !== null ? <GymPartDivider label={r.row.partStart} /> : null}
         <SwipeRow
           enabled={!r.skipped}
           onDelete={() => {

@@ -75,8 +75,8 @@ import { stepperRowTiles } from '../../workout/tile-fit';
 import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
 import { logRefusal, reloadsAfterRefusal } from '../../workout/log-refusal';
 import { FinishSheet } from './FinishSheet';
-import { GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
-import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
+import { GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
+import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedNowToast, gymOfferText, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
 import { TIME_FIT_COPY, timeFitSheet, type TimeFitSheetView } from '../../workout/time-fit';
@@ -199,6 +199,10 @@ export function WorkoutScreen() {
   const [gymSheet, setGymSheet] = useState<GymChoice[] | null | 'closed'>('closed');
   const [switchCard, setSwitchCard] = useState<OpenSwitchCard | null>(null);
   const [checkingGym, setCheckingGym] = useState<string | null>(null);
+  /** (Ben, 7 Nov) `You're at Battersea · Switch`: a location fix put Ben at another saved gym mid-workout (never switched silently). */
+  const [gymOffer, setGymOffer] = useState<{ gymId: string; gymName: string; opId: string } | null>(null);
+  /** Log ignores taps while a switch is written and shown (review M2), card or not. */
+  const switchBlocksLog = logBlockedBySwitch(switchCard) || checkingGym !== null;
   const [reviewOpen, setReviewOpen] = useState(false);
   /** The `New best · …` line for the set just logged (Summary's definition, Ben 26 Oct), shown under the saved line. */
   const [record, setRecord] = useState<{ setId: string; text: string; accessibilityLabel: string } | null>(null);
@@ -558,6 +562,23 @@ export function WorkoutScreen() {
         showToast({ icon: 'info.circle', text: 'Couldn’t check that gym.' });
       });
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id, checkGym?.nonce]);
+
+  // (Ben, 7 Nov; ADR 0041) The workout opened (Start, Resume): one quiet location fix. At another saved gym it is
+  // offered (`You're at Battersea · Switch`), never switched silently. No match, permission or fix: nothing.
+  const openedSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
+  useEffect(() => {
+    if (openedSessionId === null) return;
+    let alive = true;
+    void services.gymLocation.checkWorkout(openedSessionId).then(
+      (offer) => {
+        if (alive && offer !== null) setGymOffer({ ...offer, opId: newUuid() });
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [services, openedSessionId]);
 
   const view = useMemo(() => (data === 'loading' || data === null ? null : services.workout.view(data, now, edits)), [services, data, now, edits]);
   /** False until the workout first draws: nothing animates on screen entry (premium-feel §4.3). */
@@ -1031,7 +1052,7 @@ export function WorkoutScreen() {
   }
 
   async function log() {
-    if (!focus || guard || busy || logBlockedBySwitch(switchCard) || focus.logLabel === null) return;
+    if (!focus || guard || busy || switchBlocksLog || focus.logLabel === null) return;
     // F5: Log closes the number pad; the rest screen shouldn't open under it.
     Keyboard.dismiss();
     if (correction !== null) void saveCorrection();
@@ -2004,11 +2025,40 @@ export function WorkoutScreen() {
 
   function chooseGym(g: GymChoice) {
     setGymSheet('closed');
-    if (onGymChosen(session.gymId, g.id) === 'dismiss') {
-      setSwitchCard(null);
-      return;
+    setSwitchCard(null);
+    if (onGymChosen(session.gymId, g.id) === 'dismiss') return;
+    void switchGymNow(g.id, g.name, newUuid());
+  }
+
+  /**
+   * (Ben, 7 Nov; ADR 0041) Picking a gym (or `Switch` on `You're at …`) moves the whole workout there now: done
+   * values stay, every set not done yet is fitted to its kit, `At Battersea · 3 sets fitted · Undo`.
+   */
+  async function switchGymNow(gymId: string, gymName: string, opId: string) {
+    if (checkingGym !== null) return;
+    const labelBefore = view?.primary.label ?? '';
+    setCheckingGym(gymName);
+    setGymOffer(null);
+    try {
+      const r = await services.gymSwitch.switchNow(session.id, gymId, opId);
+      if (!r.ok) {
+        showToast({ icon: 'info.circle', text: r.message });
+        void reload();
+        return;
+      }
+      // GS12: an unsaved edit the new equipment can't make is replaced by the new target.
+      const replaced = r.outcome.aggregate.session.gymChanges?.at(-1)?.draftsReplaced ?? [];
+      if (edits !== null && (replaced.includes(edits.setId) || !editFitsCurrentEquipment(r.outcome.aggregate, edits.setId, edits.values))) setEdits(null);
+      changed();
+      const fresh = await reload();
+      const after = fresh ? services.workout.view(fresh, clockNow(), null).primary.label : labelBefore;
+      if (logGuardAfterSwitch(labelBefore, after)) armGuard();
+      showToast({ text: switchedNowToast(r.gymName, r.fitted), action: 'Undo', onAction: () => void undoSwitch(r.actionId) });
+    } catch {
+      showToast({ icon: 'info.circle', text: 'Couldn’t switch gym. Try again.' });
+    } finally {
+      setCheckingGym(null);
     }
-    void proposeGym(g.id, g.name);
   }
 
   async function applySwitch(card: OpenSwitchCard) {
@@ -2394,6 +2444,15 @@ export function WorkoutScreen() {
       <StatusLine icon="ellipsis" tone="progress" text={`Checking ${checkingGym}’s equipment…`} />
     ) : switchCard ? (
       <GymSwitchCard view={switchCardView(switchCard, loaded.aggregate)} onButton={onCardButton} />
+    ) : gymOffer !== null && gymOffer.gymId !== session.gymId ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: theme.target.min.height }}>
+        <Icon name="location" />
+        <View style={{ flex: 1 }}>
+          <AppText variant="body">{gymOfferText(gymOffer.gymName)}</AppText>
+        </View>
+        <TextButton label="Not now" tone="secondary" onPress={() => { setGymOffer(null); }} />
+        <TextButton label="Switch" accessibilityLabel={`Switch this workout to ${gymOffer.gymName}`} onPress={() => void switchGymNow(gymOffer.gymId, gymOffer.gymName, gymOffer.opId)} />
+      </View>
     ) : null;
 
   function adjustRest(deltaS: number) {
@@ -2864,7 +2923,6 @@ export function WorkoutScreen() {
         </View>
         {focus.rows.map((r, i) => (
           <View key={r.setId}>
-            {r.partStart !== null ? <GymPartDivider label={r.partStart} /> : null}
             <SetRowLine
               status={r.status}
               number={r.number}
@@ -3106,7 +3164,7 @@ export function WorkoutScreen() {
         })
       : null;
   // (Ben, 27 Oct; redesign §E1) The keypad bar's last key: `Log ✓` on the open row, `Done` on a done row's correction.
-  const keypadCommit = keypadCommitKey({ row: barCell?.row ?? 'done', logLabel: focus?.logLabel ?? null, canLog: focus !== null && !busy && !guard && !logBlockedBySwitch(switchCard), missing: focus?.missing ?? null });
+  const keypadCommit = keypadCommitKey({ row: barCell?.row ?? 'done', logLabel: focus?.logLabel ?? null, canLog: focus !== null && !busy && !guard && !switchBlocksLog, missing: focus?.missing ?? null });
   // (Ben, 26 Oct) The keypad bar's `RIR` key: the set being typed in (the open row, or a done row's correction).
   const barSetId = barCell === null ? null : barCell.row === 'open' ? (focus?.setId ?? null) : (doneEdit?.setId ?? null);
   const barRirSetId = barSetId !== null && rirItem(barSetId).length > 0 ? barSetId : null;
@@ -3471,7 +3529,7 @@ export function WorkoutScreen() {
           <SetClockBar text={setClock} paused={view.paused} slim={keypadOpen} />
         ) : null}
         {/* v3 §1.6: the shared coach ask bar (✦ + on-device mic) + Log; the coach sheet shows its own honest status. On the keypad, or with the cell bar under it: no home-indicator room (0.2; the cell bar takes it). */}
-        {chrome.actionBar ? <ActionBar talk={<CoachAskBar icons page="active" reach={coachReach} speech={speech} onOpen={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} /> : null}
+        {chrome.actionBar ? <ActionBar talk={<CoachAskBar icons page="active" reach={coachReach} speech={speech} onOpen={openCoach} />} primary={barPrimary} guard={guard || switchBlocksLog} keypadOpen={keypadOpen || cellBar !== null} /> : null}
         {/* Ben, 20 Oct: the cell is the field; its − / +, Next › and Done sit on the keypad, under Log. */}
         {cellBar !== null ? (
           <CellKeypadBarView
@@ -3546,7 +3604,7 @@ export function WorkoutScreen() {
                 barPrimary.onPress();
               },
             }}
-            guard={guard || logBlockedBySwitch(switchCard)}
+            guard={guard || switchBlocksLog}
             keypadOpen={keypadOpen}
           />
         </View>

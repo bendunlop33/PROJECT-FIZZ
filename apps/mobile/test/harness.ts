@@ -12,6 +12,7 @@ import { createLiveActivityController, type LiveActivityPort } from '../src/live
 import { createExpoDatabaseHost } from '../src/data/expo-driver';
 import { createPersonalFiles, type ContainerFileOps } from '../src/device/personal-files';
 import type { AppServices } from '../src/services/app-services';
+import type { LocationPort } from '../src/services/gym-location-service';
 import { startApp, type StartupDeps, type StartupOutcome } from '../src/services/startup';
 import { fakeHostDeps } from './fake-expo-sqlite';
 
@@ -42,9 +43,9 @@ export interface Harness {
   restAlerts: ReturnType<typeof createRestAlertController> | null;
   now: () => ZonedTimestamp;
   /** `extra.backgroundGate`: when the launch's background work starts (default: at once; the phone waits, `afterLaunch`). */
-  launch: (extra?: { backgroundGate?: () => Promise<void>; /** (ADR 0035) A fake HealthKit. */ health?: NonNullable<StartupDeps['health']>; /** A safe start (the last run never settled). */ safe?: boolean }) => Promise<Extract<StartupOutcome, { kind: 'ready' }>>;
+  launch: (extra?: { backgroundGate?: () => Promise<void>; /** (ADR 0035) A fake HealthKit. */ health?: NonNullable<StartupDeps['health']>; /** A safe start (the last run never settled). */ safe?: boolean; /** (ADR 0041) A fake when-in-use location. */ location?: LocationPort | null }) => Promise<Extract<StartupOutcome, { kind: 'ready' }>>;
   /** Launch and return whatever startup returned (`interruptedDelete` as Root passes it). */
-  start: (extra?: { interruptedDelete?: 'finish' | 'leave'; /** Background backups wait for it (main's idle rule). */ idle?: () => Promise<void>; backgroundGate?: () => Promise<void>; health?: NonNullable<StartupDeps['health']>; safe?: boolean }) => Promise<StartupOutcome>;
+  start: (extra?: { interruptedDelete?: 'finish' | 'leave'; /** Background backups wait for it (main's idle rule). */ idle?: () => Promise<void>; backgroundGate?: () => Promise<void>; health?: NonNullable<StartupDeps['health']>; safe?: boolean; location?: LocationPort | null }) => Promise<StartupOutcome>;
   /**
    * Every file in the app's container, by path: backups, the backup record,
    * the data ledger, other Documents files, tmp, Caches, and every SQLite

@@ -78,6 +78,29 @@ export function GymDetailScreen() {
       });
   }
 
+  /** (Ben, 7 Nov; ADR 0041) `Use current location` / `Clear`: one fix saved on the gym, so Today can pick it. */
+  function setLocation(clear: boolean) {
+    if (busy) return;
+    setBusy(true);
+    void (clear ? services.gymLocation.clear(gymId) : services.gymLocation.setFromCurrentLocation(gymId))
+      .then((r) => {
+        if (!r.ok) {
+          setToast({ text: r.message });
+          return;
+        }
+        haptic('commit');
+        changed();
+        reload();
+        setToast({ text: clear ? 'Location cleared' : 'Location set' });
+      })
+      .catch(() => {
+        setToast({ text: 'Couldn’t save. Try again.' });
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
   function makeFullGym() {
     if (makeFull === null) return;
     if (!makeFull.needsDumbbellStep) {
@@ -139,6 +162,19 @@ export function GymDetailScreen() {
           ))}
         </Group>
       )}
+      {services.gymLocation.available() ? (
+        <Group>
+          {gym.location === undefined ? (
+            <Row title="Use current location" icon="location" disabled={busy} onPress={() => { setLocation(false); }} />
+          ) : (
+            <Row
+              title="Location set"
+              icon="location.fill"
+              trailing={<TextButton label="Clear" disabled={busy} onPress={() => { setLocation(true); }} />}
+            />
+          )}
+        </Group>
+      ) : null}
       <Group>
         {makeFull !== null ? <Row title="Make full gym" icon="sparkles" disabled={busy} onPress={makeFullGym} /> : null}
         <Row title="Add equipment" icon="plus" onPress={addEquipment} />

@@ -12,7 +12,7 @@ import { gymChipLabel, reviewSheetView, type CardButton, type OpenSwitchCard, ty
 /**
  * The gym switch's pieces on the workout screen (gym-switch.md §2): the gym
  * chip, the switcher sheet, the card in the coach slot, the review sheet,
- * `SnapNote` and `GymPartDivider` (§9; specified there because
+ * `SnapNote` (§9; specified there because
  * design-system.md is being edited elsewhere). Every word comes from the
  * domain proposal or `switchCardView`; nothing here decides a load.
  */
@@ -119,22 +119,6 @@ export function SnapNote({ note, action, muted = false }: { note: NoteLine; acti
         {note.text}
       </AppText>
       {action ? <TextButton label={action.label} onPress={action.onPress} /> : null}
-    </View>
-  );
-}
-
-/** `GymPartDivider` (§9): `── At Hotel · Lisbon ──` between an exercise's parts done at different gyms. */
-export function GymPartDivider({ label }: { label: string }) {
-  const theme = useTheme();
-  const rule = { flex: 1, height: theme.dividerWidth, backgroundColor: theme.colors['border.divider'] };
-  return (
-    <View accessible accessibilityRole="header" accessibilityLabel={`Sets from here on ${label.replace(/^At /, 'at ').replaceAll(' · ', ' ')}`} style={{ minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-      <View style={rule} />
-      <Icon name="building.2" size={14} />
-      <AppText variant="label" color="text.secondary">
-        {label}
-      </AppText>
-      <View style={rule} />
     </View>
   );
 }

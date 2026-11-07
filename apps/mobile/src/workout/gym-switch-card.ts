@@ -182,6 +182,19 @@ export function switchedToast(p: GymSwitchProposal): string {
   return p.card.changesTargets ? `Switched to ${p.toGymName}. Remaining sets updated for today.` : `Switched to ${p.toGymName}. No targets changed.`;
 }
 
+/**
+ * (Ben, 7 Nov) After picking a gym mid-workout (or `Switch` on `You're at …`): the whole workout moved there.
+ * `At Battersea · 3 sets fitted`; just `At Battersea` when no target changed. The toast adds `Undo`.
+ */
+export function switchedNowToast(gymName: string, fitted: number): string {
+  return fitted === 0 ? `At ${gymName}` : `At ${gymName} · ${String(fitted)} ${fitted === 1 ? 'set' : 'sets'} fitted`;
+}
+
+/** (Ben, 7 Nov) A location fix put Ben at another saved gym during a workout: offered, never switched silently. */
+export function gymOfferText(gymName: string): string {
+  return `You’re at ${gymName}`;
+}
+
 export function undoneToast(gymName: string): string {
   return `Back at ${gymName}. Remaining sets restored.`;
 }

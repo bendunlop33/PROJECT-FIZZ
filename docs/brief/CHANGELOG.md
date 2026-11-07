@@ -1371,3 +1371,17 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Coach:** the Last 7 days line for one reads `Strength · 50 min · Apple Health (Garmin) · counts as a session, no sets`.
 - **Health history:** workouts were read only as far back as `How far back` (default 8 weeks). The first workouts read of each app run now goes back at least a year (`WORKOUT_BACKFILL_DAYS`, read-only, a replace of that window, so idempotent); later reads that run read the window, and older samples stay stored. `All` still reads everything.
 - **No UI change, no migration.** Open: not run on Ben's iPhone; the weekly review's `week_sessions` count (aim basis) still counts app workouts only, so it can read one fewer than Consistency in a week with a Garmin-only session (a review-fact schema change; for Ben).
+
+## 2026-11-07: A gym change mid-workout applies to the whole workout (Ben, 7 Nov)
+
+- **Ben's report:** after changing gym to Battersea mid Push A, incline dumbbell press read sets 1–2 `Main gym`, a divider `At Battersea`, sets 3–4. "If I change gym location mid go it should apply to everything."
+- **Now:** picking a gym in the workout moves the whole workout there at once (he asked: rule 3), toast `At Battersea · 3 sets fitted · Undo`. Done sets keep their values exactly (rule 2) and their gym follows: no divider, no `Main gym` caption, and Summary, Past workouts and Repeat read Battersea only. Every pending set of every exercise is fitted to Battersea's kit (rule 4). Undo restores the gym and every target; the same tap twice is one switch; it survives a force-close (one transaction).
+- **Kept honest:** done sets stay recorded on their old item when the new gym has none for them (bench at a dumbbell-only gym), it's in another unit, or it couldn't make the load they record; that is invisible in the workout. `Use changes today` keeps its card. ADR 0041 (amends ADR 0019 GS4/GS6).
+- **No migration** (an optional `wholeWorkout` flag on the gym-change record). Open: not run on Ben's iPhone.
+
+## 2026-11-07: Pick the gym from GPS (Ben, 7 Nov: "can we do it based on GPS?")
+
+- **Setting:** Profile › Gyms › a gym › `Use current location` saves one fix on the gym (`Location set` · `Clear`). The when-in-use permission is asked only on that first tap; never background location, region monitoring or "Always".
+- **Using:** opening Today, with a gym located and permission granted, takes one quick low-power fix. Within ~200 m of a saved gym that isn't Today's gym, before Start, Today switches to it: `At Battersea · Undo`. During a workout it only offers: `You’re at Battersea` · `Switch` (which is the whole-workout switch above). No match, no fix, a fix worse than 500 m, a tie, or no permission: nothing, no error copy.
+- **Your data:** the location is stored on the gym (lat/lon + accuracy in metres), in backups and restore, never sent anywhere; the coach never sees coordinates.
+- **Stack:** `expo-location` 57.0.20 (Expo SDK 57's bundled version), when-in-use usage string only, no new entitlement (ADR 0041). Hidden when the build has no location module. Needs a new IPA; not run on Ben's iPhone.
