@@ -9,7 +9,7 @@ import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, StepperTileRow, TextButton, TEXT_PRESSED_OPACITY, type SymbolName } from '../../ui';
 import { CARDIO_TIME_FORMAT } from '../../ui/number-text';
 import { cellInputA11y, editsInPlace, loadCellA11y, runRowTap, valueCellA11y, type CellField, type RowPart, type RowTap, type TileId } from '../../workout/table';
-import { REVEAL_CONTEXT, REVEAL_MARGIN, revealOffset, revealSetId, type Round, type RoundExercise, type RoundRow } from '../../workout/rounds';
+import { REVEAL_CONTEXT, REVEAL_MARGIN, revealOffset, revealSetId, warmupAddAfter, type Round, type RoundExercise, type RoundRow } from '../../workout/rounds';
 import { setColumns, widestText, type SetColumns } from '../../workout/set-columns';
 import { claimsDrag, swipeIntent } from '../../workout/set-pager';
 import { DONT_COUNT_LABEL, setSheetMenuLabel } from '../../workout/set-edit';
@@ -82,6 +82,12 @@ export interface RoundPageProps {
   /** A tap on the card outside the rows: closes any cell editor. */
   onTapElsewhere: () => void;
   onAddSet: (sessionExerciseId: string) => void;
+  /**
+   * (Ben, 7 Nov) `＋ Warm-up` as a quiet row under the exercise's last warm-up (or above set 1): shown only when
+   * `canAddWarmup` says the write works (`canAddWarmupNow`). Absent: no row.
+   */
+  canAddWarmup?: (sessionExerciseId: string) => boolean;
+  onAddWarmup?: (sessionExerciseId: string) => void;
   onWhy: (exerciseIndex: number) => void;
   /**
    * (Ben, 1 Nov, A) The exercise's menu: `⋯`, or a long press on its header. `anchor`: the header in window
@@ -423,6 +429,9 @@ function ExerciseBlock({
   const movable = edit?.movable(ex.sessionExerciseId) ?? [];
   const cols = useColumns(ex);
   const blockRows = p.ax || cols.blockRows;
+  const onAddWarmup = p.onAddWarmup;
+  const warmupRow = onAddWarmup !== undefined && p.canAddWarmup?.(ex.sessionExerciseId) === true ? <AddWarmupRow key="add-warmup" name={ex.name} onPress={() => { onAddWarmup(ex.sessionExerciseId); }} /> : null;
+  const warmupAfter = warmupRow === null ? null : warmupAddAfter(ex.rows);
   return (
     <View style={{ opacity: ex.dim ? 0.55 : 1 }}>
       <ExerciseHeader ex={ex} superset={superset} page={p} />
@@ -442,7 +451,8 @@ function ExerciseBlock({
           onDragChange={onDragChange}
           viewport={outer}
         >
-          {ex.rows.map((r) =>
+          {warmupRow !== null && warmupAfter === null ? warmupRow : null}
+          {ex.rows.flatMap((r) => [
             r.current ? (
               <View
                 key={r.setId}
@@ -481,7 +491,8 @@ function ExerciseBlock({
                 onLaidOut={onRowLaidOut}
               />
             ),
-          )}
+            warmupRow !== null && warmupAfter === r.setId ? warmupRow : null,
+          ])}
         </DragList>
       </ColumnsContext.Provider>
       <CompactRow ex={ex} index={index} page={p} />
@@ -693,6 +704,27 @@ function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset
         </LinkLine>
       ) : null}
     </View>
+  );
+}
+
+/** (Ben, 7 Nov) `＋ Warm-up`: a quiet text row in the warm-up block, no outline (it isn't a set). */
+function AddWarmupRow({ name, onPress }: { name: string; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Add warm-up to ${name}`}
+      hitSlop={8}
+      onPress={() => {
+        haptic('step');
+        onPress();
+      }}
+      style={({ pressed }) => ({ minHeight: 30, alignSelf: 'flex-start', paddingHorizontal: theme.space['1'], justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+    >
+      <AppText variant="callout" color="text.tertiary" style={{ fontSize: 13, lineHeight: 18 }}>
+        ＋ Warm-up
+      </AppText>
+    </Pressable>
   );
 }
 

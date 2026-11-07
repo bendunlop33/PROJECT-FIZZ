@@ -198,6 +198,20 @@ function anchorOf(rows: readonly RoundRow[]): number {
   return todo >= 0 ? todo : Math.max(0, rows.length - 1);
 }
 
+/**
+ * (Ben, 7 Nov) Where `＋ Warm-up` sits in an exercise's set table: under the last warm-up of the block above the
+ * first working set (that row's ID), or at the top (null) when the exercise has no warm-up there. The domain puts
+ * the new warm-up in that block too (`add_warmup`), so the control sits where the set lands.
+ */
+export function warmupAddAfter(rows: readonly Pick<RoundRow, 'setId' | 'warmup'>[]): string | null {
+  let after: string | null = null;
+  for (const r of rows) {
+    if (!r.warmup) break;
+    after = r.setId;
+  }
+  return after;
+}
+
 /** (Ben, 2 Nov) The meta line under the name: the works line, then `Warm-up` on a warm-up cardio row Ben asked for. */
 export const WARMUP_ROW_LABEL = 'Warm-up';
 
