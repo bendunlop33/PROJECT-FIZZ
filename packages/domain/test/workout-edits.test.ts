@@ -157,19 +157,20 @@ describe('add_warmup (＋ Warm-up mid-workout)', () => {
     expect(expectOk(reduceSession(back, built.command)).superseded).toBe(true);
   });
 
-  it('after a working set is done it goes before the next one, never before a done set', () => {
+  it('after a working set is done it still goes in the warm-up block (Ben, 7 Nov), above the done sets, which keep their values', () => {
     const s0 = benchStarted();
     const built = addWarmupCommand(s0, rowId(s0, BENCH), { ...op('warm-1'), newSetId: id(92001) });
     if (!built.ok) throw new Error(built.reason);
     const s1 = apply(s0, built.command);
     const rows = setsFor(s1, BENCH);
-    expect(rows.map((x) => x.status)).toEqual(['completed', 'completed', 'pending', 'pending']);
-    expect(rows[2]?.id).toBe(id(92001));
-    // The done sets are untouched (rule 2).
-    expect(rows.slice(0, 2)).toEqual(setsFor(s0, BENCH).slice(0, 2));
+    expect(rows.map((x) => x.status)).toEqual(['pending', 'completed', 'completed', 'pending']);
+    expect(rows[0]?.id).toBe(id(92001));
+    // The done sets are untouched (rule 2): only their position moved down one.
+    expect(rows.slice(1, 3).map((x) => ({ ...x, index: x.index - 1 }))).toEqual(setsFor(s0, BENCH).slice(0, 2));
+    expect(s1.session.activeSetId).toBe(s0.session.activeSetId);
   });
 
-  it('refuses a load the bar can’t make, a stale version, and a done exercise; idempotent', () => {
+  it('refuses a load the bar can’t make, a stale version, and a row with no load to ramp to; idempotent', () => {
     const s0 = startFixture().state;
     const bench = rowId(s0, BENCH);
     const built = addWarmupCommand(s0, bench, { ...op('warm-1'), newSetId: id(92001) });
@@ -180,7 +181,7 @@ describe('add_warmup (＋ Warm-up mid-workout)', () => {
     expectError(reduceSession(s1, { ...built.command, opId: 'warm-2', newSetId: id(92002) }), 'stale_version');
     let done = s0;
     for (const x of setsFor(done, HANG)) done = apply(done, logCmd(x.id, values(null, null, { durationS: 45 }), 500));
-    expect(addWarmupCommand(done, rowId(done, HANG), { ...op('warm-3'), newSetId: id(92003) })).toEqual({ ok: false, reason: 'done' });
+    expect(addWarmupCommand(done, rowId(done, HANG), { ...op('warm-3'), newSetId: id(92003) })).toEqual({ ok: false, reason: 'no_load' });
   });
 
   it('per-hand dumbbells in lb round down on the rack; assisted machines have no ramp; at most 6 (WU4’s longest ladder)', () => {
@@ -229,14 +230,16 @@ describe('add_warmup (＋ Warm-up mid-workout)', () => {
     expect(buildExecutionOrder(s0.exercises, s0.sets).filter((x) => [r1, r2, f1, f2].includes(x))).toEqual([r1, f1, r2, f2]);
   });
 
-  it('not offered when the only sets not done sit before a done one (the reducer would refuse; review S7)', () => {
+  it('offered when the sets not done sit before a done one (Ben, 7 Nov: the warm-up block is above them); the write works', () => {
     let s = startFixture().state;
     const [, , b2] = setsFor(s, BENCH);
     // Ben logs Bench set 2 first: the warm-up and set 1 are still pending, before a done set.
     s = apply(s, logCmd(b2?.id ?? '', values(kg(100), 5), 100));
     const bench = rowId(s, BENCH);
-    expect(addWarmupCommand(s, bench, { ...op('warm-x'), newSetId: id(94002) })).toEqual({ ok: false, reason: 'done' });
-    expect(canAddWarmupNow(s, bench)).toBe(false);
+    const built = addWarmupCommand(s, bench, { ...op('warm-x'), newSetId: id(94002) });
+    expect(built.ok).toBe(true);
+    expect(canAddWarmupNow(s, bench)).toBe(true);
+    if (built.ok) expectOk(reduceSession(s, built.command));
   });
 
   it('a later set Ben made current stays current (N3)', () => {
