@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-straight-arm-pulldown",
+  "tier": "basic",
+  "name": "Straight-arm pulldown",
+  "aliases": ["Straight-arm lat pulldown", "Straight arm pulldown", "Stiff-arm pulldown", "Cable pullover", "Standing cable pullover", "Straight-arm cable pushdown"],
+  "family": "straight_arm_pulldown",
+  "movementPattern": "vertical_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["lats"],
+  "secondaryMuscles": ["triceps", "upper_back", "rear_delts", "core"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

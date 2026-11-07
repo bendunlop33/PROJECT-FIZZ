@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "cable-lat-pulldown",
+  "format": "fizz-figure-guide@1",
+  "rig": "adult-v1",
+  "view": "front",
+  "durationMs": 2900,
+  "keyframes": 5,
+  "renderFps": 30,
+  "frames": 87,
+  "guideBytes": 2801,
+  "attribution": "Original figure animation made for Fizz; no third-party media.",
+  "reviewStatus": "draft",
+  "check": {
+    "status": "pass",
+    "failed": [],
+    "warnings": []
+  },
+  "focus": [
+    {
+      "muscle": "lats",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "upper_back",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "biceps",
+      "level": "soft",
+      "shown": false
+    },
+    {
+      "muscle": "brachialis",
+      "level": "soft",
+      "shown": false
+    },
+    {
+      "muscle": "rear_delts",
+      "level": "soft",
+      "shown": true
+    }
+  ],
+  "faintGroups": [
+    "obliques",
+    "lowerBack",
+    "glutes",
+    "triceps",
+    "forearm",
+    "hamstrings",
+    "adductors",
+    "calves"
+  ]
+}

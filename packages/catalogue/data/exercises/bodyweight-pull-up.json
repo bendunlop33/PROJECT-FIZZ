@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-pull-up",
+  "tier": "basic",
+  "name": "Pull-up",
+  "aliases": ["Pullup", "Pull up", "Overhand pull-up", "Pronated pull-up", "Bodyweight pull-up"],
+  "family": "pull_up",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats"],
+  "secondaryMuscles": ["upper_back", "biceps", "brachialis", "rear_delts", "grip", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["pullup_bar"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

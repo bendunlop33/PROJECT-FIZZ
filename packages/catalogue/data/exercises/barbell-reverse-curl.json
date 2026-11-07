@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-reverse-curl",
+  "tier": "rich",
+  "name": "Reverse curl",
+  "aliases": ["Reverse barbell curl", "Reverse-grip curl", "Overhand curl", "Pronated curl", "EZ-bar reverse curl", "Reverse EZ curl"],
+  "family": "curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["forearms", "brachialis"],
+  "secondaryMuscles": ["biceps", "grip"],
+  "compatibleEquipment": ["barbell", "ez_bar"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Overhand grip, hands shoulder width",
+      "Stand tall, bar resting on your thighs",
+      "Elbows by your sides, wrists straight"
+    ],
+    "execution": [
+      "Curl the bar up, knuckles leading",
+      "Keep your wrists in line with forearms",
+      "Stop near shoulder height",
+      "Lower slowly all the way down"
+    ],
+    "faults": [
+      "Don't swing your hips to lift it",
+      "Don't let your wrists drop back",
+      "Don't let your elbows drift behind you"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use noticeably less weight than your normal curl; the overhand grip is weaker.",
+      "An EZ bar's angled grip can be easier on the wrists than a straight bar.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-hammer-curl", "name": "Hammer curl", "reason": "Neutral grip; stronger and easier on the wrists." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Reverse curl with slow lowering", "reason": "A 3-second lowering adds work without more weight." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-hammer-curl", "name": "Hammer curl", "reason": "Also targets the forearm and brachialis; load is each dumbbell." },
+      { "key": null, "name": "Cable reverse curl", "reason": "Same grip on a cable with a straight bar; stack load." },
+      { "key": null, "name": "Zottman curl", "reason": "Curl up palms-up, lower palms-down." },
+      { "key": "barbell-curl", "name": "Barbell curl", "reason": "Palms-up version; more biceps." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at elbow height, figure facing right. The overhand grip (knuckles up, facing forward at the top) must be clear.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Standing tall, arms straight, bar resting against the thighs with an overhand grip, knuckles facing forward. Elbows by the sides, wrists straight.",
+        "approxAnglesDeg": { "elbowFlexion": 5, "shoulderFlexion": 0, "wristExtension": 0 }
+      },
+      {
+        "label": "Top",
+        "describe": "Elbows bent so the bar is near the front of the shoulders, knuckles facing up and forward. Upper arms still by the sides, wrists in line with the forearms.",
+        "approxAnglesDeg": { "elbowFlexion": 130, "shoulderFlexion": 10, "wristExtension": 0 }
+      }
+    ],
+    "ikHints": ["Elbows stay near the ribs", "Wrists stay straight"],
+    "barPath": "An arc from the thighs up to the front of the shoulders",
+    "tempo": { "downMs": 2000, "holdMs": 200, "upMs": 1000 },
+    "props": ["barbell_light"],
+    "emphasise": [
+      "Overhand grip throughout",
+      "Wrists straight, not bent back",
+      "Upper arms stay still"
+    ],
+    "doNotShow": ["Hips swinging", "Wrists flopping back", "Elbows drifting backward"]
+  },
+  "sources": [
+    {
+      "url": "https://learn.athleanx.com/?p=91525",
+      "title": "ATHLEAN-X: How To Do Reverse Curls",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[1-3]; cues.faults[0]; primaryMuscles (brachioradialis, brachialis); safety.notes[0]"
+    },
+    {
+      "url": "https://www.strengthlog.com/reverse-barbell-curl/",
+      "title": "StrengthLog: Reverse Barbell Curl",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0]; cues.execution[3]; cues.faults[2]; secondaryMuscles (biceps)",
+      "note": "StrengthLog lists biceps as primary and forearm flexors as secondary; the entry follows ATHLEAN-X and the expansion research."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "The brachioradialis has no muscle word of its own, so it is filed under forearms. Sources disagree on whether the biceps or the forearm muscles are primary."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-landmine-rotation",
+  "tier": "rich",
+  "name": "Landmine rotation",
+  "aliases": ["Landmine 180", "Landmine 180s", "Landmine twist", "Landmine core rotation", "Landmine rainbow"],
+  "family": "rotation",
+  "movementPattern": "core",
+  "mechanic": "compound",
+  "primaryMuscles": ["obliques", "abs"],
+  "secondaryMuscles": ["front_delts", "glutes", "core"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Bar end in a landmine or a padded corner",
+      "Feet a bit wider than your shoulders",
+      "Hold the bar end at chest height, arms long"
+    ],
+    "execution": [
+      "Turn your hips and chest together",
+      "Sweep the bar down toward one hip",
+      "Brace and bring it back over the top",
+      "Move slowly and stop the bar each side"
+    ],
+    "faults": [
+      "Don't let your arms bend to muscle it",
+      "Don't let the bar drag you round",
+      "Don't twist from the lower back alone"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Start light: the bar's momentum grows quickly at the bottom of each arc.",
+      "Let the feet and hips turn with the bar so the lower back isn't twisted on its own.",
+      "Make sure the landmine sleeve or corner is secure and the space around you is clear.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Resist twisting before you train it." },
+      { "key": null, "name": "Landmine rotation with an empty bar", "reason": "Learn the arc and the hip turn with no plates." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Medicine ball rotational throw", "reason": "Faster, more powerful rotation." }
+    ],
+    "substitutions": [
+      { "key": "cable-woodchop", "name": "Cable woodchop", "reason": "Loaded rotation on a stack; easy small steps." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Obliques resist rotation instead of producing it." },
+      { "key": "bodyweight-russian-twist", "name": "Russian twist", "reason": "Seated rotation with a light weight; needs no landmine." },
+      { "key": "bodyweight-oblique-crunch", "name": "Oblique crunch", "reason": "Floor-based obliques work with no equipment." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at chest height, figure facing the camera with the landmine anchor on the floor behind it. The bar end's arc from hip to hip over the head line must be visible.",
+    "keyPositions": [
+      {
+        "label": "Centre",
+        "describe": "Standing tall, feet wider than shoulders, knees soft. Both hands on the bar end at about chest height, arms long. Hips and chest square to the bar.",
+        "approxAnglesDeg": { "trunkRotation": 0, "shoulderFlexion": 70, "elbowFlexion": 10 }
+      },
+      {
+        "label": "Side",
+        "describe": "Hips and chest turned to one side together, bar end lowered toward the outside of that hip. Back foot pivoting on the ball. Arms still long.",
+        "approxAnglesDeg": { "trunkRotation": 45, "shoulderFlexion": 30, "elbowFlexion": 10 }
+      },
+      {
+        "label": "Other side",
+        "describe": "Bar brought back up over the centre and down to the other hip in a rainbow arc; the mirror of the previous position.",
+        "approxAnglesDeg": { "trunkRotation": -45, "shoulderFlexion": 30, "elbowFlexion": 10 }
+      }
+    ],
+    "ikHints": ["Bar end stays in both hands", "Far end of the bar stays fixed in the landmine"],
+    "barPath": "A rainbow arc from one hip, up past chest height, down to the other hip",
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 1500 },
+    "props": ["landmine", "barbell_loaded"],
+    "emphasise": [
+      "Hips and chest turn together",
+      "Arms stay long",
+      "Controlled stop at each side"
+    ],
+    "doNotShow": ["Feet planted while only the waist twists", "Bar swinging fast", "Bent arms pulling the bar"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/landmine-rotation/",
+      "title": "StrengthLog: Landmine Rotation",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1-2]; cues.execution[0-2]; primaryMuscles; secondaryMuscles (front_delts)"
+    },
+    {
+      "url": "https://fitbod.me/exercises/landmine-core-rotation",
+      "title": "Fitbod: Landmine Core Rotation",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0]; cues.execution[3]; cues.faults[0]; secondaryMuscles (glutes)",
+      "note": "Commercial app library."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "Logged as plates added to the bar (added), matching Landmine press. The real resistance depends on bar length and angle; the landmine load convention is still open (expansion research Q3)."
+    },
+    {
+      "field": "requiresStation",
+      "note": "No landmine station value exists yet (expansion research Q2), so none is listed. A corner can be used if it is padded and secure."
+    },
+    {
+      "field": "measurement",
+      "note": "Whether reps count each side or each full side-to-side pair is not settled."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

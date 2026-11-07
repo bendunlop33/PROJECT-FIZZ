@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-decline-bench-press",
+  "tier": "rich",
+  "name": "Decline bench press",
+  "aliases": ["Decline bench", "Decline barbell bench press", "Decline barbell press", "BB decline bench", "Barbell decline bench press"],
+  "family": "bench_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["triceps", "front_delts"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Hook your legs under the decline pads",
+      "Eyes under the bar, shoulder blades back",
+      "Grip a little wider than your shoulders"
+    ],
+    "execution": [
+      "Breathe in, brace, unrack to straight arms",
+      "Lower to your lower chest under control",
+      "Press up and slightly back over shoulders",
+      "Breathe at the top, then the next rep"
+    ],
+    "faults": [
+      "Don't bounce the bar off your chest",
+      "Don't let your elbows flare wide",
+      "Don't let your feet slip off the pads"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a spotter, or a decline station with safety catches. You can't roll a stuck bar off your chest in a decline as easily as on a flat bench.",
+      "Agree the lift-off and the help signal with your spotter before the set.",
+      "Wrap your thumbs round the bar. Avoid a thumbless grip.",
+      "Sit up slowly after the set; being head-down can leave you light-headed.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "Guided path; safe to train hard alone." },
+      { "key": "bodyweight-dip", "name": "Dip", "reason": "Similar lower-chest emphasis with bodyweight." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Paused decline bench press", "reason": "A short pause on the chest builds control off the chest." }
+    ],
+    "substitutions": [
+      { "key": "barbell-bench-press", "name": "Bench press", "reason": "Flat version; easier to set up safely in most gyms." },
+      { "key": "bodyweight-dip", "name": "Dip", "reason": "Lower chest and triceps with no bench needed." },
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "No spotter needed. Stack numbers aren't comparable." },
+      { "key": null, "name": "Decline dumbbell press", "reason": "Same angle with dumbbells you can drop to the sides." },
+      { "key": "cable-fly", "name": "Cable fly", "reason": "Lower-chest emphasis with high pulleys and no bar." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height, head end low on the left, decline bench about 15–30° with the leg pads on the right. Uprights drawn behind the figure.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Lying head-down on a decline bench, knees hooked under the pads. Arms straight and vertical, bar over the shoulders. Upper back set, shoulder blades pulled together.",
+        "approxAnglesDeg": { "benchDecline": 20, "shoulderFlexion": 90, "elbowFlexion": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Bar touching the lower chest, below the nipple line. Forearms near vertical, elbows tucked a little toward the body. Back and hips still on the bench.",
+        "approxAnglesDeg": { "benchDecline": 20, "shoulderFlexion": 10, "elbowFlexion": 95 }
+      }
+    ],
+    "ikHints": ["Legs locked under the pads", "Hands fixed on the bar"],
+    "barPath": "Slight arc from the lower chest up to over the shoulders",
+    "tempo": { "downMs": 1500, "holdMs": 200, "upMs": 1000 },
+    "props": ["decline_bench", "barbell_loaded"],
+    "emphasise": [
+      "Bar touches lower on the chest than a flat bench",
+      "Legs secured under the pads",
+      "Controlled lowering, no bounce"
+    ],
+    "doNotShow": ["Bouncing the bar", "Feet unhooked", "Thumbless grip"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/decline-bench-press/",
+      "title": "StrengthLog: Decline Bench Press",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1-2]; cues.execution[0-3]; primaryMuscles; secondaryMuscles; safety.notes[0]"
+    },
+    {
+      "url": "https://www.masterclass.com/articles/decline-bench-press-guide",
+      "title": "MasterClass: Decline Bench Press Guide",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0] (secure the feet); cues.faults[1]",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "requiresStation",
+      "note": "A decline bench has no station value. specific_machine is the nearest (as for the decline crunch and sit-up); the domain doesn't check it, so this exercise is never hidden for lack of a decline bench. A flat bench isn't a substitute."
+    },
+    {
+      "field": "safety.notes[3]",
+      "note": "Light-headedness after decline work is mentioned in coaching sources seen only in a search summary (BarBend); not checked directly."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

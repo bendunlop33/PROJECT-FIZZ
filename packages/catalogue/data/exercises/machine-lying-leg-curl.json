@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-lying-leg-curl",
+  "tier": "basic",
+  "name": "Lying leg curl",
+  "aliases": ["Prone leg curl", "Lying hamstring curl", "Machine lying leg curl", "Lying leg curl machine"],
+  "family": "leg_curl",
+  "movementPattern": "hinge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["hamstrings"],
+  "secondaryMuscles": ["calves"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

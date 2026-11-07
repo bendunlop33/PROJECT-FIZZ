@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-plank",
+  "tier": "basic",
+  "name": "Plank",
+  "aliases": ["Front plank", "Forearm plank", "Elbow plank", "Prone plank", "Plank hold"],
+  "family": "plank",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs", "core"],
+  "secondaryMuscles": ["obliques", "glutes", "front_delts"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

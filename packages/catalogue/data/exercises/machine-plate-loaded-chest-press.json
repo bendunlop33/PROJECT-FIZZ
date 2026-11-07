@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-plate-loaded-chest-press",
+  "tier": "rich",
+  "name": "Plate-loaded chest press",
+  "aliases": ["Iso-lateral chest press", "Iso-lateral bench press", "Plate-loaded iso-lateral chest press", "Hammer Strength chest press", "Hammer chest press"],
+  "family": "chest_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["triceps", "front_delts"],
+  "compatibleEquipment": ["plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Seat so the handles line up with mid-chest",
+      "Load the same plates on each side",
+      "Back on the pad, feet flat"
+    ],
+    "execution": [
+      "Press the handles out to nearly straight",
+      "Keep your shoulder blades on the pad",
+      "Let the handles back to a chest stretch",
+      "Control the plates; no clanking"
+    ],
+    "faults": [
+      "Don't let your shoulders roll forward",
+      "Don't lift your back off the pad",
+      "Don't slam the arms down between reps"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Load and unload plates evenly, one side then the other, so the machine doesn't tip or the arms don't swing.",
+      "Set the seat so the start position is a comfortable stretch, not an extreme one.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "Selectorised version; smaller load steps." },
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "Same pressing pattern with bodyweight." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Single-arm plate-loaded chest press", "reason": "One arm at a time on the same machine; trains each side alone." }
+    ],
+    "substitutions": [
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "Stack-loaded press. Numbers aren't comparable." },
+      { "key": "barbell-bench-press", "name": "Bench press", "reason": "Free-bar press; needs a spotter or safeties." },
+      { "key": "dumbbell-bench-press", "name": "Dumbbell bench press", "reason": "Each arm works alone, like this machine." },
+      { "key": "smith-machine-bench-press", "name": "Smith machine bench press", "reason": "Guided bar with built-in catches." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at seat height, seat back on the left, machine arms pivoting from behind and above the figure. Show one plate horn loaded on the near arm.",
+    "keyPositions": [
+      {
+        "label": "Stretch",
+        "describe": "Seated upright, back on the pad, feet flat. Hands on the handles level with mid-chest, elbows behind the torso line and a little below the shoulders.",
+        "approxAnglesDeg": { "shoulderHorizontalAbduction": 70, "elbowFlexion": 100 }
+      },
+      {
+        "label": "Press",
+        "describe": "Handles pressed forward and slightly inward until the arms are nearly straight. Shoulder blades still against the pad, back unchanged.",
+        "approxAnglesDeg": { "shoulderHorizontalAbduction": 0, "elbowFlexion": 10 }
+      }
+    ],
+    "ikHints": ["Hands fixed to the handles; handles follow the machine's arc", "Back stays on the pad"],
+    "barPath": "Handles travel forward and slightly together on the machine's arc",
+    "tempo": { "downMs": 1600, "holdMs": 200, "upMs": 1000 },
+    "props": ["plate_loaded_chest_press", "weight_plates"],
+    "emphasise": [
+      "Back and shoulder blades stay on the pad",
+      "Controlled return to the stretch",
+      "Plates loaded evenly"
+    ],
+    "doNotShow": ["Back arching off the pad", "Weights crashing down", "Uneven plates"]
+  },
+  "sources": [
+    {
+      "url": "https://shop.lifefitness.com/products/hammer-strength-plate-loaded-iso-lateral-bench-press",
+      "title": "Life Fitness: Hammer Strength Plate-Loaded Iso-Lateral Bench Press",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[2] (seated upright); primaryMuscles; secondaryMuscles; variations.progressions[0] (independent arms)",
+      "note": "Manufacturer product page."
+    },
+    {
+      "url": "https://lifefitness.com/en-us/cybex/plate-loaded-chest-press",
+      "title": "Life Fitness: Cybex Plate Loaded Chest Press",
+      "checkedOn": "2026-10-23",
+      "supports": "barPath (converging path, independent arm motion)",
+      "note": "Manufacturer product page, seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "Logged as plates added (added), like the leg press. The plate number isn't the true resistance and differs between machines and loading horns; the plate-loaded load convention is still open (expansion research Q3). Whether the number is per side or total is not yet recorded."
+    },
+    {
+      "field": "key",
+      "note": "machine-chest-press also lists plate_loaded_machine as compatible but defaults to stack. Ben may want that entry narrowed to stack machines so plate and stack histories don't mix (as was done for the leg press)."
+    },
+    {
+      "field": "cues",
+      "note": "Technique cues are general machine-press coaching; no independent coaching source specific to plate-loaded chest presses was checked."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-incline-fly",
+  "tier": "rich",
+  "name": "Incline dumbbell fly",
+  "aliases": ["Incline DB fly", "Incline dumbbell flye", "Dumbbell incline fly", "Incline chest fly", "Incline fly"],
+  "family": "chest_fly",
+  "movementPattern": "horizontal_push",
+  "mechanic": "isolation",
+  "primaryMuscles": ["upper_chest"],
+  "secondaryMuscles": ["chest", "front_delts"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["incline_bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "implements": 2,
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Bench at about 30 to 45 degrees",
+      "Head, shoulders and back on the pad",
+      "Dumbbells over your chest, palms in"
+    ],
+    "execution": [
+      "Soft bend in the elbows; keep it fixed",
+      "Open your arms wide in an arc",
+      "Stop at a stretch, about chest level",
+      "Hug the weights back up over your chest"
+    ],
+    "faults": [
+      "Don't turn it into a press",
+      "Don't drop the weights too deep",
+      "Don't clank the dumbbells at the top"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Go lighter than for a press: the long lever loads the shoulder most at the bottom.",
+      "Keep the elbows slightly bent through the whole rep.",
+      "To finish, bring the dumbbells to your chest before sitting up or lowering them.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-pec-deck", "name": "Pec deck", "reason": "Guided arc; no balancing the weights." },
+      { "key": "dumbbell-fly", "name": "Dumbbell fly", "reason": "Flat bench version; a little easier to control." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Incline fly with a pause in the stretch", "reason": "A short hold at the bottom adds time under tension." }
+    ],
+    "substitutions": [
+      { "key": "cable-fly", "name": "Cable fly", "reason": "Low-to-high cable angle also targets the upper chest; steady tension." },
+      { "key": "dumbbell-fly", "name": "Dumbbell fly", "reason": "Same movement on a flat bench; whole chest." },
+      { "key": "machine-pec-deck", "name": "Pec deck", "reason": "Machine fly on a stack." },
+      { "key": "dumbbell-incline-bench-press", "name": "Incline dumbbell press", "reason": "Upper-chest pressing; heavier loads." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height, bench inclined about 30–45° with the head end up on the left. The near arm's arc must read clearly; the far arm mirrors it.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Sitting back on an incline bench, feet flat. Dumbbells held over the upper chest, palms facing each other, elbows softly bent.",
+        "approxAnglesDeg": { "benchIncline": 35, "shoulderHorizontalAbduction": 0, "elbowFlexion": 15 }
+      },
+      {
+        "label": "Stretch",
+        "describe": "Arms opened wide in an arc, dumbbells at about chest level beside the body, elbows still softly bent and pointing down and out. Chest stretched, shoulders still on the pad.",
+        "approxAnglesDeg": { "benchIncline": 35, "shoulderHorizontalAbduction": 80, "elbowFlexion": 20 }
+      }
+    ],
+    "ikHints": ["Back and head stay on the pad", "Elbow angle stays nearly constant"],
+    "barPath": "Each dumbbell travels in a wide arc out and down, then back up and in",
+    "tempo": { "downMs": 2000, "holdMs": 300, "upMs": 1200 },
+    "props": ["bench_incline", "dumbbell_pair"],
+    "emphasise": [
+      "Wide arc, not a press",
+      "Elbows stay softly bent",
+      "Stop at a comfortable stretch"
+    ],
+    "doNotShow": ["Straight, locked elbows", "Dumbbells dropping below the bench", "Weights banging together"]
+  },
+  "sources": [
+    {
+      "url": "https://fitbod.me/exercises/dumbbell-incline-fly",
+      "title": "Fitbod: Dumbbell Incline Fly",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1-2]; cues.execution[0-3]; primaryMuscles; secondaryMuscles; safety.notes[1]",
+      "note": "Commercial app library. Fitbod suggests 45–60°; the entry uses a lower 30–45° range following the second source."
+    },
+    {
+      "url": "https://one.puregym.com/exercises/chest/chest-fly/incline-dumbbell-chest-fly",
+      "title": "PureGym: Incline dumbbell chest fly",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0]; cues.faults[1-2]",
+      "note": "Returned HTTP 502 on 23 Oct 2026; content seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "cues.setup[0]",
+      "note": "Sources disagree on the bench angle (about 30° to 60°). 30–45° is used as a middle default."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

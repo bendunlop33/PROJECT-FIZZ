@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-bird-dog",
+  "tier": "rich",
+  "name": "Bird dog",
+  "aliases": ["Bird dogs", "Bird-dog", "Birddog", "Quadruped opposite arm and leg raise", "Opposite arm and leg raise"],
+  "family": "bird_dog",
+  "movementPattern": "core",
+  "mechanic": "compound",
+  "primaryMuscles": ["core", "spinal_erectors", "glutes"],
+  "secondaryMuscles": ["abs", "obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "On hands and knees on a mat",
+      "Hands under shoulders, knees under hips",
+      "Brace gently; back flat like a table"
+    ],
+    "execution": [
+      "Reach one arm forward and the other leg back",
+      "Keep your hips and shoulders level",
+      "Hold for a breath, then return slowly",
+      "Switch sides"
+    ],
+    "faults": [
+      "Don't arch your lower back as the leg rises",
+      "Don't tip your hips toward one side",
+      "Don't kick the leg up high"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Lift the arm and leg only as high as you can keep your back still.",
+      "A mirror, or a light stick laid along your back, helps you spot tipping or arching.",
+      "Kneel on a mat or folded towel if your knees are uncomfortable on a hard floor.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Leg-only or arm-only bird dog", "reason": "One limb at a time is easier to hold steady." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Bird dog with a longer hold", "reason": "Holding each rep for about 10 seconds, as in McGill's routine, adds difficulty." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Same opposite arm and leg pattern lying on the back." },
+      { "key": "bodyweight-plank", "name": "Plank", "reason": "Static trunk hold with no limb movement." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Resists twisting with a loadable cable." },
+      { "key": "bodyweight-bear-crawl", "name": "Bear crawl", "reason": "Moving version on hands and feet; harder." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at table height, figure on hands and knees on a mat, head on the right. The near arm and far leg reach so both limbs read clearly; a faint horizontal guide line along the back helps show it stays flat.",
+    "keyPositions": [
+      {
+        "label": "Table",
+        "describe": "On hands and knees, hands under the shoulders, knees under the hips. Back flat, head in line with the spine, eyes down.",
+        "approxAnglesDeg": { "hipFlexion": 90, "kneeFlexion": 90, "shoulderFlexion": 90, "trunkLeanFromVertical": 90 }
+      },
+      {
+        "label": "Reach",
+        "describe": "Near arm reaching forward level with the shoulder, far leg reaching back level with the hip, knee straight. Back still flat; hips and shoulders level; head neutral.",
+        "approxAnglesDeg": { "farHipFlexion": 0, "farKneeFlexion": 5, "nearShoulderFlexion": 180, "trunkLeanFromVertical": 90 }
+      }
+    ],
+    "ikHints": ["Supporting hand and knee fixed in every frame", "Back line stays horizontal"],
+    "tempo": { "downMs": 1200, "holdMs": 1500, "upMs": 1200 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Back stays flat while the arm and leg reach",
+      "Hips stay level; no tipping",
+      "Short hold at full reach"
+    ],
+    "doNotShow": ["Leg kicked above hip height", "Lower back sagging or arching", "Head craning up"]
+  },
+  "sources": [
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/14/bird-dog/",
+      "title": "ACE Exercise Library: Bird Dog",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-3]; cues.faults[0-1]; safety.notes[0-1]; primaryMuscles"
+    },
+    {
+      "url": "https://www.health.harvard.edu/staying-healthy/three-moves-for-better-spine-health",
+      "title": "Harvard Health Publishing: Three moves for better spine health (McGill's Big 3)",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.progressions[0] (about 10-second holds); cues.execution[1]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "measurement",
+      "note": "Reps may be counted per side or as total reaches; the entry doesn't fix which. Some people log it as timed holds instead."
+    },
+    {
+      "field": "mechanic",
+      "note": "Several joints move and the trunk holds still, so it's listed as compound; it's a low-load control exercise, not a strength lift."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. trunkLeanFromVertical 90 means the back is horizontal."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

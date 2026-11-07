@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-side-lying-hip-abduction",
+  "tier": "rich",
+  "name": "Side-lying hip abduction",
+  "aliases": ["Side-lying leg raise", "Side-lying leg lift", "Lying hip abduction", "Side-lying abduction", "Side lying hip abduction"],
+  "family": "hip_abduction",
+  "movementPattern": "lunge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abductors"],
+  "secondaryMuscles": ["glutes", "obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 30,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your side, bottom knee bent",
+      "Top leg straight, in line with your body",
+      "Hips stacked, hand on the top hip"
+    ],
+    "execution": [
+      "Lift the top leg up and slightly back",
+      "Lead with the heel, toes forward",
+      "Pause at the top, then lower slowly",
+      "Keep the hip from rolling back"
+    ],
+    "faults": [
+      "Don't swing the leg forward",
+      "Don't turn the toes up to the ceiling",
+      "Don't hitch your waist to lift higher"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "The range is small; lift only as high as you can with the hips still stacked.",
+      "An ankle weight or band adds load later. Ankle weights have no equipment kind yet, so this entry logs no load.",
+      "Reps are per side.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the front or side of the hip",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-clamshell", "name": "Clamshell", "reason": "Knees bent, so the lever is shorter and easier." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Banded side-lying abduction", "reason": "A band around the thighs or ankles adds tension." },
+      { "key": null, "name": "Ankle-weight side-lying abduction", "reason": "Adds load to the moving leg." }
+    ],
+    "substitutions": [
+      { "key": "cable-hip-abduction", "name": "Cable hip abduction", "reason": "Standing version on a cable stack." },
+      { "key": "machine-hip-abduction", "name": "Hip abduction machine", "reason": "Seated, both legs, stack loading." },
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Side-hip and trunk work as a hold." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Camera looking at the front of the figure lying on its side, head to the left, so the top leg's lift and the stacked hips are clear.",
+    "keyPositions": [
+      {
+        "label": "Down",
+        "describe": "Lying on the side, head on the bottom arm, bottom knee bent for balance. Top leg straight, in line with the trunk, resting on the bottom leg. Top hand on the hip.",
+        "approxAnglesDeg": { "topHipAbduction": 0, "topKneeFlexion": 0, "topHipFlexion": 0 }
+      },
+      {
+        "label": "Up",
+        "describe": "Top leg lifted to about 35–40°, slightly behind the body line, heel leading and toes facing forward. Hips still stacked.",
+        "approxAnglesDeg": { "topHipAbduction": 35, "topKneeFlexion": 0, "topHipFlexion": -10 }
+      }
+    ],
+    "ikHints": ["Pelvis stays stacked; trunk does not move"],
+    "tempo": { "downMs": 1500, "holdMs": 500, "upMs": 900 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Leg lifts slightly behind the body line",
+      "Heel leads, toes forward",
+      "Hips stay stacked"
+    ],
+    "doNotShow": ["Leg swinging forward", "Pelvis rolling back", "Toes pointing up"]
+  },
+  "sources": [
+    {
+      "url": "https://www.physitrack.com/exercise-library/how-to-perform-the-side-lying-hip-abduction-exercise",
+      "title": "Physitrack: Side-lying hip abduction",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1]; cues.execution[2-3]; cues.faults[1]",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://brookbushinstitute.com/article/gluteal-muscle-activation-during-common-therapeutic-exercises",
+      "title": "Brookbush Institute summary of DiStefano et al. (2009) gluteal activation in 12 exercises, J Orthop Sports Phys Ther 39(7):532-40",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (side-lying abduction had the highest glute-med EMG of the 12 exercises)",
+      "note": "Secondary summary of an EMG study (21 recreationally active adults). EMG activity is not growth or strength."
+    },
+    {
+      "url": "https://www.ummhealth.org/health-library/side-lying-hip-abduction-strength",
+      "title": "UMass Memorial Health library: Side-lying hip abduction (strength)",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[2]; variations.progressions[0]",
+      "note": "Patient-education handout; seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'lunge' to match the Hip abduction machine entry; no hip-abduction or prehab pattern exists."
+    },
+    {
+      "field": "secondaryMuscles",
+      "note": "Obliques are listed for holding the trunk still; reasoned from the position, not measured."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative topHipFlexion means the leg is slightly behind the body line."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

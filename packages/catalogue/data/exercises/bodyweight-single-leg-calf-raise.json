@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-single-leg-calf-raise",
+  "tier": "rich",
+  "name": "Single-leg calf raise",
+  "aliases": ["Single leg calf raise", "Single-leg calf raises", "One-leg calf raise", "Single-leg heel raise", "Single-leg calf raise on step", "Unilateral calf raise"],
+  "family": "calf_raise",
+  "movementPattern": "calves",
+  "mechanic": "isolation",
+  "primaryMuscles": ["calves"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["bodyweight_station", "dumbbells"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Ball of one foot on the edge of a step",
+      "Heel free to drop below the step",
+      "Hold a rail or wall lightly for balance",
+      "Other foot lifted or hooked behind"
+    ],
+    "execution": [
+      "Rise as high as you can onto the ball of your foot",
+      "Pause at the top",
+      "Lower slowly until your heel is below the step",
+      "Keep your knee straight but not locked"
+    ],
+    "faults": [
+      "Don't push yourself up with your hand",
+      "Don't bounce at the bottom",
+      "Don't let your ankle roll outward",
+      "Don't cut the range short"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use the rail or wall for balance only, so the calf does the work and you stay steady.",
+      "Use a stable step with a non-slip edge. If your foot slides, step down rather than catching yourself on one leg.",
+      "To add load, hold a dumbbell on the working side and log it as added weight.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-calf-raise", "name": "Calf raise (bodyweight)", "reason": "Both legs share the load; learn the full range first." },
+      { "key": null, "name": "Single-leg calf raise on flat ground", "reason": "No step, so a shorter range and easier balance." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Single-leg calf raise with a dumbbell", "reason": "Hold a dumbbell on the working side; log it as added weight." },
+      { "key": null, "name": "Slower lowering", "reason": "Take about three seconds to lower each rep." }
+    ],
+    "substitutions": [
+      { "key": "machine-standing-calf-raise", "name": "Standing calf raise", "reason": "Both legs with stack loading." },
+      { "key": "machine-leg-press-calf-raise", "name": "Leg-press calf raise", "reason": "Calves only, with the back supported." },
+      { "key": "machine-seated-calf-raise", "name": "Seated calf raise", "reason": "Bent knees shift more work to the lower calf." },
+      { "key": "barbell-standing-calf-raise", "name": "Standing barbell calf raise", "reason": "Both legs with a barbell in a rack." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at knee height, figure facing right, standing on one foot on a step with a hand on a wall or rail. The ankle and the heel's travel below the step must be clear.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Standing tall on one foot, ball of the foot on the step's edge, heel dropped below it for a calf stretch. Knee straight but soft; other foot lifted behind. One hand lightly on the wall.",
+        "approxAnglesDeg": { "kneeFlexion": 5, "ankleDorsiflexion": 15, "trunkLeanFromVertical": 0 }
+      },
+      {
+        "label": "Top",
+        "describe": "Heel raised as high as possible over the ball of the foot. Body rises straight up as one piece; knee unchanged; hand still only resting.",
+        "approxAnglesDeg": { "kneeFlexion": 5, "ankleDorsiflexion": -30, "trunkLeanFromVertical": 0 }
+      }
+    ],
+    "ikHints": ["Ball of the standing foot fixed on the step edge", "Hand rests on the wall without pushing"],
+    "tempo": { "downMs": 1800, "holdMs": 600, "upMs": 900 },
+    "props": ["step", "wall_or_rail"],
+    "emphasise": [
+      "Heel drops below the step, then rises high",
+      "Only the ankle moves",
+      "Hand is for balance only"
+    ],
+    "doNotShow": ["Pulling up with the hand", "Bouncing at the bottom", "Ankle rolling outward"]
+  },
+  "sources": [
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/28886865/",
+      "title": "Hébert-Losier K et al. (2017) Updated reliability and normative values for the standing heel-rise test in healthy adults. Physiotherapy 103(4):446-452",
+      "checkedOn": "2026-10-23",
+      "supports": "Context: single-leg heel rises to fatigue are a reliable, standard calf test with published norms (566 adults); cues.execution[0,2]",
+      "note": "Abstract only, seen through a search-result summary. An original study, not a review; used for the movement, not for any claim about Ben."
+    },
+    {
+      "url": "https://uk.physitrack.com/home-exercise-video/single-leg-calf-raise-on-step-with-support",
+      "title": "Physitrack: Single-leg calf raise on step with support",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-3]; cues.execution[0,2-3]; cues.faults[0]; safety.notes[0]",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "compatibleEquipment",
+      "note": "Bodyweight by default. Holding a dumbbell is logged as added weight, like a weighted dip, rather than per dumbbell, so implements is not set."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Negative ankleDorsiflexion means the ankle is pointed."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

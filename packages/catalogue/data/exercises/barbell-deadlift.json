@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-deadlift",
+  "tier": "basic",
+  "name": "Deadlift",
+  "aliases": ["Conventional deadlift", "Barbell deadlift", "BB deadlift", "DL", "Conventional DL"],
+  "family": "deadlift",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "hamstrings", "spinal_erectors"],
+  "secondaryMuscles": ["quads", "adductors", "upper_back", "traps", "lats", "grip", "core"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 180,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

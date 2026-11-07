@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "band-triceps-pushdown",
+  "tier": "basic",
+  "name": "Band triceps pushdown",
+  "aliases": ["Band pushdown", "Banded triceps pushdown", "Resistance band pushdown", "Band tricep pushdown"],
+  "family": "triceps_pushdown",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["triceps"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["band"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

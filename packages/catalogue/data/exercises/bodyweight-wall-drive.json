@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-wall-drive",
+  "tier": "basic",
+  "name": "Wall drive",
+  "aliases": ["Wall drill", "Wall march", "Sled wall drill", "Wall drive drill"],
+  "family": "sled",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["calves", "hamstrings", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

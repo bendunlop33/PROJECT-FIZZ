@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-step-down",
+  "tier": "rich",
+  "name": "Step-down",
+  "aliases": ["Step down", "Lateral step-down", "Lateral step down", "Side step-down", "Box step-down"],
+  "family": "step_down",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads"],
+  "secondaryMuscles": ["glutes", "abductors"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Stand side-on on a low step or box",
+      "Working foot on the step",
+      "Other foot hanging off the side"
+    ],
+    "execution": [
+      "Bend the standing knee slowly",
+      "Lower until the free heel just taps",
+      "Keep your weight on the step leg",
+      "Stand back up through that foot"
+    ],
+    "faults": [
+      "Don't drop the last few centimetres",
+      "Don't let the standing knee cave in",
+      "Don't push off the floor with the free foot",
+      "Don't let your hips tip sideways"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Start on a low, stable step and raise the height only when the lowering stays slow and the knee stays in line.",
+      "Stand near a rack or wall you can touch for balance if needed.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the knee that builds during the set",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Lower step", "reason": "Less depth, so less knee bend under load." },
+      { "key": null, "name": "Step-down with a hand on support", "reason": "Takes balance out so you can focus on control." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Higher step", "reason": "More depth on the standing leg." },
+      { "key": null, "name": "Forward step-down", "reason": "Free foot reaches forward; a different, often harder, knee position." },
+      { "key": null, "name": "Step-down holding dumbbells", "reason": "Adds load once control is solid." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-step-up", "name": "Dumbbell step-up", "reason": "Same box, driving up instead of lowering down." },
+      { "key": "bodyweight-split-squat", "name": "Split squat", "reason": "Single-leg knee bend with both feet on the floor." },
+      { "key": "dumbbell-reverse-lunge", "name": "Dumbbell reverse lunge", "reason": "Single-leg strength with load." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at knee height so the standing knee's line over the foot and the level of the hips are clear. Figure faces the camera on a low step, free leg hanging off the side of the step.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Standing tall on the step on one leg, standing knee straight but not locked. Free leg hanging beside the step, foot just off the edge. Hips level, hands on hips or out for balance.",
+        "approxAnglesDeg": { "standingKneeFlexion": 5, "freeKneeFlexion": 5, "trunkLeanFromVertical": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Standing knee bent, tracking over the second toe. Free heel lightly touching the floor beside the step, no weight on it. Hips level, slight forward lean.",
+        "approxAnglesDeg": { "standingKneeFlexion": 60, "freeKneeFlexion": 5, "trunkLeanFromVertical": 15 }
+      }
+    ],
+    "ikHints": ["Standing foot flat on the step throughout", "Free heel touches the floor only at the bottom"],
+    "tempo": { "downMs": 2500, "holdMs": 200, "upMs": 1200 },
+    "props": ["low_step"],
+    "emphasise": [
+      "Slow lowering",
+      "Standing knee in line with the foot",
+      "Hips stay level"
+    ],
+    "doNotShow": ["Knee caving in", "Hip dropping on the free side", "Weight shifting onto the free foot"]
+  },
+  "sources": [
+    {
+      "url": "https://catalystathletics.com/exercise/734/Lateral-Step-Down/",
+      "title": "Catalyst Athletics exercise library: Lateral Step Down",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[0-1] (controlled lowering); variations.progressions[2] (load once form is solid); used mainly as an accessory",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://www.ummhealth.org/health-library/leg-and-knee-exercises-lateral-step-downs",
+      "title": "UMass Memorial Health library: Leg and knee exercises, lateral step-downs",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2] (low step, free foot off the side); cues.execution[1-2]; cues.faults[2]",
+      "note": "Patient-education handout; seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "The research table listed abductors as primary. They work mainly to keep the hips level, so they are listed as secondary here. No outcome evidence for this exercise was found (research note)."
+    },
+    {
+      "field": "requiresStation",
+      "note": "Needs a low step or box (about 10–20 cm). The station vocabulary has no step or box; 'bench' is usually too high, so no station is listed."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

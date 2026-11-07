@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-concentration-curl",
+  "tier": "basic",
+  "name": "Dumbbell concentration curl",
+  "aliases": ["Concentration curl", "DB concentration curl", "Seated concentration curl", "Seated dumbbell concentration curl", "One-arm concentration curl"],
+  "family": "curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["biceps"],
+  "secondaryMuscles": ["brachialis", "forearms"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "implements": 1,
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-reverse-grip-lat-pulldown",
+  "tier": "rich",
+  "name": "Reverse-grip lat pulldown",
+  "aliases": ["Underhand lat pulldown", "Supinated lat pulldown", "Reverse-grip pulldown", "Underhand pulldown", "Chin-up grip pulldown"],
+  "family": "pulldown",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "biceps"],
+  "secondaryMuscles": ["upper_back", "brachialis", "rear_delts"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Thighs snug under the pads",
+      "Palms facing you, shoulder width",
+      "Sit tall, chest up, arms straight"
+    ],
+    "execution": [
+      "Draw your shoulders down first",
+      "Pull your elbows down to your sides",
+      "Bar to your upper chest",
+      "Let it rise slowly to straight arms"
+    ],
+    "faults": [
+      "Don't lean far back to row it down",
+      "Don't swing or jerk the bar",
+      "Don't let the stack yank you up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Keep the bar in front of the face; don't pull it behind the neck.",
+      "Return the bar under control so the stack doesn't slam.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-assisted-pull-up", "name": "Assisted pull-up", "reason": "Can be done underhand with machine help." }
+    ],
+    "progressions": [
+      { "key": "bodyweight-chin-up", "name": "Chin-up", "reason": "Same grip, lifting your own bodyweight." }
+    ],
+    "substitutions": [
+      { "key": "cable-lat-pulldown", "name": "Lat pulldown", "reason": "Overhand grip on the same machine; a little less biceps." },
+      { "key": "cable-neutral-grip-pulldown", "name": "Neutral-grip pulldown", "reason": "Palms facing; often comfortable on the shoulders." },
+      { "key": "bodyweight-chin-up", "name": "Chin-up", "reason": "Bodyweight version of the same grip." },
+      { "key": "cable-single-arm-pulldown", "name": "Single-arm pulldown", "reason": "One arm at a time on the cable." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at shoulder height of the seated figure, cable and bar above. The bar path in front of the face must stay clear.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Seated tall, thighs under the pads. Arms straight overhead holding the bar with palms facing back toward the face, about shoulder width.",
+        "approxAnglesDeg": { "shoulderFlexion": 170, "elbowFlexion": 5, "trunkLeanFromVertical": 10 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Bar at the upper chest, elbows down and slightly in front of the ribs. Chest up, torso leaning back only slightly.",
+        "approxAnglesDeg": { "shoulderFlexion": 20, "elbowFlexion": 130, "trunkLeanFromVertical": 15 }
+      }
+    ],
+    "ikHints": ["Thighs fixed under the pads", "Hands fixed on the bar; cable stays vertical"],
+    "barPath": "Close to vertical, just in front of the face, down to the upper chest",
+    "tempo": { "downMs": 1000, "holdMs": 300, "upMs": 1800 },
+    "props": ["lat_pulldown_machine", "straight_bar"],
+    "emphasise": [
+      "Underhand grip clearly visible",
+      "Elbows drive down to the sides",
+      "Slow return"
+    ],
+    "doNotShow": ["Big backward lean", "Bar behind the neck", "Stack slamming"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/lat-pulldown-with-supinated-grip/",
+      "title": "StrengthLog: Lat Pulldown With Supinated Grip",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[2-3]; primaryMuscles (lats); secondaryMuscles"
+    },
+    {
+      "url": "https://one.puregym.com/exercises/back/lat-exercises/reverse-grip-lat-pulldown",
+      "title": "PureGym: Reverse grip lat pulldown",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1-2] (elbows down and back, bar to just below the chin)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "Biceps as a primary follows the expansion research and general coaching consensus; StrengthLog lists biceps as secondary."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

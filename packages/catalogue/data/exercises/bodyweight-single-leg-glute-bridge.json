@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-single-leg-glute-bridge",
+  "tier": "rich",
+  "name": "Single-leg glute bridge",
+  "aliases": ["One-leg glute bridge", "One-legged glute bridge", "Single leg glute bridge", "Single-leg hip bridge", "SL glute bridge"],
+  "family": "hip_thrust",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "hamstrings"],
+  "secondaryMuscles": ["core", "abductors"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your back, knees bent",
+      "Working foot flat, under the knee",
+      "Lift the other knee toward your chest"
+    ],
+    "execution": [
+      "Press through the heel of the working foot",
+      "Raise your hips until they're level",
+      "Keep both hips the same height",
+      "Lower slowly and repeat"
+    ],
+    "faults": [
+      "Don't let one hip drop",
+      "Don't arch your lower back",
+      "Don't push through your toes"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Holding the free knee to your chest keeps the lower back from arching.",
+      "If the back of the thigh cramps, move the working foot a little closer to your hips.",
+      "Reps are per leg.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "A cramp that won't ease",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-glute-bridge", "name": "Glute bridge", "reason": "Both feet down; half the load per leg." },
+      { "key": null, "name": "Marching glute bridge", "reason": "Hold a two-leg bridge and lift one foot at a time." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Shoulders-elevated single-leg hip thrust", "reason": "Upper back on a bench gives a longer range." },
+      { "key": null, "name": "Pause at the top", "reason": "A 2–3 second hold adds work with no load." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-glute-bridge", "name": "Glute bridge", "reason": "Two-leg version." },
+      { "key": "dumbbell-single-leg-romanian-deadlift", "name": "Single-leg Romanian deadlift", "reason": "One-leg glute and hamstring work standing up." },
+      { "key": "cable-glute-kickback", "name": "Cable glute kickback", "reason": "One-leg hip extension on a cable." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, figure lying face up with the head to the left. Working leg nearest the camera; free knee held up toward the chest.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Lying on the back, near foot flat with the knee bent, hips on the floor. Far knee drawn toward the chest. Arms on the floor by the sides.",
+        "approxAnglesDeg": { "nearHipFlexion": 45, "nearKneeFlexion": 100, "farHipFlexion": 100 }
+      },
+      {
+        "label": "Top",
+        "describe": "Hips raised so the body is straight from shoulders to the near knee. Hips level. Far knee still drawn up.",
+        "approxAnglesDeg": { "nearHipFlexion": 0, "nearKneeFlexion": 90, "farHipFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Shoulders and near foot fixed on the floor"],
+    "tempo": { "downMs": 1400, "holdMs": 600, "upMs": 900 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Hips rise level, no dropping on the free side",
+      "Push through the heel",
+      "Straight line from shoulders to knee at the top"
+    ],
+    "doNotShow": ["One hip dropping", "Arched lower back", "Heel lifting"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/one-legged-glute-bridge/",
+      "title": "StrengthLog: One-Legged Glute Bridge",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-1]; cues.execution[0-1,3]"
+    },
+    {
+      "url": "https://www.strengthlog.com/glute-bridge/",
+      "title": "StrengthLog: Glute Bridge",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.regressions[0]; cues.faults[1]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "sources",
+      "note": "Both sources are from one publisher. An independent second source is still needed."
+    },
+    {
+      "field": "secondaryMuscles",
+      "note": "Abductors are listed for keeping the hips level; reasoned from the movement, not measured."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

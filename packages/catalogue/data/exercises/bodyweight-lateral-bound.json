@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-lateral-bound",
+  "tier": "rich",
+  "name": "Lateral bound",
+  "aliases": ["Lateral bounds", "Skater jump", "Skater jumps", "Skater hops", "Side bound", "Lateral bounding"],
+  "family": "jump",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "abductors", "quads"],
+  "secondaryMuscles": ["adductors", "calves", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Stand on one leg, knee soft",
+      "Clear space to both sides",
+      "Hips back, chest slightly forward"
+    ],
+    "execution": [
+      "Push off sideways from the outside leg",
+      "Land softly on the other foot",
+      "Hold the landing, knee over the toes",
+      "Then bound back the other way"
+    ],
+    "faults": [
+      "Don't land with a straight knee",
+      "Don't let the landing knee cave in",
+      "Don't jump forward instead of sideways"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Bound on a non-slip surface with clear space on both sides.",
+      "Start with short bounds and a 1–2 second hold on each landing; add distance and speed once landings are steady.",
+      "Count reps per side.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the knee or ankle on landing",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Lateral step and stick", "reason": "Step sideways onto one leg and hold, with no flight." },
+      { "key": null, "name": "Short lateral bound with a hold", "reason": "Small bounds with a full stop on each landing." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Continuous lateral bounds", "reason": "Bounce straight into the next bound with a short contact." },
+      { "key": null, "name": "Longer lateral bounds", "reason": "More distance per bound." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-lateral-lunge", "name": "Lateral lunge", "reason": "Side-to-side strength with no jump." },
+      { "key": "bodyweight-broad-jump", "name": "Broad jump", "reason": "Jumping power in a straight line." },
+      { "key": "cable-hip-abduction", "name": "Cable hip abduction", "reason": "Outer-hip strength without impact." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at hip height so the sideways travel and the landing knee's line over the foot are clear. Leave room on both sides of the figure.",
+    "keyPositions": [
+      {
+        "label": "Load",
+        "describe": "Standing on the right leg, knee and hip bent, chest slightly forward, left foot off the floor. Arms back to swing.",
+        "approxAnglesDeg": { "rightKneeFlexion": 50, "trunkLeanFromVertical": 25 }
+      },
+      {
+        "label": "Flight",
+        "describe": "Pushed off the right leg, body travelling to the left, both feet off the floor, arms swinging across.",
+        "approxAnglesDeg": { "rightKneeFlexion": 10, "leftKneeFlexion": 20, "trunkLeanFromVertical": 15 }
+      },
+      {
+        "label": "Landing",
+        "describe": "Landed on the left leg about a body-width or more to the side. Knee bent and over the toes, hips back, right foot off the floor behind. Held still.",
+        "approxAnglesDeg": { "leftKneeFlexion": 50, "trunkLeanFromVertical": 25 }
+      }
+    ],
+    "ikHints": ["Landing knee tracks over the second toe"],
+    "tempo": { "downMs": 500, "holdMs": 1000, "upMs": 500 },
+    "props": [],
+    "emphasise": [
+      "Sideways push from the outside leg",
+      "Soft one-leg landing",
+      "Landing knee in line with the foot"
+    ],
+    "doNotShow": ["Knee caving on landing", "Stiff-legged landing", "Forward jump"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/lateral-bound/",
+      "title": "StrengthLog: Lateral Bound",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0]; cues.execution[0-3]"
+    },
+    {
+      "url": "https://theprehabguys.com/vimeo-video/lateral-bounding-continuous/",
+      "title": "The Prehab Guys: Lateral bounding, continuous",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1] (land softly on the balls of the feet); cues.faults[2] (sideways, not forward); variations.progressions[0]",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "'Skater jump' in classes is often the same movement with a reach or a toe tap; treated as the same exercise."
+    },
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'conditioning'; the proposed 'power' pattern isn't in the vocabulary."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

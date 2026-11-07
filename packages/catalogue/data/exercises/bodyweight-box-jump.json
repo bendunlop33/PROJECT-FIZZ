@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-box-jump",
+  "tier": "basic",
+  "name": "Box jump",
+  "aliases": ["Box jumps", "Plyo box jump", "Plyometric box jump"],
+  "family": "box_jump",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["calves", "hamstrings", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

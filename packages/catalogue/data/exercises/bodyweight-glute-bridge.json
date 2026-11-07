@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-glute-bridge",
+  "tier": "basic",
+  "name": "Glute bridge",
+  "aliases": ["Bodyweight glute bridge", "Hip bridge", "Floor bridge", "Floor glute bridge"],
+  "family": "hip_thrust",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes"],
+  "secondaryMuscles": ["hamstrings", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

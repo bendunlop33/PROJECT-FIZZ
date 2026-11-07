@@ -1,0 +1,20 @@
+{
+  "specVersion": 1,
+  "file": { "delimiter": ",", "headerLine": 1, "decimal": "." },
+  "layout": { "kind": "row_per_set", "setOrder": null },
+  "workoutKey": [],
+  "date": { "column": { "header": "Date", "index": 0 }, "format": "YYYY-MM-DD" },
+  "exercise": { "header": "Exercise", "index": 1 },
+  "load": { "column": { "header": "Weight (kg)", "index": 2 }, "unit": { "kind": "header_token", "column": { "header": "Weight (kg)", "index": 2 }, "token": "kg" } },
+  "reps": { "header": "Reps", "index": 3 },
+  "setType": null,
+  "rpe": null,
+  "notes": [{ "header": "Notes", "index": 4 }],
+  "unmapped": [],
+  "selfCheck": [
+    { "line": 2, "date": "2025-06-02", "exercise": "Bench Press", "load": 80, "reps": 8 },
+    { "line": 4, "date": "2025-06-02", "exercise": "Squat", "load": 100, "reps": 5 },
+    { "line": 7, "date": "2025-06-06", "exercise": "Bench Press", "load": 82.5, "reps": 7 }
+  ],
+  "unsupported": null
+}

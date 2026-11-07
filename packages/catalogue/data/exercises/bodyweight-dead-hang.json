@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-dead-hang",
+  "tier": "rich",
+  "name": "Dead hang",
+  "aliases": ["Dead hangs", "Bar hang", "Passive hang", "Hang from bar", "Hanging hold"],
+  "family": "hang",
+  "movementPattern": "vertical_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["grip"],
+  "secondaryMuscles": ["forearms"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["pullup_bar"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Step up on a box under the bar",
+      "Overhand grip, about shoulder width",
+      "Thumbs wrapped round the bar"
+    ],
+    "execution": [
+      "Lift your feet and hang, arms straight",
+      "Let your body settle; no swinging",
+      "Breathe steadily through the hold",
+      "Step back onto the box to finish"
+    ],
+    "faults": [
+      "Don't bend your elbows",
+      "Don't swing or kick your legs",
+      "Don't drop off when your grip goes"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Keep a box or bench under the bar so you can step down instead of dropping.",
+      "Start with short holds, or keep your toes on the box to take some weight, and build up.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Feet-assisted hang", "reason": "Toes stay on a box to take some bodyweight." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Active hang", "reason": "Shoulders pulled down away from the ears; the start of a pull-up." },
+      { "key": null, "name": "Weighted dead hang", "reason": "Extra weight on a dip belt." },
+      { "key": null, "name": "Single-arm dead hang", "reason": "One hand at a time; much harder." }
+    ],
+    "substitutions": [
+      { "key": "farmers-carry", "name": "Farmer's carry", "reason": "Heavy grip work while walking." },
+      { "key": "bodyweight-hanging-knee-raise", "name": "Hanging knee raise", "reason": "Same bar; adds abs work to the hang." },
+      { "key": "bodyweight-pull-up", "name": "Pull-up", "reason": "Grip under load plus the pull." },
+      { "key": "barbell-shrug", "name": "Barbell shrug", "reason": "Heavy grip work with a bar." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at chest height, bar near the top of frame, box under the feet. Whole body in frame.",
+    "keyPositions": [
+      {
+        "label": "Grip",
+        "describe": "Standing on a box under the bar, both hands gripping overhand about shoulder width, thumbs wrapped.",
+        "approxAnglesDeg": { "shoulderFlexion": 170, "elbowFlexion": 5 }
+      },
+      {
+        "label": "Hang",
+        "describe": "Feet lifted off the box, body hanging straight under the bar, arms straight, legs relaxed and still.",
+        "approxAnglesDeg": { "shoulderFlexion": 180, "elbowFlexion": 0 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the bar", "Body hangs straight down under the hands"],
+    "tempo": { "downMs": 1000, "holdMs": 8000, "upMs": 1000 },
+    "props": ["pullup_bar", "plyo_box"],
+    "emphasise": [
+      "Straight arms",
+      "Still body, no swing",
+      "Box nearby to step down"
+    ],
+    "doNotShow": ["Dropping from the bar", "Swinging", "Bent elbows"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/bar-hang/",
+      "title": "StrengthLog: Bar Hang",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (forearm flexors, grip); cues.execution[0]; variations.progressions[0] (active vs relaxed shoulders)"
+    },
+    {
+      "url": "https://www.artofmanliness.com/strength/fitness/the-benefits-of-hanging-for-strength-and-mobility/",
+      "title": "The Art of Manliness: The Benefits of Hanging for Strength and Mobility",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1]; cues.faults[0-1]; safety.notes[1]; variations.regressions[0]; variations.progressions",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "There is no hang or isometric pattern; vertical_pull is the nearest (same station as pull-ups). It is not a pull."
+    },
+    {
+      "field": "primaryMuscles",
+      "note": "Lats are not listed: they are stretched, not trained (expansion research review). Claims that hanging helps the spine or shoulder health are not made here; the evidence is weak."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

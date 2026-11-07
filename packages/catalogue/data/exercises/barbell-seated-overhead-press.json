@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-seated-overhead-press",
+  "tier": "basic",
+  "name": "Seated overhead press",
+  "aliases": ["Seated barbell press", "Seated military press", "Seated barbell shoulder press", "Seated OHP"],
+  "family": "overhead_press",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["side_delts", "triceps", "upper_chest", "traps"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["incline_bench", "rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 150,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,13 @@
+Name,StartTime,EndTime,BodyWeight,Exercise,Equipment,Reps,Weight,Time,Distance,Status,IsWarmup,RPE,RIR,Categories,Note
+Push (Heavy),2026-03-02T07:05:00Z,2026-03-02T08:10:30Z,80.0,Bench Press,Barbell,10,40.0,,,Done,true,,,"Chest,Triceps",
+Push (Heavy),2026-03-02T07:05:00Z,2026-03-02T08:10:30Z,80.0,Bench Press,Barbell,8,80.0,,,Done,false,8,2,"Chest,Triceps","Paused, first rep"
+Push (Heavy),2026-03-02T07:05:00Z,2026-03-02T08:10:30Z,80.0,Bench Press,Barbell,8,80.0,,,Done,false,8.5,,"Chest,Triceps",
+Push (Heavy),2026-03-02T07:05:00Z,2026-03-02T08:10:30Z,80.0,Bench Press,Barbell,8,80.0,,,NotStarted,false,,,"Chest,Triceps",
+Push (Heavy),2026-03-02T07:05:00Z,2026-03-02T08:10:30Z,80.0,Lateral Raise,Dumbbell,12,10.0,,,Done,false,,,Shoulders,
+Push (Heavy),2026-03-02T07:05:00Z,2026-03-02T08:10:30Z,80.0,Lateral Raise,Dumbbell,12,10.0,,,NotStarted,false,,,Shoulders,
+Pull,2026-03-04T17:30:00Z,2026-03-04T18:20:00Z,80.2,Pull Up,None,8,0.0,,,Done,false,9,,"Back,Biceps",
+Pull,2026-03-04T17:30:00Z,2026-03-04T18:20:00Z,80.2,Pull Up,None,7,0.0,,,Done,false,10,0,"Back,Biceps",
+Pull,2026-03-04T17:30:00Z,2026-03-04T18:20:00Z,80.2,Lat Pulldown,Machine,10,55.0,,,Done,false,,,Back,
+Morning,2026-03-06T06:00:00Z,2026-03-06T06:40:00Z,79.9,Back Squat,Barbell,5,100.0,,,Done,false,,,Legs,
+Morning,2026-03-06T06:00:00Z,2026-03-06T06:40:00Z,79.9,Back Squat,Barbell,5,100.0,,,Done,false,,,Legs,
+Evening,2026-03-06T18:15:00Z,2026-03-06T18:45:00Z,79.9,Bench Press,Barbell,6,82.5,,,Done,false,,,"Chest,Triceps",

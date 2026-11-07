@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-crunch",
+  "tier": "rich",
+  "name": "Crunch",
+  "aliases": ["Crunches", "Floor crunch", "Abdominal crunch", "Ab crunch", "Basic crunch", "Bodyweight crunch"],
+  "family": "crunch",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your back, knees bent, feet flat",
+      "Hands lightly by your head or across your chest",
+      "Lower back resting on the floor"
+    ],
+    "execution": [
+      "Breathe out and curl your ribs toward your hips",
+      "Lift until your shoulder blades leave the floor",
+      "Pause, then lower slowly",
+      "Keep your chin slightly tucked"
+    ],
+    "faults": [
+      "Don't pull on your head or neck",
+      "Don't sit all the way up from the hips",
+      "Don't rush or bounce off the floor"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Hands support the head only; the abs do the lifting. If your neck tires first, cross your arms on your chest instead.",
+      "To add load, hold a plate on your chest and log it as added weight.",
+      "Coaching sources differ on how much crunching is wise. A common middle ground is moderate volume, built up gradually.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Crunch with hands sliding up the thighs", "reason": "Reaching along the thighs shortens the lever and guides the curl." }
+    ],
+    "progressions": [
+      { "key": "bodyweight-decline-crunch", "name": "Decline crunch", "reason": "Longer range against gravity; progress by bench angle." },
+      { "key": null, "name": "Weighted crunch", "reason": "A plate held on the chest; log it as added weight." },
+      { "key": "machine-ab-crunch", "name": "Ab crunch machine", "reason": "Adds load in clean stack steps." }
+    ],
+    "substitutions": [
+      { "key": "cable-crunch", "name": "Cable crunch", "reason": "Same curl with stack loading, kneeling at a cable column." },
+      { "key": "bodyweight-reverse-crunch", "name": "Reverse crunch", "reason": "Curls from the pelvis up instead of the ribs down." },
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "No spine curling; trains bracing instead." },
+      { "key": "bodyweight-plank", "name": "Plank", "reason": "Holds the trunk still instead of curling it." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, figure lying along the frame with the head on the left. A thin mat line under the body.",
+    "keyPositions": [
+      {
+        "label": "Down",
+        "describe": "Lying on the back, knees bent about 90°, feet flat. Hands lightly by the head, elbows out. Head, shoulders and lower back on the mat.",
+        "approxAnglesDeg": { "trunkFlexion": 0, "hipFlexion": 45, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Curled",
+        "describe": "Head, shoulders and shoulder blades curled off the mat, ribs drawn toward the hips. Lower back, hips and feet still on the mat. Chin slightly tucked; hands not pulling.",
+        "approxAnglesDeg": { "trunkFlexion": 30, "hipFlexion": 45, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Feet, hips and lower back stay on the mat in every frame"],
+    "tempo": { "downMs": 1500, "holdMs": 500, "upMs": 1000 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Only the upper back lifts; the lower back stays down",
+      "Ribs curl toward the hips",
+      "Slow lowering"
+    ],
+    "doNotShow": ["Hands yanking the head forward", "Sitting all the way up", "Feet lifting"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/crunch/",
+      "title": "StrengthLog: Crunch",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles; cues.setup[0]; cues.execution[1]; safety.notes[1] (weight held on the chest)"
+    },
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/52/crunch/",
+      "title": "ACE Exercise Library: Crunch",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0,2-3]; cues.faults[0,2]; safety.notes[0]"
+    },
+    {
+      "url": "https://bretcontreras.com/wp-content/uploads/To-Crunch-or-Not-to-Crunch-An-Evidence-Based-Examination-of-Spinal-Flexion-Exercises-Their-Potential-Risks-and-Their-Applicability-to-Program-Design.pdf",
+      "title": "Contreras B, Schoenfeld B (2011) To crunch or not to crunch. Strength Cond J 33(4):8-18",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[2]",
+      "note": "Narrative review; cited through the expansion research file, not re-read in full."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Crunch\" is FitNotes' default name and is this entry's name. \"Weighted crunch\" is deliberately not an alias: it is the same exercise with added weight, which an import records through the bodyweight question."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

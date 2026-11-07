@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-pec-deck",
+  "tier": "basic",
+  "name": "Pec deck",
+  "aliases": ["Pec deck fly", "Machine fly", "Pec fly", "Butterfly", "Machine chest fly", "Pec dec", "Seated machine fly"],
+  "family": "chest_fly",
+  "movementPattern": "horizontal_push",
+  "mechanic": "isolation",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["front_delts"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,367 @@
+{
+  "formatVersion": 1,
+  "source": "docs/training-guides/playbook-v1.md",
+  "approved": "2026-10-09",
+  "rules": [
+    {
+      "id": "1",
+      "short": "Weekly sets per muscle group start from Ben's stated days a week and session length, or from his own logged sets per lifting day × his stated days. His goal sets the range. Sets grow by 1–2 only when he asks. In a short week, keep the loads and cut sets.",
+      "appliesWhen": "Any plan or weekly-volume advice",
+      "grade": "Strong / Moderate / Weak / Practice, split by claim (see 1)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "2",
+      "short": "Strength: main lifts mostly at ≥ ~80% 1RM (≈ 1–6 reps at RPE 7–9), 2–3+ sets per lift per session, each lift ≥ 2×/week.",
+      "appliesWhen": "Strength is the main focus, or strength \"also matters\"",
+      "grade": "Strong (heavy loads); Moderate (≥ 2×/week, set count)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "3",
+      "short": "Working sets default to RPE 7–9 on compounds. RPE 10 is for planned last sets, AMRAPs or isolation work.",
+      "appliesWhen": "Setting targets",
+      "grade": "Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "4",
+      "short": "Treat one RPE rating as ± 1 rep. Change future targets only on a pattern (≥ 2 sessions), never on one rating. Distrust ratings on sets above 12 reps.",
+      "appliesWhen": "Interpreting logs",
+      "grade": "Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "5",
+      "short": "Harder than planned (rule T: logged effort ≥ target RPE + 1.5, or reps below the range minimum): the coach offers, for the remaining sets of that exercise, −5–10% load (≈ 2–4% per RPE point over target, rounded down to an achievable load) or the same load with fewer reps. How the two figures combine is D22. With no coach, the built-in rule offers the same, labelled.",
+      "appliesWhen": "Mid-session (rule T)",
+      "grade": "Weak + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "6",
+      "short": "Easier than planned (rule T: logged effort ≤ target RPE − 2) on a working set: the coach offers the next achievable load up (+2–5%) or +1–2 reps. With no coach, the built-in rule offers the same, labelled.",
+      "appliesWhen": "Mid-session (rule T)",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "7",
+      "short": "The AI coach chooses load, reps, sets or a variant from Ben's goal, his history on this equipment and the selected gym's real increments and min/max. Changes are shown in kg/lb and %.",
+      "appliesWhen": "Ben asks, a rule T signal, the post-workout review, or planning the next session or block",
+      "grade": "Strong / Moderate / Weak / Practice, split by claim (see 7)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "7-F",
+      "short": "Labelled, equipment-aware double progression. It uses the smallest achievable increment. If that jump is > ~10% or the machine is at its max, it progresses reps instead, up to the rep cap, then holds. It doesn't add sets (D2).",
+      "appliesWhen": "Next-session targets when the coach is unavailable, or when no coach target has been applied (D21)",
+      "grade": "Weak + Practice",
+      "use": "code_only",
+      "note": "code: the built-in rule, never sent as advice"
+    },
+    {
+      "id": "8",
+      "short": "A stall (ST1: 2 comparable sessions failing the same target ≥ 7 days apart, else a third; ST2: no new best for ≥ 3 sessions and ≥ 3 weeks, deload, lead-in, return and pain weeks skipped, a machine-max or rep-cap hold is a ceiling, not a stall). ST3: shown as `Stalled`; when Ben opens a review or asks, one offer: a rep-scheme change first, then a 5–10% reset; 2+ lifts stalled in a fortnight → rule 10's deload; a pain flag gets no offer. One bad session gets a note only.",
+      "appliesWhen": "Next-session targets, block view, weekly review",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "9",
+      "short": "Rest 2–3 min (up to 5) on heavy compounds and 1–2 min on isolation work.",
+      "appliesWhen": "Rest presets, shortening sessions",
+      "grade": "Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "10",
+      "short": "Deload when performance drops across ≥ 2 sessions (≈ halve sets, RPE ≤ 7, ~1 week), or every 4–8 weeks if Ben prefers. Always a proposal.",
+      "appliesWhen": "Future plan",
+      "grade": "Weak + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "11",
+      "short": "Same day with strength as the priority: lift first and keep the endurance part easy. If the day's endurance session is a key one, do it first and cut leg volume.",
+      "appliesWhen": "Daily plan, only when the endurance switch is on. The lift-first part only when lifting is the priority (see \"Endurance switch\")",
+      "grade": "Moderate",
+      "use": "endurance_switch",
+      "note": null
+    },
+    {
+      "id": "12",
+      "short": "Keep heavy lower-body lifting and hard or long endurance ≥ 6 h apart (ideally ≥ 24 h). Keep heavy or high-volume leg work out of the 48 h before a key long run, ride or race. Show the trade-off as a proposal; never overwrite the run.",
+      "appliesWhen": "Weekly scheduling, only when the endurance switch is on",
+      "grade": "Moderate",
+      "use": "endurance_switch",
+      "note": null
+    },
+    {
+      "id": "13",
+      "short": "Keep ≥ 2 heavy strength exposures a week through endurance phases (fewer sets, same heavy loads).",
+      "appliesWhen": "When the endurance switch is on and endurance is one of Ben's goals (was \"Endurance/HYROX blocks\")",
+      "grade": "Moderate",
+      "use": "endurance_switch",
+      "note": null
+    },
+    {
+      "id": "G",
+      "short": "Targets follow Ben's confirmed goal and how his training is run. Nothing is sport-specific. Rules 11 and 12 apply only while the endurance switch is on; rule 13 also needs endurance as a goal.",
+      "appliesWhen": "Always",
+      "grade": "Practice (structure), built on Strong/Moderate profile values",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "T",
+      "short": "Mid-session offer triggers compare logged effort with each working set's target RPE (Ben's, else the coach's, else the plan's, else the built-in rule's): harder at ≥ target + 1.5 or reps below the range minimum (unless effort was ≤ target − 1), easier at ≤ target − 2. Warm-ups, drop sets and planned all-out/AMRAP sets never trigger. \"Too easy\" never fires above 12 reps.",
+      "appliesWhen": "Every logged working set",
+      "grade": "Moderate (rating error) + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU1",
+      "short": "Warm-up sets are tagged Warm-up, come before the first working set, and never count: no hard sets (rule 1), PBs, est. 1RM, rule T offers, 7-F history or stalls, and they never progress. Logged warm-ups are never silently changed. Reason: they prepare, they aren't training load.",
+      "appliesWhen": "Always",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU2",
+      "short": "A muscle is already warm when Ben logged a working set earlier today with the same primary muscle group or movement pattern, or it's a superset partner of one already started. Cardio and running never warm a lifting pattern. Reason: a warm muscle needs fewer warm-ups.",
+      "appliesWhen": "Building each exercise's warm-ups",
+      "grade": "Practice / Weak",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU3",
+      "short": "Heavy band: R of 6 or fewer; rep band: R of 7 or more. Every goal uses the same tables; the goal acts only through R and W. Reason: no study compares warm-ups by goal.",
+      "appliesWhen": "Always",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU4",
+      "short": "Heavy band ladder for a cold main lift or heavy compound: R 4–6: bar × 5, 40 % × 5, 60 % × 3, 80 % × 2; R 1–3 adds 75 % × 2 and 87.5 % × 1. No jump over 25 % of W (a step is inserted; at most 6). Warm: 60 % × 3, 80 % × 2. On a bar with Simple warm-up weights on, PL1 replaces this ladder. Reason: heavier sets need a gradual build.",
+      "appliesWhen": "Main lift or heavy compound, R of 6 or fewer",
+      "grade": "Practice + Weak",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU5",
+      "short": "Rep band heavy compound, cold: 50 % × 8, then 80 % × 5 (R 10 or more) or × 4 (R 7–9). Warm: the 80 % step only. Reason: a light and a near-working step are enough for higher reps.",
+      "appliesWhen": "Main lift or heavy compound, R of 7 or more",
+      "grade": "Weak + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU6",
+      "short": "Secondary compound (and a machine compound with R of 6 or fewer), cold: R 10 or more: 80 % × 5; R 7–9: 80 % × 4; R 6 or fewer: 60 % × 3, 80 % × 2; plus 50 % × 8 first only if it's the session's first exercise. Warm: none. Reason: lighter compounds need little ramping.",
+      "appliesWhen": "Secondary compound",
+      "grade": "Practice + Weak",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU7",
+      "short": "Isolation and other machine work, cold: one step, 50 % × 8; warm: none. Weighted bodyweight: bodyweight only. Bodyweight or assisted compounds: an easier variation only when first for the pattern with R of 6 or fewer. Cardio: no warm-up sets. Prehab work follows PH1. Reason: one easy set is enough for isolation.",
+      "appliesWhen": "Isolation, machine, bodyweight, cardio",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU8",
+      "short": "Every warm-up load is achievable on the gym's equipment, snapped down, never below its minimum; steps on one load merge; the top step stays at or under 85 % of W (rep band) or 90 % (heavy band); nothing reaches W. With Simple warm-up weights on, SW1 rounds the loads and PL1 sets bar and plate-loaded ladders. Reason: rule 4, loads must be real.",
+      "appliesWhen": "Every generated or coach-edited warm-up",
+      "grade": "Guardrail (rule 4) + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU9",
+      "short": "Floor-start lifts (deadlifts, rows from the floor, power cleans) get no empty-bar step; the first step is at least the lightest load with full-size plates when the gym records plate sizes. Reason: the bar must start at the right height.",
+      "appliesWhen": "Floor-start barbell lifts",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU10",
+      "short": "Don't tire Ben out: at most 8 reps a step, at most max(R, 5) above 50 % of W, at most 25 warm-up reps an exercise, each step easy (about RPE 6 or less); singles only before sets of 3 or fewer; no potentiation sets. Reason: warm-ups shouldn't cost working-set performance.",
+      "appliesWhen": "Always",
+      "grade": "Weak + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU11",
+      "short": "Rest 60 s between warm-up steps; 2 min (rep band) or 3 min (heavy band) before the first working set. All warm-ups fit D17's 10-minute allowance, cut in order: general warm-up, then WU6 and WU7 steps (last exercise first), then WU5's light step, then WU4's bar step and short ladder; never below 2 steps on a cold heavy-band lift or 1 on a cold rep-band heavy compound. Reason: time goes to working sets first.",
+      "appliesWhen": "Session building",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "WU12",
+      "short": "Optional 3–5 min of easy cardio or dynamic movement before a first main lift or heavy compound, skipped after cardio or a run in the last 30 min; static stretching, if Ben wants it, 30 s or less a muscle before the warm-up sets. Never presented as injury prevention or a fix for pain. Cardio Ben asks for as a warm-up follows CW1. Reason: optional, weakly supported.",
+      "appliesWhen": "Session start",
+      "grade": "Practice / Weak / Strong (stretch dose)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "FQ1",
+      "short": "Prefer ≥ 2 exposures a week per muscle group where his days and split allow, as a tie-breaker only: never a reason to add sets, time or days. A group trained once a week is never flagged. Reason: weekly sets drive growth; frequency mostly spreads them.",
+      "appliesWhen": "Planning, Rebalance, plan checks",
+      "grade": "Strong (equal volume) / Practice (exposure threshold)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "FQ2",
+      "short": "A group with more than 8 direct sets a week is spread over ≥ 2 days so no day has more than 8 direct sets for it; the builder and Rebalance never make a day above 8. Reason: rule 1's per-session cap.",
+      "appliesWhen": "Any plan",
+      "grade": "Moderate (diminishing returns) / Weak (the 8)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "FQ3",
+      "short": "Strength focus: Rebalance and trims never take a main lift below 2 days a week when his days allow (rule 2).",
+      "appliesWhen": "Strength focus, or strength also matters",
+      "grade": "Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "VC1",
+      "short": "Between a group's range top and 20 direct sets a week nothing is flagged and Rebalance doesn't trim it for its own sake; it is the first donor (only down to its range top) when a gap fill needs time on that day. Reason: more sets still add growth up to about 20.",
+      "appliesWhen": "Muscle, General fitness, non-priority groups",
+      "grade": "Strong / Practice (donor first)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "VC2",
+      "short": "Flagged, and trimmed by Rebalance, only above 20 direct sets a week (priority groups Ben chose may go above, V4). Assisted sets never flag a group. Reason: little data above 20–25.",
+      "appliesWhen": "Plan › Muscles, plan checks, weekly review",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "VC3",
+      "short": "A day with more than 8 direct sets for one group is flagged (`Chest 10 on Push A · above 8`). Rebalance moves the excess to another of that group's days with time, else trims to 8: never a main lift, never a row below 2 sets. Reason: above about 8 in one session adds little.",
+      "appliesWhen": "Any plan or builder day",
+      "grade": "Moderate / Weak (the 8)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "VC4",
+      "short": "Strength focus: the weekly review's top for non-main groups stays 10 sets a week; spare capacity goes to main-lift recovery.",
+      "appliesWhen": "Strength focus",
+      "grade": "Weak",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "LW1",
+      "short": "After a lighter week (Ben asked, or accepted the early-deload offer) the plan keeps its length; the next planned deload becomes a normal week only if it falls ≤ 3 weeks after the lighter week; later deloads stay. Never ends, restarts or extends the plan. Reason: two lighter weeks that close together cost training for little gain.",
+      "appliesWhen": "Plans with planned deloads, when a lighter week is applied",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "LW2",
+      "short": "The dropped deload shows in the same lighter-week proposal (`Deload: week 6 → none`); one Apply and one Undo cover both.",
+      "appliesWhen": "The lighter-week proposal",
+      "grade": "Guardrail",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "LW3",
+      "short": "No catch-up: the planned path doesn't advance in the lighter week (the week after is the last build week plus one step), and a lighter week never counts as a stall or as behind. Reason: strength holds over a short lighter spell.",
+      "appliesWhen": "Planned path, block view",
+      "grade": "Practice / Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "PC1",
+      "short": "A back-off or drop the app plans is put at a load reached by taking plates off the set before: the worked-out load if it can be, else the heaviest within 5% (or one gym step) below it that can. Never heavier; a weight Ben types is kept. Reason: fewer plate changes.",
+      "appliesWhen": "Planned back-offs and drops on plate-loaded lifts",
+      "grade": "Practice (Ben's preference)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "RUN1",
+      "short": "The run rule: the day before a planned long or hard run and the day after a done one, leg days go after every other day in Up next (still suggested if every option is a leg day). A Set day isn't moved. Reason: rule 12, keep heavy legs away from hard or long runs.",
+      "appliesWhen": "Up next, when a long or hard run is planned or done",
+      "grade": "Moderate (rule 12)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "RUN2",
+      "short": "A planned run or other planned activity whose day has passed with nothing linked, matched or marked done is Missed and stops counting from the day after (run rule and the week). Linking or logging it later counts it again.",
+      "appliesWhen": "The week, the run rule, the coach's week view",
+      "grade": "Ben's rule (2 Nov)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "SW1",
+      "short": "Simple warm-up weights (default on; Profile › Training): each warm-up step rounds to an easy load the item can make: the bar, then the bar + 10 kg steps (20 lb in lb; 20 kg steps from a 100 kg working weight when that needs no more steps), dumbbells in 5 kg (10 lb), machines in 10 kg (20 lb) or the stack's own step. Always achievable and below the working weight. Reason: Ben wants easy-to-load warm-ups, not fiddly calculated jumps.",
+      "appliesWhen": "Every generated warm-up while the setting is on",
+      "grade": "Ben's preference + guardrail (rule 4)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "PH1",
+      "short": "Rotator cuff and prehab work (face pulls included) gets no warm-up sets, and the coach's increases on it go one load step (one dumbbell) at a time. Ben's per-exercise warm-up setting (off or normal) wins. Reason: this work stays light and easy.",
+      "appliesWhen": "Prehab exercises",
+      "grade": "Ben's preference",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "PL1",
+      "short": "Plate ladder: on bars and plate-loaded machines, warm-ups are the bar plus whole 5 kg plates a side, each step only adds plates to the one before, and the working set only adds to the last step. A cold heavy bar lift starts with plates on (at most 60 kg and ⅔ of the working weight; the empty bar only when the working weight is 60 kg or less and not from the floor) and gets 2–3 warm-ups with no jump over 30 % of the working weight (100 → 60, 80; 105 → 60, 90); already warm: one step near 80 % × 2. In lb: the bar + 20 lb steps. Reason: minimal unloading of plates.",
+      "appliesWhen": "Every generated warm-up on a bar or plate-loaded machine, with Simple warm-up weights on",
+      "grade": "Ben's preference + guardrail (rule 4)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "CW1",
+      "short": "Cardio Ben asks for as a warm-up is marked Warm-up on its row. It stays a timed working bout: no PB, volume or muscle-set credit, and it sits outside the 10-minute warm-up-set allowance.",
+      "appliesWhen": "Plan days, Your workout, the live workout",
+      "grade": "Ben's rule (2 Nov)",
+      "use": "in_use",
+      "note": null
+    }
+  ]
+}

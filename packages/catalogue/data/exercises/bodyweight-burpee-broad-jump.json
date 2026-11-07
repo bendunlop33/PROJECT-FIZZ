@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-burpee-broad-jump",
+  "tier": "basic",
+  "name": "Burpee broad jump",
+  "aliases": ["BBJ", "Burpee broad jumps", "HYROX burpee broad jump", "Burpee long jump"],
+  "family": "burpee",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["chest", "triceps", "front_delts", "hamstrings", "calves", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "distance",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}
