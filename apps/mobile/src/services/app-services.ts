@@ -1,3 +1,4 @@
+import { createGymLocationService, type LocationPort } from './gym-location-service';
 import { createBlockProgressService } from './block-progress-service';
 import { createLibraryChangesService } from '../library/library-changes-service';
 import { createWeeklyReviewService } from '../reviews/weekly-review-service';
@@ -157,6 +158,11 @@ export interface AppServicesDeps {
   health?: { port: HealthPort | null; buildIncludesHealth: boolean; /** (Ben, 28 Oct) Off this run by the launch guard: `Paused`. */ paused?: () => NativePause | null; /** (Ben, 1 Nov) A skipped optional step of a read (Last error). */ logError?: (error: unknown, where: string) => void };
   /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
   idle?: () => Promise<void>;
+  /**
+   * (Ben, 7 Nov; ADR 0041) The phone's when-in-use location (expo-location). Absent or null (tests, a build
+   * without the module): the gym GPS rows are hidden and Today never checks.
+   */
+  location?: LocationPort | null;
 }
 
 function memoryTextFile(): TextFile {
@@ -1521,8 +1527,23 @@ export function createAppServices(deps: AppServicesDeps) {
     doneBetween: (from, to) => progress.muscleSetsBetween(from, to),
   });
 
+  /** (Ben, 7 Nov) Gym from GPS: a gym's saved location, Today's switch, the workout's offer. Local only. */
+  const gymLocation = createGymLocationService({
+    repos,
+    profile: getProfile,
+    now: deps.now,
+    port: deps.location ?? null,
+    currentGym: () => yourData.currentGym(),
+    selectGym: (gymId) => gymServices.select(gymId),
+    activeSession: async () => {
+      const a = await sessions.active();
+      return a === null ? null : { id: a.session.id, gymId: a.session.gymId };
+    },
+  });
+
   return {
     ...loop,
+    gymLocation,
     planMuscles,
     builder,
     builderCoach,

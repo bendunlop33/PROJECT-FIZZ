@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { gymRouteIds, isLoadAchievable } from '@fizz/domain';
 
-import { switchedNowToast } from '../src/workout/gym-switch-card';
+import { gymOfferText, switchedNowToast } from '../src/workout/gym-switch-card';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -119,5 +119,6 @@ describe('a gym change applies to the whole workout (Ben, 7 Nov)', () => {
     expect(switchedNowToast('Battersea', 0)).toBe('At Battersea');
     expect(switchedNowToast('Battersea', 1)).toBe('At Battersea · 1 set fitted');
     expect(switchedNowToast('Battersea', 4)).toBe('At Battersea · 4 sets fitted');
+    expect(gymOfferText('Battersea')).toBe('You’re at Battersea');
   });
 });

@@ -35,6 +35,7 @@ import { AppNavigator } from '../navigation/AppNavigator';
 import { MorningReminderHost } from '../reminders/MorningReminderHost';
 import { HealthHost } from '../health/HealthHost';
 import { healthInBuild, nativeHealthPort } from '../health/native-port';
+import { expoLocationPort } from '../device/location';
 import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
 import { createAppForeground, HOST_CLOCK } from '../coach/turn-lifecycle';
@@ -270,6 +271,8 @@ function Launch() {
       // A safe start (or a crash in HealthKit on this build) leaves Health off for the run: `Paused for this launch` /
       // `Paused on this build` (Ben, 28 Oct), never `Not available on this install` (that is a build without Health).
       health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild(), paused: () => (healthInBuild() ? nativeFeaturePause('health') : null), logError: recordContainedError },
+      // (Ben, 7 Nov; ADR 0041) When-in-use location for picking the gym; hidden when this build has no module.
+      location: expoLocationPort(),
       dataLedger: containerTextFile(DATA_LEDGER),
       credentials: deviceCredentials(),
       interruptedDelete: attempt.interruptedDelete,

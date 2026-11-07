@@ -76,7 +76,7 @@ import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
 import { logRefusal, reloadsAfterRefusal } from '../../workout/log-refusal';
 import { FinishSheet } from './FinishSheet';
 import { GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
-import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedNowToast, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
+import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedNowToast, gymOfferText, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
 import { TIME_FIT_COPY, timeFitSheet, type TimeFitSheetView } from '../../workout/time-fit';
@@ -199,6 +199,8 @@ export function WorkoutScreen() {
   const [gymSheet, setGymSheet] = useState<GymChoice[] | null | 'closed'>('closed');
   const [switchCard, setSwitchCard] = useState<OpenSwitchCard | null>(null);
   const [checkingGym, setCheckingGym] = useState<string | null>(null);
+  /** (Ben, 7 Nov) `You're at Battersea · Switch`: a location fix put Ben at another saved gym mid-workout (never switched silently). */
+  const [gymOffer, setGymOffer] = useState<{ gymId: string; gymName: string; opId: string } | null>(null);
   /** Log ignores taps while a switch is written and shown (review M2), card or not. */
   const switchBlocksLog = logBlockedBySwitch(switchCard) || checkingGym !== null;
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -560,6 +562,23 @@ export function WorkoutScreen() {
         showToast({ icon: 'info.circle', text: 'Couldn’t check that gym.' });
       });
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id, checkGym?.nonce]);
+
+  // (Ben, 7 Nov; ADR 0041) The workout opened (Start, Resume): one quiet location fix. At another saved gym it is
+  // offered (`You're at Battersea · Switch`), never switched silently. No match, permission or fix: nothing.
+  const openedSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
+  useEffect(() => {
+    if (openedSessionId === null) return;
+    let alive = true;
+    void services.gymLocation.checkWorkout(openedSessionId).then(
+      (offer) => {
+        if (alive && offer !== null) setGymOffer({ ...offer, opId: newUuid() });
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [services, openedSessionId]);
 
   const view = useMemo(() => (data === 'loading' || data === null ? null : services.workout.view(data, now, edits)), [services, data, now, edits]);
   /** False until the workout first draws: nothing animates on screen entry (premium-feel §4.3). */
@@ -2019,6 +2038,7 @@ export function WorkoutScreen() {
     if (checkingGym !== null) return;
     const labelBefore = view?.primary.label ?? '';
     setCheckingGym(gymName);
+    setGymOffer(null);
     try {
       const r = await services.gymSwitch.switchNow(session.id, gymId, opId);
       if (!r.ok) {
@@ -2424,6 +2444,15 @@ export function WorkoutScreen() {
       <StatusLine icon="ellipsis" tone="progress" text={`Checking ${checkingGym}’s equipment…`} />
     ) : switchCard ? (
       <GymSwitchCard view={switchCardView(switchCard, loaded.aggregate)} onButton={onCardButton} />
+    ) : gymOffer !== null && gymOffer.gymId !== session.gymId ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: theme.target.min.height }}>
+        <Icon name="location" />
+        <View style={{ flex: 1 }}>
+          <AppText variant="body">{gymOfferText(gymOffer.gymName)}</AppText>
+        </View>
+        <TextButton label="Not now" tone="secondary" onPress={() => { setGymOffer(null); }} />
+        <TextButton label="Switch" accessibilityLabel={`Switch this workout to ${gymOffer.gymName}`} onPress={() => void switchGymNow(gymOffer.gymId, gymOffer.gymName, gymOffer.opId)} />
+      </View>
     ) : null;
 
   function adjustRest(deltaS: number) {

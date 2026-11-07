@@ -44,6 +44,18 @@ const plugins: NonNullable<ExpoConfig['plugins']> = [
       speechRecognitionPermission: `${DISPLAY_NAME} turns your speech into text on this iPhone to log sets.`,
     },
   ],
+  [
+    // (Ben, 7 Nov; ADR 0041) When-in-use only, to pick the gym Ben is at. The `false`s keep the plugin from writing its
+    // default "Always" and motion strings: no background location, no region monitoring, no new entitlement.
+    'expo-location',
+    {
+      locationWhenInUsePermission: `${DISPLAY_NAME} uses your location to pick the gym you’re at.`,
+      locationAlwaysAndWhenInUsePermission: false,
+      locationAlwaysPermission: false,
+      motionUsagePermission: false,
+      isIosBackgroundLocationEnabled: false,
+    },
+  ],
 ];
 if (includeLiveActivity) {
   plugins.push([
