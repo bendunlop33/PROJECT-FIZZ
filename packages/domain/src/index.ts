@@ -61,6 +61,7 @@ export * from './default-rule';
 export * from './next-target';
 export * from './rep-range';
 export * from './gym-editor';
+export * from './gym-location';
 export * from './session/repeat';
 export * from './session/routines';
 export * from './session/template-fit';

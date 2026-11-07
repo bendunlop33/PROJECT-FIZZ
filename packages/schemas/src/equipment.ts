@@ -244,9 +244,24 @@ export type GymEquipmentKind = z.infer<typeof GymEquipmentKindSchema>;
 export const GymSetupSchema = z.enum(['full', 'small', 'home']);
 export type GymSetup = z.infer<typeof GymSetupSchema>;
 
+/**
+ * (Ben, 7 Nov; ADR 0041) Where a gym is: one when-in-use fix Ben saved with `Use current location`.
+ * Degrees (WGS84) and the fix's horizontal accuracy in metres, explicit. Your data: kept on the
+ * gym, in backups, never sent anywhere and never given to the coach.
+ */
+export const GymLocationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  accuracyM: z.number().min(0).max(100_000),
+  setAtUtc: UtcTimestampSchema,
+});
+export type GymLocation = z.infer<typeof GymLocationSchema>;
+
 export const GymSchema = RecordMetaSchema.extend({
   name: z.string().min(1).max(120),
   locationLabel: z.string().max(200).optional(),
+  /** (Ben, 7 Nov) Saved with `Use current location`; absent = not set. */
+  location: GymLocationSchema.optional(),
   isDefault: z.boolean(),
   notes: z.string().max(2000).optional(),
   archivedAtUtc: UtcTimestampSchema.optional(),
