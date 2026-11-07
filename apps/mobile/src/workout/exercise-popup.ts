@@ -174,7 +174,7 @@ export function whyWeightLines(exp: TargetExplanation | null): string[] {
 
 /** The pop-up's refusal lines (shortest honest words; minimal copy). */
 export const POPUP_REFUSAL = {
-  max_warmups: 'At most 4 warm-ups',
+  max_warmups: 'At most 6 warm-ups',
   no_load: 'No load to warm up to',
   no_gap: 'No room for another warm-up',
   superset: 'No warm-ups in a superset',

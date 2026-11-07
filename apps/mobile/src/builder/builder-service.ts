@@ -540,7 +540,7 @@ const REFUSAL_TEXT: Partial<Record<BuilderEditRefusal, string>> = {
   keep_one_set: BUILDER_COPY.keepOneSet,
   max_exercises: 'At most 10 exercises',
   max_sets: 'At most 10 sets',
-  max_warmups: 'At most 4 warm-ups',
+  max_warmups: 'At most 6 warm-ups',
   max_drops: 'At most 3 drop sets',
   already_in_workout: 'Already in this workout',
   cannot_superset: 'Can’t superset',
