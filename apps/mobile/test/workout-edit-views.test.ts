@@ -243,11 +243,11 @@ describe('(Ben, 2 Nov) the round menu offers what the pop-up offered, on the sam
     expect(exerciseRestRows(s, rowIdOf(s, ROW)).map((r) => r.label)).toEqual(['After each round']);
   });
 
-  it('a finished exercise: no warm-up, no rest rows, no Remove; Why stays (its last set’s target)', () => {
+  it('a finished exercise: warm-up still offered (a forgotten one, Ben 7 Nov), no rest rows, no Remove; Why stays (its last set’s target)', () => {
     let s = startFixture().state;
     for (const x of setsFor(s, BENCH)) s = apply(s, logCmd(x.id, values(x.planned.load, 8), 100));
     const m = parity(s, BENCH);
-    expect(m.more).toMatchObject({ warmup: false, rest: null, why: true });
+    expect(m.more).toMatchObject({ warmup: true, rest: null, why: true });
     expect(m.canRemove).toBe(false);
     expect(exerciseMenuMore(s, 'nope', true)).toEqual({ more: { howTo: false, warmup: false, rest: null, supersetNext: false, unlink: false, why: false }, canRemove: false });
   });
