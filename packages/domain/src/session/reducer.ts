@@ -466,10 +466,11 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   const events: SessionEvent[] = [];
   // (Ben, 25 Oct) A past log runs no clock: the set takes a placeholder time in tick order, and no rest starts.
   const pastLog = isPastLog(state.session);
+  const catchUp = isCatchUpWarmup(state, set);
   // Unticking this set puts back the rest it ends here, deadline and all (workout-table-v3 §3).
   const resumable = resumableAfterLog(state.restTimer, set.id, nowMs);
   let restTimer = state.restTimer;
-  if (restTimer?.status === 'running') {
+  if (restTimer?.status === 'running' && !catchUp) {
     // P2: logging during rest ends that rest early.
     restTimer = endRestTimer(restTimer, 'ended_early', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'ended_early', timerVersion: restTimer.version, lateByMs: 0 });
@@ -518,13 +519,16 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     },
   ];
 
-  const nextActive = companion?.id ?? nextPendingSet(set.id, state.exercises, sets);
+  // A forgotten warm-up leaves Log on the set it was on (Ben, 7 Nov).
+  const kept = state.session.activeSetId;
+  const keep = catchUp && kept !== null && kept !== set.id && sets.find((s) => s.id === kept)?.status === 'pending' ? kept : null;
+  const nextActive = companion?.id ?? keep ?? nextPendingSet(set.id, state.exercises, sets);
   if (nextActive === null) {
     // Final set of a planned workout: no rest; the primary becomes Finish
     // (rest-state #14). An open-ended workout is built as Ben goes, so its
     // "final" set is only the last one so far: the rest still runs while he
     // adds a set or the next exercise (audit B1). Finish cancels it.
-    if (!pastLog && isOpenEndedWorkout(state) && set.rest.seconds > 0) {
+    if (!pastLog && !catchUp && isOpenEndedWorkout(state) && set.rest.seconds > 0) {
       restTimer = createRestTimer({
         id: cmd.restTimerId,
         sessionId: state.session.id,
@@ -560,7 +564,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     rest = { kind: 'rest', seconds: set.rest.seconds, source: set.rest.source === 'not_recorded' ? null : set.rest.source };
   }
 
-  if (rest.seconds > 0 && !pastLog) {
+  if (rest.seconds > 0 && !pastLog && !catchUp) {
     restTimer = createRestTimer({
       id: cmd.restTimerId,
       sessionId: state.session.id,
@@ -580,10 +584,20 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
       timerVersion: restTimer.version,
     });
   }
-  events.push({ type: 'ActiveSetChanged', setId: nextActive });
-  if (restTimer !== null) restTimer = withResumable(restTimer, resumable);
+  if (nextActive !== state.session.activeSetId || !catchUp) events.push({ type: 'ActiveSetChanged', setId: nextActive });
+  if (restTimer !== null && !catchUp) restTimer = withResumable(restTimer, resumable);
   const next = bumpVersion({ ...state, sets, audit, restTimer, workInterval: wi?.setId === set.id ? null : wi }, nextActive);
   return { ok: true, state: next, events };
+}
+
+/**
+ * (Ben, 7 Nov) A forgotten warm-up: one that sits above a working set of its exercise already done
+ * (`add_warmup` puts it there). Its log is recorded with its own time and nothing else moves: no
+ * rest ends or starts, Log stays on its set, and its untick leaves Log there too. Warm-ups never
+ * count toward volume, bests or progression.
+ */
+function isCatchUpWarmup(state: SessionAggregate, set: WorkoutSet): boolean {
+  return set.setType === 'warmup' && state.sets.some((o) => o.sessionExerciseId === set.sessionExerciseId && o.id !== set.id && o.setType !== 'warmup' && o.status === 'completed' && o.index > set.index);
 }
 
 /**
@@ -798,8 +812,11 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
   ];
   // The other-side row this log created goes with it (review R4).
   const sets = dropPendingCompanions(state, replaceSet(state.sets, restored), set.id, cmd, audit, events);
-  events.push({ type: 'ActiveSetChanged', setId: set.id });
-  const next = bumpVersion({ ...state, sets, audit, restTimer }, set.id);
+  // A forgotten warm-up's untick leaves Log where it is (Ben, 7 Nov); any other untick makes that set current again.
+  const kept = state.session.activeSetId;
+  const active = isCatchUpWarmup(state, set) && kept !== null && sets.find((s) => s.id === kept)?.status === 'pending' ? kept : set.id;
+  if (active === set.id) events.push({ type: 'ActiveSetChanged', setId: active });
+  const next = bumpVersion({ ...state, sets, audit, restTimer }, active);
   return { ok: true, state: next, events };
 }
 
@@ -2232,9 +2249,12 @@ function undoReorderSets(state: SessionAggregate, prior: ProcessedOperation): Ha
 }
 
 /**
- * `add_warmup` (workout-table-v3 §7, `＋ Warm-up`): a pending warm-up in the ramp by load, never before
- * a set already done; achievable on the row's item (rule 4). When it lands before the set Log is on
- * in the same exercise, it becomes that set (the warm-up is done first).
+ * `add_warmup` (workout-table-v3 §7, `＋ Warm-up`): a pending warm-up in the warm-up block, ordered by
+ * load (lighter first), before the first working set; achievable on the row's item (rule 4). (Ben,
+ * 7 Nov) That holds even when working sets are done (a forgotten warm-up): it sits above them as a
+ * pending row, done sets keep their values, times and order (rule 2; only their positions shift
+ * down by one). When it lands before the set Log is on in the same exercise and above nothing done,
+ * it becomes that set (the warm-up is done first); above a done set the current set stays put.
  */
 function handleAddWarmup(state: SessionAggregate, cmd: CommandOf<'add_warmup'>): Handled {
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
@@ -2252,12 +2272,16 @@ function handleAddWarmup(state: SessionAggregate, cmd: CommandOf<'add_warmup'>):
     if (eq && !isLoadAchievable(load, eq)) return fail('invalid_values', `${eq.name} can’t make that load.`);
   }
   const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
-  const lastDone = own.reduce((at, s, i) => (s.status === 'pending' ? at : i), -1);
   const value = load?.value ?? 0;
-  // In the ramp: before the first later pending set that is a working set or a heavier warm-up.
-  const before = own.find((s, i) => i > lastDone && s.status === 'pending' && (s.setType !== 'warmup' || (s.planned.load?.value ?? 0) > value));
-  if (before === undefined) return fail('set_not_pending', `Nothing left to warm up for: ${ex.exerciseName} is done.`);
+  const firstWork = own.findIndex((s) => s.setType !== 'warmup');
+  if (firstWork < 0) return fail('invalid_values', `Nothing to warm up for: ${ex.exerciseName}.`);
+  // The warm-up block (the warm-ups above the first working set), by load: before the first heavier one, else the first working set.
+  const loadValue = (s: WorkoutSet): number => (s.actual?.load ?? s.draft?.load ?? s.planned.load)?.value ?? 0;
+  const before = own.slice(0, firstWork).find((s) => loadValue(s) > value) ?? own[firstWork];
+  if (before === undefined) return fail('invalid_values', `Nothing to warm up for: ${ex.exerciseName}.`);
   const from = before.index;
+  // A forgotten warm-up (Ben, 7 Nov): it lands above a set already done.
+  const aboveDone = own.some((s) => s.index >= from && s.status !== 'pending');
   const shifted = state.sets.map((s) => (s.sessionExerciseId === ex.id && s.index >= from ? { ...s, index: s.index + 1 } : s));
   const planned = withRpeOverride({ ...cmd.planned, rpe: null, rir: null, addedInWorkout: true }, undefined);
   const added: WorkoutSet = {
@@ -2285,7 +2309,7 @@ function handleAddWarmup(state: SessionAggregate, cmd: CommandOf<'add_warmup'>):
   const active = activeSetId === null ? undefined : state.sets.find((s) => s.id === activeSetId);
   // Only when Log was on the set it now warms up for (the exercise's first set not done yet): a later set Ben made current stays current.
   const firstPending = own.find((s) => s.status === 'pending');
-  if (activeSetId === null || (active?.sessionExerciseId === ex.id && active.index >= from && active.id === firstPending?.id)) {
+  if (activeSetId === null || (!aboveDone && active?.sessionExerciseId === ex.id && active.index >= from && active.id === firstPending?.id)) {
     activeSetId = added.id;
     events.push({ type: 'ActiveSetChanged', setId: added.id });
   }

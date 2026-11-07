@@ -339,7 +339,7 @@ export function setMoveSteps(state: Pick<SessionAggregate, 'sets'>, setId: strin
   return { up: at > 0, down: at >= 0 && at < ids.length - 1 };
 }
 
-export type AddWarmupRefusal = 'not_found' | 'done' | 'max_warmups' | 'no_load' | 'no_gap' | 'superset';
+export type AddWarmupRefusal = 'not_found' | 'max_warmups' | 'no_load' | 'no_gap' | 'superset';
 
 const RAMP_CONVENTIONS: ReadonlySet<Load['convention']> = new Set(['total', 'per_hand', 'stack']);
 
@@ -348,21 +348,20 @@ const RAMP_CONVENTIONS: ReadonlySet<Load['convention']> = new Set(['total', 'per
  * the first working load, rounded down on the row's own item (rule 4). Only for loads on an item
  * with the reps/RPE formula (not assisted, added weight or bodyweight), at most 4 warm-ups. Not in
  * a superset: a warm-up there would count as a round and shift every pairing (review B1; neither
- * spec says how warm-ups run in a superset). Mirrors the reducer's placement (never before a done
- * set), so the button is only offered when the write works.
+ * spec says how warm-ups run in a superset). Mirrors the reducer's placement (Ben, 7 Nov: always in
+ * the warm-up block, above the first working set even when that one is done: a forgotten warm-up),
+ * so the button is only offered when the write works. The ramp is up to the first working set's
+ * load (its logged load once done).
  */
 export function addWarmupCommand(state: SessionAggregate, sessionExerciseId: string, op: Op & { newSetId: string; /** (Ben, 28 Oct) Ben's warm-up rest (Rest times) when the exercise has no warm-up yet. */ warmupRestS?: number | undefined }): { ok: true; command: CommandOf<'add_warmup'> } | { ok: false; reason: AddWarmupRefusal } {
   const ex = state.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
   if (ex === undefined) return { ok: false, reason: 'not_found' };
   if (ex.supersetGroup !== null) return { ok: false, reason: 'superset' };
   const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
-  const lastDone = own.reduce((at, s, i) => (s.status === 'pending' ? at : i), -1);
-  // A warm-up never goes before a done set: something not done yet after the last done one to warm up for.
-  if (!own.some((s, i) => i > lastDone && s.status === 'pending' && s.setType !== 'warmup')) return { ok: false, reason: 'done' };
   const warm = own.filter((s) => s.setType === 'warmup');
   if (warm.length >= BUILD_LIMITS.maxWarmups) return { ok: false, reason: 'max_warmups' };
   const loadOf = (s: WorkoutSet): Load | null => s.actual?.load ?? s.draft?.load ?? s.planned.load;
-  const work = own.find((s, i) => i > lastDone && s.status === 'pending' && s.setType !== 'warmup');
+  const work = own.find((s) => s.setType !== 'warmup');
   const top = work === undefined ? null : loadOf(work);
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
   if (top === null || eq === null || !RAMP_CONVENTIONS.has(top.convention) || loadDirection(top.convention) !== 'resistance' || top.convention !== eq.loadConvention || top.unit !== ex.unit) {

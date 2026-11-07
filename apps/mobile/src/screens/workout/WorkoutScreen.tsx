@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundMoves, midSwapSlot, setMoveSteps, discardCommand, gymLearnDoneText, gymLearnKey, gymLearnToast, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
+import { canAddWarmupNow, canDropRound, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundMoves, midSwapSlot, setMoveSteps, discardCommand, gymLearnDoneText, gymLearnKey, gymLearnToast, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -3373,6 +3373,10 @@ export function WorkoutScreen() {
                 onDeleteSet={deleteRow}
                 onTapElsewhere={closeCellEditors}
                 onAddSet={(id) => void addSet(id)}
+                canAddWarmup={(id) => canAddWarmupNow(loaded.aggregate, id)}
+                onAddWarmup={(id) => {
+                  workoutEdits.addWarmup(id);
+                }}
                 onWhy={(index) => {
                   setWhyFor({ roundKey: shownRound.key, index });
                   const target = whyView(shownRound, index);

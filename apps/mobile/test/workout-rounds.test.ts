@@ -3,6 +3,7 @@ import type { SupersetCard, TableBlock, TableCard, TableRow, WorkoutTableView } 
 
 import {
   bottomChrome,
+  warmupAddAfter,
   buildRounds,
   clockText,
   keepInView,
@@ -561,5 +562,15 @@ describe('only the latest log offers Untick (spec S6)', () => {
     expect(roundRows([a, b, c]).some((r) => r.canUntick)).toBe(false);
     const [ex] = buildRounds(view([card('Bench', [a, b, c])]), works, 'a')[0]?.exercises ?? [];
     expect(ex?.rows.map((r) => r.canUntick)).toEqual([true, false, false]);
+  });
+});
+
+describe('warmupAddAfter (Ben, 7 Nov: ＋ Warm-up under the last warm-up)', () => {
+  it('under the last warm-up above the first working set; at the top with none', () => {
+    expect(warmupAddAfter([{ setId: 'w1', warmup: true }, { setId: 'w2', warmup: true }, { setId: 's1', warmup: false }])).toBe('w2');
+    expect(warmupAddAfter([{ setId: 's1', warmup: false }, { setId: 's2', warmup: false }])).toBeNull();
+    expect(warmupAddAfter([])).toBeNull();
+    // A warm-up moved below a working set isn't the block's.
+    expect(warmupAddAfter([{ setId: 'w1', warmup: true }, { setId: 's1', warmup: false }, { setId: 'w2', warmup: true }])).toBe('w1');
   });
 });

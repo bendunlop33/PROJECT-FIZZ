@@ -178,7 +178,6 @@ export const POPUP_REFUSAL = {
   no_load: 'No load to warm up to',
   no_gap: 'No room for another warm-up',
   superset: 'No warm-ups in a superset',
-  done: 'Nothing left to warm up for',
   not_found: 'Not in this workout',
   /** (Ben, 27 Oct) A typed weight is kept as typed; only these are refused. */
   belowZero: 'Weight can’t be below 0',
