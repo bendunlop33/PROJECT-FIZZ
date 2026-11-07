@@ -1,5 +1,7 @@
 # Gym switch and re-snap (mid-workout switch, Repeat, starting at another gym)
 
+> **Revision 7 Nov 2026 (Ben; ADR 0041):** a mid-workout gym switch now applies at once to the whole workout (toast `At Battersea · N sets fitted · Undo`, no card); done sets keep their values and follow to the new gym's item where it has one that can make them; the `GymPartDivider`, other-gym captions and the `Main → Hotel` route are gone for new switches. `Use changes today` (§2.3) still uses the card below. The sections below describe v1 and are superseded where they say otherwise.
+
 Status: v1, 9 Oct 2026. Finalises GE7 ([gym-editor.md](gym-editor.md) §2.8) for build step 2, after Ben approved competitor follow-up 6 (CHANGELOG 2026-10-09: "mid-workout gym switch re-snap (and Repeat B1)"). Tokens: [design-system.md](design-system.md) (no new tokens; see §9).
 
 **This file is the single owner of how a plan is fitted to a gym's equipment:** when a workout starts from a routine, on `Repeat last workout`, on a mid-workout gym switch, and on `[Use changes today]` after an equipment edit. [gym-editor.md](gym-editor.md) §2.8, [active-workout.md](active-workout.md) and [routines.md](routines.md) §2.4 point here.

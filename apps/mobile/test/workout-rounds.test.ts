@@ -60,7 +60,6 @@ function row(over: Partial<TableRow> = {}): TableRow {
     exclusionAccessibility: null,
     version: 1,
     gymCaption: null,
-    partStart: null,
     state: 'pending',
     setType: 'working',
     restAfterS: 90,

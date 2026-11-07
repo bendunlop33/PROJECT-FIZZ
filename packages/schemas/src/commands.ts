@@ -519,8 +519,8 @@ export const ChangeGymSlotSchema = z.object({
   unit: WeightUnitSchema,
   loadConvention: LoadConventionSchema,
   sets: z
+    // Empty (Ben, 7 Nov; `gym_switch` only): a row with nothing left to do, moved to the new gym's item as it is.
     .array(z.object({ setId: IdSchema, load: LoadSchema.nullable(), snap: PlannedSnapSchema.nullable() }))
-    .min(1)
     .max(60),
 });
 export type ChangeGymSlot = z.infer<typeof ChangeGymSlotSchema>;

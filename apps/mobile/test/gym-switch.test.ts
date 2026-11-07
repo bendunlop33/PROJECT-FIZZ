@@ -110,9 +110,10 @@ describe('gym switch through the services', () => {
     const v = s2.workout.view(data, h.clockMs, null);
     expect(v.focus?.exerciseName).toBe('Bench press');
     expect(v.focus?.snapNote?.text).toBe('No load target · no barbell and plates here · plan 100 kg');
-    expect(v.focus?.rows.map((r) => [r.status, r.gymCaption, r.partStart])).toEqual([
-      ['done', 'Main Gym', null],
-      ['active', null, 'At Hotel · Lisbon'],
+    // (Ben, 7 Nov) The whole workout is at Hotel: no divider, no `Main Gym` caption.
+    expect(v.focus?.rows.map((r) => [r.status, r.gymCaption])).toEqual([
+      ['done', null],
+      ['active', null],
     ]);
     expect(v.primary.label).toBe('Enter load');
     // The picker and Add exercise offer only Hotel's items now.
@@ -155,7 +156,7 @@ describe('gym switch through the services', () => {
     expect((await s.workout.load(sessionId))?.aggregate.session.gymId).toBe(hotelId);
   });
 
-  it('a switched workout reads Main Gym → Hotel · Lisbon in its Summary and Past workouts (check 24)', async () => {
+  it('(Ben, 7 Nov) a switched workout reads as at the gym it moved to in its Summary and Past workouts (was check 24)', async () => {
     const { s, hotelId, sessionId } = await setUp();
     const p = await s.gymSwitch.propose(sessionId, hotelId);
     if (!p) throw new Error('no proposal');
@@ -164,9 +165,9 @@ describe('gym switch through the services', () => {
     h.clockMs += 60_000;
     const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'fin-route', expectedVersion: applied.aggregate.session.version, endedAt: null });
     if (!fin.ok) throw new Error(fin.error.message);
-    expect((await s.workout.summary(sessionId))?.gymName).toBe('Main Gym → Hotel · Lisbon');
+    expect((await s.workout.summary(sessionId))?.gymName).toBe('Hotel · Lisbon');
     const row = (await s.repeat.candidates()).rows.find((r) => r.sessionId === sessionId);
-    expect(row?.gymName).toBe('Main Gym → Hotel · Lisbon');
+    expect(row?.gymName).toBe('Hotel · Lisbon');
   });
 
   it('Add set on bench (all done at Main) goes on Hotel’s equipment with no barbell target', async () => {

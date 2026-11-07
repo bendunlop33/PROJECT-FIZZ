@@ -177,7 +177,6 @@ export function rowRenderKey(row: TableRow, own: { label: string; typeLabel: str
     row.note,
     row.gymCaption,
     row.edited,
-    row.partStart,
   ]);
 }
 

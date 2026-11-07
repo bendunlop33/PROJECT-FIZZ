@@ -38,10 +38,17 @@ import { cardNoteText, loadWords, type NoteLine } from './snap-text';
  * ADR 0019). `buildGymSwitchProposal` is `setActiveGym`'s pure core: it
  * fits every pending set to the chosen gym with `snapPlanToGym` and returns a
  * `Checks`-authored, `Today only` proposal plus the card that shows it.
- * Nothing changes until Ben taps `Switch`; then the reducer applies
- * `change_gym` in one transaction, or rejects it as stale. Done sets keep
- * their row, gym and equipment (GS6), and Undo restores everything exactly
- * while nothing has changed since.
+ * The reducer applies `change_gym` in one transaction, or rejects it as
+ * stale; Undo restores everything exactly while nothing has changed since.
+ *
+ * (Ben, 7 Nov; ADR 0041) A gym switch is the whole workout: Ben picked the gym
+ * he is at, so the app applies it at once (Undo on the toast) and every row,
+ * done sets' rows too, moves to the new gym's item. Done values never change
+ * (rule 2); only the gym and item they are labelled with follow. Done sets the
+ * new gym has no item for, that would read in another unit or convention, or
+ * whose loads its item couldn't make, keep their old item and the rest
+ * continues on a new row (GS6); the workout still reads as at the new gym
+ * (`wholeWorkout`, `gymRouteIds`), with no divider or other-gym caption.
  */
 
 export type GymChangeMode = 'gym_switch' | 'equipment_update';
@@ -453,7 +460,9 @@ export function buildGymSwitchProposal(input: GymSwitchInput): GymSwitchProposal
   const slotInputs: SnapSlotInput[] = [];
   for (const row of rows) {
     const pending = state.sets.filter((s) => s.sessionExerciseId === row.id && s.status === 'pending' && !excluded.has(s.id)).sort((a, b) => a.index - b.index);
-    if (pending.length === 0) continue;
+    // A switch moves the whole workout (Ben, 7 Nov): a row with nothing left to do still follows to the new gym's item.
+    const follows = input.mode === 'gym_switch' && !isEmptyPart(state, row) && state.sets.some((s) => s.sessionExerciseId === row.id && s.status !== 'deleted');
+    if (pending.length === 0 && !follows) continue;
     const eq = equipmentOfRow(session.equipmentSnapshot, row);
     const info = input.exercises.get(row.exerciseId);
     const first = pending.find((s) => s.planned.snap !== undefined);
@@ -537,10 +546,14 @@ function buildCard(input: GymSwitchInput, snap: SnapResult, excluded: ReadonlyMa
     if (!set || !row) continue;
     // The other side is named by its prescribed set (the side already logged).
     const n = String(numberOf(why === 'other_side' ? (set.pairedWithSetId ?? setId) : setId));
+    const side = set.side === 'right' ? 'right' : 'left';
+    const other = set.side === 'right' ? 'left' : 'right';
     notChanged.push(
       why === 'timed'
         ? `${row.exerciseName} set ${n} running · unchanged`
-        : `${row.exerciseName} set ${n} ${set.side === 'right' ? 'right' : 'left'} · stays on ${fromName} (matches ${set.side === 'right' ? 'left' : 'right'})`,
+        : input.mode === 'gym_switch'
+          ? `${row.exerciseName} set ${n} ${side} · unchanged (matches ${other})`
+          : `${row.exerciseName} set ${n} ${side} · stays on ${fromName} (matches ${other})`,
     );
   }
   const active = session.activeSetId;
@@ -554,6 +567,8 @@ function buildCard(input: GymSwitchInput, snap: SnapResult, excluded: ReadonlyMa
   const lines: ChangeLine[] = [];
   const unchangedNames: string[] = [];
   for (const slot of snap.slots) {
+    // A row with nothing left to do only follows the gym: it isn't a line on the card.
+    if (slot.sets.length === 0) continue;
     const changed = slot.sets.filter((s) => s.changed);
     if (changed.length === 0) {
       if (!unchangedNames.includes(slot.exerciseName)) unchangedNames.push(slot.exerciseName);
@@ -644,7 +659,11 @@ export function gymRouteIds(session: Pick<SessionAggregate['session'], 'gymId' |
       if (i >= 0) kept.splice(i, 1);
     } else if (c.mode === 'gym_switch') kept.push(c);
   }
-  const ids = [first.fromGymId, ...kept.map((c) => c.toGymId)].filter((x): x is string => x !== null);
+  // (Ben, 7 Nov) A whole-workout switch moved everything done before it: the route starts again there.
+  const lastWhole = kept.map((c) => c.wholeWorkout === true).lastIndexOf(true);
+  if (lastWhole >= 0) kept.splice(0, lastWhole);
+  const start = lastWhole >= 0 ? [] : [first.fromGymId];
+  const ids = [...start, ...kept.map((c) => c.toGymId)].filter((x): x is string => x !== null);
   return ids.filter((x, i) => i === 0 || ids[i - 1] !== x);
 }
 
@@ -699,9 +718,14 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
   const excluded = excludedFromSwitch(state);
   const pending = state.sets.filter((s) => s.status === 'pending' && !excluded.has(s.id));
   const slotOfSet = new Map<string, ChangeGymSlot>();
+  const slotRows = new Set<string>();
   for (const slot of cmd.slots) {
     const row = state.exercises.find((e) => e.id === slot.sessionExerciseId);
     if (!row) return bad('exercise_not_found', 'Exercise not found in this workout.');
+    if (slotRows.has(row.id)) return bad('invalid_values', 'An exercise appears twice in the change.');
+    slotRows.add(row.id);
+    // Only a whole-workout switch moves a row with nothing left to do (Ben, 7 Nov).
+    if (slot.sets.length === 0 && cmd.mode !== 'gym_switch') return bad('invalid_values', 'Only sets not done yet can change.');
     for (const item of slot.sets) {
       const set = state.sets.find((s) => s.id === item.setId);
       if (!set || set.sessionExerciseId !== row.id) return bad('invalid_values', 'A set in the change isn’t in that exercise.');
@@ -746,6 +770,7 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
   const before: { exercises: SessionExercise[]; sets: GymChangeSetBefore[] } = { exercises: exercises.map((e) => ({ ...e })), sets: [] };
   const moveTo = new Map<string, string>();
   const inserted: { after: string; row: SessionExercise }[] = [];
+  const whole = cmd.mode === 'gym_switch';
   for (const slot of cmd.slots) {
     const row = exercises.find((e) => e.id === slot.sessionExerciseId);
     if (!row) return bad('exercise_not_found', 'Exercise not found in this workout.');
@@ -754,6 +779,19 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
     const target = { equipmentId: eq?.id ?? null, unit: slot.unit, loadConvention: slot.loadConvention };
     const keepsOld = state.sets.some((s) => s.sessionExerciseId === row.id && (s.status === 'completed' || s.status === 'skipped' || (s.status === 'pending' && excluded.has(s.id))));
     const ids = slot.sets.map((x) => x.setId);
+    // (Ben, 7 Nov) The whole workout is at the new gym: the row moves to its item with its done sets, whose values
+    // stay exactly as logged (rule 2). Done sets stay on their old item only when the new gym has none for them
+    // (their item isn't lost), their values would read in another unit or convention, or the new item couldn't
+    // make a load they record (history never says an item made a load past its max; rule 4).
+    const doneFollow = eq !== null && row.unit === slot.unit && row.loadConvention === slot.loadConvention && doneLoadsFit(state, row.id, eq);
+    if (whole && keepsOld && doneFollow) {
+      exercises = exercises.map((e) => (e.id === row.id ? latestVersionOf({ ...e, ...target }) : e));
+      continue;
+    }
+    if (ids.length === 0) {
+      if (whole && doneFollow) exercises = exercises.map((e) => (e.id === row.id ? latestVersionOf({ ...e, ...target }) : e));
+      continue;
+    }
     if (keepsOld) {
       // GS6: done sets keep their row and equipment; the pending ones continue on a new row.
       if (exercises.some((e) => e.id === slot.continuationId) || inserted.some((x) => x.row.id === slot.continuationId)) return bad('invalid_values', 'That exercise ID is already used.');
@@ -821,9 +859,20 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
     changedSetIds,
     draftsReplaced,
     equipment: cmd.snapshot.map((e) => ({ id: e.id, version: e.version })),
+    // (Ben, 7 Nov) The workout reads as at the new gym from start to finish (route, Summary, Past workouts).
+    ...(whole ? { wholeWorkout: true as const } : {}),
     before,
   };
   return { ok: true, state: { ...next, session: { ...next.session, gymChanges: [...(session.gymChanges ?? []), entry] } }, entry };
+}
+
+/** Every load the row's done sets record can be made on `eq` (sets with no load, or bodyweight, always fit). */
+function doneLoadsFit(state: SessionAggregate, rowId: string, eq: EquipmentInstance): boolean {
+  return state.sets.every((s) => {
+    if (s.sessionExerciseId !== rowId || s.status !== 'completed') return true;
+    const l = s.actual?.load ?? null;
+    return l === null || l.convention === 'bodyweight' || isLoadAchievable(l, eq);
+  });
 }
 
 /** gym-switch §4.5: restore the gym, rows, targets and drafts exactly, only while nothing changed since. */

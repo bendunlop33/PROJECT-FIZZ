@@ -129,7 +129,7 @@ describe('Hotel switch (gym-switch check 1, brief §10)', () => {
     expect(SessionAggregateSchema.safeParse(after).success).toBe(true);
   });
 
-  it('the set card: numbering runs across parts, a divider and done-set gym, a capped SnapNote', () => {
+  it('the set card: numbering runs across parts, no divider or other-gym caption (Ben, 7 Nov), a SnapNote', () => {
     const after = switched(before, p).state;
     const view = buildActiveSetView({ aggregate: after, nowMs: Date.parse(at(410).utc), gymName: 'Hotel · Lisbon', gymNames: GYM_NAMES, previous: {}, painFlagged: new Set(), edits: null });
     const focus = view.focus;
@@ -137,11 +137,12 @@ describe('Hotel switch (gym-switch check 1, brief §10)', () => {
     expect(focus?.headerLine).toBe('Working · Set 3 of 4');
     expect(plain(focus?.target ?? '')).toBe('Target 6–8 reps');
     expect(focus?.snapNote).toEqual({ tone: 'warning', text: 'No load target · no olympic bar here · plan 100 kg' });
-    expect(focus?.rows.map((r) => [r.number, r.status, r.gymCaption, r.partStart])).toEqual([
-      [1, 'done', 'Main Gym', null],
-      [2, 'done', 'Main Gym', null],
-      [3, 'active', null, 'At Hotel · Lisbon'],
-      [4, 'pending', null, null],
+    // The whole workout is at Hotel now: one gym, no `At Hotel · Lisbon` divider, no `Main Gym` on done sets.
+    expect(focus?.rows.map((r) => [r.number, r.status, r.gymCaption])).toEqual([
+      [1, 'done', null],
+      [2, 'done', null],
+      [3, 'active', null],
+      [4, 'pending', null],
     ]);
     // One exercise entry per block, holding the part with pending sets.
     expect(view.exercises.map((e) => [e.name, e.pendingSets, e.doneSets])).toEqual([
@@ -175,7 +176,7 @@ describe('Undo and switch back (gym-switch checks 6, 10)', () => {
     // The empty continuation part is never shown.
     const view = buildActiveSetView({ aggregate: u, nowMs: Date.parse(at(410).utc), gymName: 'Main Gym', previous: {}, painFlagged: new Set(), edits: null });
     expect(view.exercises.map((e) => e.name)).toEqual(['Bench press', 'Incline DB press', 'Cable row', 'Lateral raise']);
-    expect(view.focus?.rows.map((r) => r.partStart)).toEqual([null, null, null, null]);
+    expect(view.focus?.rows.map((r) => r.gymCaption)).toEqual([null, null, null, null]);
   });
 
   it('after a set is logged at Hotel, Undo is refused (nothing reverts silently)', () => {
@@ -259,10 +260,11 @@ describe('Out of date, idempotency and exclusions (checks 8, 11, 12)', () => {
     s = apply(s, logCmd(first, values(kg(10, 'per_hand'), 12), 350, 'left-1', 'left'));
     const partner = s.sets.find((x) => x.pairedWithSetId === first);
     const prop = propose(s, hotel);
-    expect(prop.card.notChanged).toContain('Lateral raise set 1 right · stays on Main Gym (matches left)');
+    expect(prop.card.notChanged).toContain('Lateral raise set 1 right · unchanged (matches left)');
     const after = switched(s, prop, 360).state;
     expect(after.sets.find((x) => x.id === partner?.id)).toEqual(partner);
-    expect(after.exercises.find((e) => e.id === partner?.sessionExerciseId)?.equipmentId).toBe(mainRack.id);
+    // (Ben, 7 Nov) The whole workout moved: the row (its logged left side too) is on Hotel's rack now.
+    expect(after.exercises.find((e) => e.id === partner?.sessionExerciseId)?.equipmentId).toBe(hotelRack.id);
   });
 
   it('a running timed set stays as it is, and the card says so', () => {
@@ -455,12 +457,12 @@ describe('Summary and history after a switch (check 24)', () => {
     return apply(s, { type: 'finish', at: at(900), opId: 'fin-x', expectedVersion: s.session.version, endedAt: null });
   }
 
-  it('the title names each gym in order, and an exercise done at both is one row with each part’s gym', () => {
+  it('(Ben, 7 Nov) the whole workout reads as at the new gym; an exercise kept on two items is one row', () => {
     const done = finishedAcrossGyms();
     const sum = buildWorkoutSummary({ aggregate: done, nowMs: Date.parse(at(1000).utc), gymName: 'Hotel · Lisbon', gymNames: GYM_NAMES, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
-    expect(sum.gymName).toBe('Main Gym → Hotel · Lisbon');
+    expect(sum.gymName).toBe('Hotel · Lisbon');
     const incline = sum.exercises.find((e) => e.name === 'Incline DB press');
-    expect(plain(incline?.results ?? '')).toBe('32.5×9 (Main Gym) · 20×12 · 20×11 (Hotel · Lisbon)');
+    expect(plain(incline?.results ?? '')).toBe('32.5×9 · 20×12 · 20×11');
     expect(sum.exercises.filter((e) => e.name === 'Incline DB press')).toHaveLength(1);
   });
 
@@ -479,7 +481,8 @@ describe('Summary and history after a switch (check 24)', () => {
     const sum = buildWorkoutSummary({ aggregate: s, nowMs: Date.parse(at(1000).utc), gymName: 'US Hotel', gymNames: { ...GYM_NAMES, [US]: 'US Hotel' }, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
     const incline = sum.exercises.find((e) => e.name === 'Incline DB press');
     expect(incline?.setsText).toBe('2 sets');
-    expect(plain(incline?.results ?? '')).toBe('32.5×9 kg each (Main Gym) · 70×10 lb each (US Hotel)');
+    // (Ben, 7 Nov) One gym for the workout: no gym names, but each part keeps its own unit.
+    expect(plain(incline?.results ?? '')).toBe('32.5×9 kg each · 70×10 lb each');
     // Same unit across parts: today's text, one shared note.
     const kgOnly = buildWorkoutSummary({ aggregate: finishedAcrossGyms(), nowMs: Date.parse(at(1000).utc), gymName: 'Hotel · Lisbon', gymNames: GYM_NAMES, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
     expect(kgOnly.exercises.find((e) => e.name === 'Incline DB press')?.setsText).toBe('3 sets (kg each)');
@@ -620,7 +623,11 @@ describe('Summary and history after a switch (check 24)', () => {
     const c = latestUndoableGymChange(sw);
     const u = apply(sw, { type: 'undo_change_gym', at: at(330), opId: 'u', actionId: c?.actionId ?? '', expectedFingerprint: c?.afterFingerprint ?? '' });
     expect(gymRouteIds(u.session)).toEqual([MAIN]);
-    expect(gymRouteIds(sw.session)).toEqual([MAIN, HOTEL]);
+    // (Ben, 7 Nov) A switch is the whole workout: the route is the gym it moved to.
+    expect(gymRouteIds(sw.session)).toEqual([HOTEL]);
+    // An older switch (before 7 Nov, no `wholeWorkout`) still reads as both gyms.
+    const legacy = { ...sw.session, gymChanges: sw.session.gymChanges?.map((c) => ({ ...c, wholeWorkout: undefined })) };
+    expect(gymRouteIds(legacy)).toEqual([MAIN, HOTEL]);
   });
 });
 
@@ -654,7 +661,7 @@ describe('Rule 4 in the reducer itself, and unsaved edits (review M1, M3)', () =
 });
 
 describe('Main → Hotel → Home → Main (review: double switch)', () => {
-  it('continuation chains stay one block per exercise, the route names each gym, and the Summary lists each exercise once', () => {
+  it('(Ben, 7 Nov) each switch takes the whole workout along: one row per exercise, the route is the last gym, the Summary lists each exercise once', () => {
     let s = benchTwoDone();
     s = switched(s, propose(s, hotel), 320, 'sw-1').state;
     const inc = () => exerciseSets(s, INCLINE).filter((x) => x.status === 'pending');
@@ -664,16 +671,18 @@ describe('Main → Hotel → Home → Main (review: double switch)', () => {
     s = apply(s, logCmd(inc()[0]?.id ?? '', values(kg(30, 'per_hand'), 9), 600));
     s = switched(s, propose(s, main), 650, 'sw-3').state;
     s = apply(s, logCmd(inc()[0]?.id ?? '', values(kg(32.5, 'per_hand'), 8), 800));
-    expect(gymRouteIds(s.session)).toEqual([MAIN, HOTEL, HOME, MAIN]);
+    // (Ben, 7 Nov) Each switch moved the whole workout: it reads as at the last gym.
+    expect(gymRouteIds(s.session)).toEqual([MAIN]);
     const rows = s.exercises.filter((e) => e.exerciseId === INCLINE);
-    expect(rows.length).toBeGreaterThanOrEqual(3);
+    // Each switch took the row along (every done load fits the next gym's rack): one row, no parts.
+    expect(rows).toHaveLength(1);
     const roots = new Set(rows.map((r) => partRootOf(s.exercises, r.id)));
     expect(roots.size).toBe(1);
     const done = apply(s, { type: 'finish', at: at(900), opId: 'fin-3', expectedVersion: s.session.version, endedAt: null });
     expect(doneExerciseNames(done)).toEqual(['Bench press', 'Incline DB press']);
     const sum = buildWorkoutSummary({ aggregate: done, nowMs: Date.parse(at(1000).utc), gymName: 'Main Gym', gymNames: GYM_NAMES, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
     expect(sum.exercises.filter((e) => e.name === 'Incline DB press')).toHaveLength(1);
-    expect(plain(sum.exercises.find((e) => e.name === 'Incline DB press')?.results ?? '')).toBe('20×12 (Hotel · Lisbon) · 30×9 (Home) · 32.5×8 (Main Gym)');
+    expect(plain(sum.exercises.find((e) => e.name === 'Incline DB press')?.results ?? '')).toBe('20×12 · 30×9 · 32.5×8');
     const rep = startWorkoutFromSession({ opId: 'rep-3', owner: profile(), gymId: MAIN, gymName: 'Main Gym', source: done, exercises: EXERCISES, gymEquipment: MAIN_EQ, at: at(90_000), newId: idGen(82_000) });
     expect(rep.aggregate.exercises.filter((e) => e.exerciseId === INCLINE)).toHaveLength(1);
   });

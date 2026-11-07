@@ -102,6 +102,7 @@ import {
   buildLiftHighlight,
   buildAddSetContinuation,
   buildGymSwitchProposal,
+  gymSwitchRefusal,
   gymRouteIds,
   doneExerciseNames,
   feedWorkoutTitle,
@@ -730,6 +731,14 @@ export interface GymChoice {
   /** Items set up there (0 = none yet). */
   items: number;
 }
+
+/**
+ * (Ben, 7 Nov) Picking a gym mid-workout moves the whole workout there at once: `At Battersea · N sets fitted · Undo`.
+ * `fitted`: pending sets whose target changed. `actionId`: what the toast's Undo reverts.
+ */
+export type GymSwitchNowOutcome =
+  | { ok: true; outcome: Extract<CommandOutcome, { ok: true }>; gymName: string; fitted: number; actionId: string }
+  | { ok: false; message: string };
 
 /** Toast Undo of a switch (gym-switch §4.5): restored, or refused with a `Switch back` card. */
 export type GymUndoOutcome =
@@ -4040,6 +4049,29 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         ownerUnit: p.preferredUnit,
         newId: ctx.newId,
       });
+    },
+
+    /**
+     * (Ben, 7 Nov; ADR 0041) Ben picked another gym for this workout: the whole workout moves there now (CLAUDE.md
+     * rule 3, he asked), every pending set fitted to its kit, done values unchanged. One transaction; the same opId
+     * again (double tap, retry after a relaunch) is the same change, never a second one.
+     */
+    async switchNow(sessionId: string, gymId: string, opId: string): Promise<GymSwitchNowOutcome> {
+      const aggregate = await repos().sessions.get(sessionId);
+      if (!aggregate || aggregate.session.status !== 'active') return { ok: false, message: 'Couldn’t switch gym.' };
+      const gym = await repos().gyms.get(gymId);
+      const name = gym?.name ?? 'the gym';
+      const done = aggregate.session.gymChanges?.find((c) => c.opId === opId && c.kind === 'change');
+      if (done) return { ok: true, outcome: { ok: true, aggregate, events: [], duplicate: true, superseded: false }, gymName: name, fitted: done.changedSetIds.length, actionId: done.actionId };
+      if (aggregate.session.gymId === gymId) return { ok: false, message: `Already at ${name}.` };
+      const refusal = gymSwitchRefusal(aggregate.session);
+      if (refusal !== null) return { ok: false, message: `Couldn’t switch gym. ${refusal}` };
+      const proposal = await gymSwitch.propose(sessionId, gymId);
+      if (proposal === null) return { ok: false, message: 'Couldn’t switch gym.' };
+      const r = await gymSwitch.apply(proposal, opId);
+      if (!r.ok) return { ok: false, message: r.error.code === 'write_failed' ? 'Couldn’t switch gym. Try again.' : `Couldn’t switch gym. ${r.error.message}` };
+      const entry = r.aggregate.session.gymChanges?.find((c) => c.opId === opId && c.kind === 'change');
+      return { ok: true, outcome: r, gymName: name, fitted: entry?.changedSetIds.length ?? 0, actionId: entry?.actionId ?? proposal.actionId };
     },
 
     /** `Switch` / `Apply`: one transaction; a double tap or `Try again` with the same opId is one change. */

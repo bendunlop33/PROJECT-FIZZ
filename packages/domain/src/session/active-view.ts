@@ -11,7 +11,7 @@ import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, cardioEla
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { addedWeightItems, addWeightToggle, canAddWeight, isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
-import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
+import { blockSets, gymRouteIds, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet, setSteps } from './order';
 import { DEFAULT_WORKING_SETS, GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
@@ -301,10 +301,11 @@ export interface SetRowView {
   notCounted: string | null;
   exclusionAccessibility: string | null;
   version: number;
-  /** A done set from a gym other than the current one: that gym's name (gym-switch §2.5). */
+  /**
+   * A done set from a gym other than the current one: that gym's name (gym-switch §2.5). Since a switch moves
+   * the whole workout (Ben, 7 Nov) only a workout switched before that still has one.
+   */
   gymCaption: string | null;
-  /** `At Hotel · Lisbon`: this set starts a part at another gym (`GymPartDivider` before it). */
-  partStart: string | null;
 }
 
 export interface FocusView {
@@ -857,13 +858,12 @@ export function buildSetRows(input: Pick<ActiveViewInput, 'aggregate' | 'gymName
   const ex = state.exercises.find((e) => e.id === sessionExerciseId);
   if (!ex) return [];
   const own = exerciseSets(state, ex.id);
+  // (Ben, 7 Nov) A workout switched as a whole reads as at one gym: no other gym's name on its done sets.
+  const split = gymRouteIds(state.session).length > 1;
   return own.map((s, i) => {
     const partRow = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
     const { status, text } = rowText(state, s, partRow, equipmentOf(state, partRow), s.id === activeSetId, carry);
     const gymId = partGymId(state, partRow);
-    const prevRowId = own[i - 1]?.sessionExerciseId;
-    const prevRow = prevRowId === undefined ? undefined : state.exercises.find((e) => e.id === prevRowId);
-    const startsPart = prevRow !== undefined && prevRow.id !== partRow.id && gymId !== null && partGymId(state, prevRow) !== gymId;
     const gymName = gymId === null ? undefined : input.gymNames?.[gymId];
     return {
       setId: s.id,
@@ -876,8 +876,7 @@ export function buildSetRows(input: Pick<ActiveViewInput, 'aggregate' | 'gymName
       edited: s.edited,
       ...exclusionFields(s),
       version: s.version,
-      gymCaption: status === 'done' && gymId !== null && gymId !== state.session.gymId ? (gymName ?? null) : null,
-      partStart: startsPart && gymName !== undefined ? `At ${gymName}` : null,
+      gymCaption: split && status === 'done' && gymId !== null && gymId !== state.session.gymId ? (gymName ?? null) : null,
     };
   });
 }
