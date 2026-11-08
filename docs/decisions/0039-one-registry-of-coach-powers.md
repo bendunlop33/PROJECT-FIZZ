@@ -346,3 +346,14 @@ carry the change. Kept: weights Ben named come only from his words (`namedWeight
 is always a proposal with Apply / Skip, so the coach's wording can't apply anything. With today's draft in context and
 no coach build in play, a forced workout ask ("give me the best workout for today") goes to this tool, not
 `propose_workout`, so the answer replaces today's draft in one card with Undo.
+
+## Amendment (8 Nov 2026, Ben: "If I agree to apply it there shouldn't be any limit"; coach parity)
+
+Two principles change. (1) **Parity:** the coach can do in today's workout anything Ben can by hand; the registry's
+tools cover each manual action (`packages/coach/src/parity.ts`, enforced by a test), extending `edit_today`'s and
+`propose_workout_edit`'s op lists rather than adding tools. (2) **Ben's ask overrides the coach's judgement limits**
+(load step, per-session volume, warm-up count, time fit, hold after a stall): the executors take `asked` (an explicit
+request, or an applied proposal) and then apply past those limits with a one-line trade-off on the card; unprompted
+offers keep them. Never overridden: the real kit and a machine's max, done sets, Undo, versions and op IDs. A pain hold
+gives way only to his own go-ahead words, never the model's claim alone.
+

@@ -41,11 +41,14 @@ const APPROVED_22_OCT = ['WU1', 'WU2', 'WU3', 'WU4', 'WU5', 'WU6', 'WU7', 'WU8',
 /** (Ben, 2 Nov) His own warm-up choices (1 Nov simple weights and prehab, 2 Nov plate ladder): approved rules. */
 const BENS_WARMUP_RULES = ['SW1', 'PH1', 'PL1'];
 
+/** (Ben, 8 Nov) The one-session pain hold and the in-session fatigue rules, in short form. */
+const APPROVED_8_NOV = ['PN1', 'SF1', 'SF2', 'SF3', 'SF4', 'SF5', 'SF6', 'SF7', 'SF8', 'SF9'];
+
 describe('the playbook bundle (ADR 0020 §6)', () => {
   it('matches the approved playbook Markdown (regenerate with scripts/playbook-bundle.ts --write)', () => {
     const fromMd = buildPlaybookBundle(readFileSync(PLAYBOOK_MD, 'utf8'));
     expect(JSON.parse(readFileSync(PLAYBOOK_JSON, 'utf8'))).toEqual(fromMd);
-    expect(PLAYBOOK_V1.rules.map((r) => r.id)).toEqual(['1', '2', '3', '4', '5', '6', '7', '7-F', '8', '9', '10', '11', '12', '13', 'G', 'T', ...APPROVED_22_OCT, ...APPROVED_2_NOV]);
+    expect(PLAYBOOK_V1.rules.map((r) => r.id)).toEqual(['1', '2', '3', '4', '5', '6', '7', '7-F', '8', '9', '10', '11', '12', '13', 'G', 'T', ...APPROVED_22_OCT, ...APPROVED_2_NOV, ...APPROVED_8_NOV]);
   });
 
   it('(Ben, 2 Nov) every rule approved since v1 that the app enforces is in the coach context, in use, by its ID', () => {
@@ -268,7 +271,7 @@ describe('describeCoachContext (What the coach can see)', () => {
       { label: 'Memories', detail: '1 memory' },
     ]);
     expect(d.coachingKnowledge).toEqual([
-      { label: 'Playbook v1 (2026-10-09)', detail: '44 rules, 3 not in use' },
+      { label: 'Playbook v1 (2026-10-09)', detail: '54 rules, 3 not in use' },
       { label: 'Exercise cues', detail: 'Bench press' },
     ]);
     expect(d.notAvailable).toHaveLength(4);
