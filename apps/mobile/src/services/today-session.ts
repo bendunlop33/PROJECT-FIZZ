@@ -35,6 +35,19 @@ import {
   pbAppliedBuilder,
   pbWeekdaysOf,
   setDaysWeekSlots,
+  weekBehind,
+  type WeekBehind,
+  behindPick,
+  behindBuiltInDay,
+  behindCandidates,
+  behindLaterDays,
+  behindLine,
+  directMuscleGroup,
+  RETURN_TO_LOAD_GAP_DAYS,
+  type BehindDay,
+  type BehindOfferGate,
+  type BehindScore,
+  type TodayTemplateSlot,
   weekdayIndexOfDate,
   upNextPlanningWeekday,
   buildWeekTiles,
@@ -365,9 +378,18 @@ export interface TodaySessionData {
     setDays: boolean;
     /** (Ben, 29 Oct) Plan days skipped this week, with the date they had (null on Any days). */
     skippedOn: Record<string, string | null>;
+    /**
+     * (Ben, 8 Nov, MS1 flag 1) Set days: plan days still to do that don't fit this week, on their own scheduled date
+     * (the tiles' `missed` marks; their count is `behind.k`). Empty otherwise.
+     */
+    missed: { key: string; name: string; localDate: string }[];
+    /** (Ben, 8 Nov, MS1) Behind this week (`weekBehind`); null: no plan running (paused, block done, no builder plan). */
+    behind: WeekBehind | null;
     /** The week's done workouts and activities as History reads them (`52 min · 16 sets`, `5.2 km · 28 min`), for a day's sheet. */
     feed: FeedItem[];
   };
+  /** (Ben, 8 Nov: MS1–MS9) Behind on the plan this week (`N days behind · Adjust today?`); null: not behind or no plan running. */
+  behind: TodayBehind | null;
   /** (Ben, 26 Oct) Today's Recent: what Ben did in the last 14 days, workouts and activities, newest first, at most 6. */
   recent: FeedItem[];
   /** Done today (a second session can still be picked). */
@@ -1202,6 +1224,31 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       offerAtOrBelow: deps.offerAtOrBelow?.() ?? null,
       activities: nudgeActs.map((a) => ({ id: a.id, localDate: a.fields.date, kind: a.fields.kind, effort: a.fields.effort, status: a.fields.status })),
     };
+    // (Ben, 8 Nov: MS1–MS9) Behind this week: the offer's facts, all from logs and the plan (rule 6).
+    const behind = todayBehindOf({
+      week: week.behind,
+      planDays,
+      today,
+      monday,
+      plan,
+      changeWeek,
+      deload,
+      paused,
+      doneToday: stripWorkouts.some((w) => w.localDate === today),
+      ill: checkIn?.reasons.includes('ill') === true,
+      cardKey: nextDay?.key ?? null,
+      initial,
+      doneOn: week.doneOn,
+      sessions: newest.map((a) => ({
+        localDate: localDateOf(toMs(a.session.startedAt.utc), tz),
+        sets: a.sets.filter((x) => x.status === 'completed' && x.setType !== 'warmup').map((x) => a.exercises.find((e) => e.id === x.sessionExerciseId)?.exerciseId ?? ''),
+      })),
+      directGroupOf: (id) => {
+        const e = exercises.get(id);
+        return e === undefined ? null : directMuscleGroup(e);
+      },
+      setDays: week.setDays,
+    });
     const memories = (await repos().coach.listMemories(p.id, 'active').catch(() => [])).filter((m) => m.dayNote === undefined).map((m) => m.text).slice(0, 20);
     const coach = await deps.coachStatus().catch((): CoachStatus => 'not_connected');
     const review = reviewOf(coach);
@@ -1248,6 +1295,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       near,
       strip: { workouts: stripWorkouts, activities: acts, firstUse: newest.length === 0 && refs.length === 0 && acts.length === 0 },
       week,
+      behind,
       recent,
       weekEdits,
       dayRows: Object.fromEntries(
@@ -1890,6 +1938,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       workouts: data.week.workouts,
       activities: data.week.activities.map((a) => ({ activityId: a.id, localDate: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM, durationS: a.fields.durationS, effort: a.fields.effort })),
       plannedDays: data.week.planned.map((d) => ({ localDate: d.localDate, name: d.name })),
+      missed: data.week.missed.map((d) => ({ localDate: d.localDate, name: d.name })),
       ahead: data.week.ahead.map((d) => d.name),
       chosen,
       upNext: data.status === 'paused' || data.nextKey === null ? null : (data.days.find((d) => d.key === data.nextKey)?.name ?? null),
@@ -1967,7 +2016,13 @@ function weekOf(
     if (on !== null && on >= monday) doneOn[d.key] = on;
   }
   const planned: TodaySessionData['week']['planned'] = [];
+  const missed: TodaySessionData['week']['missed'] = [];
+  let behind: WeekBehind | null = null;
   const ahead: TodaySessionData['week']['ahead'] = [];
+  const planningDay = upNextPlanningWeekday(weekdayIndexOfDate(today), upNext.doneToday);
+  // (Ben, 8 Nov) Not done this week, not skipped, Up next first then plan order (MS1's not-done days).
+  const notDoneDays = planDays.filter((d) => doneOn[d.key] === undefined && !(d.dayIndex !== null && skipped.has(d.dayIndex)));
+  const notDone = [...notDoneDays.filter((d) => d.key === upNext.nextKey), ...notDoneDays.filter((d) => d.key !== upNext.nextKey)].map((d) => d.key);
   const skippedOn: Record<string, string | null> = {};
   const running = plan !== null && block !== null && !block.done;
   const setDays = builder !== null && builder.builder.answers.schedule === 'set' && running;
@@ -1981,9 +2036,19 @@ function weekOf(
     const movedTo = new Map((plan.moves ?? []).filter((m) => m.week === moveWeek).map((m) => [m.dayIndex, m.weekday] as const));
     const slots = setDaysWeekSlots({
       days: planDays.map((d) => ({ key: d.key, weekday: wdOf(d) ?? null, doneOn: doneOn[d.key] === undefined ? null : weekdayIndexOfDate(doneOn[d.key] ?? monday), skipped: d.dayIndex !== null && skipped.has(d.dayIndex), movedTo: d.dayIndex === null ? null : (movedTo.get(d.dayIndex) ?? null) })),
-      planningDay: upNextPlanningWeekday(weekdayIndexOfDate(today), upNext.doneToday),
+      planningDay,
       upNext: upNext.nextKey,
     });
+    const placed = new Map(planDays.map((d) => [d.key, slots.get(d.key) ?? null] as const));
+    behind = weekBehind({ notDone, schedule: { mode: 'set', planningDay, planWeekdays: planDays.flatMap((d) => { const wd = wdOf(d); return wd === undefined ? [] : [wd]; }), placed } });
+    // Each on the rest day Up next borrows for it (a rest day, with the day greyed: MS1 flag 1), else its own weekday.
+    for (const key of behind.overflow) {
+      const d = planDays.find((x) => x.key === key);
+      const own = d === undefined ? undefined : wdOf(d);
+      const at = placed.get(key) ?? null;
+      const wd = at !== null && at >= planningDay ? at : own;
+      if (d !== undefined && wd !== undefined) missed.push({ key, name: d.name, localDate: addDays(monday, wd) });
+    }
     for (const d of planDays) {
       const wd = wdOf(d);
       if (wd !== undefined && doneOn[d.key] === undefined && d.dayIndex !== null && skipped.has(d.dayIndex)) skippedOn[d.key] = addDays(monday, wd);
@@ -1998,8 +2063,134 @@ function weekOf(
       if (d.dayIndex !== null && skipped.has(d.dayIndex)) skippedOn[d.key] = null;
       else ahead.push({ key: d.key, name: d.name });
     }
+    behind = weekBehind({ notDone, schedule: { mode: 'any', planningDay, daysPerWeek: planDays.length } });
   }
-  return { workouts, activities, planned, ahead, doneOn, setDays, skippedOn };
+  return { workouts, activities, planned, ahead, doneOn, setDays, skippedOn, missed, behind };
+}
+
+/**
+ * (Ben, 8 Nov: MS1–MS9, docs/training-guides/missed-sessions.md) Behind on the plan this week, as Today and the coach
+ * read it. The gate holds MS2's facts but Ben's dismiss and a pick on this visit (the screen's: `behindOfferShown`).
+ */
+export interface TodayBehind {
+  k: number;
+  /** `2 days behind`. */
+  line: string;
+  mode: 'set' | 'any';
+  gate: Omit<BehindOfferGate, 'today' | 'dismissedOn'>;
+  /** MS4: the not-done days scored, best first. */
+  scores: BehindScore[];
+  /** MS6: the top day whole, as planned (null: it is already today's card, so `2 days behind` only). */
+  builtIn: { dayKey: string; name: string; routineId: string; sets: number } | null;
+  planId: string;
+  /** MS9: what the coach is told (numbers from logs; no inference). */
+  coach: TodayBehindCoachFacts;
+}
+
+/** MS9, kept small: the coach request has a size cap. */
+export interface TodayBehindCoachFacts {
+  behindBy: number;
+  notDone: string[];
+  laterThisWeek: string[];
+  /** MS4's order, best first. */
+  pickOrder: string[];
+  /** Groups the top day covers that have 0 direct sets this week and none later. */
+  uncovered: string[];
+  /** Direct sets this week by group (non-zero only): `Chest 6`. */
+  directThisWeek: string[];
+  /** Direct sets yesterday by group: `Back 8`; empty: none. */
+  yesterday: string[];
+}
+
+/** The behind facts from what `loadFresh` read. Pure. */
+export function todayBehindOf(input: {
+  week: WeekBehind | null;
+  planDays: readonly TodayDay[];
+  today: string;
+  monday: string;
+  plan: PlanDraft | null;
+  changeWeek: number | null;
+  deload: boolean;
+  paused: boolean;
+  doneToday: boolean;
+  ill: boolean;
+  cardKey: string | null;
+  initial: Readonly<Record<string, TodayControls>>;
+  doneOn: Readonly<Record<string, string>>;
+  /** Finished workouts in the window: local date and each working set's exercise. */
+  sessions: readonly { localDate: string; sets: readonly string[] }[];
+  directGroupOf: (exerciseId: string) => string | null;
+  setDays: boolean;
+}): TodayBehind | null {
+  const b = input.week;
+  const plan = input.plan;
+  if (b === null || plan === null || b.k < 1) return null;
+  const templateOf = (d: TodayDay) => d.templates.find((t) => t.mainLiftExerciseId === (input.initial[d.key]?.mainLiftExerciseId ?? null)) ?? d.templates[0];
+  const dayOf = (key: string): BehindDay | null => {
+    const d = input.planDays.find((x) => x.key === key);
+    const t = d === undefined ? undefined : templateOf(d);
+    if (d === undefined || t === undefined) return null;
+    const stored: readonly Pick<TodayTemplateSlot, 'exerciseId' | 'workingSets' | 'timed' | 'warmup'>[] = t.slots ?? t.exerciseIds.map((exerciseId) => ({ exerciseId, workingSets: 3 }));
+    // Warm-ups and cardio never count (WU1, CW1).
+    const slots = stored.flatMap((x) => (x.timed !== undefined || x.warmup !== undefined ? [] : [{ exerciseId: x.exerciseId, sets: x.workingSets }]));
+    return { key, name: d.name, mainLiftIds: t.mainLiftExerciseId === null ? [] : [t.mainLiftExerciseId], slots };
+  };
+  const days = behindCandidates(b).flatMap((k) => {
+    const d = dayOf(k);
+    return d === null ? [] : [d];
+  });
+  const count = (from: string, to: string) => {
+    const out = new Map<string, number>();
+    for (const w of input.sessions) {
+      if (w.localDate < from || w.localDate > to) continue;
+      for (const id of w.sets) {
+        const g = input.directGroupOf(id);
+        if (g !== null) out.set(g, (out.get(g) ?? 0) + 1);
+      }
+    }
+    return out;
+  };
+  const yesterdayDate = addDays(input.today, -1);
+  const weekDirect = count(input.monday, input.today);
+  const yesterdayDirect = count(yesterdayDate, yesterdayDate);
+  const mains = new Set(input.planDays.flatMap((d) => d.templates.flatMap((t) => (t.mainLiftExerciseId === null ? [] : [t.mainLiftExerciseId]))));
+  const mainTrained = new Set(input.sessions.filter((w) => w.localDate >= input.monday && w.localDate <= input.today).flatMap((w) => w.sets.filter((id) => mains.has(id))));
+  const laterKeys = (key: string): string[] => behindLaterDays(b, key);
+  const later = (key: string) => laterKeys(key).flatMap((k) => {
+    const d = dayOf(k);
+    return d === null ? [] : [d];
+  });
+  const scores = behindPick({ days, later, facts: { weekDirect, mainTrained, yesterdayDirect }, groupOf: input.directGroupOf });
+  const top = behindBuiltInDay(scores, input.cardKey);
+  const topDay = top === null ? undefined : input.planDays.find((d) => d.key === top.key);
+  const topTemplate = topDay === undefined ? undefined : templateOf(topDay);
+  // MS2: a day Ben chose himself (a pin not done yet, or a move onto today this week).
+  const pinRoutine = plan.pin?.routineId ?? null;
+  const pinned = pinRoutine !== null && input.planDays.some((d) => d.templates.some((t) => t.routineId === pinRoutine) && input.doneOn[d.key] === undefined);
+  const todayWd = weekdayIndexOfDate(input.today);
+  const movedOnto = input.changeWeek !== null && (plan.moves ?? []).some((m) => m.week === input.changeWeek && m.weekday === todayWd && input.planDays.some((d) => d.dayIndex === m.dayIndex && input.doneOn[d.key] === undefined));
+  const lastMs = input.sessions[0] === undefined ? null : input.sessions[0].localDate;
+  const gapDays = lastMs === null ? null : Math.round((toMs(`${input.today}T12:00:00.000Z`) - toMs(`${lastMs}T12:00:00.000Z`)) / 86_400_000);
+  const nameOf = (k: string) => input.planDays.find((d) => d.key === k)?.name ?? k;
+  const lines = (m: Map<string, number>) => [...m].filter(([, n]) => n > 0).map(([g, n]) => `${g} ${String(n)}`);
+  return {
+    k: b.k,
+    line: behindLine(b.k),
+    mode: b.mode,
+    gate: { lighterWeek: input.deload, paused: input.paused, trainedOrOpenToday: input.doneToday, pickedToday: pinned || movedOnto, ill: input.ill, gapDays: input.sessions.length === 0 ? RETURN_TO_LOAD_GAP_DAYS : gapDays },
+    scores,
+    builtIn: top === null || topTemplate === undefined || topTemplate.routineId === null ? null : { dayKey: top.key, name: top.name, routineId: topTemplate.routineId, sets: top.sets },
+    planId: plan.id,
+    coach: {
+      behindBy: b.k,
+      notDone: b.notDone.map(nameOf),
+      laterThisWeek: laterKeys(scores[0]?.key ?? '').map(nameOf),
+      pickOrder: scores.map((x) => x.name),
+      uncovered: scores[0]?.uncoveredGroups ?? [],
+      directThisWeek: lines(weekDirect),
+      yesterday: lines(yesterdayDirect),
+    },
+  };
 }
 
 /** A builder draft key's Today day: `plan:<planId>:<dayIndex>`, else `other:<splitDayId>` (a Profile split day or an Other session). */

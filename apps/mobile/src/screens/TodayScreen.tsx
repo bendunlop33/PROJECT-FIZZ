@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { DEFAULT_TODAY_HEALTH_SHOWS, deriveId, discardCommand, discardConfirmation, formatDuration, HISTORY_COPY, reasonsText, scoreText, sessionCheckInForSkip, TODAY_PICK_COPY, TODAY_V2_COPY, todayDayRows, todayRestDay, weekPickRows, toMs, type ResumeRow, type TodayHealthLine, type TodayMain, type WeekTile } from '@fizz/domain';
+import { BEHIND_COPY, DEFAULT_TODAY_HEALTH_SHOWS, deriveId, discardCommand, discardConfirmation, formatDuration, HISTORY_COPY, reasonsText, scoreText, sessionCheckInForSkip, TODAY_PICK_COPY, TODAY_V2_COPY, todayDayRows, todayRestDay, weekPickRows, toMs, type ResumeRow, type TodayHealthLine, type TodayControls, type TodayMain, type WeekTile } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -23,13 +23,13 @@ import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
 import { MovedByYou } from '../today/MovedByYou';
-import { daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, followUpNext, hasOwnDraftFor, movedOffToday, plannedDayDetail, plannedOnOf, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { behindOfferView, behindRowView, daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, followUpNext, hasOwnDraftFor, movedOffToday, plannedDayDetail, plannedOnOf, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { DaySheetFlow } from './today/DaySheet';
-import { DoneCard, HealthLine, OfferSheet, RecentList, RestDayCard, SectionLabel, ShowOnTodaySheet, StartDock, TodayCard, TodayHeader, TodayPickSheet, TODAY_SPACING, WeekTiles } from './today/TodaySession';
+import { BehindRow, BehindSheet, DoneCard, HealthLine, OfferSheet, RecentList, RestDayCard, SectionLabel, ShowOnTodaySheet, StartDock, TodayCard, TodayHeader, TodayPickSheet, TODAY_SPACING, WeekTiles } from './today/TodaySession';
 import { useDevicePrefs } from '../device/DevicePrefsContext';
 import { LogPastWorkoutSheet } from './workout/LogPastWorkoutSheet';
 import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
@@ -104,6 +104,9 @@ export function TodayScreen() {
   // (Redesign v3 option C) `Push ⌄` → Today's workout; `✦ 1 change` → the offer; long-press Health → Show on Today.
   const [pickSheet, setPickSheet] = useState(false);
   const [offerSheet, setOfferSheet] = useState(false);
+  // (Ben, 8 Nov: MS6) The built-in `Adjust today?` offer's sheet.
+  const [behindSheet, setBehindSheet] = useState(false);
+  const [behindBusy, setBehindBusy] = useState(false);
   const [healthSheet, setHealthSheet] = useState(false);
   // Ben picked a day this visit (the sheet, or Your plan's `Do today`): a rest day's card gives way to it.
   const [picked, setPicked] = useState(false);
@@ -266,6 +269,57 @@ export function TodayScreen() {
     }
   }
   const offerCard = nudge !== null && nudge.key === nudgeKey ? nudgeCardView(nudge.result) : null;
+
+  // (Ben, 8 Nov: MS1–MS9) `2 days behind · Adjust today?`: the coach builds today from the top missed day (its proposal,
+  // Apply/Undo on its card), or with no coach that day whole (`Make next`, Undo).
+  const behindRow = session === null ? null : behindRowView(session.behind, { today: session.localDate, dismissedOn: prefs.behindDismissedOn ?? null, picked: pickedKey.current !== null, coach: reach === 'ok' });
+  const behindDay = session?.behind?.builtIn ?? null;
+  const behindCard = session === null || behindDay === null || session.initial[behindDay.dayKey] === undefined ? null : services.todaySession.card(session, { dayKey: behindDay.dayKey, controls: session.initial[behindDay.dayKey] as TodayControls });
+  const behindOffer = behindSheet && session !== null ? behindOfferView(session.behind, behindCard?.minutes ?? null) : null;
+  function dismissBehind() {
+    if (session !== null) updatePrefs({ behindDismissedOn: session.localDate });
+    setBehindSheet(false);
+  }
+  function adjustBehind() {
+    const b = session?.behind;
+    if (b == null) return;
+    if (reach === 'ok') {
+      askToday(BEHIND_COPY.ask(b.k), false);
+      return;
+    }
+    setBehindSheet(true);
+  }
+  async function applyBehind() {
+    const b = session?.behind;
+    const day = b?.builtIn ?? null;
+    if (session === null || b == null || day === null || session.planVersion === null || behindBusy) return;
+    setBehindBusy(true);
+    const opId = newUuid();
+    try {
+      const r = await services.plans.makeNext({ planId: b.planId, routineId: day.routineId, expectedVersion: session.planVersion, opId });
+      setBehindSheet(false);
+      if (!r.ok) {
+        setToast({ text: r.message });
+        reload();
+        return;
+      }
+      changed();
+      reloadSession();
+      setToast({
+        text: TODAY_V2_COPY.applied,
+        action: TODAY_V2_COPY.undo,
+        onAction: () => {
+          setToast(null);
+          void services.plans.undoControl({ planId: b.planId, targetOpId: opId, expectedVersion: r.plan.version, opId: newUuid() }).then(() => {
+            changed();
+            reloadSession();
+          });
+        },
+      });
+    } finally {
+      setBehindBusy(false);
+    }
+  }
 
   // `Chest moves to next session` when another day is picked (a prediction; nothing is written until Start).
   const [moved, setMoved] = useState<string | null>(null);
@@ -985,6 +1039,7 @@ export function TodayScreen() {
             </View>
           </Pressable>
         ) : null}
+        {behindRow !== null && view !== null ? <BehindRow row={behindRow} onAdjust={adjustBehind} onDismiss={dismissBehind} /> : null}
         {view !== null && selection !== null ? (
           <>
             {label(todayCardLabel(selection.dayKey, session.status === 'paused' ? null : session.nextKey))}
@@ -1261,6 +1316,15 @@ export function TodayScreen() {
         }}
         onClose={() => {
           setPickSheet(false);
+        }}
+      />
+      <BehindSheet
+        offer={behindOffer}
+        busy={behindBusy}
+        onApply={() => void applyBehind()}
+        onSkip={dismissBehind}
+        onClose={() => {
+          setBehindSheet(false);
         }}
       />
       <OfferSheet

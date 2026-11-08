@@ -17,7 +17,9 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
  *   trained today it plans from tomorrow. Fri before training: Legs B (legs last Mon). Fri after Legs B and Sat: Pull B
  *   (pull last Tue, push last Wed).
  * - The week follows what he did: Push B moved to Fri, Legs B done Fri → Fri is Legs B's (never `Missed`), and Up next
- *   Pull B is Saturday's; Push B goes to the next free day (Sun).
+ *   Pull B is Saturday's. (Ben, 8 Nov, MS1 flag 1) Push B no longer goes onto Sunday (a rest day): it doesn't fit this
+ *   week, so it shows as missed on Friday (its weekday), and the tiles agree with `1 day behind`. Once Pull B is done,
+ *   Push B is Up next on Sunday (Up next on the planning day, as approved), shown there greyed (a borrowed rest day).
  * Today's card, Library › Plan, the tiles, the day sheet, the morning reminder and the coach all read the one rule. An
  * open workout doesn't count; Ben's own `Make next` still wins; a force-close re-derives it.
  */
@@ -147,7 +149,7 @@ describe('Up next: least recently trained of the days left this week, from tomor
     expect(await readers(s2, gymId)).toEqual(after);
   });
 
-  it('Ben’s exact week (Sat 31, 10:31): Push B moved to Fri, Legs B done Fri → Fri is Legs B’s, Up next Pull B on Sat, Push B Sun; every reader agrees', async () => {
+  it('Ben’s exact week (Sat 31, 10:31): Push B moved to Fri, Legs B done Fri → Fri is Legs B’s, Up next Pull B on Sat, Push B doesn’t fit (missed on Fri); every reader agrees', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     await monToThu(s, gymId);
@@ -161,12 +163,13 @@ describe('Up next: least recently trained of the days left this week, from tomor
     h.clockMs = toMs('2026-10-31T10:31:00.000Z');
     const d = await loaded(s);
     expect(nextName(d)).toBe('Pull B');
-    expect(tileText(s.todaySession.week(d, nextName(d)))).toEqual(['30 done dot:legs', '31 today planned ring:pull', '01 planned ring:push']);
+    expect(tileText(s.todaySession.week(d, nextName(d)))).toEqual(['30 done dot:legs missed:push', '31 today planned ring:pull', '01 plain']);
+    expect(d.behind?.k).toBe(1);
     const fri = s.todaySession.daySheet(d, { date: '2026-10-30' }, d.nextKey, (x) => x);
     expect(`${fri.title} ${fri.statusText}`).toBe('Fri · Legs B Done');
     const sat = s.todaySession.daySheet(d, { date: '2026-10-31' }, d.nextKey, (x) => x);
     expect(sat.title).toBe('Sat · Pull B');
-    expect(await libraryRows(s)).toEqual(['Push A done 2', 'Pull A done 1', 'Legs A done 0', 'Push B todo 6', 'Pull B next 5', 'Legs B done 4']);
+    expect(await libraryRows(s)).toEqual(['Push A done 2', 'Pull A done 1', 'Legs A done 0', 'Push B todo 4', 'Pull B next 5', 'Legs B done 4']);
     expect((await s.plans.overview())?.daysThisWeek.text).toBe('4 of 6');
     expect(await readers(s, gymId)).toMatchObject({ today: 'Pull B', library: 'Pull B', preview: 'Pull B', coach: 'Pull B' });
 
@@ -175,7 +178,9 @@ describe('Up next: least recently trained of the days left this week, from tomor
     h.clockMs = toMs('2026-10-31T13:00:00.000Z');
     const after = await loaded(s);
     expect(nextName(after)).toBe('Push B');
-    expect(tileText(s.todaySession.week(after, null))).toEqual(['30 done dot:legs', '31 today done dot:pull', '01 planned ring:push']);
+    // Up next on Sunday (a rest day it borrows): shown there greyed, not as a planned ring (1 day behind).
+    expect(tileText(s.todaySession.week(after, null))).toEqual(['30 done dot:legs', '31 today done dot:pull', '01 plain missed:push']);
+    expect(after.behind?.k).toBe(1);
   });
 
   it('a workout still open today does not count: Up next stays Legs B', async () => {
@@ -235,7 +240,7 @@ describe('this week’s changes survive a new plan document in the same block (B
       return { next: nextName(d), tiles: tileText(x.todaySession.week(d, nextName(d))), fri: `${fri.title} ${fri.statusText}`, count: (await x.plans.overview())?.daysThisWeek.text };
     };
     const sat = await read(s);
-    expect(sat).toEqual({ next: 'Pull B', tiles: ['30 done dot:legs', '31 today planned ring:pull', '01 planned ring:push'], fri: 'Fri · Legs B Done', count: '4 of 6' });
+    expect(sat).toEqual({ next: 'Pull B', tiles: ['30 done dot:legs missed:push', '31 today planned ring:pull', '01 plain'], fri: 'Fri · Legs B Done', count: '4 of 6' });
     await h.forceClose();
     const { services: s2 } = await h.launch();
     expect(await read(s2)).toEqual(sat);

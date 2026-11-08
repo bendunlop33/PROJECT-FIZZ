@@ -110,7 +110,10 @@ describe('Up next on Sat 31 after Ben’s week (Ben, 31 Oct 17:57)', () => {
     h.clockMs = toMs('2026-10-31T17:57:00.000Z');
     const d = await loaded(s);
     expect(nextName(d)).toBe('Push B');
-    expect(s.todaySession.week(d, nextName(d)).slice(5).map((t) => `${t.date.slice(8)} ${t.marks.map((m) => `${m.shape}:${m.colour}`).join(' ')}`)).toEqual(['31 ring:push', '01 ring:pull']);
+    expect(s.todaySession.week(d, nextName(d)).slice(5).map((t) => `${t.date.slice(8)} ${t.marks.map((m) => `${m.shape}:${m.colour}`).join(' ')}`)).toEqual(['31 ring:push', '01 ']);
+    // (Ben, 8 Nov, MS1 flag 1) Pull B, displaced, no longer goes onto Sunday (a rest day): it doesn't fit this week.
+    expect(d.week.missed.map((m) => `${m.name} ${m.localDate}`)).toEqual(['Pull B 2026-10-30']);
+    expect(d.behind?.k).toBe(1);
     const now = await s.plans.overview();
     if (now == null) throw new Error('no plan');
     expect(await s.plans.undoWeekChange({ planId: now.planId, expectedVersion: now.planVersion, opId: 'undo-push-b-sat' })).toMatchObject({ ok: true });

@@ -91,6 +91,7 @@ export function stripPillStyle(item: Pick<StripItem, 'kind' | 'planned'>, theme:
     case 'today':
       return { backgroundColor: none, borderWidth: 1, borderStyle: 'dashed', borderColor: theme.colors['text.tertiary'], color: theme.colors['text.secondary'] };
     case 'rest':
+    case 'missed':
       return { backgroundColor: none, borderWidth: 0, borderStyle: 'solid', borderColor: none, color: theme.colors['text.tertiary'] };
   }
 }
