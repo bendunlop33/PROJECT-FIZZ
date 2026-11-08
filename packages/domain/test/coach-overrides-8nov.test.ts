@@ -17,6 +17,8 @@ const groupOf = (exerciseId: string): string | null => GROUPS[exerciseId] ?? nul
 const rowId = (s: SessionAggregate, exerciseId: string): string => s.exercises.find((e) => e.exerciseId === exerciseId && e.removed === undefined)?.id ?? '';
 const working = (s: SessionAggregate, exerciseId: string) => setsFor(s, exerciseId).filter((x) => x.setType !== 'warmup' && x.status !== 'deleted');
 const OP = 'turn-1:edit_today:o';
+type Details = Extract<EditTodayOp, { op: 'set_details' }>;
+const details = (sessionExerciseId: string, over: Partial<Details>): EditTodayOp => ({ op: 'set_details', sessionExerciseId, setId: null, setType: null, restSeconds: null, workSeconds: null, distanceMetres: null, position: null, remove: null, note: null, addedWeight: null, ...over });
 
 function plan(s: SessionAggregate, ops: EditTodayOp[], over: Partial<CoachEditInput> = {}) {
   const args: EditTodayArgs = { baseVersion: s.session.version, ops, reason: 'Ben asked', benAsked: true, benQuote: 'do it' };
@@ -139,12 +141,12 @@ describe('parity ops: what Ben can do by hand, with one Undo (8 Nov)', () => {
       plan(
         s0,
         [
-          { op: 'remove_set', setId: face[1]?.id ?? '' },
-          { op: 'set_details', sessionExerciseId: rowId(s0, BENCH), setId: b2?.id ?? '', setType: 'backoff', restSeconds: 150, workSeconds: null, distanceMetres: null },
-          { op: 'set_details', sessionExerciseId: rowId(s0, HANG), setId: null, setType: null, restSeconds: null, workSeconds: 60, distanceMetres: null },
-          { op: 'order_sets', sessionExerciseId: rowId(s0, ROW), setIds: setsFor(s0, ROW).map((x) => x.id).reverse() },
-          { op: 'note', sessionExerciseId: rowId(s0, BENCH), setId: null, note: 'Pause at the chest' },
-          { op: 'load_mode', sessionExerciseId: rowId(s0, HANG), mode: 'added' },
+          details(rowId(s0, FACE), { setId: face[1]?.id ?? '', remove: true }),
+          details(rowId(s0, BENCH), { setId: b2?.id ?? '', setType: 'backoff', restSeconds: 150 }),
+          details(rowId(s0, HANG), { workSeconds: 60 }),
+          details(rowId(s0, ROW), { setId: setsFor(s0, ROW)[1]?.id ?? '', position: 1 }),
+          details(rowId(s0, BENCH), { note: 'Pause at the chest' }),
+          details(rowId(s0, HANG), { addedWeight: true }),
         ],
         { asked: true },
       ),
@@ -174,15 +176,15 @@ describe('parity ops: what Ben can do by hand, with one Undo (8 Nov)', () => {
 
   it('a duplicate op ID replays; a stale version is refused', () => {
     const s0 = startFixture().state;
-    const p = ok(plan(s0, [{ op: 'note', sessionExerciseId: rowId(s0, BENCH), setId: null, note: 'Elbows in' }], { asked: true }));
+    const p = ok(plan(s0, [details(rowId(s0, BENCH), { note: 'Elbows in' })], { asked: true }));
     const s1 = expectOk(reduceSession(s0, p.command)).state;
     expect(expectOk(reduceSession(s1, p.command)).duplicate).toBe(true);
-    expect(plan(s1, [{ op: 'note', sessionExerciseId: rowId(s1, BENCH), setId: null, note: 'x' }], { asked: true, args: { baseVersion: s0.session.version, ops: [{ op: 'note', sessionExerciseId: rowId(s1, BENCH), setId: null, note: 'x' }], reason: 'r' } }).status).toBe('stale');
+    expect(plan(s1, [details(rowId(s1, BENCH), { note: 'x' })], { asked: true, args: { baseVersion: s0.session.version, ops: [details(rowId(s1, BENCH), { note: 'x' })], reason: 'r' } }).status).toBe('stale');
   });
 
   it('a coach note’s Undo is refused once the note changed since (rule 5)', () => {
     const s0 = startFixture().state;
-    const p = ok(plan(s0, [{ op: 'note', sessionExerciseId: rowId(s0, BENCH), setId: null, note: 'Elbows in' }], { asked: true }));
+    const p = ok(plan(s0, [details(rowId(s0, BENCH), { note: 'Elbows in' })], { asked: true }));
     const s1 = expectOk(reduceSession(s0, p.command)).state;
     const s2 = apply(s1, { type: 'set_note', at: at(550), opId: 'ben-note', target: { kind: 'exercise', sessionExerciseId: rowId(s1, BENCH) }, note: 'My own words', expectedVersion: s1.session.version });
     expect(reduceSession(s2, revert).ok).toBe(false);

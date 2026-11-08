@@ -11,11 +11,31 @@ import { reduceSession } from './reducer';
 
 type Line = Extract<ActionDetail, { kind: 'edit_today' }>['lines'][number];
 
-export const PARITY_OPS = ['remove_set', 'set_details', 'order_sets', 'note', 'load_mode'] as const satisfies readonly EditTodayOp['op'][];
+/** The `edit_today` ops this file builds. */
+export const PARITY_OPS = ['set_details'] as const satisfies readonly EditTodayOp['op'][];
 export type ParityOp = Extract<EditTodayOp, { op: (typeof PARITY_OPS)[number] }>;
 
 export function isParityOp(op: EditTodayOp): op is ParityOp {
   return (PARITY_OPS as readonly string[]).includes(op.op);
+}
+
+/** One manual control, as `set_details` and `order_sets` name them (one op may carry several). */
+export type ParityStep =
+  | { op: 'remove_set'; setId: string }
+  | { op: 'set_details'; sessionExerciseId: string; setId: string | null; setType: WorkoutSet['setType'] | null; restSeconds: number | null; workSeconds: number | null; distanceMetres: number | null }
+  | { op: 'move_set'; sessionExerciseId: string; setId: string; position: number }
+  | { op: 'note'; sessionExerciseId: string; setId: string | null; note: string | null }
+  | { op: 'load_mode'; sessionExerciseId: string; mode: 'added' | 'bodyweight' };
+
+/** `set_details` split into its controls: `+ Weight` first (it moves the sets' versions), then the set's values, a removal, a note. */
+export function parityStepsOf(op: ParityOp): ParityStep[] {
+  const out: ParityStep[] = [];
+  if (op.addedWeight !== null) out.push({ op: 'load_mode', sessionExerciseId: op.sessionExerciseId, mode: op.addedWeight ? 'added' : 'bodyweight' });
+  if (op.setType !== null || op.restSeconds !== null || op.workSeconds !== null || op.distanceMetres !== null) out.push({ op: 'set_details', sessionExerciseId: op.sessionExerciseId, setId: op.setId, setType: op.setType, restSeconds: op.restSeconds, workSeconds: op.workSeconds, distanceMetres: op.distanceMetres });
+  if (op.note !== null) out.push({ op: 'note', sessionExerciseId: op.sessionExerciseId, setId: op.setId, note: op.note.trim() === '' ? null : op.note });
+  if (op.position !== null && op.setId !== null && op.remove !== true) out.push({ op: 'move_set', sessionExerciseId: op.sessionExerciseId, setId: op.setId, position: op.position });
+  if (op.remove === true && op.setId !== null) out.push({ op: 'remove_set', setId: op.setId });
+  return out;
 }
 
 const liveRow = (s: SessionAggregate, id: string): SessionExercise | undefined => s.exercises.find((e) => e.id === id && e.removed === undefined);
@@ -32,14 +52,14 @@ const TYPE_WORD: Readonly<Record<WorkoutSet['setType'], string>> = { warmup: 'wa
 export function afterSteps(s: SessionAggregate, steps: readonly CoachEditStep[], ids: { at: ZonedTimestamp; opId: string; baseVersion: number; actionId: string }): SessionAggregate {
   if (steps.length === 0) return s;
   const r = reduceSession(s, { type: 'coach_edit_today', at: ids.at, opId: ids.opId, expectedVersion: ids.baseVersion, actionId: ids.actionId, steps: [...steps] });
-  return r.ok && r.duplicate !== true ? r.state : s;
+  return r.ok && !r.duplicate ? r.state : s;
 }
 
 /**
  * The parity ops' steps, numbered from `first`. `now`: the workout after the edit's other steps. A step that can't be
  * made is a note (`Not done: …`); the rest apply.
  */
-export function parityOpSteps(now: SessionAggregate, ops: readonly ParityOp[], ids: { at: ZonedTimestamp; opId: string; first: number }): { steps: CoachEditStep[]; lines: Line[]; notes: string[]; names: string[] } {
+export function parityOpSteps(now: SessionAggregate, ops: readonly ParityStep[], ids: { at: ZonedTimestamp; opId: string; first: number }): { steps: CoachEditStep[]; lines: Line[]; notes: string[]; names: string[] } {
   const steps: CoachEditStep[] = [];
   const lines: Line[] = [];
   const notes: string[] = [];
@@ -114,19 +134,23 @@ export function parityOpSteps(now: SessionAggregate, ops: readonly ParityOp[], i
         names.push(row.exerciseName);
         break;
       }
-      case 'order_sets': {
+      case 'move_set': {
+        // The drag: this set to its new place among the sets not done yet; the others keep their order.
         const own = now.sets.filter((x) => x.sessionExerciseId === row.id && x.status !== 'deleted');
         const movable = own.filter((x) => x.status === 'pending' && x.pairedWithSetId === null && !own.some((c) => c.pairedWithSetId === x.id)).sort((a, b) => a.index - b.index);
-        const wanted = new Set(op.setIds);
-        if (wanted.size !== op.setIds.length || wanted.size !== movable.length || movable.some((x) => !wanted.has(x.id))) {
-          notes.push(`list every set of ${row.exerciseName} not done yet to reorder them`);
+        const from = movable.findIndex((x) => x.id === op.setId);
+        if (from < 0) {
+          notes.push(`that ${row.exerciseName} set isn’t one to move`);
           break;
         }
-        if (movable.every((x, i) => op.setIds[i] === x.id)) {
-          notes.push(`${row.exerciseName}’s sets are already in that order`);
+        const to = Math.min(movable.length, op.position) - 1;
+        if (to === from) {
+          notes.push(`that ${row.exerciseName} set is already there`);
           break;
         }
-        steps.push({ type: 'reorder_sets', at: ids.at, opId: nextOpId(), sessionExerciseId: row.id, setIds: [...op.setIds], expectedVersion: now.session.version });
+        const setIds = movable.map((x) => x.id).filter((x) => x !== op.setId);
+        setIds.splice(to, 0, op.setId);
+        steps.push({ type: 'reorder_sets', at: ids.at, opId: nextOpId(), sessionExerciseId: row.id, setIds, expectedVersion: now.session.version });
         lines.push({ change: 'reorder', text: `${row.exerciseName}: sets reordered`.slice(0, 200) });
         names.push(row.exerciseName);
         break;

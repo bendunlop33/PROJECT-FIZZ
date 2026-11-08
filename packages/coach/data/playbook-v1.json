@@ -365,79 +365,79 @@
     },
     {
       "id": "PN1",
-      "short": "Pain hold: a pain mention holds progression (load, reps, sets, harder variants) on that movement for that session and its next, then clears by itself unless Ben reports pain again. Ben can clear it early, or tell the coach to go ahead. The coach never diagnoses. Reason: Ben's pain is usually one-off.",
-      "appliesWhen": "Any pain mention or flag",
-      "grade": "Ben's rule (8 Nov) + guardrail (rule 9)",
+      "short": "A pain mention holds progression on that movement this session and its next, then clears unless he reports pain again; he can clear it or say go ahead. Never diagnose.",
+      "appliesWhen": "Pain",
+      "grade": "Ben (8 Nov)",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF1",
-      "short": "Count today's earlier work by muscle: hard sets so far in this workout, 1 for a primary muscle, ½ for a secondary, before each exercise not started (P).",
-      "appliesWhen": "Every pending target, every coach context",
-      "grade": "Moderate / Practice",
+      "short": "Today's earlier hard sets count by muscle (primary 1, secondary ½).",
+      "appliesWhen": "Pending targets",
+      "grade": "Moderate",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF2",
-      "short": "Like-for-like reference: a past exposure counts as \"last time\" only if its P was within 2 sets of today's; same-muscle supersets compare only with their own kind; a much older like-for-like is checked against the newer one and the lower load wins.",
-      "appliesWhen": "Picking last time",
-      "grade": "Practice / Moderate",
+      "short": "Last time = an exposure with similar earlier work (within 2 sets).",
+      "appliesWhen": "Last time",
+      "grade": "Practice",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF3",
-      "short": "No like-for-like history: keep the load and aim 1 rep fewer (P ≥ 2 higher) or 2 fewer (≥ 5 higher), no load step this session, labelled est.; fresher than then: no upward change.",
-      "appliesWhen": "No comparable reference",
-      "grade": "Weak / Practice",
+      "short": "No such exposure: same load, 1–2 reps fewer, no step, est.",
+      "appliesWhen": "No match",
+      "grade": "Weak",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF4",
-      "short": "No fixed \"−x% per earlier set\" anywhere.",
+      "short": "No fixed % cut per earlier set.",
       "appliesWhen": "Always",
-      "grade": "Weak + guardrail (rule 6)",
+      "grade": "Weak",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF5",
-      "short": "Progression and stalls compare like with like: an exposure in another context is neither a miss nor a new best.",
-      "appliesWhen": "Next targets, stalls, weekly review",
+      "short": "Stalls and steps compare like with like only.",
+      "appliesWhen": "Stalls",
       "grade": "Practice",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF6",
-      "short": "When today's order changes (reorder, skip, swap, add), only the built-in targets of exercises not started are worked out again; Ben's own and applied coach targets stay; the coach may offer. Undo restores them.",
+      "short": "Order changed today: only built-in targets are worked out again.",
       "appliesWhen": "Today's edits",
-      "grade": "Practice + guardrail (rules 2, 3)",
+      "grade": "Practice",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF7",
-      "short": "The coach gets \"done so far today\" per muscle (direct and secondary), the exercise's P and reference, and any earlier workout or hard run today, and names them in one line when it explains.",
-      "appliesWhen": "Coach plans or adjusts sets",
-      "grade": "Practice + guardrail",
+      "short": "Use doneSoFarToday when planning sets; name it when asked why.",
+      "appliesWhen": "Coach sets",
+      "grade": "Practice",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF8",
-      "short": "Supersets: partner sets count to P as logged; same-muscle pairs are their own context; antagonist pairs count only by real overlap.",
-      "appliesWhen": "Supersets, circuits",
+      "short": "Same-muscle supersets are their own context.",
+      "appliesWhen": "Supersets",
       "grade": "Moderate",
       "use": "in_use",
       "note": null
     },
     {
       "id": "SF9",
-      "short": "SF never raises a load; the pain hold wins; loads snapped down to the kit; estimates labelled; done sets never edited; warm-ups, drops and cardio never add to P.",
+      "short": "Never raises a load; pain hold, kit and done sets win.",
       "appliesWhen": "Always",
       "grade": "Guardrail",
       "use": "in_use",

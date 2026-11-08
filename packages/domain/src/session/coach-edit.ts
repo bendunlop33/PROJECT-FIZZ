@@ -12,7 +12,7 @@ import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { buildSwapExerciseCommand, midSwapSlot, swapPainCarry } from './mid-swap';
 import { doableHere, substituteTargets } from './substitutes';
 import { supersetLinkSides } from './order';
-import { afterSteps, isParityOp, parityOpSteps } from './coach-edit-parity';
+import { afterSteps, isParityOp, parityOpSteps, parityStepsOf } from './coach-edit-parity';
 import { COACH_HARD_CEILINGS, COACH_JUDGEMENT_LIMITS, loadStepTradeOff, painGoAheadTradeOff, volumeTradeOff, warmupTradeOff } from '../coach/coach-limits';
 import { reduceSession } from './reducer';
 
@@ -129,12 +129,7 @@ function rowOf(state: SessionAggregate, op: EditTodayOp): string | null {
     case 'main':
     case 'warmups':
     case 'set_details':
-    case 'order_sets':
-    case 'note':
-    case 'load_mode':
       return op.sessionExerciseId;
-    case 'remove_set':
-      return state.sets.find((s) => s.id === op.setId)?.sessionExerciseId ?? null;
     case 'add':
       return null;
   }
@@ -193,9 +188,9 @@ function planOnce(input: CoachEditInput): CoachEditPlan {
     if (clash !== undefined) return reject(`two changes to ${nameOf(clash)} at once`);
   }
   // (Ben, 8 Nov) A new order of the sets, or `+ Weight`, with the same row's sets or targets changed too would fight.
-  const resets = new Set(ops.filter((op) => op.op === 'set' || op.op === 'sets' || op.op === 'set_count' || op.op === 'warmups' || op.op === 'remove_set').map((op) => rowOf(s, op)));
-  const fights = ops.find((op) => (op.op === 'order_sets' || op.op === 'load_mode') && resets.has(op.sessionExerciseId));
-  if (fights !== undefined && (fights.op === 'order_sets' || fights.op === 'load_mode')) return reject(`two changes to ${nameOf(fights.sessionExerciseId)}’s sets at once`);
+  const resets = new Set(ops.filter((op) => op.op === 'set' || op.op === 'sets' || op.op === 'set_count' || op.op === 'warmups' || (op.op === 'set_details' && op.remove === true)).map((op) => rowOf(s, op)));
+  const fights = ops.find((op) => op.op === 'set_details' && (op.position !== null || op.addedWeight !== null) && resets.has(op.sessionExerciseId));
+  if (fights !== undefined && fights.op === 'set_details') return reject(`two changes to ${nameOf(fights.sessionExerciseId)}’s sets at once`);
 
   const steps: CoachEditStep[] = [];
   /** ADR 0038: an op that can't be done is left out with its line; the rest applies. */
@@ -600,7 +595,7 @@ function planOnce(input: CoachEditInput): CoachEditPlan {
   // 9. (Ben, 8 Nov, coach parity) The workout's own manual controls: a set out, a set's type, rest or time, the sets'
   // order, a note, `+ Weight`. Built on the workout as the steps above leave it, so versions and new sets line up.
   // `+ Weight` first: it moves the sets' versions, so the others are built after it (each its own Undo, rule 5).
-  const parity = ops.filter(isParityOp);
+  const parity = ops.filter(isParityOp).flatMap(parityStepsOf);
   for (const group of [parity.filter((op) => op.op === 'load_mode'), parity.filter((op) => op.op !== 'load_mode')]) {
     if (group.length === 0) continue;
     const now = afterSteps(s, steps, { at: input.at, opId: input.opId, baseVersion: input.args.baseVersion, actionId: input.actionId });
@@ -641,7 +636,7 @@ function directSets(s: SessionAggregate, groupOf: (exerciseId: string) => string
 /** Groups the edit takes above the per-session cap (and above where they already were). */
 function volumeOver(before: SessionAggregate, command: CoachEditTodayCommand, groupOf: (exerciseId: string) => string | null): { group: string; before: number; after: number }[] {
   const r = reduceSession(before, command);
-  if (!r.ok || r.duplicate === true) return [];
+  if (!r.ok || r.duplicate) return [];
   const was = directSets(before, groupOf);
   const now = directSets(r.state, groupOf);
   const cap = COACH_JUDGEMENT_LIMITS.sessionDirectSets;

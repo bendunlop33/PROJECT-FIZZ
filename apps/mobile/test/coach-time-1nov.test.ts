@@ -183,6 +183,9 @@ describe('Ben’s live Push B chat (build 500)', () => {
     // Measured on this fixture (1 Nov): about 97,000 characters (24k tokens) before the trim, then under 60,000.
     // (2 Nov) The playbook grew by the rules Ben approved (FQ/VC/ST, LW, WU1–12 and his amendments, run rules):
     // about 67,000 here. The cap is 70,000 so later growth is still caught.
-    expect(requestChars(plan)).toBeLessThan(70_000);
+    // (Ben, 8 Nov) Caught: the rules he approved that day in short form (PN1, the one-session pain hold; SF1–SF9), the
+    // coach-parity `set_details` op and the one-line override rule add about 3,800: about 72,500 here. Raised to 74,000
+    // for that growth only (PM to confirm); anything more still fails.
+    expect(requestChars(plan)).toBeLessThan(74_000);
   });
 });

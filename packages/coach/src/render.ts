@@ -365,7 +365,7 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
           const spoken = adjustSpoken(d.exercises);
           if (surface === 'slot') {
             const slot = adjustSlot(d.exercises, record.author === 'coach');
-            return make(status, slot.title, spoken, trade === '' ? slot.detail : [slot.detail, trade].filter((x) => x !== null && x !== '').join(' · '));
+            return make(status, slot.title, spoken, trade === '' ? slot.detail : [slot.detail, trade].filter((x) => x !== '').join(' · '));
           }
           return make(status, withTrade(adjustLine(d.exercises, 'committed')), spoken);
         }

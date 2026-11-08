@@ -593,7 +593,7 @@ export const WHY_RULE_LINE =
  * limits; the app keeps only the real kit and done sets, and the card says the trade-off. One line.
  */
 export const BEN_ASK_OVERRIDES_LINE =
-  'Ben’s explicit ask (or his yes to your offer) overrides your coaching limits: the 20% load step, sets per muscle in a session, rep ranges, warm-up counts, time fit, holding after a stall. Make the change he asked for, never refuse it for one of those; the card states the trade-off in one line. Only his real equipment (never past a machine’s max) and sets already done stay fixed. If he says to go ahead despite a pain hold, make the edit with painGoAhead true.';
+  'His explicit ask or yes overrides your limits (20% step, sets a session, rep ranges, warm-ups, time, stall holds): do it, never refuse for them; the card says the trade-off. Only his kit, a machine max and done sets stay. "Go ahead" despite pain: painGoAhead true.';
 
 export const COACH_INSTRUCTIONS = [
   // Coach v3 (ADR 0027, Ben 18 Oct: "more dynamic like AI would be"): a coach's voice, still short.

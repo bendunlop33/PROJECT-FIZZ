@@ -288,7 +288,7 @@ export function TodayScreen() {
       // replaces it (`propose_workout_edit`, Undo), never a separate draft to open.
       // The top missed day (MS4, MS6) when it isn't today's card already, so the coach adjusts that day.
       const top = b.builtIn === null || session === null ? undefined : session.initial[b.builtIn.dayKey];
-      const pick: TodaySelection | null = b.builtIn !== null && top !== undefined ? { dayKey: b.builtIn.dayKey, controls: top as TodayControls } : selection === null ? null : { dayKey: selection.dayKey, controls: selection.controls };
+      const pick: TodaySelection | null = b.builtIn !== null && top !== undefined ? { dayKey: b.builtIn.dayKey, controls: top } : selection === null ? null : { dayKey: selection.dayKey, controls: selection.controls };
       if (session !== null && pick !== null) {
         const sel: TodaySelection = pick;
         const key = `behind:${sel.dayKey}:${JSON.stringify(sel.controls)}:${session.gymId ?? '-'}:${session.equipmentVersion}`;

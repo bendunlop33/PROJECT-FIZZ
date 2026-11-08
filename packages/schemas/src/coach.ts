@@ -683,12 +683,11 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
     sets: z.array(z.strictObject({ load: z.number().min(0).max(2000), reps: z.int().min(1).max(30) })).min(1).max(20),
     replace: z.boolean(),
   }),
-  /** (Ben, 8 Nov, coach parity) One pending set taken out (a warm-up or a working set; done sets stay, rule 2). */
-  z.strictObject({ op: z.literal('remove_set'), setId: IdSchema }),
   /**
-   * (Ben, 8 Nov, coach parity) A pending set's other values, as Ben edits them by hand: its type, the rest after it,
-   * its work time or distance (timed and cardio). `setId` null: every pending set of the exercise (type excepted).
-   * Null keeps a value.
+   * (Ben, 8 Nov, coach parity) What Ben edits by hand on a pending set (`setId`) or all the exercise's (null): its type
+   * (one set), rest, work time or distance; `position` that set's place among the pending ones (1 = next); `remove`
+   * that set; `note` on it or the exercise ("" clears); `addedWeight` true for `+ Weight`, false back to bodyweight.
+   * Null keeps each.
    */
   z.strictObject({
     op: z.literal('set_details'),
@@ -698,13 +697,11 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
     restSeconds: z.int().min(0).max(3600).nullable(),
     workSeconds: z.int().min(1).max(36_000).nullable(),
     distanceMetres: z.number().min(0).max(100_000).nullable(),
+    position: z.int().min(1).max(40).nullable(),
+    remove: z.boolean().nullable(),
+    note: z.string().max(500).nullable(),
+    addedWeight: z.boolean().nullable(),
   }),
-  /** (Ben, 8 Nov, coach parity) The exercise's pending sets in a new order (exactly its pending sets, as the drag). */
-  z.strictObject({ op: z.literal('order_sets'), sessionExerciseId: IdSchema, setIds: z.array(IdSchema).min(2).max(40) }),
-  /** (Ben, 8 Nov, coach parity) A note on an exercise, or one of its sets (`setId`); null clears it. */
-  z.strictObject({ op: z.literal('note'), sessionExerciseId: IdSchema, setId: IdSchema.nullable(), note: z.string().max(500).nullable() }),
-  /** (Ben, 8 Nov, coach parity) `+ Weight` on a bodyweight exercise (`added`), or back to bodyweight. */
-  z.strictObject({ op: z.literal('load_mode'), sessionExerciseId: IdSchema, mode: z.enum(['added', 'bodyweight']) }),
 ]);
 export type EditTodayOp = z.infer<typeof EditTodayOpSchema>;
 

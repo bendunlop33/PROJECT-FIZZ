@@ -140,9 +140,11 @@ describe('partial success and kit (ADR 0038)', () => {
     const s0 = startWorkout({ ...input, gymEquipment: [barbell(), stack(), dumbbells()] }).aggregate;
     const add = (load: number): EditTodayOp => ({ op: 'add', exerciseId: RAISE.id, workingSets: 2, reps: { min: 12, max: 15 }, workSeconds: null, targetRpe: null, afterSessionExerciseId: null, supersetWithSessionExerciseId: null, load });
     const mine = ok(plan(s0, [add(11)], 'add lateral raises with the 11s', {}, new Map([[0, inputs(RAISE)]])));
-    expect(setsFor(apply(s0, mine.command), RAISE.id).map((x) => x.planned.load)).toEqual([kg(11, 'per_hand'), kg(11, 'per_hand')]);
+    // (8 Nov) A coach add plans its warm-ups too (the added-exercise warm-up work): the working sets are what's checked.
+    const work = (s: typeof s0) => setsFor(s, RAISE.id).filter((x) => x.setType !== 'warmup');
+    expect(work(apply(s0, mine.command)).map((x) => x.planned.load)).toEqual([kg(11, 'per_hand'), kg(11, 'per_hand')]);
     const coach = ok(plan(s0, [add(11)], 'add some lateral raises', {}, new Map([[0, inputs(RAISE)]])));
-    expect(setsFor(apply(s0, coach.command), RAISE.id).map((x) => x.planned.load?.value)).toEqual([10, 10]);
+    expect(work(apply(s0, coach.command)).map((x) => x.planned.load?.value)).toEqual([10, 10]);
   });
 });
 

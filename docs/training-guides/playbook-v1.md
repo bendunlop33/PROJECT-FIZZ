@@ -104,16 +104,16 @@ Short forms of rules Ben approved after v1 that the app enforces, so the coach c
 | PH1 | Rotator cuff and prehab work (face pulls included) gets no warm-up sets, and the coach's increases on it go one load step (one dumbbell) at a time. Ben's per-exercise warm-up setting (off or normal) wins. Reason: this work stays light and easy. | Prehab exercises | Ben's preference | warm-up.md WU7 amendment (1 Nov); CHANGELOG 1 Nov |
 | PL1 | Plate ladder: on bars and plate-loaded machines, warm-ups are the bar plus whole 5 kg plates a side, each step only adds plates to the one before, and the working set only adds to the last step. A cold heavy bar lift starts with plates on (at most 60 kg and ⅔ of the working weight; the empty bar only when the working weight is 60 kg or less and not from the floor) and gets 2–3 warm-ups with no jump over 30 % of the working weight (100 → 60, 80; 105 → 60, 90); already warm: one step near 80 % × 2. In lb: the bar + 20 lb steps. Reason: minimal unloading of plates. | Every generated warm-up on a bar or plate-loaded machine, with Simple warm-up weights on | Ben's preference + guardrail (rule 4) | warm-up.md WU8 amendment (2 Nov); CHANGELOG 2 Nov |
 | CW1 | Cardio Ben asks for as a warm-up is marked Warm-up on its row. It stays a timed working bout: no PB, volume or muscle-set credit, and it sits outside the 10-minute warm-up-set allowance. | Plan days, Your workout, the live workout | Ben's rule (2 Nov) | CHANGELOG 2 Nov |
-| PN1 | Pain hold: a pain mention holds progression (load, reps, sets, harder variants) on that movement for that session and its next, then clears by itself unless Ben reports pain again. Ben can clear it early, or tell the coach to go ahead. The coach never diagnoses. Reason: Ben's pain is usually one-off. | Any pain mention or flag | Ben's rule (8 Nov) + guardrail (rule 9) | CLAUDE.md rule 9; CHANGELOG 8 Nov |
-| SF1 | Count today's earlier work by muscle: hard sets so far in this workout, 1 for a primary muscle, ½ for a secondary, before each exercise not started (P). | Every pending target, every coach context | Moderate / Practice | in-session-fatigue.md SF1 |
-| SF2 | Like-for-like reference: a past exposure counts as "last time" only if its P was within 2 sets of today's; same-muscle supersets compare only with their own kind; a much older like-for-like is checked against the newer one and the lower load wins. | Picking last time | Practice / Moderate | SF2 |
-| SF3 | No like-for-like history: keep the load and aim 1 rep fewer (P ≥ 2 higher) or 2 fewer (≥ 5 higher), no load step this session, labelled est.; fresher than then: no upward change. | No comparable reference | Weak / Practice | SF3 |
-| SF4 | No fixed "−x% per earlier set" anywhere. | Always | Weak + guardrail (rule 6) | SF4 |
-| SF5 | Progression and stalls compare like with like: an exposure in another context is neither a miss nor a new best. | Next targets, stalls, weekly review | Practice | SF5 |
-| SF6 | When today's order changes (reorder, skip, swap, add), only the built-in targets of exercises not started are worked out again; Ben's own and applied coach targets stay; the coach may offer. Undo restores them. | Today's edits | Practice + guardrail (rules 2, 3) | SF6 |
-| SF7 | The coach gets "done so far today" per muscle (direct and secondary), the exercise's P and reference, and any earlier workout or hard run today, and names them in one line when it explains. | Coach plans or adjusts sets | Practice + guardrail | SF7 |
-| SF8 | Supersets: partner sets count to P as logged; same-muscle pairs are their own context; antagonist pairs count only by real overlap. | Supersets, circuits | Moderate | SF8 |
-| SF9 | SF never raises a load; the pain hold wins; loads snapped down to the kit; estimates labelled; done sets never edited; warm-ups, drops and cardio never add to P. | Always | Guardrail | SF9 |
+| PN1 | A pain mention holds progression on that movement this session and its next, then clears unless he reports pain again; he can clear it or say go ahead. Never diagnose. | Pain | Ben (8 Nov) | rule 9 |
+| SF1 | Today's earlier hard sets count by muscle (primary 1, secondary ½). | Pending targets | Moderate | SF1 |
+| SF2 | Last time = an exposure with similar earlier work (within 2 sets). | Last time | Practice | SF2 |
+| SF3 | No such exposure: same load, 1–2 reps fewer, no step, est. | No match | Weak | SF3 |
+| SF4 | No fixed % cut per earlier set. | Always | Weak | SF4 |
+| SF5 | Stalls and steps compare like with like only. | Stalls | Practice | SF5 |
+| SF6 | Order changed today: only built-in targets are worked out again. | Today's edits | Practice | SF6 |
+| SF7 | Use doneSoFarToday when planning sets; name it when asked why. | Coach sets | Practice | SF7 |
+| SF8 | Same-muscle supersets are their own context. | Supersets | Moderate | SF8 |
+| SF9 | Never raises a load; pain hold, kit and done sets win. | Always | Guardrail | SF9 |
 
 ## Inputs the coach uses
 
