@@ -112,7 +112,11 @@ describe('checkCoachAdd: loads from history, fitted to this gym', () => {
     const after = expectOk(reduceSession(s, r.command)).state;
     const row = rowsNamed(after, 'Lateral raise')[0];
     expect(row).toMatchObject({ equipmentId: rack.id, loadConvention: 'per_hand', unit: 'kg', id: coachAddRowId('coach-op-1') });
-    const sets = after.sets.filter((x) => x.sessionExerciseId === row?.id);
+    const all = after.sets.filter((x) => x.sessionExerciseId === row?.id).sort((a, b) => a.index - b.index);
+    // (Ben, 8 Nov) Its warm-up from the shared planner: a cold isolation after bench (WU7), one 50 % step, on the rack.
+    expect(all.filter((x) => x.setType === 'warmup').map((x) => [x.index, x.planned.load?.convention, x.planned.source])).toEqual([[0, 'per_hand', undefined]]);
+    expect(getAchievableLoads(rack).loads).toContain(all[0]?.planned.load?.value);
+    const sets = all.filter((x) => x.setType !== 'warmup');
     expect(sets).toHaveLength(3);
     for (const x of sets) {
       expect(x.status).toBe('pending');
@@ -204,12 +208,13 @@ describe('checkCoachAdd: loads from history, fitted to this gym', () => {
   it('clamps sets, reps and RPE with a note each; a missing RPE stays the usual target', () => {
     const s = session(MAIN, MAIN_EQ);
     const r = ok(input(RAISE, s, {}, { workingSets: 15, reps: { min: 15, max: 8 }, targetRpe: 11 }));
-    expect(r.command.plan).toHaveLength(10);
-    expect(r.command.plan?.[0]?.planned).toMatchObject({ reps: { min: 8, max: 15 }, rpe: 10 });
+    const working = (r.command.plan ?? []).filter((p) => p.setType !== 'warmup');
+    expect(working).toHaveLength(10);
+    expect(working[0]?.planned).toMatchObject({ reps: { min: 8, max: 15 }, rpe: 10 });
     expect(r.guardNotes.map((n) => n.text)).toEqual(expect.arrayContaining(['Sets 15 → 10', 'RIR -1 → 0']));
     const none = ok(input(RAISE, s, {}, { targetRpe: null, reps: null }));
-    expect(none.command.plan?.[0]?.planned.rpe).toBeNull();
-    expect(none.command.plan?.[0]?.planned.reps).not.toBeNull();
+    expect(none.command.plan?.find((p) => p.setType !== 'warmup')?.planned.rpe).toBeNull();
+    expect(none.command.plan?.find((p) => p.setType !== 'warmup')?.planned.reps).not.toBeNull();
   });
 });
 

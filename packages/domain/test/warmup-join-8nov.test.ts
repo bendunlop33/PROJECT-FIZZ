@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EquipmentInstance, Exercise, SessionAggregate } from '@fizz/schemas';
-import { joinWarmups, startWorkout, withJoinWarmups, type JoinWarmupInput } from '../src/index';
+import { buildSwapExerciseCommand, checkCoachAdd, joinsAsSecondary, joinWarmups, reduceSession, startWorkout, withJoinWarmups, type HistorySession, type JoinWarmupInput } from '../src/index';
 import { at, barbell, bodyweightStation, dumbbells, exercise, GYM, id, idGen, kg, lb, profile, routine, routineExercise, stack, template, values } from './fixtures';
 import { apply, logCmd } from './session-fixture';
 
@@ -114,5 +114,160 @@ describe('an exercise added mid-workout warms up by the approved rules (8 Nov)',
     const out = withJoinWarmups(plan, row(pullB(true)));
     expect(out?.map((p) => [p.setType, p.planned.load?.value])).toEqual([['warmup', 80], ['working', 97.5], ['working', 97.5], ['working', 97.5]]);
     expect(withJoinWarmups(null, row(pullB(true)))).toBeNull();
+  });
+});
+
+/** Pull B with a one-arm dumbbell row planned after pull-ups: one light warm-up and three working sets, pull-ups logged. */
+function pullBWithDbRow(): SessionAggregate {
+  const s = startWorkout({
+    opId: 'start-db',
+    owner: profile(),
+    gymId: GYM,
+    routine: routine([
+      routineExercise(830, { exerciseId: PULLUP, equipmentId: STATION.id, order: 0, setTemplates: [template(8301, { targetReps: { min: 8, max: 8 } })] }),
+      routineExercise(831, {
+        exerciseId: DBROW,
+        equipmentId: RACK.id,
+        order: 1,
+        setTemplates: [template(8311, { setType: 'warmup', targetLoad: kg(15, 'per_hand'), targetReps: { min: 8, max: 8 } }), ...[8312, 8313, 8314].map((n) => template(n, { targetLoad: kg(35, 'per_hand'), targetReps: { min: 8, max: 8 } }))],
+      }),
+    ]),
+    exercises: EX,
+    gymEquipment: [BAR, RACK, STACK, STATION],
+    at: at(0),
+    newId: idGen(83_000),
+  }).aggregate;
+  const first = s.sets.find((x) => x.setType !== 'warmup' && s.exercises.find((e) => e.id === x.sessionExerciseId)?.exerciseId === PULLUP);
+  return first === undefined ? s : apply(s, logCmd(first.id, values(null, 8, { rpe: 8 }), 60, 'log-pu2'));
+}
+
+const rowsOf = (s: SessionAggregate, exerciseId: string) => {
+  const row = s.exercises.find((e) => e.exerciseId === exerciseId && e.removed === undefined);
+  return s.sets.filter((x) => x.sessionExerciseId === row?.id && x.status !== 'deleted').sort((a, b) => a.index - b.index).map((x) => [x.setType, x.status, x.planned.load?.value ?? null, x.planned.reps?.min ?? null]);
+};
+
+describe('a swap mid-workout plans the substitute’s own warm-ups (8 Nov)', () => {
+  const plan = { exercise: EX.get(ROW) as Exercise, pin: BAR, plan: [1, 2, 3].map(() => ({ setType: 'working' as const, planned: { load: kg(97.5), reps: { min: 8, max: 8 }, durationS: null, rpe: 8, rir: null } })) };
+  const swap = (s: SessionAggregate, ctx: boolean) => {
+    const dbRow = s.exercises.find((e) => e.exerciseId === DBROW)?.id ?? '';
+    const r = buildSwapExerciseCommand({ aggregate: s, sessionExerciseId: dbRow, plan, gymName: 'Main', ownerUnit: 'kg', opId: 'swap-row', at: at(300), newId: idGen(84_000), ...(ctx ? { warmups: { lookup } } : {}) });
+    if (!r.ok) throw new Error(r.reason);
+    return r.command;
+  };
+
+  it('dumbbell row (one 15 kg warm-up) → barbell row 97.5 × 8 after pull-ups: the planner’s 80 × 4, not the old count at a light load; Undo brings the dumbbell row back exactly', () => {
+    const s0 = pullBWithDbRow();
+    const cmd = swap(s0, true);
+    const s1 = (() => {
+      const r = reduceSession(s0, cmd);
+      if (!r.ok) throw new Error(r.error.message);
+      return r.state;
+    })();
+    expect(rowsOf(s1, ROW)).toEqual([
+      ['warmup', 'pending', 80, 4],
+      ['working', 'pending', 97.5, 8],
+      ['working', 'pending', 97.5, 8],
+      ['working', 'pending', 97.5, 8],
+    ]);
+    // The pull-ups Ben logged are untouched (rule 2).
+    expect(rowsOf(s1, PULLUP)).toEqual(rowsOf(s0, PULLUP));
+    // A retry with the same opId is a duplicate, nothing new.
+    const again = reduceSession(s1, cmd);
+    expect(again.ok && again.duplicate).toBe(true);
+    const undone = reduceSession(s1, { type: 'undo_op', at: at(320), opId: 'undo-swap-row', targetOpId: 'swap-row' });
+    if (!undone.ok) throw new Error(undone.error.message);
+    expect(rowsOf(undone.state, DBROW)).toEqual(rowsOf(s0, DBROW));
+    expect(undone.state.sets.filter((x) => x.status === 'pending' && undone.state.exercises.find((e) => e.id === x.sessionExerciseId)?.exerciseId === ROW)).toEqual([]);
+  });
+
+  it('cold (nothing logged): the full ladder replaces the one light warm-up; a warm-up logged on the new row stays through Undo', () => {
+    const fresh = startWorkout({
+      opId: 'start-cold',
+      owner: profile(),
+      gymId: GYM,
+      routine: routine([routineExercise(840, { exerciseId: DBROW, equipmentId: RACK.id, order: 0, setTemplates: [template(8401, { setType: 'warmup', targetLoad: kg(15, 'per_hand'), targetReps: { min: 8, max: 8 } }), template(8402, { targetLoad: kg(35, 'per_hand'), targetReps: { min: 8, max: 8 } })] })]),
+      exercises: EX,
+      gymEquipment: [BAR, RACK, STACK, STATION],
+      at: at(0),
+      newId: idGen(85_000),
+    }).aggregate;
+    const r = buildSwapExerciseCommand({ aggregate: fresh, sessionExerciseId: fresh.exercises[0]?.id ?? '', plan: { ...plan, plan: plan.plan.slice(0, 1) }, gymName: 'Main', ownerUnit: 'kg', opId: 'swap-cold', at: at(30), newId: idGen(86_000), warmups: { lookup } });
+    if (!r.ok) throw new Error(r.reason);
+    const s1r = reduceSession(fresh, r.command);
+    if (!s1r.ok) throw new Error(s1r.error.message);
+    // First exercise of the session, cold: WU5 50 % × 8 then 80 % × 4 (WU6's extra step is for secondary compounds).
+    expect(rowsOf(s1r.state, ROW)).toEqual([['warmup', 'pending', 50, 8], ['warmup', 'pending', 80, 4], ['working', 'pending', 97.5, 8]]);
+    const w1 = s1r.state.sets.find((x) => x.setType === 'warmup' && x.status === 'pending' && s1r.state.exercises.find((e) => e.id === x.sessionExerciseId)?.exerciseId === ROW);
+    const s2 = apply(s1r.state, logCmd(w1?.id ?? '', values(kg(50), 8), 90, 'log-w1'));
+    const u = reduceSession(s2, { type: 'undo_op', at: at(100), opId: 'undo-cold', targetOpId: 'swap-cold' });
+    if (!u.ok) throw new Error(u.error.message);
+    // The logged warm-up stays; the dumbbell row's working set is back; he's warm, so its old warm-up isn't.
+    expect(rowsOf(u.state, ROW)).toEqual([['warmup', 'completed', 50, 8]]);
+    expect(rowsOf(u.state, DBROW)).toEqual([['working', 'pending', 35, 8]]);
+  });
+
+  it('without the planner’s context the swap keeps its earlier shape (one new set per pending set)', () => {
+    const cmd = swap(pullBWithDbRow(), false);
+    expect(cmd.warmups).toBeUndefined();
+    expect(cmd.sets).toHaveLength(4);
+  });
+});
+
+describe('the coach’s add plans warm-ups and targets from history (8 Nov)', () => {
+  const OWNER = profile();
+  const history = (n: number, daysAgo: number): HistorySession => ({
+    sessionId: id(n),
+    performedAtUtc: at(-daysAgo * 86_400).utc,
+    equipmentId: BAR.id,
+    gymId: GYM,
+    imported: false,
+    sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(95), reps: 10, rpe: 8, rir: null })),
+    tz: 'Europe/London',
+  });
+  it('rows after logged pull-ups, last two sessions 95 × 10 at RIR 2: compound reps from history (not 3–6), the warm 80 % step first', () => {
+    const s = pullB(true);
+    const r = checkCoachAdd({
+      aggregate: s,
+      args: { baseVersion: s.session.version, exerciseId: 'barbell-bent-over-row', workingSets: 3, reps: null, workSeconds: null, distanceMetres: null, targetRpe: null, afterSessionExerciseId: null, supersetWithSessionExerciseId: null, load: null, reason: 'Ben asked' },
+      exercise: EX.get(ROW) ?? null,
+      history: [history(870, 2), history(871, 5)],
+      substitute: { ownerId: OWNER.id, unit: 'kg', gym: { id: GYM, name: 'Main', equipment: s.session.equipmentSnapshot }, knownEquipment: new Map(s.session.equipmentSnapshot.map((e) => [e.id, e])), painFlags: [], sessionPain: { active: false, reportedAtUtc: null }, at: at(100), warmups: { lookup }, secondaryLift: true },
+      owner: OWNER,
+      opId: 'coach-add-row',
+      at: at(100),
+    });
+    if (r.status !== 'ok') throw new Error(r.status);
+    const plan = r.command.plan ?? [];
+    const work = plan.filter((p) => p.setType !== 'warmup');
+    expect(work).toHaveLength(3);
+    // The rule's next step from 95 × 10 at RPE 8 on a 6–10 compound range, never a 3–6 main-lift range.
+    for (const p of work) {
+      expect(p.planned.reps?.max ?? 0).toBeGreaterThanOrEqual(10);
+      expect(p.planned.load?.value ?? 0).toBeGreaterThanOrEqual(95);
+      expect(p.planned.load?.value ?? 0).toBeLessThanOrEqual(97.5);
+    }
+    const W = work[0]?.planned.load?.value ?? 0;
+    const warm = plan.filter((p) => p.setType === 'warmup').map((p) => p.planned.load?.value ?? 0);
+    expect(warm).toHaveLength(1);
+    expect((warm[0] ?? 0) / W).toBeGreaterThanOrEqual(0.7);
+    const applied = reduceSession(s, r.command);
+    expect(applied.ok).toBe(true);
+  });
+});
+
+describe('joinsAsSecondary: an added or swapped-in lift reads as a secondary lift unless it is the main lift (8 Nov)', () => {
+  const mainBarbell = (row: { exerciseId: string }) => row.exerciseId === ROW || row.exerciseId === CURL;
+  it('after logged pull-ups (no main lift named): secondary; in an empty workout before anything is done: its own category', () => {
+    expect(joinsAsSecondary(pullB(true), { exerciseId: ROW, mains: new Set(), mainBarbell })).toBe(true);
+    expect(joinsAsSecondary(pullB(false), { exerciseId: ROW, mains: new Set(), mainBarbell })).toBe(false);
+  });
+  it('a named main lift: that exercise is the main lift; anything else is secondary', () => {
+    expect(joinsAsSecondary(pullB(false), { exerciseId: ROW, mains: new Set([ROW]), mainBarbell })).toBe(false);
+    expect(joinsAsSecondary(pullB(false), { exerciseId: ROW, mains: new Set([PULLUP]), mainBarbell })).toBe(true);
+  });
+  it('a swap for the main lift row stays the main lift', () => {
+    const s = pullB(true);
+    const pu = s.exercises.find((e) => e.exerciseId === PULLUP)?.id ?? '';
+    expect(joinsAsSecondary(s, { exerciseId: ROW, mains: new Set([PULLUP]), replacing: pu, mainBarbell })).toBe(false);
   });
 });

@@ -368,7 +368,9 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     // Pain on the row being swapped holds the substitute today (B5, rule 9).
     const carried = swapPainCarry(s, row.id, input.painFlags);
     const sctx = { ...got.substitute, gym: { ...got.substitute.gym, equipment: currentGymEquipment(s.session) }, sessionPain: got.substitute.sessionPain.active ? got.substitute.sessionPain : carried };
-    const plan = substituteTargets(slot, exercise, got.history, sctx);
+    // (Ben, 8 Nov) A substitute for a row that isn't the main lift, joining as a secondary lift: reps from his history.
+    const main = got.substitute.warmups?.lookup.main?.(row.id) === true;
+    const plan = substituteTargets(slot, exercise, got.history, sctx, { accessory: !main && got.substitute.secondaryLift === true });
     const opId = nextOpId();
     let n = 0;
     const built = buildSwapExerciseCommand({
@@ -382,6 +384,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       opId,
       at: input.at,
       newId: () => deriveId(`coach-edit-swap:${opId}:${String((n += 1))}`),
+      ...(got.substitute.warmups === undefined ? {} : { warmups: got.substitute.warmups, main }),
     });
     if (!built.ok) {
       skip(built.reason === 'measurement' ? `${exercise.name} is measured differently` : `nothing left to swap: ${row.exerciseName} is done`);
