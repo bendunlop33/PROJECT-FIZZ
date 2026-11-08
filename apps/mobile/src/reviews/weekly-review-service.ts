@@ -372,6 +372,10 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     const pain = await repos()
       .painFlags.listActive(owner.id)
       .catch(() => []);
+    // Rule 9 (8 Nov): the stall check skips only the workouts a pain flag held.
+    const painHeld = await repos()
+      .painFlags.heldSessions(owner.id)
+      .catch(() => new Map<string, Set<string>>());
     const chosen = training?.progressLifts ?? [];
     const liftTargets = liftTargetsInUse(training);
     const mains = new Set<string>();
@@ -412,6 +416,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         activities,
         templates,
         painFlagged: new Set(pain.map((p) => p.exerciseId)),
+        ...(painHeld.size > 0 ? { painHeld } : {}),
         unit: owner.preferredUnit,
         ...(health === null ? {} : { health }),
         ...(healthSessions.length === 0 ? {} : { healthSessions }),

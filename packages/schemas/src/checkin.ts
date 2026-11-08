@@ -107,8 +107,11 @@ export const CheckInSettingsSchema = z.object({
 export type CheckInSettings = z.infer<typeof CheckInSettingsSchema>;
 
 /**
- * Minimal pain flag (coach-memory.md CM4; rule 9). An active flag stops
- * progression for that movement until Ben clears it. Never a diagnosis.
+ * Minimal pain flag (coach-memory.md CM4; rule 9). Rule 9 as changed by Ben
+ * on 8 Nov: a flag holds progression for that movement in the workout it was
+ * reported in and in the movement's next workout, then clears by itself
+ * (read at read time, `withPainHold`), unless pain is reported again. Ben can
+ * clear it early. Never a diagnosis.
  */
 export const PainAreaSchema = z.enum(['shoulder', 'elbow', 'wrist', 'neck', 'back', 'hip', 'knee', 'ankle', 'other']);
 export type PainArea = z.infer<typeof PainAreaSchema>;
@@ -143,7 +146,8 @@ export const PainFlagSchema = RecordMetaSchema.extend({
    * is as if the flag never existed: not active, never a `Before flag`
    * reference, not listed, and never a return-to-load guard. Kept as a
    * document (never deleted) for the audit; it can't become active again.
-   * `cleared` is only ever Ben's explicit `Clear flag`.
+   * `cleared` is stored only by Ben's explicit `Clear flag`; a flag whose
+   * one-session hold ran out reads as `cleared` with `lapsed` (8 Nov).
    */
   status: z.enum(['active', 'cleared', 'retracted']),
   clearedAtUtc: UtcTimestampSchema.nullable(),
@@ -156,5 +160,10 @@ export const PainFlagSchema = RecordMetaSchema.extend({
    * fortnight is about 26 a year.
    */
   reviews: z.array(PainFlagReviewSchema).max(200).optional(),
+  /**
+   * (Rule 9, 8 Nov) The hold ran out by itself: the movement's next workout after the report (`sessionId`) finished
+   * at `atUtc`. Derived when the flag is read (`withPainHold`), with `status: 'cleared'`; absent otherwise.
+   */
+  lapsed: z.object({ atUtc: UtcTimestampSchema, sessionId: IdSchema }).optional(),
 });
 export type PainFlag = z.infer<typeof PainFlagSchema>;

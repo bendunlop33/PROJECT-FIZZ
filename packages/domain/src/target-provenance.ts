@@ -204,6 +204,8 @@ export function ruleTargetProvenance(input: RuleProvenanceInput, target: TargetS
     basis,
     rule: { name: result.rule.name, decision: result.decision, summary: result.explanation.summary, facts: [...result.explanation.facts], ...(result.stalled === true ? { stalled: true as const } : {}) },
     ...(step !== null ? { step } : {}),
+    // SF3 (Ben 8 Nov): a target cushioned for earlier work today has no like-for-like basis: an estimate (rule 6).
+    ...(result.earlierWork?.cushion !== undefined ? { estimate: true as const } : {}),
     guardNotes,
   });
 }

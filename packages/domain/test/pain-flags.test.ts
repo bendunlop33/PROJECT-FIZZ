@@ -212,8 +212,9 @@ describe('copy (active-workout §5, exercise-library §5, today.md §5)', () => 
   });
 
   it('note, check and sheet lines', () => {
-    expect(painNoteText(false)).toBe('Pain flag: no increases');
-    expect(painNoteText(true)).toBe('Pain flag: no increases · check due');
+    expect(painNoteText(false)).toBe('Pain flag · clears after next session');
+    expect(painNoteText(true)).toBe('Pain flag · clears after next session · check due');
+    expect(painNoteText(false, true)).toBe('Pain flag · clears after this workout');
     expect(plain(painFlagFact(f, now, LONDON))).toBe('Pain flag since 6 Oct · 16 days');
     expect(painFlagHeading(f)).toBe('Overhead press · shoulder');
     expect(painFlagHeading({ ...f, area: null })).toBe('Overhead press');
@@ -282,9 +283,9 @@ describe('PainFlagNote and the rest card’s Still hurts? (checks 32, 51)', () =
     const due = view(state, [benchFlag(16)]);
     const notDue = view(state, [benchFlag(5)]);
     expect(plainView.focus?.painFlag).toBeNull();
-    expect(due.focus?.painFlag).toMatchObject({ checkDue: true, text: 'Pain flag: no increases · check due' });
+    expect(due.focus?.painFlag).toMatchObject({ checkDue: true, text: 'Pain flag · clears after this workout · check due' });
     expect(due.focus?.painFlagged).toBe(true);
-    expect(notDue.focus?.painFlag).toMatchObject({ checkDue: false, text: 'Pain flag: no increases' });
+    expect(notDue.focus?.painFlag).toMatchObject({ checkDue: false, text: 'Pain flag · clears after this workout' });
     expect(due.primary).toEqual(plainView.primary);
     expect(due.focus?.logLabel).toBe(plainView.focus?.logLabel);
   });
@@ -376,7 +377,7 @@ describe('buildPainFlagSheet (§2.14.4)', () => {
     const sheet = buildPainFlagSheet({ flag: f, history, nowMs: ms(9 * DAY), tz: TZ, exercise: press, anchor: { equipmentId: BAR.id, unit: 'kg', loadConvention: 'total', equipment: BAR } });
     expect(sheet.heading).toBe('Overhead press · shoulder');
     expect(plain(sheet.since)).toBe('Since 13 Oct (4 days) · you, in a check-in');
-    expect(sheet.effect).toBe('No increases');
+    expect(sheet.effect).toBe('No increases · clears after next session');
     expect(plain(sheet.before)).toBe('8 Oct · 57.5 kg × 5, 4');
     expect(plain(sheet.sinceFlag)).toBe('16 Oct · 50 kg × 8, 8, 8');
     expect(sheet.checkDue).toBe(false);

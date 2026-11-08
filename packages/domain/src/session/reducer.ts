@@ -2738,6 +2738,38 @@ function handleMoveExercise(state: SessionAggregate, cmd: CommandOf<'move_exerci
   return { ok: true, state: bumpVersion({ ...state, exercises }, refocus(state, exercises, events)), events };
 }
 
+/**
+ * `replan_built_in_targets` (SF6, Ben 8 Nov): the built-in rule's targets for the new order. Every named set must be
+ * pending, still the rule's target (`planned.source: 'built_in_rule'`) with no unsaved draft, at the version shown;
+ * otherwise nothing changes (Ben's typed values and coach targets are never replaced). The new target is the rule's too.
+ */
+function handleReplanBuiltIn(state: SessionAggregate, cmd: CommandOf<'replan_built_in_targets'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
+  const byId = new Map(cmd.sets.map((x) => [x.setId, x]));
+  for (const x of cmd.sets) {
+    const set = state.sets.find((s) => s.id === x.setId);
+    if (!set || set.status === 'deleted') return fail('set_not_found', 'Set not found.');
+    if (set.status !== 'pending') return fail('set_not_pending', 'This set is done.');
+    if (set.version !== x.expectedSetVersion) return fail('stale_version', 'This set changed since it was shown.');
+    if (set.planned.source !== 'built_in_rule' || set.draft !== null) return fail('invalid_values', 'This target is yours now.');
+    if (x.planned.source !== 'built_in_rule') return fail('invalid_values', 'Only the rule’s targets are worked out again.');
+    const ex = exerciseOf(state, set);
+    if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
+    if (x.planned.load !== null && (x.planned.load.unit !== ex.unit || x.planned.load.convention !== ex.loadConvention)) return fail('convention_mismatch', 'The target is in another unit or convention.');
+    // Rule 4: a rule target is always achievable on the row's kit.
+    const eq = x.planned.load === null ? undefined : checkEquipmentOf(state, ex);
+    if (eq && x.planned.load !== null && !isLoadAchievable(x.planned.load, eq)) return fail('invalid_values', `${eq.name} can’t make that load.`);
+  }
+  const sets = state.sets.map((s) => {
+    const x = byId.get(s.id);
+    if (x === undefined) return s;
+    // Ben's own target RPE stays (it isn't the rule's).
+    const planned = s.planned.rpeOverride === undefined ? { ...x.planned } : { ...x.planned, rpeOverride: s.planned.rpeOverride };
+    return { ...s, planned, version: s.version + 1 };
+  });
+  return { ok: true, state: bumpVersion({ ...state, sets }, state.session.activeSetId), events: [] };
+}
+
 /** Undo of a move: the old order back, only while the rows are still in the order the move left. */
 function undoMove(state: SessionAggregate, prior: ProcessedOperation): Handled {
   const ids = prior.createdIds ?? [];
@@ -3212,6 +3244,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleSetLoadMode(state, command);
     case 'move_exercise':
       return handleMoveExercise(state, command);
+    case 'replan_built_in_targets':
+      return handleReplanBuiltIn(state, command);
     case 'link_superset':
       return handleLinkSuperset(state, command);
     case 'split_superset':
@@ -3337,6 +3371,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'set_load_mode':
       // Switched back since.
       return state.exercises.find((e) => e.id === command.sessionExerciseId)?.loadConvention !== command.mode;
+    case 'replan_built_in_targets':
+      // A set it worked out was done, edited or worked out again since.
+      return command.sets.some((x) => state.sets.find((s) => s.id === x.setId)?.version !== x.expectedSetVersion + 1);
     case 'move_exercise': {
       // Moved again (or put back) since.
       const ids = state.processedOps[command.opId]?.createdIds ?? [];

@@ -1,3 +1,4 @@
+import { earlierWorkOf, type MusclesOf } from '../in-session-fatigue';
 import type { CheckIn, EquipmentInstance, Load, PainFlag, ProgressionRule, RepRange, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { isSetCountable, notComparedText, withExclusionWords } from '../exclusions';
 import { painMentionedNotFlagged, reasonsText, scoreText } from '../checkin';
@@ -68,6 +69,11 @@ export interface SummaryInput {
    * rule lowers their load; every other stall only holds and offers the reset.
    */
   acceptedResets?: ReadonlySet<string>;
+  /**
+   * (SF1–SF3, Ben 8 Nov) Muscles of every exercise (catalogue or Ben's own): next time is read like for like, from
+   * this workout's own order. Absent: no like-for-like reading.
+   */
+  musclesOf?: MusclesOf;
 }
 
 /** (Ben, 23 Oct) The rule's stall reset, offered on its row: `Reset to 90 kg × 6–8?` and what Apply saves. */
@@ -449,6 +455,8 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
         sessionPain: unspecifiedPain(input.checkIn),
         ...(secondary.has(ex.exerciseId) ? { accessory: true } : {}),
         ...(input.acceptedResets?.has(ex.exerciseId) === true ? { acceptReset: true } : {}),
+        // SF2 (8 Nov): next time repeats this order, so this workout's context is the one to compare with.
+        ...(input.musclesOf !== undefined ? { fatigue: { today: earlierWorkOf(state, ex.exerciseId), musclesOf: input.musclesOf } } : {}),
       },
       gymId === null ? null : (input.gymNames?.[gymId] ?? (gymId === s.gymId ? input.gymName : null)),
     );

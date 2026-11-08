@@ -303,7 +303,7 @@ describe('explainTarget: pain flags (Pain and Before flag rows)', () => {
     expect(rowsOf(e)).toEqual([
       ['Set by', 'Rule · after your 10 Oct workout'],
       ['Last time', '100 kg × 8, 8 · RIR 2 · 10 Oct'],
-      ['Reason', 'Progression for Bench press is paused'],
+      ['Reason', 'Progression for Bench press is held for one session'],
       ['Pain', 'Held · since 9 Oct (shoulder)'],
       ['Before flag', '105 kg × 6, 6 · 8 Oct'],
     ]);
