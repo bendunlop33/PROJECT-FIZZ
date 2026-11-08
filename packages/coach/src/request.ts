@@ -652,6 +652,11 @@ const BUILD_PLEASE = new RegExp(
 const BUILD_PLACE = new RegExp(
   `^(?:add|put|save|load|stick|pop)(?: me| us)?(?: (?:${NEW_DET}))+\\b.{0,60}?\\b${BUILD_NOUN}s?(?: for (?:me|us|today|tonight|tomorrow))? (?:to|in|into|on|onto) (?:the app|this app|my workouts|my routines|my library|the workouts tab)\\b`,
 );
+/**
+ * (Ben, 8 Nov: "give me the workout best for the situation") "give me the best workout for today", "what's the right
+ * session for today": "the" with a best-fit word asks for a new one, not the one in hand.
+ */
+const BUILD_BEST = new RegExp(`^(?:${BUILD_VERB_STRONG}|${BUILD_VERB_WEAK}|what(?:'s| is))(?: me| us)? (?:the|my) (?:best|right|ideal|optimal|perfect|smartest|most sensible)(?: possible)? ${BUILD_NOUN}s?\\b`);
 /** Review r2 B2: "can you do a push session for me" ("do" with "for me" after the noun). */
 const BUILD_DO_FOR = new RegExp(`^do (?:${NEW_DET} )+.{0,60}?\\b${BUILD_NOUN}s? for (?:me|us)\\b`);
 /**
@@ -720,7 +725,7 @@ function buildIn(clause: string): boolean {
   // Review r6 S2: "would you be able to make me …", "help me plan today's workout".
   const asked = ASK_PREFIX.exec(c)?.[1] ?? c;
   const body = asked.replace(/^(?:(?:(?:would|could|will|can) you )?be able to |are you able to |(?:you )?help (?:me|us) (?:to )?)/, '');
-  return BUILD_DIRECT.test(body) || BUILD_FOCUS_TODAY.test(c) || BUILD_WANT.test(c) || BUILD_CAN_I.test(c) || BUILD_FOCUS.test(body) || BUILD_PLEASE.test(c) || BUILD_PLACE.test(body) || BUILD_DO_FOR.test(body) || BUILD_SOMETHING.test(body);
+  return BUILD_DIRECT.test(body) || BUILD_FOCUS_TODAY.test(c) || BUILD_WANT.test(c) || BUILD_CAN_I.test(c) || BUILD_FOCUS.test(body) || BUILD_PLEASE.test(c) || BUILD_PLACE.test(body) || BUILD_DO_FOR.test(body) || BUILD_SOMETHING.test(body) || BUILD_BEST.test(body);
 }
 
 /**
@@ -1258,9 +1263,17 @@ const STICK_AT = /\b(?:stick|stay|go|keep (?:it|them|the (?:weights?|loads?|sets
 const OPINION_ONLY_ASK = /\b(?:what do you think|do you think|should i|would it be|is it (?:ok|okay|fine|worth)|thoughts|any (?:ideas|advice|tips)|what would you)\b/;
 const OUTRIGHT_ASK = /\b(?:can you|could you|would you|will you|please)\b/;
 
+/**
+ * (Ben, 8 Nov, live Pull B: "Ok but there's not much of a warm up", "Yes as I asked, you should have spotted this",
+ * "Why haven't u added a 80 too") A problem he points out with today's workout is the request: the coach changes it.
+ */
+const TODAY_PROBLEM =
+  /\b(?:not much (?:of )?a warm-?\s?up|(?:no|barely (?:a|any)|hardly (?:a|any)|not enough|too few|only (?:one|1)) warm-?\s?ups?|warm-?\s?ups? (?:is|are|was|were|seems?|looks?|feels?) (?:too |a bit |pretty |really |very )?(?:light|short|thin|small|few|little|not enough)|(?:big|huge|massive|large) jump|too long|why (?:haven't|havent|didn't|didnt|have you not|did you not) (?:u|you)\b[^.?!]{0,30}\b(?:add|added|put|change|changed|include|included|do|done|fix|fixed)|(?:you|u) (?:should|shud|shld)(?:'ve| have| of)? (?:spotted|caught|added|done|changed|fixed|noticed)|as i (?:asked|said))\b/;
+
 export function asksLiveChange(text: string): boolean {
   const t = lower(text).replace(/[‘’]/g, "'");
   if (KEEP_AS_IS.test(t) || declinesChange(t) || futureScopeOnly(t)) return false;
+  if (TODAY_PROBLEM.test(t)) return true;
   if (OPINION_ONLY_ASK.test(t) && !OUTRIGHT_ASK.test(t)) return false;
   if (mentionsTodaysSets(t)) return true;
   const sentences = t.match(/[^.!?;]+[.!?;]*/g) ?? [];

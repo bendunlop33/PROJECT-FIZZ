@@ -2765,7 +2765,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const training = await deps.training().catch(() => null);
       const memories = await repos().coach.listMemories(p.id, 'active').catch(() => []);
       const name = env.nameOf;
-      const usable = [...new Set([...groups, ...BUILDER_GROUP_ORDER])].flatMap((g) => env.pool(g).slice(0, 8).map((id) => ({ exerciseId: id, name: name(id), group: g }))).slice(0, 40);
+      // (Ben, 7 Nov, build 552: "Add lat pulldowns after rows") 8 a group, alphabetical, never reached Lat pulldown or
+      // Seated cable row, so the edit coach couldn't add what he asked for. 24 a group, 120 in all.
+      const usable = [...new Set([...groups, ...BUILDER_GROUP_ORDER])].flatMap((g) => env.pool(g).slice(0, 24).map((id) => ({ exerciseId: id, name: name(id), group: g }))).slice(0, 120);
       return {
         snapshot: { draftId: d.id, draftVersion: d.version, dayName: setup.dayName, minutes: setup.minutes, supersets: setup.supersets, workout, revs: Object.fromEntries(v.plan.slots.map((x) => [x.slotKey, x.rev ?? 1])) },
         env: {

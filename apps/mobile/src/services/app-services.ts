@@ -752,7 +752,7 @@ export function createAppServices(deps: AppServicesDeps) {
       today: () => builder.todayDraft(),
       summary: (draftId) => builderCoach.draftSummary(draftId),
       edit: async (req) => {
-        const a = await builderCoach.askEdit({ draftId: req.draftId, words: req.words, opId: req.opId });
+        const a = await builderCoach.askEdit({ draftId: req.draftId, words: req.words, change: req.change, opId: req.opId });
         switch (a.kind) {
           case 'proposal':
             return { kind: 'proposal', proposal: a.proposal };

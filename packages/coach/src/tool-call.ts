@@ -14,7 +14,8 @@ import type { TurnRegistry } from './registry';
 export type ParsedToolCall =
   | { ok: true; call: CoachToolCall; opId: string; dropped: string[] }
   | { ok: false; error: 'not_allowed'; line: string }
-  | { ok: false; error: 'invalid_args'; line: string; issues: string[] };
+  /** `fixable`: the JSON or the schema failed (a retry can fix it); false: a rule refused it (a retry must not reword it past the rule). */
+  | { ok: false; error: 'invalid_args'; line: string; issues: string[]; fixable: boolean };
 
 /**
  * Idempotency key (ADR 0020 §5): the same call in the same turn, e.g. replayed
@@ -94,6 +95,8 @@ export function semanticArgs(call: CoachToolCall): unknown {
       // (Ben, 20 Oct) The reason is explanation; what, when, how long, how far and how hard are the activity.
       return { ...call.args, reason: undefined };
     case 'propose_workout_edit':
+      // ADR 0039: Ben's own words are the request; the reason is explanation. (7 Nov) The change he agreed to is part of it.
+      return call.args.change == null || call.args.change.trim() === '' ? {} : { change: normaliseContentText(call.args.change) };
     case 'fill_setup':
       // ADR 0039: Ben's own words are the request; the reason is explanation.
       return {};
@@ -234,6 +237,48 @@ function removeAt(value: unknown, path: readonly PropertyKey[], keys: readonly s
   for (const k of keys) Reflect.deleteProperty(node, k);
 }
 
+/** Free-text explanation fields: too long is clipped, never a failed call (the declared schema can't carry string lengths). */
+const CLIPPED_KEYS: ReadonlySet<string> = new Set(['reason', 'basis', 'message']);
+
+/** Clip `text` to `max` characters: at its last whole sentence, else at a word with an ellipsis (never half a sentence shown as whole). */
+export function clipExplanation(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const head = text.slice(0, max);
+  const end = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '), /[.!?]$/.test(head) ? head.length - 1 : -1);
+  if (end >= max / 3) return head.slice(0, end + 1);
+  const cut = text.slice(0, Math.max(0, max - 1));
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/**
+ * (Ben, 7 Nov, build 552) Strict function tools can't declare string lengths (function-tools.ts), so a model that
+ * explains itself at length in `reason` broke the whole call ("Couldn't read the coach's request"). Clipped in place.
+ */
+function clipLongExplanations(schema: z.ZodType, value: unknown): void {
+  const r = schema.safeParse(value);
+  if (r.success) return;
+  for (const issue of r.error.issues) {
+    if (issue.code !== 'too_big' || issue.origin !== 'string') continue;
+    const key = issue.path[issue.path.length - 1];
+    if (typeof key !== 'string' || !CLIPPED_KEYS.has(key)) continue;
+    let node: unknown = value;
+    for (const p of issue.path.slice(0, -1)) {
+      if (node === null || typeof node !== 'object') break;
+      node = (node as Record<PropertyKey, unknown>)[p];
+    }
+    if (node === null || typeof node !== 'object') continue;
+    const rec = node as Record<string, unknown>;
+    const text = rec[key];
+    if (typeof text === 'string') rec[key] = clipExplanation(text, Number(issue.maximum));
+  }
+}
+
+/** One issue as the model reads it back: where, and what was wrong. */
+function issueText(i: z.core.$ZodIssue): string {
+  return `${i.path.join('.') || '(root)'}: ${i.message}`;
+}
+
 /** `value` must be the caller's own copy (fresh from `JSON.parse`): unknown keys are deleted in place. */
 function parseArgs(schema: z.ZodType, value: unknown): { ok: true; value: unknown; dropped: string[] } | { ok: false; issues: string[] } {
   const dropped: string[] = [];
@@ -243,7 +288,7 @@ function parseArgs(schema: z.ZodType, value: unknown): { ok: true; value: unknow
     if (r.success) return { ok: true, value: r.data, dropped };
     const unknownKeys = r.error.issues.filter((i) => i.code === 'unrecognized_keys');
     if (unknownKeys.length === 0 || unknownKeys.length !== r.error.issues.length) {
-      return { ok: false, issues: r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`) };
+      return { ok: false, issues: r.error.issues.map(issueText) };
     }
     for (const issue of unknownKeys) {
       removeAt(value, issue.path, issue.keys);
@@ -400,20 +445,21 @@ export function parseToolCall(turnId: string, name: string, rawArguments: string
   try {
     raw = JSON.parse(rawArguments);
   } catch {
-    return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: ['not JSON'] };
+    return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: ['(root): not JSON'], fixable: true };
   }
   const schema: z.ZodType = COACH_TOOL_ARGS[decl.name];
+  clipLongExplanations(schema, raw);
   // workout-builder BD1, WB3: `propose_workout` has no load, minutes, gym or equipment field, and one
   // smuggled in (`load`, `weight`, `minutes` …) fails the call instead of being dropped.
   if (STRICT_TOOLS.has(decl.name)) {
     const strict = schema.safeParse(raw);
     if (!strict.success) {
-      return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: strict.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`) };
+      return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: strict.error.issues.map(issueText), fixable: true };
     }
   }
   const parsed = parseArgs(schema, raw);
   if (!parsed.ok) {
-    return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: parsed.issues };
+    return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: parsed.issues, fixable: true };
   }
   const call = { tool: decl.name, args: parsed.value } as CoachToolCall;
   if (call.tool === 'add_playbook_candidate' && personalPlaybookText(call.args.text)) {
@@ -422,13 +468,14 @@ export function parseToolCall(turnId: string, name: string, rawArguments: string
       error: 'invalid_args',
       line: "That's about you, not a general rule, so it wasn't added to the playbook. Nothing changed.",
       issues: ['text: personal fact, not a general rule (rule 10)'],
+      fixable: false,
     };
   }
   // A coach suggestion in clear rule wording is refused: the coach can't add to the playbook unasked
   // (add_playbook_candidate needs Ben's request). Ben's own "remember …" of a rule goes to the playbook
   // instead (the save_memory executor). Unclear text becomes a card with both choices (CM9).
   if (call.tool === 'suggest_memory' && memoryTextKind(call.args.text) === 'rule') {
-    return { ok: false, error: 'invalid_args', line: RULE_NOT_MEMORY_LINE, issues: ['text: general training rule, not a personal fact (rule 10)'] };
+    return { ok: false, error: 'invalid_args', line: RULE_NOT_MEMORY_LINE, issues: ['text: general training rule, not a personal fact (rule 10)'], fixable: false };
   }
   return { ok: true, call, opId: toolOpId(turnId, decl.name, semanticArgs(call)), dropped: parsed.dropped };
 }

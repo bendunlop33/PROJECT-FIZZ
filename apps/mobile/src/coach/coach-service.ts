@@ -582,7 +582,7 @@ export interface CoachServiceDeps {
   builder?: {
     today(): Promise<{ draftId: string; name: string } | null>;
     summary(draftId: string): Promise<{ aboutMinutes: number; exercises: string[] } | null>;
-    edit(req: { draftId: string; words: string; opId: string }): Promise<DraftEditOutcome>;
+    edit(req: { draftId: string; words: string; change: string | null; opId: string }): Promise<DraftEditOutcome>;
     fillSetup(req: { words: string; opId: string }): Promise<SetupFillOutcome>;
     /** Apply on the card (rule 3): checked again against the draft now (`Out of date. Ask again.`), one versioned write. */
     apply(proposal: BuilderProposal): Promise<{ kind: 'applied' } | { kind: 'out_of_date'; line: string } | { kind: 'failed' }>;

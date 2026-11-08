@@ -288,12 +288,18 @@ export const ProposeWeekArgsSchema = z.strictObject({
 });
 export type ProposeWeekArgs = z.infer<typeof ProposeWeekArgsSchema>;
 
+/** Most characters of a draft edit's `change` (a few clauses: add, trim, keep, a length). */
+export const DRAFT_EDIT_CHANGE_MAX = 600;
+
 /**
  * ADR 0039: a change to the Your workout draft in context, from any chat. Ben's own words this turn are the request
  * (the builder's edit coach reads them, so a weight he named is his); `reason` is the coach's one line. Always a
  * proposal he applies or skips.
+ * (Ben, 7 Nov, build 552: "U shud send this") `change`: the change in full when his words only agree to one the coach
+ * described ("do it", "make the change"); the builder's edit coach reads it beside his words, but only his words count
+ * as weights he named. Null (or absent, on calls made before it) when his words say it all.
  */
-export const ProposeDraftEditArgsSchema = z.strictObject({ reason });
+export const ProposeDraftEditArgsSchema = z.strictObject({ change: z.string().max(DRAFT_EDIT_CHANGE_MAX).nullish(), reason });
 export type ProposeDraftEditArgs = z.infer<typeof ProposeDraftEditArgsSchema>;
 
 /**

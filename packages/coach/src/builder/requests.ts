@@ -85,7 +85,7 @@ const INSTRUCTIONS: Readonly<Record<BuilderRequestKind, string>> = {
   setup: [...COMMON, 'Ben is on Set up. Read what he wants (day, length, main lift, supersets, muscle groups) and fill only what he said. Leave the rest null.', LAST_DAYS_LINE].join('\n'),
   edit: [
     ...COMMON,
-    'Ben is looking at today’s workout before he starts. Make only the changes he asked for. Each one is a proposal he applies or skips.',
+    'Ben is looking at today’s workout before he starts. Make only the changes he asked for, or agreed to as his coach put it. Each one is a proposal he applies or skips. A length range (60–65 min) is one minutes value inside it.',
     'When he asks for a new exercise without naming it, never pick a near-duplicate of one already in the workout (see COACHING KNOWLEDGE). If he names one, propose it; code flags it.',
     'Cardio, timed and plyometric work (bike, rower, treadmill, ski erg, ropes, box jumps) is in `otherWork`, not `usable`: add it by its exerciseId, cardio and timed work with workSeconds (8 min = 480). A warm-up goes first (first=true); otherwise leave first null.',
     'Never say an exercise is unavailable or not in his list when `usable` or `otherWork` has one that fits his words. If none fits, ask one short question.',
@@ -252,8 +252,20 @@ export function workoutContextText(view: BuilderWorkoutView, extras: BuilderCoac
   return yourData('Ben’s workout for today, before he starts', { workout: view, ...extras, ...more });
 }
 
-export function buildEditRequest(view: BuilderWorkoutView, extras: BuilderCoachExtras, words: string, model: string): ModelRequest {
-  return request('edit', model, workoutContextText(view, extras), words);
+/**
+ * (Ben, 7 Nov, build 552: "U shud send this") What the edit coach reads as Ben's ask: his words, and, when they only
+ * agree to a change the main coach described ("do it", "make the change"), that change, labelled as the coach's
+ * wording. Weights he named come from his words alone (the caller's `namedWeights`), never from this text. Pure.
+ */
+export function draftEditAsk(words: string, change: string | null | undefined): string {
+  const c = change?.trim() ?? '';
+  const w = words.trim();
+  if (c === '' || c.toLowerCase() === w.toLowerCase()) return w;
+  return w === '' ? `The change I’m agreeing to, as my coach put it: ${c}` : `${w}\n\nThe change I’m agreeing to, as my coach put it: ${c}`;
+}
+
+export function buildEditRequest(view: BuilderWorkoutView, extras: BuilderCoachExtras, words: string, model: string, change: string | null = null): ModelRequest {
+  return request('edit', model, workoutContextText(view, extras), draftEditAsk(words, change));
 }
 
 /**
