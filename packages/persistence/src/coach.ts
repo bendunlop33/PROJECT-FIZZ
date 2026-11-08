@@ -25,7 +25,7 @@ import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTarg
 import { ACTIVITY_SPEC } from './activities';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
-import { decodeDocument, deleteDocumentIn, EQUIPMENT_SPEC, erase, EXERCISE_SPEC, GYM_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
+import { decodeDocument, deleteDocumentIn, EQUIPMENT_SPEC, erase, EXERCISE_SPEC, GYM_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, withPainHoldIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId } from './sql';
 import { getWorkoutDraftIn, WORKOUT_DRAFT_SPEC } from './workout-drafts';
@@ -527,8 +527,9 @@ export class SqliteCoachStore {
         let added = 0;
         for (const f of write.flags) {
           if (f.ownerId !== ownerId) throw new Error('Pain flag owner differs from the store owner');
-          const live = await tx.getFirst("SELECT id FROM pain_flags WHERE owner_id = ? AND exercise_id = ? AND status = 'active'", [ownerId, f.exerciseId]);
-          if (live !== null) continue;
+          // A flag whose one-session hold ran out (rule 9, 8 Nov) isn't live: pain reported again is a new hold.
+          const live = (await withPainHoldIn(tx, await listDocuments(tx, PAIN_FLAG_SPEC, "owner_id = ? AND exercise_id = ? AND status = 'active'", [ownerId, f.exerciseId]))).some((x) => x.status === 'active');
+          if (live) continue;
           const r = await saveDocumentIn(tx, PAIN_FLAG_SPEC, f, null);
           if (!r.ok) throw new Rollback('already_exists');
           added += 1;

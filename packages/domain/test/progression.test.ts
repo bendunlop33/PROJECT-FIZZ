@@ -168,7 +168,7 @@ describe('double progression', () => {
     );
     expect(t.decision).toBe('halted_pain');
     expect(t.sets[0]?.load).toEqual(kg(100));
-    expect(t.explanation.summary).toBe('Progression for Bench press is paused because pain was reported on 2026-09-02. Targets are not increased.');
+    expect(t.explanation.summary).toBe('Progression for Bench press is held for one session because pain was reported on 2026-09-02. Targets are not increased.');
     expect(t.explanation.summary).not.toMatch(/injur|strain|tendin/i);
   });
 

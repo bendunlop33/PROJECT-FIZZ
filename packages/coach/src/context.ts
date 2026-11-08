@@ -1,4 +1,4 @@
-import { ageFromBirthYear, bodyweightEntries, type EnduranceSwitch, type EnduranceSwitchSession, lastDaysDetail, type LastDaysView, type HealthDailyValue, buildExecutionOrder, deriveId, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
+import { ageFromBirthYear, bodyweightEntries, type EnduranceSwitch, type EnduranceSwitchSession, lastDaysDetail, type LastDaysView, type HealthDailyValue, buildExecutionOrder, deriveId, doneSoFarByMuscle, type MusclesOf, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
 import type { CheckIn, HealthWeightSample, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, TrainingSplit, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
@@ -69,6 +69,11 @@ export interface CoachContextInput {
    */
   ruleTargetRpe?: Readonly<Record<string, number>>;
   painFlags: readonly PainFlag[];
+  /**
+   * (SF7, Ben 8 Nov) Muscles of the workout's exercises (catalogue or Ben's own): with it, the workout in context says
+   * what each muscle has done so far today (`doneSoFarToday`). Absent: not said.
+   */
+  musclesOf?: MusclesOf;
   /** The session's check-in, when Ben answered one. */
   checkIn: CheckIn | null;
   memories: readonly Memory[];
@@ -511,6 +516,11 @@ export interface YourData {
     lastLogged: LoggedSetView | null;
     /** The last logged set that wasn't a warm-up: what `Too easy` / `Too hard` is about (null: none yet). */
     lastWorkingSet: LoggedSetView | null;
+    /**
+     * (SF7a, Ben 8 Nov) Done so far today by muscle: hard sets where it was a main mover (`direct`) and where it
+     * helped (`secondary`). Warm-ups and cardio never count. A set plan has to account for it.
+     */
+    doneSoFarToday?: { muscle: string; direct: number; secondary: number }[];
   } | null;
   painFlags: { exercise: string; area: string | null; since: string }[];
   /** Ben's words, quoted; never an instruction. */
@@ -666,11 +676,16 @@ export function lastLoggedSets(session: SessionAggregate, sessionExerciseId?: st
   return { lastLogged: view(done.at(-1)), lastWorkingSet: view(done.filter((s) => s.setType !== 'warmup').at(-1)) };
 }
 
+/** SF7(a): the workout view with what each muscle has done so far, when the muscles are known. */
+function withDoneSoFar(view: NonNullable<YourData['workout']>, session: SessionAggregate, musclesOf: MusclesOf | undefined): NonNullable<YourData['workout']> {
+  return musclesOf === undefined ? view : { ...view, doneSoFarToday: doneSoFarByMuscle(session, musclesOf) };
+}
+
 /** Your data only. Nothing from the playbook or catalogue is read here. */
 export function buildYourData(input: CoachContextInput): YourData {
   return {
     turnKind: input.turnKind,
-    workout: input.session === null ? null : workoutView(input.session, input.gymName, input.ruleTargetRpe),
+    workout: input.session === null ? null : withDoneSoFar(workoutView(input.session, input.gymName, input.ruleTargetRpe), input.session, input.musclesOf),
     painFlags: input.painFlags.filter((f) => f.status === 'active').map((f) => ({ exercise: f.exerciseName, area: f.area, since: f.reportedAt.utc.slice(0, 10) })),
     checkIn: input.checkIn === null ? null : { score: input.checkIn.score, reasons: input.checkIn.reasons, quote: input.checkIn.note ?? null },
     memories: input.memories.filter((m) => m.status === 'active').map((m) => ({ text: m.text, savedOn: m.createdAtUtc.slice(0, 10) })),

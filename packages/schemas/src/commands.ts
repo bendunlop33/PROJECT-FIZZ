@@ -781,6 +781,24 @@ export const SetLoadModeCommandSchema = z.object({
 });
 
 /**
+ * (SF6, Ben 8 Nov) After Ben reorders, skips, swaps or adds an exercise today: the built-in rule's targets of sets not
+ * done yet, worked out again for the new order (`replanBuiltInSets`). Only a pending set whose target is still the
+ * rule's (`planned.source: 'built_in_rule'`, no unsaved draft) changes; Ben's typed values and coach targets never
+ * do. Guarded on each set's version and on the session version (rule 5), idempotent (`opId`). Not undone on its own:
+ * Undo of the reorder puts the order back and the targets are worked out again from it.
+ */
+export const ReplanBuiltInTargetsCommandSchema = z.object({
+  type: z.literal('replan_built_in_targets'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  sets: z
+    .array(z.object({ setId: IdSchema, expectedSetVersion: z.int().min(1), planned: PlannedSetSchema }))
+    .min(1)
+    .max(120),
+});
+
+/**
  * (Coach v3, ADR 0027, 18 Oct) Move a live row (with its whole superset, when
  * it is in one) to straight after another live row, or first. Only a row with
  * a set not done yet; no set changes (rule 2). Versioned on the session (rule
@@ -954,6 +972,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   SetTargetRpeCommandSchema,
   EditPlannedSetCommandSchema,
   SetLoadModeCommandSchema,
+  ReplanBuiltInTargetsCommandSchema,
   MoveExerciseCommandSchema,
   LinkSupersetCommandSchema,
   SplitSupersetCommandSchema,

@@ -112,7 +112,7 @@ describe('Why? through the services', () => {
       ['Pain', 'Held · since 9 Oct (shoulder)'],
       ['Before flag', '105 kg × 5, 5, 5 · 8 Oct'],
     ]);
-    expect(rowsOf(on)[2]?.[1]).toBe('Progression for Bench press is paused');
+    expect(rowsOf(on)[2]?.[1]).toBe('Progression for Bench press is held for one session');
 
     for (const f of flagged.ok ? (flagged.flags ?? []) : []) await s.pain.clearConfirmed({ flagId: f.id, expectedVersion: f.version });
     const off = await s.workout.explainTarget(sessionId, setId);

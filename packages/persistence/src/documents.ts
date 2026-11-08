@@ -17,11 +17,11 @@ import {
   type Routine,
   type UserProfile,
 } from '@fizz/schemas';
-import { planDayKeyOf, type PlanDayKeySplit, type SaveResult } from '@fizz/domain';
+import { painHeldSessionIds, planDayKeyOf, withPainHold, type PainExposure, type PlanDayKeySplit, type SaveResult } from '@fizz/domain';
 import type { z } from 'zod';
 import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
-import { checkRead, checkWrite, ident, insert, mismatch, parseJson, rowId, upsert } from './sql';
+import { checkRead, checkWrite, ident, inHistorySql, insert, mismatch, parseJson, rowId, upsert } from './sql';
 
 type Versioned = { id: string; version: number; updatedAtUtc: string };
 
@@ -349,16 +349,70 @@ export class SqliteCheckIns extends DocumentRepository<CheckIn> {
   }
 }
 
-/** Pain flags (Your data; rule 9). */
+/**
+ * The workouts of `exerciseId` a pain flag reported at `sinceUtc` can hold (rule 9, 8 Nov; `painHoldOf`): finished
+ * ones with a completed set of it that ended at or after the report, and the one in progress with a set of it.
+ * An imported workout has no end: its start stands for it.
+ */
+export async function painExposuresIn(q: SqlExecutor, ownerId: string, exerciseId: string, sinceUtc: string): Promise<PainExposure[]> {
+  const rows = await q.getAll<{ id: string; started_at_utc: string; ended_at_utc: string | null; status: string; check_in_id: string | null }>(
+    `SELECT DISTINCT s.id AS id, s.started_at_utc AS started_at_utc, s.ended_at_utc AS ended_at_utc, s.status AS status, s.check_in_id AS check_in_id
+       FROM sessions s JOIN session_exercises se ON se.session_id = s.id
+      WHERE s.owner_id = ? AND se.exercise_id = ? AND (s.status = 'active' OR (${inHistorySql('s')} AND COALESCE(s.ended_at_utc, s.started_at_utc) >= ?))
+        AND EXISTS (SELECT 1 FROM session_sets ss WHERE ss.session_exercise_id = se.id AND (ss.status = 'completed' OR (s.status = 'active' AND ss.status = 'pending')))`,
+    [ownerId, exerciseId, sinceUtc],
+  );
+  return rows.map((r) => ({ sessionId: r.id, startedAtUtc: r.started_at_utc, finishedAtUtc: r.status === 'active' ? null : (r.ended_at_utc ?? r.started_at_utc), checkInId: r.check_in_id }));
+}
+
+/** `withPainHold` for flags read inside a caller's transaction or read. */
+export async function withPainHoldIn(q: SqlExecutor, flags: readonly PainFlag[]): Promise<PainFlag[]> {
+  const out: PainFlag[] = [];
+  for (const f of flags) out.push(f.status === 'active' ? withPainHold(f, await painExposuresIn(q, f.ownerId, f.exerciseId, f.reportedAt.utc)) : f);
+  return out;
+}
+
+/**
+ * Pain flags (Your data; rule 9). Every read applies the one-session hold (8 Nov): an active flag whose movement's
+ * next workout has finished reads as cleared (`lapsed`), with nothing written, so flags stored before the change need
+ * no migration. `listActive` lists only flags still holding.
+ */
 export class SqlitePainFlags extends DocumentRepository<PainFlag> {
   constructor(db: Database) {
     super(db, PAIN_FLAG_SPEC);
   }
+  override get(id: string): Promise<PainFlag | null> {
+    return this.db.read(async (q) => {
+      const row = await q.getFirst(`SELECT * FROM pain_flags WHERE id = ?`, [id]);
+      if (!row) return null;
+      const [f] = await withPainHoldIn(q, [decodeDocument(PAIN_FLAG_SPEC, row)]);
+      return f ?? null;
+    });
+  }
   listByOwner(ownerId: string): Promise<PainFlag[]> {
-    return this.listWhere('owner_id = ?', [ownerId]);
+    return this.db.read(async (q) => withPainHoldIn(q, await listDocuments(q, PAIN_FLAG_SPEC, 'owner_id = ?', [ownerId])));
   }
   listActive(ownerId: string): Promise<PainFlag[]> {
-    return this.listWhere("owner_id = ? AND status = 'active'", [ownerId]);
+    return this.db.read(async (q) => (await withPainHoldIn(q, await listDocuments(q, PAIN_FLAG_SPEC, "owner_id = ? AND status = 'active'", [ownerId]))).filter((f) => f.status === 'active'));
+  }
+  /**
+   * Per exercise, the workouts any flag held (its report workout and the next one; rule 9, 8 Nov): the stall checks
+   * and the weekly review skip these, and only these.
+   */
+  heldSessions(ownerId: string): Promise<Map<string, Set<string>>> {
+    return this.db.read(async (q) => {
+      const out = new Map<string, Set<string>>();
+      for (const f of await withPainHoldIn(q, await listDocuments(q, PAIN_FLAG_SPEC, "owner_id = ? AND status <> 'retracted'", [ownerId]))) {
+        const ids = painHeldSessionIds(f, await painExposuresIn(q, ownerId, f.exerciseId, f.reportedAt.utc));
+        if (ids.size === 0) continue;
+        out.set(f.exerciseId, new Set([...(out.get(f.exerciseId) ?? []), ...ids]));
+      }
+      return out;
+    });
+  }
+  /** As stored, without the hold applied (audit, backup checks). */
+  listStored(ownerId: string): Promise<PainFlag[]> {
+    return this.listWhere('owner_id = ?', [ownerId]);
   }
 }
 

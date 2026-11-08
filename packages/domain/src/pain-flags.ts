@@ -6,10 +6,11 @@ import { toMs } from './time';
 /**
  * Pain flags without the coach (active-workout.md §2.14; competitor
  * follow-up 8). Pure and deterministic, so all of it works offline with no
- * AI. A flag is a guard (rule 9): nothing here diagnoses, says a movement is
- * safe, or clears a flag. Only Ben's `Clear flag` in the confirmation clears
- * one (`clearPainFlag`, coach-memory CM4); the two-weekly `Still hurts?`
- * check, time and the coach never do.
+ * AI. A flag is a guard (rule 9): nothing here diagnoses or says a movement is
+ * safe. Rule 9 as changed on 8 Nov: a flag holds the movement in the workout it
+ * was reported in and the movement's next workout, then reads as cleared by
+ * itself (`withPainHold`). Ben's `Clear flag` (`clearPainFlag`) clears it
+ * early; the coach going ahead because Ben said so uses the same clear.
  *
  * Every sentence the screens show about a flag is built here, so the set
  * card, the rest card, Today, the picker and Profile say the same thing.
@@ -31,7 +32,7 @@ export const PAIN_AREA_WORD: Readonly<Record<PainArea, string | null>> = {
   other: null,
 };
 
-export const PAIN_NO_INCREASES = 'No increases';
+export const PAIN_NO_INCREASES = 'No increases · clears after next session';
 export const PAIN_PROFESSIONAL_TEXT = 'Sharp or lasting pain: see a physio or doctor.';
 /** The red-flag line on the check-in pain step: safety, so always visible (minimal-copy D2). */
 export const PAIN_RED_FLAG_TEXT = 'Chest pain, faintness or sudden severe pain: stop and get medical help now.';
@@ -157,13 +158,22 @@ export function undoPainFlagReview(flag: PainFlag, reviewOpId: string, undoOpId:
 // ---------------------------------------------------------------------------
 // Copy (active-workout §5, exercise-library §5, today.md §5)
 
-/** `PainFlagNote` under the target line. */
-export function painNoteText(checkDue: boolean): string {
-  return `Pain flag: no increases${checkDue ? ' · check due' : ''}`;
+/** `PainFlagNote` under the target line: `Pain flag · clears after next session` (rule 9, 8 Nov). */
+export function painNoteText(checkDue: boolean, clearsAfterThis = false): string {
+  return `Pain flag · clears after ${clearsAfterThis ? 'this workout' : 'next session'}${checkDue ? ' · check due' : ''}`;
 }
 
-export function painNoteAccessibility(checkDue: boolean): string {
-  return `Pain flag on this movement. Loads won’t go up.${checkDue ? ' Check due.' : ''}`;
+export function painNoteAccessibility(checkDue: boolean, clearsAfterThis = false): string {
+  return `Pain flag on this movement. Loads won’t go up. Clears after ${clearsAfterThis ? 'this workout' : 'the next session'}.${checkDue ? ' Check due.' : ''}`;
+}
+
+/**
+ * Whether the workout `session` is the last one a flag holds (rule 9, 8 Nov): the flag was reported before it started
+ * and not in its own check-in, so this workout is the movement's next one after the report.
+ */
+export function painClearsAfter(flag: Pick<PainFlag, 'reportedAt' | 'checkInId'>, session: { startedAtUtc: string; checkInId: string | null }): boolean {
+  if (flag.checkInId !== null && flag.checkInId === session.checkInId) return false;
+  return toMs(flag.reportedAt.utc) < toMs(session.startedAtUtc);
 }
 
 /** `PainReviewLine`, line 1. */
@@ -255,4 +265,100 @@ export function todayPainCheck(flags: readonly PainFlag[], nowMs: number, tz: st
     return { kind: 'one', flagId: first.id, text: `Still hurts? ${first.exerciseName} · ${ago}`, accessibilityLabel: `Pain flag check due: ${first.exerciseName}, ${ago}.` };
   }
   return { kind: 'several', count: due.length, text: `Still hurts? ${String(due.length)} pain flags to check`, accessibilityLabel: `Pain flag checks due: ${String(due.length)} flags.` };
+}
+
+// ---------------------------------------------------------------------------
+// One-session hold (CLAUDE.md rule 9 as changed by Ben, 8 Nov)
+
+/**
+ * A workout with the flagged movement in it, as the hold reads it: finished with a completed set of the movement, or
+ * the workout in progress with the movement in it. `finishedAtUtc` null: in progress.
+ */
+export interface PainExposure {
+  sessionId: string;
+  startedAtUtc: string;
+  finishedAtUtc: string | null;
+  /** The check-in answered for the workout (`sessions.check_in_id`): a check-in flag's report workout. */
+  checkInId: string | null;
+}
+
+export interface PainHold {
+  /** The workout the pain was reported in (it holds), when that workout has the movement. */
+  reportSessionId: string | null;
+  /** The movement's next workout after the report (it holds too); null: not started yet. */
+  nextSessionId: string | null;
+  /** When the hold ended by itself: the next workout's finish. Null while it holds. */
+  lapsedAtUtc: string | null;
+}
+
+/**
+ * Rule 9 (Ben, 8 Nov: "the pain flags are one off, not usual"): a pain flag holds progression for its movement in the
+ * workout it was reported in and in the movement's next workout, then clears by itself, unless Ben reports pain again
+ * (a new flag, a new hold). Read at read time from the workouts, so flags stored before 8 Nov need no migration: one
+ * whose movement has been done in a finished workout since the report reads as cleared. Ben's own `Clear flag` still
+ * clears it early. Pure; never diagnoses.
+ *
+ * The report workout: the one its check-in was answered for, else the one in progress when it was reported. The next
+ * workout: the first one of the movement that started after the report.
+ */
+export function painHoldOf(flag: Pick<PainFlag, 'reportedAt' | 'checkInId'>, exposures: readonly PainExposure[]): PainHold {
+  const at = toMs(flag.reportedAt.utc);
+  const byStart = [...exposures].sort((a, b) => toMs(a.startedAtUtc) - toMs(b.startedAtUtc) || (a.sessionId < b.sessionId ? -1 : 1));
+  const report =
+    (flag.checkInId === null ? undefined : byStart.find((e) => e.checkInId === flag.checkInId)) ??
+    byStart.find((e) => toMs(e.startedAtUtc) <= at && (e.finishedAtUtc === null || toMs(e.finishedAtUtc) >= at));
+  const next = byStart.find((e) => e.sessionId !== report?.sessionId && toMs(e.startedAtUtc) > at && (report === undefined || toMs(e.startedAtUtc) >= toMs(report.startedAtUtc)));
+  return { reportSessionId: report?.sessionId ?? null, nextSessionId: next?.sessionId ?? null, lapsedAtUtc: next?.finishedAtUtc ?? null };
+}
+
+/**
+ * The flag as every reader sees it: an active flag whose hold has run out reads as cleared (`lapsed` says when and
+ * after which workout). Anything else is returned as it is.
+ */
+export function withPainHold(flag: PainFlag, exposures: readonly PainExposure[]): PainFlag {
+  if (flag.status !== 'active') return flag;
+  const hold = painHoldOf(flag, exposures);
+  if (hold.lapsedAtUtc === null || hold.nextSessionId === null) return flag;
+  return { ...flag, status: 'cleared', clearedAtUtc: hold.lapsedAtUtc, lapsed: { atUtc: hold.lapsedAtUtc, sessionId: hold.nextSessionId } };
+}
+
+/** The workouts a flag held (report and next), for stall checks and the weekly review to skip (rule 9, ST2). Retracted flags held nothing. */
+export function painHeldSessionIds(flag: PainFlag, exposures: readonly PainExposure[]): Set<string> {
+  if (flag.status === 'retracted') return new Set();
+  const hold = painHoldOf(flag, exposures);
+  const out = new Set<string>();
+  // A flag Ben cleared early held only the workouts started before he cleared it.
+  const clearedMs = flag.status === 'cleared' && flag.lapsed === undefined && flag.clearedAtUtc !== null ? toMs(flag.clearedAtUtc) : Number.POSITIVE_INFINITY;
+  for (const sid of [hold.reportSessionId, hold.nextSessionId]) {
+    const e = exposures.find((x) => x.sessionId === sid);
+    if (e !== undefined && toMs(e.startedAtUtc) < clearedMs) out.add(e.sessionId);
+  }
+  return out;
+}
+
+/** Per exercise, every workout a flag held (`painHeldSessionIds`). `exposuresOf` gives one exercise's workouts. */
+export function painHeldSessions(flags: readonly PainFlag[], exposuresOf: (exerciseId: string) => readonly PainExposure[]): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const f of flags) {
+    const ids = painHeldSessionIds(f, exposuresOf(f.exerciseId));
+    if (ids.size === 0) continue;
+    const cur = out.get(f.exerciseId) ?? new Set<string>();
+    for (const id of ids) cur.add(id);
+    out.set(f.exerciseId, cur);
+  }
+  return out;
+}
+
+/** `Pain flag · clears after next session` / `… after this workout`, for the flag's own rows (Profile, the pain sheet). */
+export function painHoldText(flag: Pick<PainFlag, 'status'>, inNextSession: boolean): string | null {
+  if (flag.status !== 'active') return null;
+  return inNextSession ? 'Pain flag · clears after this workout' : 'Pain flag · clears after next session';
+}
+
+/**
+ * Whether `sessionId` (the workout in progress) is the flag's next workout (the last one it holds), from the
+ * exposures: then the hold ends with it.
+ */
+export function isLastHeldSession(flag: Pick<PainFlag, 'reportedAt' | 'checkInId'>, exposures: readonly PainExposure[], sessionId: string): boolean {
+  return painHoldOf(flag, exposures).nextSessionId === sessionId;
 }

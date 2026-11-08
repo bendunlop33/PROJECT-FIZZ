@@ -4,6 +4,7 @@ import type { HistorySession, HistorySet } from './progression';
 import { equipmentOfRow } from './session/equipment-snapshot';
 import { setDisplayNumbers } from './session/order';
 import { isInHistory } from './session/deletion';
+import { earlierWorkOf } from './in-session-fatigue';
 
 /**
  * Progression history for one exercise from a stored session (third-review
@@ -27,6 +28,8 @@ import { isInHistory } from './session/deletion';
  * - `identity: true` also keeps each set's ID and version and the session's
  *   zone and routine name, so a target made from this history can record its
  *   basis for `Why?` (active-workout §2.12) and spot later edits.
+ * - `context` (SF1, Ben 8 Nov): the hard sets of other exercises logged before it in that workout, and its superset
+ *   partners, for like-for-like targets (`pickLikeForLike`). Absent on imported workouts (order unknown).
  */
 export function toHistorySessions(aggregate: HistoryLike, exerciseId: string, opts: { identity?: boolean } = {}): HistorySession[] {
   const { session } = aggregate;
@@ -70,6 +73,7 @@ export function toHistorySessions(aggregate: HistoryLike, exerciseId: string, op
   }
   // After a mid-workout switch each item belongs to its own gym (gym-switch GS6), not the workout's last one.
   const switched = (session.gymChanges ?? []).length > 0;
+  const context = earlierWorkOf(aggregate, exerciseId);
   const gymOf = (equipmentId: string | null): string | null =>
     !switched || equipmentId === null ? session.gymId : (equipmentOfRow(session.equipmentSnapshot, { equipmentId })?.gymId ?? session.gymId);
   return [...buckets.values()]
@@ -83,6 +87,7 @@ export function toHistorySessions(aggregate: HistoryLike, exerciseId: string, op
       sets,
       ...(copy ? { copy: true as const } : {}),
       ...(session.deload !== undefined ? { deload: true as const } : {}),
+      ...(context !== null ? { context } : {}),
       ...(opts.identity ? { tz: session.startedAt.tz, routineName: session.routineName } : {}),
     }));
 }

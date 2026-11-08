@@ -17,7 +17,8 @@ import { isInHistory } from './session/deletion';
  */
 
 /** Bump when what a summary holds changes: every stored summary of another format is rebuilt on open. */
-export const HISTORY_SUMMARY_FORMAT = 1;
+/** 2 (8 Nov): lifts carry their in-workout `context` (SF1). */
+export const HISTORY_SUMMARY_FORMAT = 2;
 
 /**
  * A finished workout as history reads it: the workout's session, rows, sets and storage revision exactly as stored;

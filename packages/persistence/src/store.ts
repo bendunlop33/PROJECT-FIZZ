@@ -185,8 +185,15 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
         );
       }
     }
+    // Rule 9 (8 Nov): the workouts a pain flag held are marked, read fresh each time (flags change without a workout
+    // write), so the rule's miss streak skips them like deload weeks (`painHeld`).
+    const held = await repos.painFlags.heldSessions(ownerId).catch(() => new Map<string, Set<string>>());
     const out = new Map<string, HistorySession[]>();
-    for (const id of unique) out.set(id, [...(kept.byExercise.get(id) ?? [])]);
+    for (const id of unique) {
+      const ids = held.get(id);
+      const list = kept.byExercise.get(id) ?? [];
+      out.set(id, ids === undefined ? [...list] : list.map((h) => (ids.has(h.sessionId) ? { ...h, painHeld: true as const } : h)));
+    }
     return out;
   }
 
