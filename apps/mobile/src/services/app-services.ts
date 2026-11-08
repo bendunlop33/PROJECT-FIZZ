@@ -739,6 +739,7 @@ export function createAppServices(deps: AppServicesDeps) {
     upNextTitle: (gymId) => loop.workout.upNextTitle(gymId),
     coachAddInputs: (exerciseId, aggregate) => loop.workout.coachAddInputs(exerciseId, aggregate),
     replanToday: (sessionId, opId) => loop.workout.replanAfterCoach(sessionId, opId),
+    healthSessions: () => progress.healthSessions(),
     painHold: {
       clear: async (f) => {
         const r = await loop.pain.clearConfirmed({ flagId: f.id, expectedVersion: f.version });

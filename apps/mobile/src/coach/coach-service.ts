@@ -255,6 +255,7 @@ import {
   asksBehindToday,
   directMuscleGroup,
   type MusclesOf,
+  type HealthStrengthSession,
 } from '@fizz/domain';
 import { TurnAlreadyRunningError, type CandidateWrite, type MemoryWrite, type SqliteRepositories, type Store } from '@fizz/persistence';
 import { createRunningTurns, type TurnScope } from './running-turns';
@@ -524,6 +525,8 @@ export interface CoachServiceDeps {
   replanToday?: (sessionId: string, opId: string) => Promise<boolean>;
   /** (Ben, 8 Nov) A pain hold's early clear and its Undo (the pain service's `clearConfirmed` / `undoClear`), for Ben's "go ahead". */
   painHold?: { clear: (flag: { id: string; version: number }) => Promise<{ id: string; version: number } | null>; restore: (cleared: readonly { id: string; version: number }[]) => Promise<boolean> };
+  /** (Ben, 8 Nov) Health strength workouts counted as sessions (Progress › Training's), for `get_training_overview`. */
+  healthSessions?: () => Promise<readonly HealthStrengthSession[]>;
   /** (SF7a) The muscles of these exercises, for the context's `doneSoFarToday`. Absent: not said. */
   musclesOf?: (exerciseIds: readonly string[]) => Promise<MusclesOf>;
   /** The bundled exercise catalogue (Coaching knowledge), for swap options and names. */
@@ -1021,7 +1024,9 @@ export function createCoachService(deps: CoachServiceDeps) {
         const from = toIso(toMs(now.utc) - weeks * 7 * 86_400_000);
         const aggs = await repos().sessions.listFinishedBetween(p.id, from, now.utc).catch(() => [] as HistoryWorkout[]);
         const firstWorkoutUtc = await repos().sessions.earliestFinishedStartUtc(p.id).catch(() => null);
-        return trainingOverviewView({ weeks, nowUtc: now.utc, tz: now.tz, sessions: aggs, gymNames: await gymNames(), firstWorkoutUtc });
+        // (Ben, 8 Nov) Garmin-only strength sessions count as Training counts them (no sets or loads).
+        const healthSessions = (await deps.healthSessions?.().catch(() => [])) ?? [];
+        return trainingOverviewView({ weeks, nowUtc: now.utc, tz: now.tz, sessions: aggs, gymNames: await gymNames(), firstWorkoutUtc, healthSessions });
       },
       async equipment(exerciseId, gymName) {
         // Coach v3: another saved gym by name (the hotel gym), matched like a build's gymName; else the gym in context.

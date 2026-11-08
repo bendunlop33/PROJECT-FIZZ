@@ -10,6 +10,7 @@ import type { HistorySession, HistorySet } from '../progression';
 import { isInHistory } from '../session/deletion';
 import { estimateOneRepMax } from '../progress/e1rm';
 import { toMs } from '../time';
+import type { HealthStrengthSession } from '../progress/health-sessions';
 import { usualTargetRpeOf } from './target-rpe';
 import { ruleRepsFact, type RuleReps } from '../rep-range';
 
@@ -208,7 +209,13 @@ export interface OverviewSessionLine {
   date: string;
   title: string | null;
   gym: string | null;
-  source: 'app' | 'FitNotes import';
+  /**
+   * (Ben, 8 Nov) `Health`: a strength workout recorded only by his watch (Garmin, via Apple Health), counted as a
+   * session as Progress › Training counts it: no sets, loads or exercises (Health sends none; rule 6).
+   */
+  source: 'app' | 'FitNotes import' | 'Health';
+  /** `Garmin`, on a Health-only session. */
+  recordedBy?: string;
   /** Present on a workout done in the plan's deload week (`DELOAD_NOTE`). */
   deload?: true;
   exercises: OverviewExerciseLine[];
@@ -276,6 +283,11 @@ export interface TrainingOverviewInput {
   gymNames: Readonly<Record<string, string>>;
   /** When Ben's first finished workout started (any source); null or absent: the window is used as is. */
   firstWorkoutUtc?: string | null;
+  /**
+   * (Ben, 8 Nov) Health strength workouts that count as sessions (`healthStrengthSessions`: unlinked, not overlapping
+   * an app or imported workout, not unlinked or `Not it` by Ben), as Progress › Training counts them. Absent: none.
+   */
+  healthSessions?: readonly Pick<HealthStrengthSession, 'sessionId' | 'name' | 'date' | 'startedMs' | 'fromHealth'>[];
 }
 
 /** `get_training_overview`: how often, what, and whether the main lifts moved, over the last weeks. */
@@ -346,6 +358,12 @@ export function trainingOverviewView(input: TrainingOverviewInput): TrainingOver
         trend: first?.top ? trend : 'not comparable',
       };
     });
+  // (Ben, 8 Nov) Garmin-only strength sessions count as workouts, like Training; they add no exercise, set or trend.
+  for (const h of input.healthSessions ?? []) {
+    if (h.startedMs < fromMs || h.startedMs > toMs(input.nowUtc)) continue;
+    sessions.push({ sessionId: h.sessionId, version: 1, date: h.date, title: h.name, gym: null, source: 'Health', recordedBy: h.fromHealth.sourceName, exercises: [] });
+  }
+  sessions.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const workouts = sessions.length;
   const nowMs = toMs(input.nowUtc);
   const first = input.firstWorkoutUtc === undefined || input.firstWorkoutUtc === null ? null : toMs(input.firstWorkoutUtc);

@@ -288,7 +288,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: CHAT,
     plainLabel: 'Turn a pain flag on',
     capabilitySection: 'when_you_ask',
-    description: "Turn on a pain flag for movements Ben says hurt in this message. Stops increases for them. Never diagnoses, and can't clear a flag.",
+    description: "Turn on a pain flag for movements Ben says hurt in this message. Holds increases on them this session and the next. Never diagnoses. To go ahead anyway when Ben says so, use edit_today with painGoAhead.",
   },
   {
     name: 'save_memory',
