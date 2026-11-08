@@ -13,6 +13,7 @@ export * from './history-summary';
 export * from './gym-presets';
 export * from './stable';
 export * from './session/order';
+export * from './session/replan';
 export * from './session/superset-with';
 export * from './session/workout-times';
 export * from './session/time-shift';

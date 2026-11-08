@@ -5,6 +5,7 @@ import type { EquipmentInstance, ProgressionRule, SetType } from '@fizz/schemas'
 import {
   builtInDefaultRule,
   cushionReps,
+  doneSoFarByMuscle,
   doneSoFarLines,
   earlierSetsByMuscle,
   earlierSetsP,
@@ -310,5 +311,28 @@ describe('SF5: stalls compare like with like', () => {
     expect(r.result.stalled).toBeUndefined();
     expect(r.result.basedOnSessionIds).toEqual([id(1)]);
     expect(r.result.decision).toBe('hold');
+  });
+});
+
+describe('SF7: done so far today, for the coach', () => {
+  it('per muscle, direct and secondary hard sets; warm-ups and cardio never count', () => {
+    const w = {
+      session: { source: 'manual' },
+      exercises: [
+        { id: id(1), exerciseId: BIKE, order: 0, supersetGroup: null, measurement: 'cardio' as const },
+        { id: id(2), exerciseId: BENCH, order: 1, supersetGroup: null, measurement: 'reps' as const },
+        { id: id(3), exerciseId: INCLINE, order: 2, supersetGroup: null, measurement: 'reps' as const },
+      ],
+      sets: [
+        { sessionExerciseId: id(1), setType: 'working' as SetType, status: 'completed' as const, side: null, completedAt: { utc: new Date(T0_MS).toISOString(), tz: TZ }, actual: { load: null, reps: null, durationS: 600, rpe: null, rir: null } },
+        ...[1, 2, 3, 4].map((m) => ({ sessionExerciseId: id(2), setType: (m === 1 ? 'warmup' : 'working') as SetType, status: 'completed' as const, side: null, completedAt: { utc: new Date(T0_MS + m * 60_000).toISOString(), tz: TZ }, actual: { load: kg(60, 'total'), reps: 8, durationS: null, rpe: 8, rir: null } })),
+        { sessionExerciseId: id(3), setType: 'working' as SetType, status: 'pending' as const, side: null, completedAt: null, actual: null },
+      ],
+    } satisfies ContextWorkout;
+    expect(doneSoFarByMuscle(w, musclesOf)).toEqual([
+      { muscle: 'Chest', direct: 3, secondary: 0 },
+      { muscle: 'Shoulders', direct: 3, secondary: 0 },
+      { muscle: 'Triceps', direct: 0, secondary: 3 },
+    ]);
   });
 });

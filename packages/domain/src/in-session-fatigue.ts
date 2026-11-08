@@ -103,7 +103,8 @@ export function earlierWorkOf(w: ContextWorkout, exerciseId: string, opts: { pla
   if (w.session.source === 'import') return null;
   const live = w.exercises.filter((e) => e.removed === undefined);
   const own = live.filter((e) => e.exerciseId === exerciseId);
-  if (own.length === 0) return null;
+  // Not in the workout yet (being added at the end, SF6): everything done or planned so far is before it.
+  if (own.length === 0 && opts.planned !== true) return null;
   const ownIds = new Set(own.map((e) => e.id));
   const rowOf = new Map(live.map((e) => [e.id, e]));
   const done = (s: ContextSet): boolean => s.status === 'completed' && s.actual !== null && s.completedAt !== null;
@@ -111,7 +112,7 @@ export function earlierWorkOf(w: ContextWorkout, exerciseId: string, opts: { pla
     .filter((s) => ownIds.has(s.sessionExerciseId) && done(s) && COUNTED.has(s.setType))
     .map((s) => toMs((s.completedAt as { utc: string }).utc))
     .reduce((m, t) => Math.min(m, t), Number.POSITIVE_INFINITY);
-  const firstOrder = Math.min(...own.map((e) => e.order));
+  const firstOrder = own.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...own.map((e) => e.order));
   const counts = new Map<string, number>();
   for (const s of w.sets) {
     const row = rowOf.get(s.sessionExerciseId);
@@ -282,4 +283,38 @@ export function otherContextSessions(points: readonly { sessionId: string; conte
   if (anchor === undefined) return out;
   for (const x of resolved) if (x.c.p !== null && !sameContext(anchor.c, x.c)) out.add(x.id);
   return out;
+}
+
+/** Every exercise whose muscles SF needs for one target: the exercise, today's earlier work and partners, and every exposure's. */
+export function fatigueExerciseIds(exerciseId: string, today: WorkContext | null | undefined, history: readonly { context?: WorkContext | undefined }[]): string[] {
+  const out = new Set<string>([exerciseId]);
+  const add = (c: WorkContext | null | undefined) => {
+    if (c == null) return;
+    for (const e of c.earlier) out.add(e.exerciseId);
+    for (const id of c.supersetWith) out.add(id);
+  };
+  add(today);
+  for (const h of history) add(h.context);
+  return [...out].sort();
+}
+
+/** SF7(a): every hard set logged so far in a workout, per exercise (warm-ups, drops, easy sets and cardio left out). */
+export function doneSoFarIn(w: ContextWorkout): EarlierWork[] {
+  const rows = new Map(w.exercises.filter((e) => e.removed === undefined && e.measurement !== 'cardio').map((e) => [e.id, e]));
+  const counts = new Map<string, number>();
+  for (const s of w.sets) {
+    const row = rows.get(s.sessionExerciseId);
+    if (row === undefined || s.status !== 'completed' || s.actual === null) continue;
+    if (!isHard({ setType: s.setType, rpe: s.actual.rpe, rir: s.actual.rir })) continue;
+    counts.set(row.exerciseId, (counts.get(row.exerciseId) ?? 0) + sideWeight(s.side));
+  }
+  return [...counts].map(([exerciseId, sets]) => ({ exerciseId, sets })).sort((a, b) => (a.exerciseId < b.exerciseId ? -1 : 1));
+}
+
+/** SF7(a) for the coach: per muscle, the hard sets so far in this workout, direct and secondary, most-worked first. */
+export function doneSoFarByMuscle(w: ContextWorkout, musclesOf: MusclesOf): { muscle: string; direct: number; secondary: number }[] {
+  return [...earlierSetsByMuscle(doneSoFarIn(w), musclesOf)]
+    .filter(([, v]) => v.direct > 0 || v.secondary > 0)
+    .sort((a, b) => b[1].direct + b[1].secondary / 2 - (a[1].direct + a[1].secondary / 2) || (a[0] < b[0] ? -1 : 1))
+    .map(([muscle, v]) => ({ muscle, direct: v.direct, secondary: v.secondary }));
 }

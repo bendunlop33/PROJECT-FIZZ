@@ -351,6 +351,15 @@ import {
   pickedMainLift,
   MAIN_LIFT_COPY,
   mainLiftTemplateClash,
+  earlierWorkOf,
+  fatigueExerciseIds,
+  REPLAN_AFTER,
+  replanCandidates,
+  replanCommand,
+  replanEntries,
+  replanEquipmentOf,
+  type MusclesOf,
+  type WorkContext,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import { muscleGroupOf, worksLine } from '@fizz/schemas';
@@ -1558,6 +1567,69 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return out;
   }
 
+  /**
+   * (SF1, Ben 8 Nov) The muscles of the exercises one like-for-like target reads (`fatigueExerciseIds`), as a lookup.
+   * An exercise that can't be read has none (it counts towards no muscle).
+   */
+  async function musclesFor(ids: Iterable<string>): Promise<MusclesOf> {
+    const out = new Map<string, Exercise>();
+    for (const id of new Set(ids)) {
+      const e = await repos().exercises.get(id).catch(() => null);
+      if (e) out.set(id, e);
+    }
+    return (id) => out.get(id) ?? null;
+  }
+
+  /**
+   * SF6 (Ben, 8 Nov): the built-in targets of exercises not started yet, worked out again for today's order. Only the
+   * rule's own targets change (`replanCandidates`); a failure changes nothing (logging never waits on this).
+   */
+  async function replanToday(aggregate: SessionAggregate, opId: string): Promise<CommandOutcome | null> {
+    try {
+      const p = await ctx.profile();
+      if (!p || aggregate.session.status !== 'active') return null;
+      const flags = await repos().painFlags.listActive(p.id);
+      const sessionPain = unspecifiedPain(await sessionCheckIn(aggregate));
+      const entries: CommandOf<'replan_built_in_targets'>['sets'] = [];
+      for (const c of replanCandidates(aggregate)) {
+        const exercise = await repos().exercises.get(c.row.exerciseId).catch(() => null);
+        if (!exercise) continue;
+        const history = await historyFor(p.id, exercise.id);
+        if (history.length === 0) continue;
+        const rule = c.row.progressionRuleId === null ? null : await repos().progressionRules.get(c.row.progressionRuleId).catch(() => null);
+        const equipment = replanEquipmentOf(aggregate, c.row);
+        const { result } = nextTargetsFor({
+          ownerId: p.id,
+          exerciseId: exercise.id,
+          exerciseName: exercise.name,
+          measurement: exercise.measurement,
+          unit: c.row.unit,
+          convention: c.row.loadConvention,
+          equipment,
+          exercise,
+          rule: rule ?? null,
+          workingSets: Math.max(1, c.workingSets),
+          history,
+          painFlags: flags,
+          sessionPain,
+          fatigue: await fatigueFor(exercise.id, c.today, history),
+        });
+        entries.push(...replanEntries(c, plannedSetsFromTargets(result, { history, equipment, at: ctx.now() })));
+      }
+      const command = replanCommand(aggregate, entries, { opId: deriveId(`replan:${opId}`), at: ctx.now() });
+      if (command === null) return null;
+      const r = ctx.afterCommand(await domain().dispatch(aggregate.session.id, command));
+      return r.ok ? r : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** `NextTargetRequest.fatigue` for one exercise: today's context and the muscles its history needs. */
+  async function fatigueFor(exerciseId: string, today: WorkContext | null, history: readonly HistorySession[]): Promise<{ today: WorkContext | null; musclesOf: MusclesOf }> {
+    return { today, musclesOf: await musclesFor(fatigueExerciseIds(exerciseId, today, history)) };
+  }
+
   async function gymNamesOf(ownerId: string): Promise<Record<string, string>> {
     return Object.fromEntries((await repos().gyms.listByOwner(ownerId).catch(() => [])).map((g) => [g.id, g.name]));
   }
@@ -1614,6 +1686,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       history,
       painFlags: await repos().painFlags.listActive(p.id),
       sessionPain: now.active ? now : then,
+      // SF1/SF6 (8 Nov): added at the end, so everything done or still planned in this workout comes before it.
+      fatigue: await fatigueFor(exercise.id, earlierWorkOf(aggregate, exercise.id, { planned: true }), history),
     });
     // Each planned set records what produced it, for `Why?` (active-workout §2.12, AW3).
     return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, workingSets), { at: ctx.now(), decision: result.decision });
@@ -1698,7 +1772,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const { result } = nextTargetsForBlock(
         block,
         // A FitNotes source recorded no item: its loads are fitted to the gym when the workout is built (B7; rule 4).
-        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}), ...(secondary.has(sx.exerciseId) ? { accessory: true } : {}), ...(acceptedResets.has(sx.exerciseId) ? { acceptReset: true } : {}) },
+        {
+          ownerId: p.id,
+          sessionId: source.session.id,
+          count: 'done',
+          exercise,
+          rule: null,
+          history,
+          painFlags: flags,
+          sessionPain,
+          ...(source.session.source === 'import' ? { fitLater: true } : {}),
+          ...(secondary.has(sx.exerciseId) ? { accessory: true } : {}),
+          ...(acceptedResets.has(sx.exerciseId) ? { acceptReset: true } : {}),
+          // SF2 (8 Nov): the new workout repeats the source's order, so the source's context is today's.
+          fatigue: await fatigueFor(sx.exerciseId, earlierWorkOf(source, sx.exerciseId), history),
+        },
         null,
       );
       if (repsOut !== undefined && result.reps !== undefined) repsOut.set(sx.exerciseId, result.reps);
@@ -3535,7 +3623,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }),
       ),
 
-    dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
+    dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => {
+      const r = ctx.afterCommand(await domain().dispatch(sessionId, command));
+      // SF6 (8 Nov): a reorder, skip, swap, add or remove (or its Undo) works the built-in targets out again.
+      if (!r.ok || r.duplicate || !REPLAN_AFTER.has(command.type) || !('opId' in command)) return r;
+      return (await replanToday(r.aggregate, command.opId)) ?? r;
+    },
 
     /**
      * `Undo` on a delete-set, skip, correction, remove or swap toast (copy D4):
@@ -3988,7 +4081,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const gymNames = Object.fromEntries((await repos().gyms.listByOwner(p.id).catch(() => [])).map((g) => [g.id, g.name]));
       // (Ben, 23 Oct) The rule's stall resets Ben applied on this Summary: only those lower the load.
       const acceptedResets = acceptedRuleResets(await ctx.store().repos.coach.listNextTargets(p.id, aggregate.session.id).catch(() => []), aggregate);
+      // SF1 (8 Nov): the muscles every exercise's like-for-like reading needs.
+      const muscleIds = aggregate.exercises.flatMap((ex) => fatigueExerciseIds(ex.exerciseId, earlierWorkOf(aggregate, ex.exerciseId), history[ex.exerciseId] ?? []));
       const summary = buildWorkoutSummary({
+        musclesOf: await musclesFor(muscleIds),
         acceptedResets,
         aggregate,
         nowMs: toMs(ctx.now().utc),
