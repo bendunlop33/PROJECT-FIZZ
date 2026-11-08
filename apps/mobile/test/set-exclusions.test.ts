@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { createHarness, dropPlannedWarmups, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * Sets that don't count (active-workout §2.13) through the app's services on
@@ -43,7 +43,9 @@ async function nextBench(s: AppServices, gymId: string): Promise<{ sessionId: st
   const pick = (await s.workout.pickerExercises(sessionId, 'Bench press')).find((p) => p.exercise.name === 'Bench press');
   const added = await s.workout.addExercise({ sessionId, exerciseId: pick?.exercise.id ?? '', equipmentId: pick?.equipment[0]?.id ?? null, opId: h.ids() });
   if (!added.ok) throw new Error(added.error.message);
-  return { sessionId, aggregate: added.aggregate };
+  // (8 Nov) The planner's warm-ups are incidental here: set 1 is the first working set.
+  const a = await dropPlannedWarmups(h, s, sessionId);
+  return { sessionId, aggregate: { ...a, sets: a.sets.filter((x) => x.status !== 'deleted').sort((x, y) => x.index - y.index) } };
 }
 
 describe('correctSet with exclusion chips (§2.13, AW6)', () => {

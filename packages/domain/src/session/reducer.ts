@@ -16,6 +16,7 @@ import type {
   SetExclusion,
   SetFlag,
   SetSide,
+  SetType,
   SetSnapshot,
   SetValues,
   DraftValues,
@@ -2041,9 +2042,12 @@ function handleSwapExercise(state: SessionAggregate, cmd: CommandOf<'swap_exerci
   const pending = pendingSetsOf(state, ex.id);
   if (pending.length === 0) return fail('set_not_pending', `Nothing left to swap: ${ex.exerciseName} is done.`);
   if (isWorkLive(state, pending.map((s) => s.id))) return fail('work_interval_running', 'Stop the work timer before swapping.');
+  // (Ben, 8 Nov) With the substitute's own warm-ups, `sets` maps the pending sets that aren't warm-ups.
+  const mapped = cmd.warmups === undefined ? pending : pending.filter((s) => s.setType !== 'warmup');
   const from = cmd.sets.map((x) => x.fromSetId);
-  if (from.length !== pending.length || pending.some((s, i) => from[i] !== s.id)) return fail('stale_version', 'The workout changed since Swap was opened.');
-  const newIds = cmd.sets.map((x) => x.newSetId);
+  if (from.length !== mapped.length || mapped.some((s, i) => from[i] !== s.id)) return fail('stale_version', 'The workout changed since Swap was opened.');
+  const newWarm = cmd.warmups ?? [];
+  const newIds = [...newWarm.map((x) => x.newSetId), ...cmd.sets.map((x) => x.newSetId)];
   if (state.exercises.some((e) => e.id === cmd.newSessionExerciseId) || new Set(newIds).size !== newIds.length || state.sets.some((s) => newIds.includes(s.id))) {
     return fail('invalid_values', 'That exercise or set ID is already used.');
   }
@@ -2056,7 +2060,7 @@ function handleSwapExercise(state: SessionAggregate, cmd: CommandOf<'swap_exerci
   const convention = equipment?.loadConvention ?? cmd.exercise.defaultLoadConvention;
   const unit = equipment?.unit ?? cmd.unit;
   if (cmd.loadConvention !== convention || cmd.unit !== unit) return fail('convention_mismatch', `Targets on ${equipment?.name ?? cmd.exercise.name} must be in ${unit} (${convention}).`);
-  for (const x of cmd.sets) {
+  for (const x of [...newWarm, ...cmd.sets]) {
     const l = x.planned.load;
     if (l === null) continue;
     if (l.unit !== unit || l.convention !== convention) return fail('invalid_values', `A target must be in ${unit} (${convention}); convert explicitly first.`);
@@ -2087,20 +2091,28 @@ function handleSwapExercise(state: SessionAggregate, cmd: CommandOf<'swap_exerci
     audit.push(auditEntry(state, cmd, 'deleted', p, deleted, 'deleted'));
     events.push({ type: 'SetDeleted', setId: p.id });
   }
-  const added: WorkoutSet[] = cmd.sets.map((x, index) => {
-    const src = pending[index] ?? pending[0];
+  const oldWarm = pending.filter((p) => p.setType === 'warmup');
+  const entries: { newSetId: string; planned: PlannedSet; setType: SetType; rest: WorkoutSet['rest'] | undefined }[] = [
+    // The substitute's warm-ups keep the replaced warm-ups' rest (else the first pending set's).
+    ...newWarm.map((x, k) => ({ newSetId: x.newSetId, planned: x.planned, setType: 'warmup' as const, rest: (oldWarm[k] ?? oldWarm.at(-1) ?? pending[0])?.rest })),
+    ...cmd.sets.map((x, k) => {
+      const src = mapped[k] ?? mapped[0] ?? pending[0];
+      return { newSetId: x.newSetId, planned: x.planned, setType: src?.setType ?? ('working' as const), rest: src?.rest };
+    }),
+  ];
+  const added: WorkoutSet[] = entries.map((x, index) => {
     return {
       id: x.newSetId,
       sessionId: state.session.id,
       sessionExerciseId: row.id,
       index,
-      setType: src?.setType ?? 'working',
+      setType: x.setType,
       status: 'pending',
       side: cmd.exercise.laterality === 'unilateral' ? 'both' : null,
       pairedWithSetId: null,
       // The substitute's target RPE is its own (plan, coach or rule), as for an added exercise: never Ben's override.
       planned: withRpeOverride(x.planned, undefined),
-      rest: src?.rest ?? { seconds: 0, source: 'global_default', sourceLabel: '' },
+      rest: x.rest ?? { seconds: 0, source: 'global_default', sourceLabel: '' },
       actual: null,
       draft: null,
       completedAt: null,
@@ -2122,7 +2134,9 @@ function handleSwapExercise(state: SessionAggregate, cmd: CommandOf<'swap_exerci
   const activeAt = pending.findIndex((p) => p.id === state.session.activeSetId);
   let activeSetId = state.session.activeSetId;
   if (activeAt >= 0) {
-    activeSetId = added[activeAt]?.id ?? null;
+    const was = pending[activeAt];
+    // (8 Nov) With new warm-ups: a warm-up's place goes to the substitute's first set, a working set's to its own.
+    activeSetId = cmd.warmups === undefined ? (added[activeAt]?.id ?? null) : was?.setType === 'warmup' ? (added[0]?.id ?? null) : (added[newWarm.length + mapped.findIndex((m) => m.id === was?.id)]?.id ?? null);
     events.push({ type: 'ActiveSetChanged', setId: activeSetId });
   }
   return { ok: true, state: bumpVersion({ ...state, exercises, sets, audit }, activeSetId), events };
@@ -2339,6 +2353,46 @@ function restoreAudited(state: SessionAggregate, targetOpId: string, kind: 'dele
   return sets.size === 0 ? null : { sets, audit };
 }
 
+/**
+ * Undo swap: which of the substitute's sets go and which replaced sets come back. The i-th new set took the i-th old
+ * one's place; sets logged on the new exercise stay (they're real), and so does the one they replaced. (Ben, 8 Nov) A
+ * swap that planned the substitute's own warm-ups has a different warm-up count: its working sets pair in order, and
+ * its pending warm-ups go while the original's warm-ups come back (none, once a new warm-up is logged: he's warm).
+ * Entries without `oldId` are deleted with nothing to restore.
+ */
+function swapUndoPairs(state: SessionAggregate, newSets: readonly WorkoutSet[], oldIds: readonly string[]): { s: WorkoutSet; oldId: string | undefined }[] {
+  const typeOf = (setId: string): SetType | undefined => state.sets.find((x) => x.id === setId)?.setType;
+  const aligned = oldIds.every((oldId, i) => {
+    const n = newSets[i];
+    return n !== undefined && (n.setType === 'warmup') === (typeOf(oldId) === 'warmup');
+  });
+  if (aligned) return newSets.map((s, i) => ({ s, oldId: oldIds[i] })).filter((x): x is { s: WorkoutSet; oldId: string } => x.s.status === 'pending' && x.oldId !== undefined);
+  const oldWarm = oldIds.filter((x) => typeOf(x) === 'warmup');
+  const oldWork = oldIds.filter((x) => typeOf(x) !== 'warmup');
+  const newWarm = newSets.filter((x) => x.setType === 'warmup');
+  const newWork = newSets.filter((x) => x.setType !== 'warmup');
+  const out: { s: WorkoutSet; oldId: string | undefined }[] = [];
+  const warmLogged = newWarm.some((x) => x.status !== 'pending');
+  const pendingWarm = newWarm.filter((x) => x.status === 'pending');
+  pendingWarm.forEach((x, k) => out.push({ s: x, oldId: warmLogged ? undefined : oldWarm[k] }));
+  // More old warm-ups than new ones left to pair with: they come back alongside the first.
+  if (!warmLogged) for (const oldId of oldWarm.slice(pendingWarm.length)) {
+    const anchor = pendingWarm[0] ?? newWork.find((x) => x.status === 'pending');
+    if (anchor !== undefined) out.push({ s: anchor, oldId });
+  }
+  newWork.forEach((x, k) => {
+    const oldId = oldWork[k];
+    if (x.status === 'pending' && oldId !== undefined) out.push({ s: x, oldId });
+  });
+  const seen = new Set<string>();
+  return out.filter((x) => {
+    const key = `${x.s.id}|${x.oldId ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** After an Undo: a workout with nothing active picks up the first restored pending set. */
 function activeAfterRestore(state: SessionAggregate, sets: WorkoutSet[], restored: readonly string[], events: SessionEvent[]): string | null {
   const current = state.session.activeSetId;
@@ -2455,14 +2509,14 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs:
       // The i-th new set took the i-th old one's place. Sets logged on the new exercise stay (they're real).
       const newSets = state.sets.filter((s) => s.sessionExerciseId === row.id).sort((a, b) => a.index - b.index);
       const oldIds = state.audit.filter((e) => e.opId === cmd.targetOpId && e.kind === 'deleted').map((e) => e.setId);
-      const stillPending = newSets.map((s, i) => ({ s, oldId: oldIds[i] })).filter((x) => x.s.status === 'pending' && x.oldId !== undefined);
+      const stillPending = swapUndoPairs(state, newSets, oldIds);
       if (stillPending.length === 0) return fail('stale_version', `Nothing left to swap back: ${row.exerciseName} is done.`);
       if (isWorkLive(state, stillPending.map((x) => x.s.id))) return fail('work_interval_running', 'Stop the work timer first.');
-      const r = restoreAudited(state, cmd.targetOpId, 'deleted', cmd, new Set(stillPending.map((x) => x.oldId ?? '')));
+      const r = restoreAudited(state, cmd.targetOpId, 'deleted', cmd, new Set(stillPending.flatMap((x) => (x.oldId === undefined ? [] : [x.oldId]))));
       if (r === null) return fail('stale_version', STALE_UNDO);
       const changed = new Map(r.sets);
       const audit = [...state.audit, ...r.audit];
-      for (const { s } of stillPending) {
+      for (const s of new Map(stillPending.map((x) => [x.s.id, x.s])).values()) {
         const deleted: WorkoutSet = { ...s, status: 'deleted', draft: null, version: s.version + 1 };
         changed.set(s.id, deleted);
         audit.push(auditEntry(state, cmd, 'deleted', s, deleted, 'deleted'));

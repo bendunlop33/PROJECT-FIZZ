@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { toIso, toMs } from '@fizz/domain';
 import { idGen } from '@fizz/domain/testing';
-import type { ZonedTimestamp } from '@fizz/schemas';
+import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 import { createRestAlertController, type LastTimeLayer, type NotifierPort, type PlannedRestAlert } from '../src/alerts/rest-alerts';
 import type { BackupFileStore, TextFile } from '../src/backup/backup-service';
@@ -265,12 +265,17 @@ export async function logWorkout(h: Harness, s: AppServices, gymId: string, plan
     if (!added.ok) throw new Error(added.error.message);
     const ex = added.aggregate.exercises.at(-1);
     if (!ex) throw new Error('no exercise');
+    // (8 Nov) Planned warm-ups (the shared planner) go: the sets given here are the working sets Ben logged.
+    for (const w of added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.setType === 'warmup')) {
+      const r = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: w.id, expectedSetVersion: w.version });
+      if (!r.ok) throw new Error(r.error.message);
+    }
     // Sets may already be planned (built-in rule); add or remove to match.
-    let own = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id);
+    let own = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.setType !== 'warmup' && x.status !== 'deleted');
     for (let i = own.length; i < item.sets.length; i += 1) {
       const r = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: h.ids(), sessionExerciseId: ex.id, newSetId: h.ids(), setType: null });
       if (!r.ok) throw new Error(r.error.message);
-      own = r.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id);
+      own = r.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.setType !== 'warmup' && x.status !== 'deleted');
     }
     for (const extra of own.slice(item.sets.length)) {
       const r = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: extra.id, expectedSetVersion: extra.version });
@@ -298,4 +303,18 @@ export async function logWorkout(h: Harness, s: AppServices, gymId: string, plan
   if (!fin.ok) throw new Error(fin.error.message);
   await h.settle(s);
   return sessionId;
+}
+
+/**
+ * (8 Nov) Exercises added mid-workout now get the shared planner's warm-ups. Tests about the working sets, where the
+ * warm-ups are incidental, take the pending ones out first (as Ben could with Delete) so set 1 is the focus.
+ */
+export async function dropPlannedWarmups(h: Harness, s: AppServices, sessionId: string, sessionExerciseId?: string): Promise<SessionAggregate> {
+  for (const w of (await s.workout.load(sessionId))?.aggregate.sets.filter((x) => x.setType === 'warmup' && x.status === 'pending' && (sessionExerciseId === undefined || x.sessionExerciseId === sessionExerciseId)) ?? []) {
+    const d = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: w.id, expectedSetVersion: w.version });
+    if (!d.ok) throw new Error(d.error.message);
+  }
+  const a = (await s.workout.load(sessionId))?.aggregate;
+  if (a === undefined) throw new Error('no workout');
+  return a;
 }

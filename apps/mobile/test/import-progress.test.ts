@@ -244,7 +244,8 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     expect(prev).toMatchObject({ imported: true });
     // The ramp (40, 50, 60 × 3) is left out; the top set and the back-offs are Ben's working sets.
     expect(prev?.sets.map((x) => [x.values.load?.value, x.values.reps])).toEqual([[70, 4], [60, 8], [60, 8], [60, 8]]);
-    const planned = loaded?.aggregate.sets.filter((x) => x.sessionExerciseId === row?.id).map((x) => x.planned) ?? [];
+    // (8 Nov) The working sets; the planner's warm-ups come first.
+    const planned = loaded?.aggregate.sets.filter((x) => x.sessionExerciseId === row?.id && x.setType !== 'warmup').map((x) => x.planned) ?? [];
     expect(planned).toHaveLength(3);
     for (const p of planned) {
       // From the back-off load: 60 × 8 on every back-off is past the top of 3–6, so one step up (r2 B1).

@@ -580,6 +580,12 @@ export const SwapExerciseCommandSchema = z.object({
   loadConvention: LoadConventionSchema,
   /** One per pending set of the row, in its order: the new set's ID, the set it replaces and its target. */
   sets: z.array(z.object({ newSetId: IdSchema, fromSetId: IdSchema, planned: PlannedSetSchema })).min(1).max(60),
+  /**
+   * (Ben, 8 Nov) The substitute's own warm-ups (the shared planner at its place, `joinWarmups`), lightest first. When
+   * present they replace the row's pending warm-ups, and `sets` then has one entry per pending set that isn't a
+   * warm-up. Absent (earlier commands): `sets` has one per pending set, warm-ups included.
+   */
+  warmups: z.array(z.object({ newSetId: IdSchema, planned: PlannedSetSchema })).max(6).optional(),
 });
 
 /**

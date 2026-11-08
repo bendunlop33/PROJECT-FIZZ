@@ -12,6 +12,7 @@ import { plannedSnapOf, snapPlanToGym } from './snap';
 import { doableHere, substituteTargets, type SubstituteContext } from './substitutes';
 import { swapSource } from './swap-plan';
 import { CARDIO_DEFAULT_S } from '../cardio';
+import { joinWarmups } from '../warmup/join';
 
 /**
  * The coach's `add_exercise_today` (12 Oct; CLAUDE.md rule 3: when Ben asks,
@@ -170,7 +171,10 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
     durationS = clampInt(args.workSeconds ?? 45, L.minWorkS, L.maxWorkS);
     if (args.workSeconds !== null && durationS !== args.workSeconds) note('invalid_reps', `Work ${formatDuration(args.workSeconds)} → ${formatDuration(durationS)}`);
   } else if (args.reps === null) {
-    reps = builtInRepRange(ruleCategory(exercise, null, convention));
+    // (Ben, 8 Nov) Added as a secondary lift, a main barbell lift's range reads as a compound lift's (6–10, not 3–6);
+    // the rule's reps from his history win below when there is history.
+    const category = ruleCategory(exercise, null, convention);
+    reps = builtInRepRange(category === 'main_barbell' && input.substitute.secondaryLift === true ? 'compound' : category);
   } else {
     const lo = Math.min(args.reps.min, args.reps.max);
     const hi = Math.max(args.reps.min, args.reps.max);
@@ -186,12 +190,16 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
 
   // 8. Loads from the exercise's own history (B6: none → blank), fitted to this gym.
   const templates = Array.from({ length: sets }, () => ({ setType: 'working' as const, reps, durationS }));
-  const plan = substituteTargets({ workingSets: sets, templates }, exercise, input.history, { ...input.substitute, gym });
+  // (Ben, 8 Nov) Added as a secondary lift (`joinsAsSecondary`), a main barbell lift's rule reads as a compound lift's,
+  // so its reps follow his history (95 × 10 rows stay near 10), as a planned non-main slot's do (21 Oct), not 3–6.
+  const plan = substituteTargets({ workingSets: sets, templates }, exercise, input.history, { ...input.substitute, gym }, { accessory: input.substitute.secondaryLift === true });
   const fromPlan = (plan.plan ?? []).filter((p) => p.setType !== 'warmup');
   const planned = templates.map((t, i): PlannedSet => {
     const p = fromPlan[i] ?? fromPlan.at(-1);
     const base: PlannedSet = p === undefined ? { load: null, reps: t.reps, durationS: t.durationS, rpe: null, rir: null } : { ...p.planned };
-    const out: PlannedSet = { ...base, reps: t.reps, durationS: t.durationS, ...(distanceM !== null ? { distanceM } : {}), rpe: cardio ? null : (rpe ?? base.rpe), rir: cardio || rpe !== null ? null : base.rir, source: 'coach' };
+    // No reps asked: the rule's reps from his history (21 Oct), else the range above.
+    const setReps = args.reps === null && !timed && p !== undefined ? (p.planned.reps ?? t.reps) : t.reps;
+    const out: PlannedSet = { ...base, reps: setReps, durationS: t.durationS, ...(distanceM !== null ? { distanceM } : {}), rpe: cardio ? null : (rpe ?? base.rpe), rir: cardio || rpe !== null ? null : base.rir, source: 'coach' };
     if (cardio && distanceM === null) delete out.distanceM;
     delete out.rpeOverride;
     delete out.coach;
@@ -261,7 +269,24 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
   if (dropped > 0) note('no_achievable_load', `Load left blank · can't be made on ${equipment?.name ?? 'this equipment'}`);
   else if (!timed && !noWeight && fitted.every((p) => p.load === null) && exercise.defaultLoadConvention !== 'bodyweight') note('build_check', 'No history on this equipment · load left blank');
 
-  const generated = [...setIds];
+  // (Ben, 8 Nov) Its warm-ups: the shared planner at its place in the workout (`joinWarmups`), from the first working load.
+  const warmups = timed || noWeight
+    ? []
+    : joinWarmups(
+        {
+          state: s,
+          exercise: { id: exercise.id, measurement: exercise.measurement, facts: exercise },
+          equipment,
+          convention: rowConvention,
+          unit,
+          bodyweightExercise: rowConvention === 'added' && convention === 'bodyweight',
+          supersetWith: partner ?? null,
+          ctx: input.substitute.warmups,
+        },
+        fitted[0] ?? null,
+      );
+  const warmIds = warmups.map((_, k) => deriveId(`coach-add-warmup:${input.opId}:${String(k + 1)}`));
+  const generated = [...warmIds, ...setIds];
   const rowId = coachAddRowId(input.opId);
   const newId = (): string => generated.shift() ?? rowId;
   const command: CommandOf<'add_exercise'> = {
@@ -272,7 +297,7 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
       equipmentId: equipment?.id ?? null,
       at: input.at,
       newId,
-      plan: fitted.map((p) => ({ setType: 'working' as const, planned: p })),
+      plan: [...warmups.map((p) => ({ setType: 'warmup' as const, planned: p })), ...fitted.map((p) => ({ setType: 'working' as const, planned: p }))],
       exerciseRestS: input.owner.exerciseRestS?.[exercise.id] ?? null,
     }),
     ...(after === undefined ? {} : { afterSessionExerciseId: after }),

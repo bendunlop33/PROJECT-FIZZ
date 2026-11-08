@@ -4,6 +4,7 @@ import { currentGymEquipment } from './equipment-snapshot';
 import { snapPlanToGym } from './snap';
 import type { SubstituteSlot } from './substitutes';
 import { swapSource, type SwapPlan } from './swap-plan';
+import { joinWarmups, type JoinWarmupContext } from '../warmup/join';
 
 /**
  * Swap an exercise mid-workout (exercise-library EL4, backlog B3: Ben's own
@@ -19,7 +20,9 @@ import { swapSource, type SwapPlan } from './swap-plan';
  *   set type, its target from the substitute's own plan (`substituteTargets`,
  *   never the original's load, GS3), fitted with the shared `snapPlanToGym`
  *   (mode `start`) on the workout's current gym (rule 4: achievable, within
- *   min/max; a load that can't be made here is left blank).
+ *   min/max; a load that can't be made here is left blank). (Ben, 8 Nov) Its
+ *   warm-ups are its own, from the shared planner at the row's place
+ *   (`joinWarmups`), in place of the row's pending warm-ups.
  */
 
 /**
@@ -88,6 +91,14 @@ export interface SwapCommandInput {
   opId: string;
   at: ZonedTimestamp;
   newId: () => string;
+  /**
+   * (Ben, 8 Nov) Plan the substitute's own warm-ups at the row's place (`joinWarmups`) in place of the row's pending
+   * ones (a swapped-in barbell row never keeps a dumbbell exercise's one light warm-up). Absent (no facts for the
+   * workout's other rows, so WU2 can't be read): one new set per pending set, warm-ups included, as before.
+   */
+  warmups?: JoinWarmupContext;
+  /** The row is the workout's main lift (its substitute takes WU4/WU5 whatever its equipment). */
+  main?: boolean;
 }
 
 export type SwapCommandResult = { ok: true; command: CommandOf<'swap_exercise'> } | { ok: false; reason: 'nothing_pending' | 'same_exercise' | 'measurement' };
@@ -129,6 +140,39 @@ export function buildSwapExerciseCommand(input: SwapCommandInput): SwapCommandRe
   });
   const slot = snapped.slots[0];
   const equipment = slot?.equipment ?? null;
+  const fittedSets = raw.map((r, i) => {
+    const fitted = slot?.sets[i];
+    // A dropped load (can't be made here, past the max) stays blank: Ben enters it (rule 4).
+    const load = fitted === undefined || fitted.outcome === 'dropped' ? null : fitted.load;
+    // Target RPE as for an exercise added mid-workout (coach-adjustments §4.8, CHANGELOG 2026-10-11): the
+    // substitute's own coach or plan target, else the built-in rule's for its row. Ben's override was set
+    // on the replaced exercise's sets and stays on them (Undo swap brings it back).
+    const planned: PlannedSet = { ...r.planned, load };
+    delete planned.rpeOverride;
+    return { set: r.set, planned };
+  });
+  const unit = slot?.unit ?? input.ownerUnit;
+  const loadConvention = slot?.convention ?? exercise.defaultLoadConvention;
+  // (Ben, 8 Nov) The substitute's own warm-ups from its first working target, at the row's place.
+  const working = fittedSets.filter((x) => x.set.setType !== 'warmup');
+  const warmups =
+    input.warmups === undefined || working.length === 0
+      ? null
+      : joinWarmups(
+          {
+            state,
+            exercise: { id: exercise.id, measurement: exercise.measurement, facts: exercise },
+            equipment,
+            convention: loadConvention,
+            unit,
+            bodyweightExercise: loadConvention === 'added' && exercise.defaultLoadConvention === 'bodyweight',
+            main: input.main === true,
+            replacing: ex.id,
+            ctx: input.warmups,
+          },
+          working[0]?.planned ?? null,
+        );
+  const sets = warmups === null ? fittedSets : working;
   return {
     ok: true,
     command: {
@@ -147,19 +191,10 @@ export function buildSwapExerciseCommand(input: SwapCommandInput): SwapCommandRe
         compatibleEquipment: exercise.compatibleEquipment,
       },
       equipmentId: equipment?.id ?? null,
-      unit: slot?.unit ?? input.ownerUnit,
-      loadConvention: slot?.convention ?? exercise.defaultLoadConvention,
-      sets: raw.map((r, i) => {
-        const fitted = slot?.sets[i];
-        // A dropped load (can't be made here, past the max) stays blank: Ben enters it (rule 4).
-        const load = fitted === undefined || fitted.outcome === 'dropped' ? null : fitted.load;
-        // Target RPE as for an exercise added mid-workout (coach-adjustments §4.8, CHANGELOG 2026-10-11): the
-        // substitute's own coach or plan target, else the built-in rule's for its row. Ben's override was set
-        // on the replaced exercise's sets and stays on them (Undo swap brings it back).
-        const planned: PlannedSet = { ...r.planned, load };
-        delete planned.rpeOverride;
-        return { newSetId: input.newId(), fromSetId: r.set.id, planned };
-      }),
+      unit,
+      loadConvention,
+      ...(warmups === null ? {} : { warmups: warmups.map((planned) => ({ newSetId: input.newId(), planned })) }),
+      sets: sets.map((x) => ({ newSetId: input.newId(), fromSetId: x.set.id, planned: x.planned })),
     },
   };
 }
