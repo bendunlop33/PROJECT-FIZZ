@@ -288,9 +288,8 @@ describe('morning reminder with a coach plan', () => {
 
   const titles = (m: Map<string, PlannedReminder>) => sorted(m).map(named);
   const byDate = (m: Map<string, PlannedReminder>) => new Map(sorted(m).map((x) => [x.fireAtLocal.date, named(x)]));
-  const planDay = (r: PlannedReminder) => r.body.split(' · ').find((p) => p.startsWith('Day ')) ?? '';
 
-  it('day 1 is Up next by the adaptive rule (`Day 3 of 4`); days 2–7 follow the same rule, and doing day 1 makes day 2 the real Up next', async () => {
+  it('day 1 is Up next by the adaptive rule; days 2–7 follow the same rule, and doing day 1 makes day 2 the real Up next', async () => {
     const { s, gymId } = await benWithRotation();
     await applyPlan(s);
     const { port, pending } = fakePort();
@@ -301,10 +300,11 @@ describe('morning reminder with a coach plan', () => {
     expect((await s.next.preview(gymId))?.title).toBe('Legs');
     const before = sorted(pending);
     expect(before[0]).toMatchObject({ fireAtLocal: { date: '2026-10-20' }, title: 'Today: Legs' });
-    expect(before[0]?.body).toMatch(/^Day 3 of 4 · about \d+ min · Main Gym$/u);
+    expect(before[0]?.body).toMatch(/^about \d+ min · Main Gym$/u);
     // Never the day just done; Upper (never done) before Push and Pull (done Sunday); then each in turn.
     expect(titles(pending)).toEqual(['Legs', 'Upper', 'Push', 'Pull', 'Legs', 'Upper', 'Push']);
-    expect(before.map(planDay)).toEqual(['Day 3 of 4', 'Day 4 of 4', 'Day 1 of 4', 'Day 2 of 4', 'Day 3 of 4', 'Day 4 of 4', 'Day 1 of 4']);
+    // (Ben, 8 Nov) No plan day index in the body.
+    expect(before.every((x) => !/Day \d+ of \d+/u.test(x.body))).toBe(true);
 
     // Legs done this morning: tomorrow on is what was predicted.
     await logAndFinish(s, await startUpNext(s, gymId, 'legs'), 'fin-legs');
@@ -328,7 +328,7 @@ describe('morning reminder with a coach plan', () => {
     expect(titles(pending)).toEqual(['Legs', 'Upper', 'Push', 'Pull', 'Upper', 'Legs', 'Push']);
     expect(byDate(pending).get('2026-10-24')).toBe('Upper');
     expect(sorted(pending)[4]).toMatchObject({ title: 'Time to train' });
-    expect(sorted(pending)[4]?.body).toMatch(/^Upper is next · Day 4 of 4 · about \d+ min · Main Gym$/u);
+    expect(sorted(pending)[4]?.body).toMatch(/^Upper is next · about \d+ min · Main Gym$/u);
 
     // Ben cancels the run: Saturday is Legs again.
     if (!run.ok) throw new Error('run');
@@ -442,7 +442,7 @@ describe('morning reminder with a coach plan', () => {
     await reminders.refresh();
     expect(pending.size).toBe(7);
     expect(sorted(pending)[0]).toMatchObject({ title: 'Today: Legs' });
-    expect(sorted(pending)[0]?.body).toMatch(/^Day 3 of 4 · /u);
+    expect(sorted(pending)[0]?.body).toMatch(/^about \d+ min · /u);
   });
 });
 

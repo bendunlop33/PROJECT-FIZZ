@@ -10,7 +10,7 @@ import type { NextSessionPreview, PlanAheadRow, RoutineRow } from '../services/w
  * resolver as Today's card), plus what Up next walks through after it, only
  * where the resolver itself walks a fixed order:
  *
- * - a plan day (`Day 2 of 4`): the plan's adaptive rule run forward
+ * - a plan day: the plan's adaptive rule run forward
  *   (`next.planAhead`: the day trained least recently, assuming each named
  *   day is done; a `Make next` pin first until its day is done), since Up
  *   next doesn't walk a plan in day order (plan-adapt, Ben 20 Oct);
@@ -56,7 +56,7 @@ export async function readUpNextForecast(services: AppServices, at: ForecastAt |
   const overview = await services.plans.overview().catch(() => null);
   const basis = next.routine?.basis ?? null;
   const legIds = next.routine === null ? new Set<string>() : await services.next.legDayIds([next.routine.id]).catch(() => new Set<string>());
-  const exact: ReminderSession = { title: next.title, planDay: basis?.kind === 'plan' ? { n: basis.dayN, of: basis.of } : null, aboutMinutes: next.aboutMinutes, ...(next.routine === null ? {} : { id: next.routine.id, legs: legIds.has(next.routine.id) }) };
+  const exact: ReminderSession = { title: next.title, aboutMinutes: next.aboutMinutes, ...(next.routine === null ? {} : { id: next.routine.id, legs: legIds.has(next.routine.id) }) };
   const paused = planPaused(overview);
   const withSlots = at === null ? {} : { slots };
   if (basis?.kind === 'plan') {
@@ -113,7 +113,7 @@ async function readPlanAhead(services: AppServices, next: NextSessionPreview, gy
   const minutes = new Map<string, number | null>();
   const session = async (d: PlanAheadRow): Promise<ReminderSession> => {
     if (!minutes.has(d.routineId)) minutes.set(d.routineId, await minutesOf(services, d.routineId, gymId));
-    return { id: d.routineId, title: d.name, planDay: { n: d.dayN, of: d.of }, aboutMinutes: minutes.get(d.routineId) ?? null, legs: d.legs, ...(d.pinned ? { pinned: true } : {}) };
+    return { id: d.routineId, title: d.name, aboutMinutes: minutes.get(d.routineId) ?? null, legs: d.legs, ...(d.pinned ? { pinned: true } : {}) };
   };
   const first = r.first === null ? null : await session(r.first);
   const ahead: ReminderSession[] = [];
@@ -129,7 +129,7 @@ async function readCycle(services: AppServices, next: NextSessionPreview, gymId:
     if (at < 0) return NO_CYCLE;
     const legIds = await services.next.legDayIds(rows.map((r) => r.id)).catch(() => new Set<string>());
     const sessions: ReminderSession[] = [];
-    for (const r of rows) sessions.push({ id: r.id, title: r.name, planDay: null, aboutMinutes: await minutesOf(services, r.id, gymId), legs: legIds.has(r.id) });
+    for (const r of rows) sessions.push({ id: r.id, title: r.name, aboutMinutes: await minutesOf(services, r.id, gymId), legs: legIds.has(r.id) });
     // Where the resolver's order starts: the one after the workout last done (`after`), which the run rule may have
     // passed over today (review ben-runs-20oct S1).
     // By name, so only when exactly one workout in the rotation has it.

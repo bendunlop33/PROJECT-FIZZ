@@ -87,6 +87,8 @@ export interface WeekServicesDeps {
   currentGymId?: () => Promise<string | null>;
   /** What Start would create for a workout at a gym (a dry run, saves nothing). */
   plannedDay?: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate } | null>;
+  /** (Ben, 8 Nov) Health strength workouts of their own (Progress's `healthSessions`): gym days, as Consistency counts them; absent: none. */
+  healthSessions?: () => Promise<readonly { date: string; startedMs: number }[]>;
 }
 
 /**
@@ -241,6 +243,8 @@ export function createWeekServices(deps: WeekServicesDeps) {
       .catch(() => ({ sessions: [] as HistoryWorkout[] }));
     const thisWeek = sessions.filter((a) => isInHistory(a.session));
     const gymDates = new Set(thisWeek.map((a) => localDateOf(toMs(a.session.startedAt.utc), tz)));
+    // (Ben, 8 Nov) A Health strength workout of its own is a gym day (never a plan or split day: it has no exercises).
+    for (const h of (await deps.healthSessions?.().catch(() => null)) ?? []) if (h.startedMs >= startMs && h.startedMs <= nowMs) gymDates.add(h.date);
     const plan = await planInUse(p, nowMs);
     const routines = await repos()
       .routines.listByOwner(p.id)

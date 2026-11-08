@@ -646,6 +646,7 @@ export function createAppServices(deps: AppServicesDeps) {
     catalogueExercises,
     currentGymId: async () => (await yourData.currentGym())?.id ?? null,
     plannedDay: (routineId, gymId) => loop.routines.planned(routineId, gymId),
+    healthSessions: () => progress.healthSessions(),
   });
 
   /** (Ben, 27 Oct; ADR 0035) Apple Health: switches, writes after Finish and edits, reads, links. Local only. */
@@ -1485,6 +1486,7 @@ export function createAppServices(deps: AppServicesDeps) {
     catalogueExercises,
     mainLiftIds: () => training.splitMainLiftIds(),
     healthSignals: () => health.signals(),
+    healthSessions: () => progress.healthSessions(),
   });
 
   /** (Redesign 27 Oct, D2/D5) Library › Plan › Changes: the coach's next-time targets and the weekly review's changes. */

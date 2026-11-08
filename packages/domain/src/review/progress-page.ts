@@ -311,6 +311,12 @@ export function thisWeekView(input: WeeklyReviewInput, opts: { today: string; re
     });
   } else {
     sessions.slice(0, 7).forEach((s) => chips.push(doneChip(s.sessionId, s.name ?? 'Workout', s)));
+    // (Ben, 8 Nov) A Health strength workout of its own is counted (`reviewWeekCount`): a done chip, nothing to open.
+    for (const h of (input.healthSessions ?? []).filter((x) => inWeek(x.date, monday) && x.startedMs <= input.nowMs)) {
+      if (chips.length >= 7) break;
+      const d = weekdayIndexOfDate(h.date);
+      chips.push({ key: `health:${String(h.startedMs)}`, name: h.name, line: DAY[d] ?? '', state: 'done', sessionId: null, accessibilityLabel: `${h.name}, done ${DAY_LONG[d] ?? ''}` });
+    }
     if (c.count.planned !== null) for (let i = c.count.done; i < Math.min(7, c.count.planned); i += 1) chips.push(openChip(`aim${String(i)}`, 'Workout', complete ? 'missed' : 'upcoming'));
   }
   const fullyPaused = c.plan !== null && c.count.planned === null;
