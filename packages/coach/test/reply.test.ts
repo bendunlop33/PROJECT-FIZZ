@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActionRecord } from '@fizz/schemas';
 import type { TurnLedger } from '../src/claims';
-import { createReplyFilter, needsNoChangeLine, needsStructuralNoChangeLine, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem } from '../src/reply';
+import { createReplyFilter, LEANS_ON_HIDDEN_DETAIL, needsNoChangeLine, needsStructuralNoChangeLine, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem } from '../src/reply';
 import { splitSentences } from '../src/sentences';
 import { resolveActionTokens } from '../src/tokens';
 import { chunked, ScriptedCoachModel } from './fake-model';
@@ -69,9 +69,13 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
   it('check 2: a phantom change is never shown; the note says nothing changed', async () => {
     const model = new ScriptedCoachModel([[...chunked('Done, I’ve lowered sets 3–4 to 95 kg. That should keep you at 8.'), { type: 'completed' }]]);
     const { shown, hidden, note } = await play(model, {});
-    expect(texts(shown)).toEqual(['That should keep you at 8.']);
-    expect(hidden).toEqual([{ sentence: 'Done, I’ve lowered sets 3–4 to 95 kg.', reason: 'no_action', detail: 'No change was saved in this reply.' }]);
-    expect(note).toEqual({ text: 'Nothing changed · 1 line hidden', spoken: 'Nothing changed.' });
+    // (7 Nov, build 552) The sentence that leans on the hidden one goes with it: never half an argument.
+    expect(texts(shown)).toEqual([]);
+    expect(hidden).toEqual([
+      { sentence: 'Done, I’ve lowered sets 3–4 to 95 kg.', reason: 'no_action', detail: 'No change was saved in this reply.' },
+      { sentence: 'That should keep you at 8.', reason: 'no_action', detail: LEANS_ON_HIDDEN_DETAIL },
+    ]);
+    expect(note).toEqual({ text: 'Nothing changed · 2 lines hidden', spoken: 'Nothing changed.' });
     const stored = toHiddenLines('turn-1', hidden, '2026-10-10T17:21:00.000Z');
     expect(stored[0]).toMatchObject({ turnId: 'turn-1', reason: 'no_action' });
   });

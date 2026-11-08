@@ -104,7 +104,8 @@ export type BuilderEditOpKind = BuilderEditOp['op'];
 
 /** Most edits in one proposal or suggestion. */
 export const BUILDER_COACH_LIMITS = {
-  maxOps: 8,
+  /** (Ben, 8 Nov: "give me the workout best for the situation") 16: a whole reshape of today's workout (swaps, adds, removes, sets, a length) fits one proposal. */
+  maxOps: 16,
   maxSuggestionOps: 4,
   maxSuggestions: 4,
   maxNotes: 4,

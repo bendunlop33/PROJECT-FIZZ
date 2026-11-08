@@ -259,6 +259,14 @@ export function claimsChangeFailed(sentence: string): boolean {
 /** `Why?` → `Not shown` for a sentence promising or claiming a workout in the app when none was built (review r3 B1). */
 export const NO_DRAFT_BUILT_DETAIL = 'No workout was built.';
 
+/** `Why?` → `Not shown` for a sentence that only made sense after a hidden one (7 Nov). */
+export const LEANS_ON_HIDDEN_DETAIL = 'It followed on from a hidden line.';
+
+/** Opens by pointing back at the sentence before it ("That gives…", "So…", "Which means…", "It also…"). Pure. */
+export function leansOnPrevious(sentence: string): boolean {
+  return /^\W*(?:that|this|these|those|it|it's|its|which|so|and|but|also|plus|both|together|either way|that way|this way)\b/i.test(sentence.trim().replace(/[‘’]/g, "'"));
+}
+
 export type NoChangeLineMode = 'structural' | 'topic' | 'off';
 
 export interface ReplyFilterOptions {
@@ -339,10 +347,25 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
   let weekAskShown = false;
   const todayKinds = new Set(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout']);
 
+  // (Ben, 7 Nov, build 552: "The draft-edit request didn't go through. That gives back more attention…") A sentence that
+  // leans on the one before it is hidden with it: half an argument is never shown. A true restatement of a saved change
+  // (its card is shown) leaves nothing missing, so what follows it stays.
+  let lastWasHidden = false;
   const process = (sentence: string): ReplyItem[] => {
+    const before = hidden.length;
+    const out = processOne(sentence);
+    lastWasHidden = hidden.length > before && !out.some((o) => o.kind === 'sentence');
+    return out;
+  };
+  const processOne = (sentence: string): ReplyItem[] => {
     const ledger = options.ledger();
     said.push(sentence);
     const tokens = resolveActionTokens(sentence, ledger, options.surface);
+    const previous = hidden[hidden.length - 1];
+    if (lastWasHidden && previous !== undefined && previous.detail !== CARD_ONLY_DETAIL && tokens.unknownRefs.length === 0 && leansOnPrevious(tokens.plainText)) {
+      hidden.push({ sentence: tokens.plainText, reason: previous.reason, detail: LEANS_ON_HIDDEN_DETAIL });
+      return tokens.segments.flatMap((a) => (a.kind === 'action' ? [{ kind: 'action_line' as const, ref: a.ref, actionId: a.actionId, rendered: a.rendered }] : []));
+    }
     for (const ref of tokens.unknownRefs) {
       hidden.push({ sentence, reason: 'unknown_token', detail: `It cited a change (${ref}) that wasn't saved.` });
     }

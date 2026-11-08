@@ -288,12 +288,18 @@ export const ProposeWeekArgsSchema = z.strictObject({
 });
 export type ProposeWeekArgs = z.infer<typeof ProposeWeekArgsSchema>;
 
+/** Most characters of a draft edit's `change` (a few clauses: add, trim, keep, a length). */
+export const DRAFT_EDIT_CHANGE_MAX = 600;
+
 /**
  * ADR 0039: a change to the Your workout draft in context, from any chat. Ben's own words this turn are the request
  * (the builder's edit coach reads them, so a weight he named is his); `reason` is the coach's one line. Always a
  * proposal he applies or skips.
+ * (Ben, 7 Nov, build 552: "U shud send this") `change`: the change in full when his words only agree to one the coach
+ * described ("do it", "make the change"); the builder's edit coach reads it beside his words, but only his words count
+ * as weights he named. Null (or absent, on calls made before it) when his words say it all.
  */
-export const ProposeDraftEditArgsSchema = z.strictObject({ reason });
+export const ProposeDraftEditArgsSchema = z.strictObject({ change: z.string().max(DRAFT_EDIT_CHANGE_MAX).nullish(), reason });
 export type ProposeDraftEditArgs = z.infer<typeof ProposeDraftEditArgsSchema>;
 
 /**
@@ -664,6 +670,18 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
    * No set changes. The workout's own `set_main_lift` step; every week is `propose_plan_day_edit` with `main: true`.
    */
   z.strictObject({ op: z.literal('main'), sessionExerciseId: IdSchema }),
+  /**
+   * (Ben, 8 Nov, live Pull B: "not much of a warm up", "why haven't u added a 80 too") The exercise's warm-ups today:
+   * each load (the row's unit and convention) and reps, placed in the warm-up block by load, above the working sets.
+   * Loads are rounded down to the row's item and kept under its first working load. `replace`: its pending warm-ups not
+   * listed go (done ones always stay, rule 2); false: these are added to them. A load already there isn't added twice.
+   */
+  z.strictObject({
+    op: z.literal('warmups'),
+    sessionExerciseId: IdSchema,
+    sets: z.array(z.strictObject({ load: z.number().min(0).max(2000), reps: z.int().min(1).max(30) })).min(1).max(6),
+    replace: z.boolean(),
+  }),
 ]);
 export type EditTodayOp = z.infer<typeof EditTodayOpSchema>;
 

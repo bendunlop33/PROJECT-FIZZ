@@ -502,7 +502,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
      * Your workout's bar (§2.6): a proposal with code-made before/after lines, Apply / Skip.
      * Offline or not connected: `unavailable` (the bar shows the word and is disabled).
      */
-    async askEdit(req: { draftId: string; words: string; opId: string; signal?: AbortSignal; /** Ben's Retry (or "again"): tried even inside the offline hold. */ retry?: boolean }): Promise<EditAsk> {
+    async askEdit(req: { draftId: string; words: string; /** (7 Nov) The change Ben agreed to, in the main coach's words; never a source of his named weights. */ change?: string | null; opId: string; signal?: AbortSignal; /** Ben's Retry (or "again"): tried even inside the offline hold. */ retry?: boolean }): Promise<EditAsk> {
       const r = await reach({ retry: req.retry === true });
       if (r.reach !== 'ok' || r.models === null) return { kind: 'unavailable', status: r.reach === 'ok' ? 'not_connected' : r.reach };
       const world = await deps.source.world(req.draftId);
@@ -512,7 +512,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const days = await lastDaysNow();
       const extras = days === null ? world.extras : { ...world.extras, lastDays: days };
       // (Ben, 28 Oct) It may read his history first (a day in full, an exercise's sets or records), then proposes.
-      const { answer, reads } = await callWithReads(buildEditRequest(view, extras, req.words, builderModelFor('edit', r.models)), BUILDER_COACH_TOOL.proposeWorkoutEdit, { words: req.words, opId: req.opId }, req.signal);
+      const { answer, reads } = await callWithReads(buildEditRequest(view, extras, req.words, builderModelFor('edit', r.models), req.change ?? null), BUILDER_COACH_TOOL.proposeWorkoutEdit, { words: req.words, opId: req.opId }, req.signal);
       if (!answer.ok) return { kind: 'unavailable', status: failedReach(answer), ...(answer.error === 'timeout' ? { timeout: true as const } : {}) };
       // What it saw and read may be quoted back, each number with its exercise (the claim check, rule 6).
       const base: ClaimBase = { ...claimBase(world, req.words), extra: [...lastDaysClaimExtras(extras.lastDays), ...readClaimExtras(reads)] };

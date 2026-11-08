@@ -336,3 +336,13 @@ should know when there are leg days. it just needs the ability to add it". This 
    set, so it never enters D17's 10-minute warm-up-set budget.
 
 Not yet run on Ben's iPhone.
+
+## Amendment (8 Nov 2026, Ben's build 552 reports; for Ben's approval)
+
+`propose_workout_edit` gains `change` (nullable): when Ben's words only agree to a change the coach described ("do
+it", "make the change"), the coach passes that change and the builder's edit coach reads it after his words, labelled
+as the coach's wording. This loosens "the model passes no request text": without it, "U shud send this" could never
+carry the change. Kept: weights Ben named come only from his words (`namedWeights` on his words alone), and the result
+is always a proposal with Apply / Skip, so the coach's wording can't apply anything. With today's draft in context and
+no coach build in play, a forced workout ask ("give me the best workout for today") goes to this tool, not
+`propose_workout`, so the answer replaces today's draft in one card with Undo.

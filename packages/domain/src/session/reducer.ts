@@ -2910,10 +2910,12 @@ function atVersion(step: CommandOf<'coach_edit_today'>['steps'][number], version
     case 'link_superset':
     case 'split_superset':
     case 'set_main_lift':
+    case 'add_warmup':
       return { ...step, at, expectedVersion: version };
     case 'add_exercise':
     case 'skip_exercise':
     case 'edit_planned_set':
+    case 'delete_set':
       return { ...step, at };
   }
 }

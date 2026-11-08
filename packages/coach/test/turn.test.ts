@@ -92,13 +92,14 @@ describe('runCoachTurn: structured replies (PM decision 10 Oct)', () => {
     const s = await store();
     const model = new ScriptedCoachModel([reply('Done, I’ve lowered sets 3–4 to 95 kg. That should keep you at 8.')]);
     const r = await runCoachTurn(request({ input: words('How did bench go?') }), ports(s, model, storeExecutors(s)));
-    expect(sentences(r)).toEqual(['That should keep you at 8.']);
+    // (7 Nov, build 552) "That should…" leaned on the hidden sentence, so it goes too.
+    expect(sentences(r)).toEqual([]);
     expect(r.cards).toEqual([]);
-    expect(r.note).toBe('Nothing changed · 1 line hidden');
-    expect(r.hiddenLines).toMatchObject([{ sentence: 'Done, I’ve lowered sets 3–4 to 95 kg.', reason: 'no_action' }]);
+    expect(r.note).toBe('Nothing changed · 2 lines hidden');
+    expect(r.hiddenLines).toMatchObject([{ sentence: 'Done, I’ve lowered sets 3–4 to 95 kg.', reason: 'no_action' }, { sentence: 'That should keep you at 8.', reason: 'no_action' }]);
     const msgs = await s.repos.coach.listMessages(r.threadId);
     expect(msgs.map((m) => m.body.role)).toEqual(['ben', 'coach']);
-    expect(msgs[1]?.body).toMatchObject({ role: 'coach', hiddenLines: [{ reason: 'no_action' }], complete: true });
+    expect(msgs[1]?.body).toMatchObject({ role: 'coach', hiddenLines: [{ reason: 'no_action' }, { reason: 'no_action' }], complete: true });
   });
 
   it('a saved memory is a card from the record; the model restating it in words is dropped', async () => {

@@ -14,7 +14,9 @@ import { newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolRe
  * - `fill_setup`: today's Set up filled from Ben's words (a day, a length, a main lift), as Today's bar used to; Undo
  *   is on Set up. Nothing runs without his words.
  *
- * The model passes no request text: Ben's own words are the request, so a number it made up is never taken as his.
+ * Ben's own words are the request. (Ben, 7 Nov, build 552) When they only agree to a change the coach described ("do
+ * it", "make the change"), the coach passes that change as `change`; the edit coach reads it as the coach's wording,
+ * and a weight in it is never taken as one Ben named. It is still only a proposal he applies or skips.
  */
 
 export type DraftEditOutcome =
@@ -29,7 +31,8 @@ export interface DraftToolDeps {
   store: CoachWriteStore;
   /** The Your workout draft in context (not started). Null: `propose_workout_edit` isn't wired. */
   draft: { draftId: string; name: string } | null;
-  edit?: (req: { draftId: string; words: string; opId: string }) => Promise<DraftEditOutcome>;
+  /** `change`: the change in full when Ben's words only agree to one the coach described (else null). */
+  edit?: (req: { draftId: string; words: string; change: string | null; opId: string }) => Promise<DraftEditOutcome>;
   /** Absent: `fill_setup` isn't wired. */
   fillSetup?: (req: { words: string; opId: string }) => Promise<SetupFillOutcome>;
 }
@@ -52,7 +55,8 @@ export function createDraftToolExecutors(deps: DraftToolDeps): CoachExecutors {
       if (call.tool !== 'propose_workout_edit') throw new TypeError(call.tool);
       const words = ctx.benWords?.trim() ?? '';
       if (words === '') return { kind: 'refused', line: NEEDS_BEN_WORDS_LINE };
-      const made = await edit({ draftId: draft.draftId, words, opId: ctx.opId }).catch((): DraftEditOutcome => ({ kind: 'unavailable' }));
+      const change = call.args.change?.trim() ?? '';
+      const made = await edit({ draftId: draft.draftId, words, change: change === '' ? null : change, opId: ctx.opId }).catch((): DraftEditOutcome => ({ kind: 'unavailable' }));
       switch (made.kind) {
         case 'proposal': {
           const p = made.proposal;

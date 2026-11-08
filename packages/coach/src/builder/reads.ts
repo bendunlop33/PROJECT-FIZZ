@@ -90,7 +90,7 @@ export async function requestBuilderToolWithReads<K extends BuilderCoachToolName
     input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
     const parsed = parseToolCall(reads.context.turnId, out.name, out.arguments, registry);
     if (!parsed.ok) {
-      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: parsed.error, line: parsed.line }) });
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: parsed.error, line: parsed.line, ...(parsed.error === 'invalid_args' ? { issues: parsed.issues.slice(0, 8) } : {}) }) });
       continue;
     }
     const exec = reads.executors[parsed.call.tool];

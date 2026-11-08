@@ -499,7 +499,8 @@ export function todayAskVerdict(tool: string, gate: Pick<TurnGate, 'benRequest' 
 function setsOnlyOf(call: { tool: string; args: unknown }): boolean | undefined {
   if (call.tool !== 'edit_today') return undefined;
   const ops = (call.args as { ops?: readonly { op: string }[] }).ops ?? [];
-  return ops.every((o) => o.op === 'set' || o.op === 'set_count');
+  // (Ben, 8 Nov) Warm-ups today are sets too.
+  return ops.every((o) => o.op === 'set' || o.op === 'set_count' || o.op === 'warmups');
 }
 
 /** The model's ask claim on a today-tool call (absent on calls that don't carry one). */
@@ -607,7 +608,7 @@ export const COACH_INSTRUCTIONS = [
   // delete-workouts §4, DW33: there is no delete tool; the decline is the spec's line.
   'You cannot delete workouts or sets. If Ben asks you to, reply only: "Delete workouts from History."',
   // 21 Oct (Ben's Build B report): the coach said "The adjustment didn't go through" with no tool result.
-  'Never say a change failed, was rejected, didn’t go through or that the app is blocking it unless a tool result in this turn says so. If an earlier request was not answered, act on it now.',
+  'Never say a change failed, was rejected, didn’t go through or that the app is blocking it unless a tool result in this turn says so; then say it in one sentence with the reason, and "Nothing changed." If an earlier request was not answered, act on it now. A "yes" or "do it" after you described a change makes that change now; never ask again.',
   SOLUTION_FIRST_LINE,
   // (Ben, 2 Nov) Say what the tools can't do once, up front; a partial proposal says it is partial.
   PARTIAL_ASK_LINE,
@@ -619,9 +620,14 @@ export const COACH_INSTRUCTIONS = [
 export const WEEK_TOOL_LINE =
   'This week is in YOUR DATA week (remaining: the days left, in order; done: the days done). When Ben asks to rest today, skip, merge or spread out this week’s days ("make today a rest day and don’t cram the rest of the week"), call propose_week in this turn with benAsked true: it applies at once with Undo. As your own idea, benAsked false: he sees a proposal to apply.';
 
+/** (Ben, 7 Nov, build 552) Fed back with the issues the first time a tool's arguments can't be read. */
+export const INVALID_ARGS_RETRY_LINE = 'Fix these issues and call it once more now.';
+/** Fed back the second time: no more tries; the reply says so in one line. */
+export const INVALID_ARGS_FINAL_LINE = 'Not run. Don’t call it again this turn; reply in one sentence what couldn’t be changed and why, then "Nothing changed."';
+
 /** ADR 0039: sent when `propose_workout_edit` is offered (a Your workout draft in context, not started). */
 export const DRAFT_EDIT_LINE =
-  'YOUR DATA builderDraft is his workout for today, not started yet. For any change to it he asks for, call propose_workout_edit in this turn (the app makes the change from his words and he applies or skips it). edit_today is only for a live workout.';
+  'YOUR DATA builderDraft is his workout for today, not started yet. For any change to it he asks for, call propose_workout_edit in this turn (he applies or skips it). When he agrees to a change you described ("do it", "send it", "make the change"), call it now with that change in full as `change`; never ask him to type it. For the best workout for today, a whole reshape, put it in `change` in one call (exercises in order, sets, length), not propose_workout. edit_today is only for a live workout.';
 
 /** ADR 0039: sent when `fill_setup` is offered (no live workout). */
 export const FILL_SETUP_LINE = 'When Ben names today’s workout by a day, a length or a main lift ("legs, 45 min"), call fill_setup: Set up is filled from his words and he opens it to build.';
@@ -654,7 +660,7 @@ export function liveWorkoutInstructions(addOffered: boolean): string {
     'On each of these calls say whether Ben asked for it: benAsked true when his message this turn asks for the change or answers your question about it ("Working set"), with benQuote his words; benAsked false when it is your own idea (he then sees an offer).',
     'Too easy or Too hard with no set named is about his last logged working set (workout.lastWorkingSet); a warm-up never counts. Change that exercise’s remaining sets; never ask him which set it was. After warm-ups only, offer instead.',
     // 21 Oct (Ben's Build B report): advice instead of the change he asked for, three turns running.
-    'When Ben asks to change today’s sets, or says a load is too light or too heavy ("too light", "fix them", "make the warm-ups heavier"), call edit_today in this turn with the change. Do not answer with advice alone.',
+    'When Ben asks to change today’s sets, or points out a problem with them ("too light", "not much of a warm-up", "fix them"), that is the request: call edit_today in this turn with the change (warm-ups: the warmups op). Do not answer with advice alone or ask "want me to?".',
     'recentLifts in YOUR DATA has his last sessions of the exercises in play (date, load × reps @RPE, unit and convention as logged); use it for loads. For any other exercise, read get_recent_training. History imported from FitNotes is his own training and a valid basis.',
     LIVE_LOAD_CHOICE_LINE,
     LIVE_TARGET_CORRECTION_LINES,
@@ -864,6 +870,9 @@ export const SKIPPED_LINE = 'Ben skipped your question: build now with the defau
 export const ANSWERED_LINE = 'Ben’s message answers your question: build the workout now (or, only if still needed, ask one more).';
 
 /** Fed back when a build turn's first answer was text (build 131). Never shown to Ben. */
+/** (Ben, 8 Nov) The same, when the workout he asked for reshapes today's Your workout. Never shown to Ben. */
+export const DRAFT_BUILD_NUDGE_LINE = 'Not shown. Ben asked for a workout for today: call propose_workout_edit now with the whole workout in `change`. Do not write it in reply.';
+
 export const BUILD_NUDGE_LINE = 'Not shown. Ben asked for a workout in the app: call propose_workout now with the session (from his words, or the one you described earlier in this thread). Do not write the workout in reply.';
 
 /** Fed back when a plan turn's first answer was text (19 Oct). Never shown to Ben. */
@@ -1077,7 +1086,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const targetedPlan = settingAsked || (req.planInUse === true && planToolsHere && words !== null && !asksPlanRebuild(words));
   const forcedPlan = planOffered && words !== null && askedPlan && !targetedPlan && buildPainMention(words) === 'none' && !multiWeekBlock(words);
   const forced = forcedPlan || (buildOffered && words !== null && forcesBuild(words, { draftInContext: req.draftInContext === true }));
-  const forcedTool = forcedPlan ? 'propose_plan' : 'propose_workout';
+  // (Ben, 8 Nov: "give me the workout best for the situation") With today's Your workout in context (not started) and no
+  // coach build in play, a workout ask reshapes that draft: one Apply / Skip card that replaces it, with Undo.
+  const draftReshape = forced && !forcedPlan && req.builderDraft === true && req.draftInContext !== true && registry.tools.some((t) => t.name === 'propose_workout_edit');
+  const forcedTool = forcedPlan ? 'propose_plan' : draftReshape ? 'propose_workout_edit' : 'propose_workout';
   const benBuildWords = words !== null && (requestHas(classifyBenRequest(words, 'general'), 'build') || (req.draftInContext === true && revisesDraft(words)));
   const painWords = mention !== 'none';
   const clearFollowUp = followUp?.strength === 'clear' && !painWords;
@@ -1121,7 +1133,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const baseInstructions = todayOffered ? `${COACH_INSTRUCTIONS}\n${liveWorkoutInstructions(addOffered)}` : COACH_INSTRUCTIONS;
   const questionOffered = registry.tools.some((t) => t.name === 'ask_build_question');
   const questionLines = [...(questionOffered ? [QUESTION_RULES] : []), ...(chain?.skipped === true ? [SKIPPED_LINE] : chain?.open !== null && chain?.open !== undefined ? [ANSWERED_LINE] : [])];
-  const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
+  const withBuild = buildOffered || planOffered ? [...(buildOffered && !draftReshape ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
   const findLine = (registry.tools.some((t) => t.name === 'update_warmup_prefs') ? `\n${WARMUP_PREFS_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'update_rest_settings') ? `\n${REST_SETTINGS_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'set_exercise_preference') ? `\n${EXERCISE_PREF_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_rebalance') ? `\n${REBALANCE_TOOL_LINE}` : '') + (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
@@ -1145,6 +1157,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const logged = difficultyChip && req.context.session !== null ? lastLoggedSets(req.context.session, tappedRow) : null;
   const difficultyTapWithoutWork = logged !== null && logged.lastLogged !== null && logged.lastWorkingSet === null;
   const callCtx: ToolCallContext = { ownerId: req.ownerId, turnId: req.turnId, opId: '', now: startedAt, benWords: words, messagePain, intent: gate.intent };
+  /** Calls per tool this turn whose arguments couldn't be read (one corrected try each). */
+  const unreadCalls = new Map<string, number>();
 
   let message: string | null = null;
   let offer: CoachOfferKind | null = null;
@@ -1430,7 +1444,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       heldReply = out.arguments;
       logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: forced ? 'Answer in text; asked to build.' : NUDGE_CHANGE_LINE, actionId: null });
       input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
-      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: forcedPlan ? PLAN_NUDGE_LINE : forced ? BUILD_NUDGE_LINE : LIVE_CHANGE_NUDGE_LINE }) });
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: forcedPlan ? PLAN_NUDGE_LINE : draftReshape ? DRAFT_BUILD_NUDGE_LINE : forced ? BUILD_NUDGE_LINE : LIVE_CHANGE_NUDGE_LINE }) });
       continue;
     }
     // (Ben, 31 Oct) A plan ask answered without a plan card: held once, and the coach asked for the plan proposal (or the
@@ -1443,7 +1457,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: PLAN_PART_NUDGE_LINE }) });
       continue;
     }
-    if (forced ? out.name === 'propose_workout' || out.name === 'propose_plan' : out.name === 'edit_today') buildTried = true;
+    if (forced ? out.name === 'propose_workout' || out.name === 'propose_plan' || (draftReshape && out.name === 'propose_workout_edit') : out.name === 'edit_today') buildTried = true;
     if (out.name === COACH_REPLY_TOOL_NAME) {
       const parsed = parseReply(out.arguments, req.kind);
       if (solutionHeld !== null) {
@@ -1481,10 +1495,19 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       break;
     }
     input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
+    // (Ben, 7 Nov, build 552) A call the app couldn't read gets its issues back and one corrected try this turn.
+    const badBefore = unreadCalls.get(out.name) ?? 0;
+    if (badBefore >= 2) {
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_allowed', line: INVALID_ARGS_FINAL_LINE }) });
+      continue;
+    }
     const parsed = parseToolCall(req.turnId, out.name, out.arguments, registry);
     if (!parsed.ok) {
       logLine({ tool: out.name, outcome: parsed.error, text: parsed.line, actionId: null });
-      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: parsed.error, line: parsed.line }) });
+      const fixable = parsed.error === 'invalid_args' && parsed.fixable;
+      if (fixable) unreadCalls.set(out.name, badBefore + 1);
+      const retry = fixable ? { issues: parsed.issues.slice(0, 8).map((i) => i.slice(0, 200)), next: badBefore === 0 ? INVALID_ARGS_RETRY_LINE : INVALID_ARGS_FINAL_LINE } : {};
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: parsed.error, line: parsed.line, ...retry }) });
       continue;
     }
     if (todayScopeRefused(parsed.call.tool, words)) {
