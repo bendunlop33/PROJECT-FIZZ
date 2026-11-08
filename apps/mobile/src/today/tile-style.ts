@@ -47,8 +47,12 @@ export function tileStyle(tile: Pick<WeekTile, 'state' | 'today' | 'past'>, them
   return { backgroundColor: bg, borderWidth: 0, borderColor: 'transparent', dateColor: tile.past || tile.state === 'done' ? 'text.secondary' : 'text.primary' };
 }
 
-/** A mark's drawing: a filled dot, or a ring (1.5 pt) in its colour. */
-export function markStyle(mark: WeekTileMark, theme: Pick<ResolvedTheme, 'scheme'>): { backgroundColor: string; borderWidth: number; borderColor: string } {
+/** (Ben, 8 Nov) A missed plan day's mark: grey and dashed, so it reads apart from a planned ring without colour. */
+export const MISSED_MARK_COLOUR = { dark: '#8E8E93', light: '#8E8E93' } as const;
+
+/** A mark's drawing: a filled dot, a ring (1.5 pt) in its colour, or a grey dashed ring for a missed plan day. */
+export function markStyle(mark: WeekTileMark, theme: Pick<ResolvedTheme, 'scheme'>): { backgroundColor: string; borderWidth: number; borderColor: string; borderStyle?: 'dashed' } {
+  if (mark.shape === 'missed') return { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: MISSED_MARK_COLOUR[theme.scheme], borderStyle: 'dashed' };
   const c = markColour(mark, theme);
   return mark.shape === 'dot' ? { backgroundColor: c, borderWidth: 0, borderColor: c } : { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: c };
 }

@@ -464,6 +464,64 @@ export function DoneCard({ title, rows, onSummary }: { title: string; rows: read
   );
 }
 
+/**
+ * (Ben, 8 Nov: MS2) `2 days behind · Adjust today?` above Today's card, with ✕ (gone for the day). Minimal copy; the
+ * status alone when there's nothing to adjust (MS6).
+ */
+export function BehindRow({ row, onAdjust, onDismiss }: { row: { text: string; adjust: string | null; accessibilityLabel: string }; onAdjust: () => void; onDismiss: () => void }) {
+  const theme = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: 36 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={row.accessibilityLabel} disabled={row.adjust === null} onPress={onAdjust} style={({ pressed }) => ({ flex: 1, minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], opacity: pressed ? 0.7 : 1 })}>
+        <AppText variant="callout" color="text.secondary" numeric style={CARD_TEXT.small}>
+          {row.text}
+        </AppText>
+        {row.adjust === null ? null : (
+          <AppText variant="callout" color="accent" style={CARD_TEXT.small}>
+            {`· ${row.adjust}`}
+          </AppText>
+        )}
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Dismiss for today" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={onDismiss} style={({ pressed }) => ({ minHeight: 36, minWidth: 36, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
+        <Icon name="xmark" size={14} color="text.secondary" />
+      </Pressable>
+    </View>
+  );
+}
+
+/** (Ben, 8 Nov: MS6) The built-in offer: the top day whole (`Pull A`, `13 sets · ~52 min`, `Built-in`), Apply / Skip. */
+export function BehindSheet({ offer, busy, onApply, onSkip, onClose }: { offer: { title: string; line: string; label: string } | null; busy: boolean; onApply: () => void; onSkip: () => void; onClose: () => void }) {
+  const theme = useTheme();
+  return (
+    <BottomCard
+      visible={offer !== null}
+      onClose={onClose}
+      footer={
+        offer === null ? null : (
+          <View style={{ gap: theme.space['2'] }}>
+            <PrimaryButton label={TODAY_V2_COPY.apply} disabled={busy} onPress={onApply} />
+            <SecondaryButton label={TODAY_V2_COPY.skip} disabled={busy} onPress={onSkip} />
+          </View>
+        )
+      }
+    >
+      {offer === null ? null : (
+        <View style={{ gap: theme.space['2'] }} accessible accessibilityLabel={`${offer.title}. ${offer.line}. ${offer.label}`}>
+          <AppText variant="title2" accessibilityRole="header">
+            {offer.title}
+          </AppText>
+          <AppText variant="body" numeric>
+            {offer.line}
+          </AppText>
+          <AppText variant="callout" color="text.secondary">
+            {offer.label}
+          </AppText>
+        </View>
+      )}
+    </BottomCard>
+  );
+}
+
 /** The coach's offer for today (`✦ 1 change`): its line, the before → after lines, Apply / Skip (rule 3). */
 export function OfferSheet({ visible, offer, onClose }: { visible: boolean; offer: { line: string; lines: readonly string[]; busy: boolean; onApply: () => void; onSkip: () => void } | null; onClose: () => void }) {
   const theme = useTheme();

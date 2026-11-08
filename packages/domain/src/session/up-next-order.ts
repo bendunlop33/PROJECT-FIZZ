@@ -75,9 +75,10 @@ export interface WeekSlotDay<K> {
  * it. Done days: the weekday they were done. Then:
  * - **What he did** (implicit swap, this week only, never stored): a plan day done on a weekday scheduled for another
  *   day still to do is a swap; that day takes the done day's own slot if it is still ahead and free, else the next
- *   free day (no plan day on it, nothing done) from the planning day to Sunday, else none (null: genuinely missed).
+ *   free plan weekday (a plan day scheduled on it, none still to do there, nothing done) from the planning day to
+ *   Sunday, else none (null: it doesn't fit this week). (Ben, 8 Nov) Never a rest day: only Ben moves a day there.
  * - **Up next** (`upNext`, absent for the ties): it is the day on the planning day (`upNextPlanningWeekday`). The day
- *   that held that slot takes Up next's slot if it is ahead, else the next free day, else none. A planning day with
+ *   that held that slot takes Up next's slot if it is ahead, else the next free plan weekday, else none. A planning day with
  *   no plan day on it keeps its rest day unless Up next's own day has passed. A day still on the date Ben moved it to
  *   (on or after the planning day) is his choice: Up next never moves it, and is never moved off its own.
  * Skipped days and days with no weekday are left as they are. Plan order breaks every tie. Pure.
@@ -89,8 +90,11 @@ export function setDaysWeekSlots<K>(input: { days: readonly WeekSlotDay<K>[]; pl
   const open = (d: WeekSlotDay<K>) => d.doneOn === null && d.skipped !== true;
   const holderOf = (wd: number, except: K) => input.days.find((d) => d.key !== except && open(d) && slot.get(d.key) === wd);
   const free = (wd: number, except: K) => !doneDays.has(wd) && holderOf(wd, except) === undefined;
+  // (Ben, 8 Nov, MS1 flag 1) A displaced day only goes to another plan weekday (one a plan day is scheduled on this
+  // week, Ben's moves included), never onto a rest day: there it doesn't fit, so the tiles agree with `weekBehind`.
+  const planWeekdays = new Set(input.days.flatMap((d) => (d.weekday === null ? [] : [d.weekday])));
   const nextFree = (except: K): number | null => {
-    for (let wd = Math.max(0, p); wd <= 6; wd += 1) if (free(wd, except)) return wd;
+    for (let wd = Math.max(0, p); wd <= 6; wd += 1) if (planWeekdays.has(wd) && free(wd, except)) return wd;
     return null;
   };
   const rehome = (d: WeekSlotDay<K>, preferred: number | null) => {
