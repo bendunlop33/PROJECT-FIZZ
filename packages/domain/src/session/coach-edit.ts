@@ -596,10 +596,12 @@ function planOnce(input: CoachEditInput): CoachEditPlan {
 
   // 9. (Ben, 8 Nov, coach parity) The workout's own manual controls: a set out, a set's type, rest or time, the sets'
   // order, a note, `+ Weight`. Built on the workout as the steps above leave it, so versions and new sets line up.
+  // `+ Weight` first: it moves the sets' versions, so the others are built after it (each its own Undo, rule 5).
   const parity = ops.filter(isParityOp);
-  if (parity.length > 0) {
+  for (const group of [parity.filter((op) => op.op === 'load_mode'), parity.filter((op) => op.op !== 'load_mode')]) {
+    if (group.length === 0) continue;
     const now = afterSteps(s, steps, { at: input.at, opId: input.opId, baseVersion: input.args.baseVersion, actionId: input.actionId });
-    const r = parityOpSteps(now, parity, { at: input.at, opId: input.opId, first: steps.length });
+    const r = parityOpSteps(now, group, { at: input.at, opId: input.opId, first: steps.length });
     for (const n of r.notes) skip(n);
     steps.push(...r.steps);
     lines.push(...r.lines);
