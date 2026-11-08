@@ -185,7 +185,7 @@ describe('Ben’s live Push B chat (build 500)', () => {
     // about 67,000 here. The cap is 70,000 so later growth is still caught.
     // (Ben, 8 Nov) Caught: the rules he approved that day in short form (PN1, the one-session pain hold; SF1–SF9), the
     // coach-parity `set_details` op and the one-line override rule add about 3,800: about 72,500 here. Raised to 74,000
-    // for that growth only (PM to confirm); anything more still fails.
+    // for that growth only (PM confirmed 8 Nov: growth is the rules Ben approved); anything more still fails.
     expect(requestChars(plan)).toBeLessThan(74_000);
   });
 });
