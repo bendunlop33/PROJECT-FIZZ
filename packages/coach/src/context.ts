@@ -165,7 +165,25 @@ export interface CoachContextInput {
    * activities not read for this turn.
    */
   enduranceSwitch?: EnduranceSwitch;
+  /** (Ben, 8 Nov: MS9) Behind on the plan this week, on a turn asking what to do today. Your data; numbers from logs. */
+  behind?: BehindFacts;
 }
+
+/** (Ben, 8 Nov: MS9) Behind this week: days by name, groups and sets from logs (rule 6). */
+export interface BehindFacts {
+  behindBy: number;
+  notDone: readonly string[];
+  laterThisWeek: readonly string[];
+  /** MS4's order, best first: build from the first. */
+  pickOrder: readonly string[];
+  /** The first day's groups with 0 direct sets this week and none later. */
+  uncovered: readonly string[];
+  directThisWeek: readonly string[];
+  yesterday: readonly string[];
+}
+
+/** (Ben, 8 Nov: MS3, MS5, MS7) The one instruction that comes with `behind`. */
+export const BEHIND_USE_LINE = 'Build today with propose_workout from pickOrder[0] as planned, his usual length, never two days merged. You may swap its last accessories for at most 2 exercises from other notDone days that cover uncovered groups or a main lift. Keep every uncovered group. Later days stay as they are.';
 
 /** (Q4) The linked watch workout as the coach sees it. */
 export interface LinkedActivityContext {
@@ -542,6 +560,8 @@ export interface YourData {
   lastDays?: LastDaysView;
   /** (Ben, 2 Nov) Rules 11–13 apply while `on`; `session` is what turned it on. */
   enduranceSwitch?: { on: boolean; session: EnduranceSwitchSession | null; rules: '11, 12, 13 in use' | '11, 12, 13 not in use' };
+  /** (Ben, 8 Nov: MS9) Behind this week, with its one instruction. */
+  behind?: BehindFacts & { use: string };
 }
 
 export interface CoachingKnowledge {
@@ -686,6 +706,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),
     ...(input.enduranceSwitch === undefined ? {} : { enduranceSwitch: { on: input.enduranceSwitch.on, session: input.enduranceSwitch.session === null ? null : { ...input.enduranceSwitch.session }, rules: input.enduranceSwitch.on ? ('11, 12, 13 in use' as const) : ('11, 12, 13 not in use' as const) } }),
     ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until }, ...(input.plan.inUse.days === undefined ? {} : { days: input.plan.inUse.days.map((d) => ({ name: d.name, exercises: d.exercises.map((e) => ({ ...e })) })) }), ...(input.plan.inUse.muscles === undefined ? {} : { muscles: [...input.plan.inUse.muscles] }), ...(input.plan.inUse.weeks === undefined ? {} : { weeks: input.plan.inUse.weeks }) } } }),
+    ...(input.behind === undefined ? {} : { behind: { ...JSON.parse(JSON.stringify(input.behind)) as BehindFacts, use: BEHIND_USE_LINE } }),
     ...(input.notPreferred === undefined || input.notPreferred.length === 0 ? {} : { notPreferred: input.notPreferred.map((e) => ({ catalogueId: e.catalogueId, name: e.name, use: 'never put this in his plan or a workout' as const })) }),
   };
 }
