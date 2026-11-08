@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { createHarness, dropPlannedWarmups, logWorkout, setUpGym, type Harness } from './harness';
 
 /** `Rest after` through the services: this set, or the exercise and its future default (rest-state §2.4). */
 let h: Harness;
@@ -23,7 +23,8 @@ describe('Rest after', () => {
     const pick = (await s.workout.pickerExercises(sessionId, 'pulldown'))[0];
     const added = await s.workout.addExercise({ sessionId, exerciseId: pick?.exercise.id ?? '', equipmentId: pick?.equipment[0]?.id ?? null, opId: 'add' });
     if (!added.ok) throw new Error('add');
-    const sets = added.aggregate.sets;
+    // (8 Nov) The planner's warm-ups are incidental here: the working sets' rests are under test.
+    const sets = (await dropPlannedWarmups(h, s, sessionId)).sets.filter((x) => x.status !== 'deleted').sort((a, b) => a.index - b.index);
     expect(sets.map((x) => x.rest.seconds)).toEqual([90, 90]);
     // Log the first set: a 90 s rest starts.
     const first = sets[0];
@@ -35,7 +36,7 @@ describe('Rest after', () => {
     expect(r).toMatchObject({ ok: true, defaultSaved: true });
     if (!r.ok) throw new Error('rest');
     expect(r.aggregate.restTimer?.deadlineUtc).toBe(deadline);
-    expect(r.aggregate.sets.map((x) => x.rest.seconds)).toEqual([90, 120]);
+    expect(r.aggregate.sets.filter((x) => x.status !== 'deleted').sort((a, b) => a.index - b.index).map((x) => x.rest.seconds)).toEqual([90, 120]);
     expect((await s.yourData.profile())?.exerciseRestS).toEqual({ [pick?.exercise.id ?? '']: 120 });
 
     // Next workout: the exercise starts with Ben's default.

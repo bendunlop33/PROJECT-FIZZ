@@ -32,7 +32,8 @@ async function logOneBench(s: Awaited<ReturnType<typeof setUp>>['s'], gymId: str
   const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: h.ids() });
   if (!added.ok) throw new Error(added.error.message);
   const ex = added.aggregate.exercises.at(-1);
-  const set = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.id).sort((a, b) => a.index - b.index)[0];
+  // (8 Nov) The first working set: the planner's warm-ups come first now (and never count as records).
+  const set = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.id && x.setType !== 'warmup').sort((a, b) => a.index - b.index)[0];
   if (!ex || !set) throw new Error('no set');
   h.clockMs += 60_000;
   const cmd = { type: 'log_set' as const, at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: { value: load, unit: ex.unit, convention: ex.loadConvention }, reps: 5, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() };
@@ -84,7 +85,7 @@ describe('setRecord', () => {
     if (!ex) throw new Error('no exercise');
     const more = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: h.ids(), sessionExerciseId: ex.id, newSetId: h.ids(), setType: null });
     if (!more.ok) throw new Error(more.error.message);
-    const sets = more.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
+    const sets = more.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.setType !== 'warmup').sort((a, b) => a.index - b.index);
     const [first, second] = sets;
     if (!first || !second) throw new Error('no sets');
 

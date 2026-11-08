@@ -117,7 +117,7 @@ function warmupSet(load: PlannedSet['load'], reps: number): PlannedSet {
  * A new row's plan with its warm-ups from `joinWarmups`: any warm-ups the plan came with (the builder's, planned as if
  * the exercise were cold and alone) give way to the planner's for its place. A plan with no working set is unchanged.
  */
-export function withJoinWarmups<P extends { setType: SetType; planned: PlannedSet }>(plan: readonly P[] | null | undefined, input: JoinWarmupInput): { setType: SetType; planned: PlannedSet }[] | null {
+export function withJoinWarmups(plan: readonly { setType: SetType; planned: PlannedSet }[] | null | undefined, input: JoinWarmupInput): { setType: SetType; planned: PlannedSet }[] | null {
   if (plan === null || plan === undefined) return null;
   const working = plan.filter((p) => p.setType !== 'warmup');
   const first = working[0];

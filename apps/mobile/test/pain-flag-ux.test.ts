@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { AppServices } from '../src/services/app-services';
-import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { createHarness, dropPlannedWarmups, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * Pain flags without the coach (active-workout §2.14, exercise-library EL9,
@@ -164,8 +164,9 @@ describe('in the workout (checks 32, 51)', () => {
     const sessionId = started.aggregate.session.id;
     const bench = (await s.workout.pickerExercises(sessionId, 'bench')).find((p) => p.exercise.name === 'Bench press');
     if (!bench) throw new Error('bench');
-    const added = await s.workout.addExercise({ sessionId, exerciseId: bench.exercise.id, equipmentId: bench.equipment[0]?.id ?? null, opId: h.ids() });
-    if (!added.ok) throw new Error(added.error.message);
+    const added0 = await s.workout.addExercise({ sessionId, exerciseId: bench.exercise.id, equipmentId: bench.equipment[0]?.id ?? null, opId: h.ids() });
+    if (!added0.ok) throw new Error(added0.error.message);
+    const added = { aggregate: await dropPlannedWarmups(h, s, sessionId) };
 
     let data = await s.workout.load(sessionId);
     if (!data) throw new Error('load');
@@ -175,7 +176,7 @@ describe('in the workout (checks 32, 51)', () => {
     // The flag holds the target at the last load (no increase).
     expect(view.focus?.logLabel).toContain('100');
 
-    const sets = [...added.aggregate.sets].sort((a, b) => a.index - b.index);
+    const sets = [...added.aggregate.sets].filter((x) => x.status !== 'deleted').sort((a, b) => a.index - b.index);
     const first = sets[0];
     if (!first) throw new Error('set');
     h.clockMs += 60_000;

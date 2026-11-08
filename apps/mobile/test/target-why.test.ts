@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NBSP, type TargetExplanation } from '@fizz/domain';
 
-import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { createHarness, dropPlannedWarmups, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * `Why?` on a set target (active-workout §2.12) through the services, on
@@ -28,7 +28,9 @@ async function addBench(s: Services, gymId: string, opId = h.ids()) {
   const bench = (await s.workout.pickerExercises(sessionId, 'bench')).find((p) => p.exercise.name === 'Bench press');
   const r = await s.workout.addExercise({ sessionId, exerciseId: bench?.exercise.id ?? '', equipmentId: bench?.equipment[0]?.id ?? null, opId });
   if (!r.ok) throw new Error(r.error.message);
-  return { sessionId, aggregate: r.aggregate, bench };
+  // (8 Nov) The planner's warm-ups (kept in `added`) are incidental here: set 1 is the first working set.
+  const a = await dropPlannedWarmups(h, s, sessionId);
+  return { sessionId, aggregate: { ...a, sets: a.sets.filter((x) => x.status !== 'deleted').sort((x, y) => x.index - y.index) }, added: r.aggregate, bench };
 }
 
 describe('Why? through the services', () => {
@@ -69,8 +71,9 @@ describe('Why? through the services', () => {
     const retry = await s.workout.addExercise({ sessionId: first.sessionId, exerciseId: first.bench?.exercise.id ?? '', equipmentId: first.bench?.equipment[0]?.id ?? null, opId });
     expect(retry.ok && retry.duplicate).toBe(true);
     if (!retry.ok) return;
-    expect(retry.aggregate.sets.length).toBe(first.aggregate.sets.length);
-    expect(retry.aggregate.sets.map((x) => x.planned.provenance)).toEqual(first.aggregate.sets.map((x) => x.planned.provenance));
+    const live = retry.aggregate.sets.filter((x) => x.status !== 'deleted').sort((x, y) => x.index - y.index);
+    expect(live.length).toBe(first.aggregate.sets.length);
+    expect(live.map((x) => x.planned.provenance)).toEqual(first.aggregate.sets.map((x) => x.planned.provenance));
   });
 
   it('after the basis is corrected: says so, keeps the values the target used, and the target doesn’t change by itself (check 42)', async () => {
@@ -90,7 +93,7 @@ describe('Why? through the services', () => {
     const e = await s.workout.explainTarget(sessionId, setId);
     expect(plain(e?.basisEdited ?? '')).toBe('Based on 8 Oct, edited 11 Oct');
     expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 6, 6, 6 · RIR 2 · 8 Oct']);
-    expect((await s.workout.load(sessionId))?.aggregate.sets.map((x) => x.planned.load?.value)).toEqual([102.5, 102.5, 102.5]);
+    expect((await s.workout.load(sessionId))?.aggregate.sets.filter((x) => x.status !== 'deleted').map((x) => x.planned.load?.value)).toEqual([102.5, 102.5, 102.5]);
   });
 
   it('pain: the flag and the sets before it show; a cleared flag keeps Before flag only', async () => {

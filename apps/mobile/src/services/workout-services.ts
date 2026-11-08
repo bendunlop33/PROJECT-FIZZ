@@ -346,6 +346,13 @@ import {
   warmupPrefsCommand,
   restTodayCommand,
   warmupLookupOf,
+  withJoinWarmups,
+  pbWarmupsOf,
+  isMainLiftRow,
+  workoutMainLifts,
+  joinsAsSecondary,
+  ruleCategory,
+  type JoinWarmupContext,
   type ResolvedWarmupPrefs,
   followMainLift,
   pickedMainLift,
@@ -380,6 +387,7 @@ import type {
   RestSetting,
   RestSettings,
   SessionAggregate,
+  SessionExercise,
   SessionCheckIn,
   SessionPlanDay,
   SessionCommand,
@@ -1584,7 +1592,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return a?.session.checkIn?.kind === 'answered' ? repos().checkIns.get(a.session.checkIn.checkInId) : null;
   }
 
-  async function planFor(p: UserProfile, req: { sessionId: string; exerciseId: string; equipmentId: string | null }): Promise<{ setType: SetType; planned: PlannedSet }[] | null> {
+  async function planFor(p: UserProfile, req: { sessionId: string; exerciseId: string; equipmentId: string | null }, reads?: Awaited<ReturnType<typeof joinReads>> | null): Promise<{ setType: SetType; planned: PlannedSet }[] | null> {
     const [aggregate, exercise] = await Promise.all([repos().sessions.get(req.sessionId), repos().exercises.get(req.exerciseId)]);
     // Cardio (review B1): last time's time and distance, on any item (no load to fit); none = the add's own default.
     if (aggregate && exercise?.measurement === 'cardio') return cardioRepeatTargets(await historyFor(p.id, exercise.id), { at: ctx.now() });
@@ -1614,9 +1622,31 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       history,
       painFlags: await repos().painFlags.listActive(p.id),
       sessionPain: now.active ? now : then,
+      // (Ben, 8 Nov) Added as a secondary lift, a main barbell lift's rule reads as a compound lift's, so its reps
+      // follow his history (rows at 95 × 10 stay near 10), as a planned non-main slot's do (21 Oct), not 3–6.
+      ...(reads?.secondary(exercise.id) === true ? { accessory: true } : {}),
     });
     // Each planned set records what produced it, for `Why?` (active-workout §2.12, AW3).
     return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, workingSets), { at: ctx.now(), decision: result.decision });
+  }
+
+  /** (Ben, 8 Nov) An added exercise's plan with the warm-up planner's warm-ups for its place (`withJoinWarmups`). */
+  async function joinedPlan(p: UserProfile, req: { sessionId: string; exerciseId: string; equipmentId: string | null; supersetWithSessionExerciseId?: string }, plan: { setType: SetType; planned: PlannedSet }[] | null, aggregate: SessionAggregate | null, reads: Awaited<ReturnType<typeof joinReads>> | null): Promise<{ setType: SetType; planned: PlannedSet }[] | null> {
+    if (plan === null || aggregate === null || reads === null) return plan;
+    const exercise = await exerciseById(req.exerciseId);
+    if (exercise === null || exercise.measurement !== 'reps') return plan;
+    const equipment = req.equipmentId === null ? null : (currentGymEquipment(aggregate.session).find((e) => e.id === req.equipmentId) ?? null);
+    const convention = equipment?.loadConvention ?? exercise.defaultLoadConvention;
+    return withJoinWarmups(plan, {
+      state: aggregate,
+      exercise: { id: exercise.id, measurement: exercise.measurement, facts: exercise },
+      equipment,
+      convention,
+      unit: equipment?.unit ?? p.preferredUnit,
+      bodyweightExercise: convention === 'added' && exercise.defaultLoadConvention === 'bodyweight',
+      supersetWith: req.supersetWithSessionExerciseId ?? null,
+      ctx: reads.warmups,
+    });
   }
 
   /**
@@ -2751,6 +2781,31 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /**
+   * (Ben, 8 Nov) What an exercise joining this running workout is planned from, read once: the catalogue facts of every
+   * exercise in it and of `extraIds`, today's main lift, Ben's warm-up preferences and the plan's Warm-ups setting.
+   * `warmups` is the warm-up planner's context (`joinWarmups`); `secondary` says whether an exercise joins as a
+   * secondary lift (`joinsAsSecondary`). Local reads only; a read that fails leaves that part out (fallbacks apply).
+   */
+  async function joinReads(p: UserProfile, aggregate: SessionAggregate, extraIds: Iterable<string>): Promise<{ warmups: JoinWarmupContext; secondary: (exerciseId: string, replacing?: string | null) => boolean; main: (sessionExerciseId: string) => boolean }> {
+    const facts: Record<string, Exercise | null> = {};
+    for (const id of new Set([...aggregate.exercises.map((e) => e.exerciseId), ...extraIds])) facts[id] = await exerciseById(id).catch(() => null);
+    const [draft, training, plan] = await Promise.all([
+      draftMains(p.id, aggregate).catch(() => new Set<string>()),
+      ctx.store().repos.trainingProfiles.get(p.id).catch(() => null),
+      ctx.store().repos.planDrafts.applied(p.id).catch(() => null),
+    ]);
+    const mains = workoutMainLifts(aggregate, draft);
+    const lookup = warmupLookupOf({ aggregate, warmupFacts: facts, mainExerciseIds: mains, warmupPrefs: warmupPrefsOf(training) }) ?? {};
+    const mode = pbWarmupsOf(plan);
+    const mainBarbell = (row: SessionExercise): boolean => ruleCategory(facts[row.exerciseId] ?? null, equipmentOfRow(aggregate.session.equipmentSnapshot, row)?.kind ?? null, row.loadConvention) === 'main_barbell';
+    return {
+      warmups: { lookup, ...(mode === 'full' ? {} : { mode }) },
+      secondary: (exerciseId, replacing = null) => joinsAsSecondary(aggregate, { exerciseId, mains, replacing, mainBarbell }),
+      main: (sessionExerciseId) => isMainLiftRow(aggregate, sessionExerciseId, mains),
+    };
+  }
+
+  /**
    * Today's edits as the planner takes them (TE2): the live draft's edits and
    * each swapped slot's own plan (`substituteTargets`: the substitute's own
    * history at this gym, never the original's load). No draft: no edits.
@@ -2956,7 +3011,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const exerciseUnsaved = exercise !== null && !saved.some((e) => e.id === exercise.id);
       const ci = await sessionCheckIn(aggregate).catch(() => null);
       const gymId = aggregate.session.gymId ?? 'no-gym';
-      const substitute = await substituteCtx(p, gymId, currentGymEquipment(aggregate.session), ci, exercise === null ? [] : [exercise.id]);
+      const base = await substituteCtx(p, gymId, currentGymEquipment(aggregate.session), ci, exercise === null ? [] : [exercise.id]);
+      // (Ben, 8 Nov) The warm-up planner's reads, so the coach's add and swap warm up as Start would.
+      const reads = await joinReads(p, aggregate, exercise === null ? [] : [exercise.id]).catch(() => null);
+      const warmups = reads?.warmups;
+      const secondaryLift = exercise !== null && reads?.secondary(exercise.id) === true;
+      const substitute: SubstituteContext = { ...base, ...(warmups === undefined ? {} : { warmups }), ...(secondaryLift ? { secondaryLift } : {}) };
       const history = exercise === null ? [] : await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
       const sameMovement = exercise === null ? [] : sameMovementIds(exercise, [...saved, ...catalogue]).filter((id) => id !== exercise.id);
       return { exercise, history, substitute, owner: p, sameMovementIds: [...new Set(sameMovement)], exerciseUnsaved };
@@ -3803,9 +3863,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           if (!saved?.ok && !(await repos().exercises.get(req.exerciseId))) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
         }
       }
-      const planned = req.plan ?? (await planFor(p, req).catch(() => null));
+      // (Ben, 8 Nov) Read once: what the joining exercise's targets and warm-ups are planned from.
+      const before = await repos().sessions.get(req.sessionId).catch(() => null);
+      const reads = before === null ? null : await joinReads(p, before, [req.exerciseId]).catch(() => null);
+      const planned = req.plan ?? (await planFor(p, req, reads).catch(() => null));
       // The picker's `Sets` count (exercise-library §10.2): only this exercise's new pending sets are shaped (rule 2).
-      const plan = req.shape === undefined ? planned : shapeAddPlan(planned, req.shape);
+      const shaped = req.shape === undefined ? planned : shapeAddPlan(planned, req.shape);
+      // (Ben, 8 Nov) Its warm-ups: the shared planner at its place in the workout, from its first working target.
+      const plan = (await joinedPlan(p, req, shaped, before, reads).catch(() => null)) ?? shaped;
       return ctx.afterCommand(
         await domain().addExercise(req.sessionId, {
           ownerId: p.id,
@@ -3896,7 +3961,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (exercise === null) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
       const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
       const sctx = await midSwapCtx(p, aggregate, [exercise.id], row.id);
-      const plan = req.builderPlan === undefined ? substituteTargets(slot, exercise, history, sctx) : { exercise, pin: req.builderPlan.pin, plan: req.builderPlan.plan };
+      // (Ben, 8 Nov) A substitute joining as a secondary lift: a main barbell lift's reps follow his history.
+      const reads = await joinReads(p, aggregate, [exercise.id]).catch(() => null);
+      const main = reads?.main(row.id) === true;
+      const secondary = reads?.secondary(exercise.id, row.id) === true;
+      const plan = req.builderPlan === undefined ? substituteTargets(slot, exercise, history, sctx, secondary ? { accessory: true } : {}) : { exercise, pin: req.builderPlan.pin, plan: req.builderPlan.plan };
+      const warmups = reads?.warmups;
       const built = buildSwapExerciseCommand({
         aggregate,
         sessionExerciseId: row.id,
@@ -3909,6 +3979,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         opId: req.opId,
         at: ctx.now(),
         newId: ctx.newId,
+        // (Ben, 8 Nov) The substitute's own warm-ups at the row's place, never the old exercise's.
+        ...(warmups === undefined ? {} : { warmups, main }),
       });
       if (!built.ok) return failed(built.reason === 'measurement' ? `${exercise.name} is measured differently.` : 'Nothing left to swap.');
       const r = ctx.afterCommand(await domain().dispatch(req.sessionId, built.command));
