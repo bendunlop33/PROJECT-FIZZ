@@ -104,6 +104,8 @@ export type CoachEditPlan =
       used: Exercise[];
       /** (Ben, 8 Nov) The coach limits Ben's ask went past, one line each, for the card. */
       tradeOff: string[];
+      /** (Ben, 8 Nov) The pain holds his go-ahead waved through (the caller clears them early with the change). */
+      wavedFlags?: { id: string; version: number }[];
     }
   | { status: 'stale'; guardNotes: GuardNote[] }
   /** `already` (Ben, 1 Nov): nothing to do, not a failure: every set asked for already is that (`Already 100 kg`). */
@@ -727,9 +729,9 @@ function loadSteps(s: SessionAggregate, ops: readonly EditTodayOp[], asked: bool
 }
 
 /** The touched movements' pain holds, waved through on Ben's go-ahead. */
-function goAhead(input: CoachEditInput): { input: CoachEditInput; lines: string[] } {
+function goAhead(input: CoachEditInput): { input: CoachEditInput; lines: string[]; flags: { id: string; version: number }[] } {
   const s = input.aggregate;
-  if (s === null || input.painGoAhead !== true || input.asked !== true) return { input, lines: [] };
+  if (s === null || input.painGoAhead !== true || input.asked !== true) return { input, lines: [], flags: [] };
   const nowMs = toMs(input.at.utc);
   const touched: { id: string; name: string }[] = [];
   for (const [i, op] of input.args.ops.entries()) {
@@ -749,7 +751,7 @@ function goAhead(input: CoachEditInput): { input: CoachEditInput; lines: string[
   }
   const said = input.messagePain !== null && (input.messagePain.mention === 'pain' || input.messagePain.mention === 'unclear');
   if (lines.length === 0 && (said || input.sessionPainUnspecified)) lines.push(painGoAheadTradeOff(touched[0]?.name ?? 'Today', input.messagePain?.bodyPart ?? null));
-  return { input: { ...input, painFlags: input.painFlags.filter((f) => !waved.has(f.id)), messagePain: null, sessionPainUnspecified: false }, lines };
+  return { input: { ...input, painFlags: input.painFlags.filter((f) => !waved.has(f.id)), messagePain: null, sessionPainUnspecified: false }, lines, flags: input.painFlags.filter((f) => waved.has(f.id)).map((f) => ({ id: f.id, version: f.version })) };
 }
 
 /**
@@ -802,7 +804,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   }
   if (plan.status === 'stale') return plan;
   if (plan.status === 'rejected') return { ...plan, guardNotes: [...plan.guardNotes, ...loads.notes].slice(0, 40) };
-  return { ...plan, guardNotes: [...loads.notes, ...plan.guardNotes].slice(0, 40), tradeOff: [...new Set(tradeOff)].slice(0, 4).map((t) => t.slice(0, 200)) };
+  return { ...plan, guardNotes: [...loads.notes, ...plan.guardNotes].slice(0, 40), tradeOff: [...new Set(tradeOff)].slice(0, 4).map((t) => t.slice(0, 200)), ...(waved.flags.length > 0 ? { wavedFlags: waved.flags } : {}) };
 }
 
 const RAMP_CONVENTIONS: ReadonlySet<string> = new Set(['total', 'per_hand', 'stack']);

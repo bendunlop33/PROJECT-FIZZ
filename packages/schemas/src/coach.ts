@@ -1178,6 +1178,11 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
      */
     tradeOff: z.array(z.string().min(1).max(200)).max(4).optional(),
     /**
+     * (Ben, 8 Nov) Pain holds Ben told the coach to go ahead despite, cleared early with the change (`clearConfirmed`)
+     * and put back by its Undo, each at the version the clear left it. Absent: none.
+     */
+    painCleared: z.array(z.object({ id: IdSchema, version: z.int().min(1) })).max(10).optional(),
+    /**
      * (Ben, 28 Oct) What the gym learned from weights Ben named (a dumbbell, a plate), written with the change and
      * taken back by its Undo. Absent: nothing learned.
      */

@@ -53,7 +53,14 @@ export interface EditTodayDeps {
    * (Ben, 8 Nov) The muscle group an exercise's working sets count to directly, for the per-session cap (8 direct sets
    * a group): the coach's own offer stays within it; Ben's ask goes past it with a trade-off line. Absent: not checked.
    */
-  directGroupOf?: (exerciseId: string) => string | null;
+  directGroups?: (exerciseIds: readonly string[]) => Promise<(exerciseId: string) => string | null>;
+  /**
+   * (Ben, 8 Nov: "go ahead" despite a pain hold) The hold's early clear (the pain service's `clearConfirmed`), with the
+   * flag's version as the coach read it; the version the clear left it at, or null when it couldn't. `restorePainHolds`
+   * puts cleared ones back (the change refused, or its Undo). Absent: the hold is only waved through for this change.
+   */
+  clearPainHold?: (flag: { id: string; version: number }) => Promise<{ id: string; version: number } | null>;
+  restorePainHolds?: (cleared: readonly { id: string; version: number }[]) => Promise<boolean>;
 }
 
 const NO_ID = '00000000-0000-4000-8000-000000000000';
@@ -133,6 +140,8 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
       }
     }
     const { byOp, unsaved } = first;
+    const groupIds = [...new Set([...current.exercises.map((e) => e.exerciseId), ...[...byOp.values()].flatMap((g) => (g?.exercise == null ? [] : [g.exercise.id]))])];
+    const directGroupOf = deps.directGroups === undefined ? undefined : await deps.directGroups(groupIds).catch(() => undefined);
     const plan = planCoachEdit({
       aggregate: current,
       args,
@@ -151,7 +160,7 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
       kitOptional: true,
       // (Ben, 8 Nov) His ask (not an offer) overrides the coach's judgement limits; real kit and done sets still apply.
       asked: ctx.propose !== true,
-      ...(deps.directGroupOf === undefined ? {} : { directGroupOf: deps.directGroupOf }),
+      ...(directGroupOf === undefined ? {} : { directGroupOf }),
       // A pain go-ahead counts only on his ask, in his own words this turn (rule 9), never on the model's claim alone.
       painGoAhead: ctx.propose !== true && a.painGoAhead === true && painGoAheadWords(ctx.benWords),
     });
@@ -178,9 +187,20 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
       guardNotes: plan.guardNotes,
       entityVersions: [{ entity: 'session', id: sessionId, before: args.baseVersion, after: args.baseVersion + 1 }, ...(learned === null ? [] : learned.equipment.map((e) => ({ entity: 'equipment', id: e.after.id, before: e.before?.version ?? null, after: e.after.version })))],
     });
+    // (Ben, 8 Nov) His go-ahead clears the hold early (rule 9: his call, never a diagnosis); the change's Undo puts it back.
+    const painCleared: { id: string; version: number }[] = [];
+    if (deps.clearPainHold !== undefined) for (const f of plan.wavedFlags ?? []) {
+      const c = await deps.clearPainHold(f).catch(() => null);
+      if (c !== null) painCleared.push(c);
+    }
+    if (painCleared.length > 0) action.detail = { ...detail, painCleared };
+    const putBack = async (): Promise<void> => {
+      if (painCleared.length > 0) await deps.restorePainHolds?.(painCleared).catch(() => false);
+    };
     const saveExercises = plan.used.filter((e) => unsaved.has(e.id));
     const w = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action, sessionId, command: plan.command, expectedSessionVersion: args.baseVersion, ...(saveExercises.length > 0 ? { saveExercises } : {}), ...(learned === null ? {} : { gymEdit: learned }) });
     if (w.status === 'conflict') {
+      await putBack();
       if (w.reason === 'stale_version') return withAlso(await staleNow(plan.guardNotes, `${ctx.opId}:refused`));
       return withAlso(await refuse('rejected', 'the workout refused it', plan.guardNotes, `${ctx.opId}:refused`));
     }

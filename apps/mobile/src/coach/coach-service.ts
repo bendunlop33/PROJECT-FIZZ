@@ -250,6 +250,9 @@ import {
   missingEquipmentNoun,
   planMuscleGapLines,
   type MuscleGoalInput,
+  REPLAN_AFTER,
+  directMuscleGroup,
+  type MusclesOf,
 } from '@fizz/domain';
 import { TurnAlreadyRunningError, type CandidateWrite, type MemoryWrite, type SqliteRepositories, type Store } from '@fizz/persistence';
 import { createRunningTurns, type TurnScope } from './running-turns';
@@ -258,7 +261,7 @@ import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
 import { summaryNoteSentences } from './next-time-view';
 import type { CustomWrite } from '../services/custom-exercises';
 import type { TextCoachState } from '@fizz/providers';
-import { GymEquipmentKindSchema, muscleGroupOf } from '@fizz/schemas';
+import { GymEquipmentKindSchema, muscleGroupOf, type CommandOf } from '@fizz/schemas';
 import type {
   ActionDetail,
   CheckInSettings,
@@ -513,6 +516,12 @@ export interface CoachServiceDeps {
   builtInNextTargets: (sessionId: string, reps?: Map<string, RuleReps>) => Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null>;
   /** After a coach change to today's sets or its Undo: rest alerts follow the new targets. */
   onSessionChanged?: (aggregate: SessionAggregate) => void;
+  /** (SF6, Ben 8 Nov) After a coach edit (or its Undo) that moved, added, removed or swapped an exercise: today's built-in targets again. */
+  replanToday?: (sessionId: string, opId: string) => Promise<boolean>;
+  /** (Ben, 8 Nov) A pain hold's early clear and its Undo (the pain service's `clearConfirmed` / `undoClear`), for Ben's "go ahead". */
+  painHold?: { clear: (flag: { id: string; version: number }) => Promise<{ id: string; version: number } | null>; restore: (cleared: readonly { id: string; version: number }[]) => Promise<boolean> };
+  /** (SF7a) The muscles of these exercises, for the context's `doneSoFarToday`. Absent: not said. */
+  musclesOf?: (exerciseIds: readonly string[]) => Promise<MusclesOf>;
   /** The bundled exercise catalogue (Coaching knowledge), for swap options and names. */
   catalogueExercises?: () => readonly Exercise[];
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
@@ -1091,6 +1100,9 @@ export function createCoachService(deps: CoachServiceDeps) {
       ...(deps.onSessionChanged === undefined ? {} : { onSessionChanged: deps.onSessionChanged }),
       learnKit: (exercise, aggregate, ctx) => learnKitFor(p, exercise, aggregate, ctx),
       gymItems: async (gymId) => ((await repos().gyms.get(gymId).catch(() => null))?.ownerId === p.id ? await repos().equipment.listByGym(gymId) : []),
+      ...(deps.painHold === undefined ? {} : { clearPainHold: deps.painHold.clear, restorePainHolds: deps.painHold.restore }),
+      // (Ben, 8 Nov) The per-session cap's groups: the coach's own offer stays within 8 direct sets a group.
+      ...(deps.musclesOf === undefined ? {} : { directGroups: async (ids: readonly string[]) => { const m = await deps.musclesOf?.(ids); return (id: string) => directMuscleGroup(m?.(id) ?? null); } }),
     };
   }
 
@@ -1273,6 +1285,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         session,
         gymName,
         ...(session === null ? {} : { ruleTargetRpe: await ruleRpesOf(session).catch(() => ({})) }),
+        // (SF7a) What each muscle has done so far today, from the workout's own exercises.
+        ...(session === null || deps.musclesOf === undefined ? {} : await deps.musclesOf([...new Set(session.exercises.map((e) => e.exerciseId))]).then((musclesOf) => ({ musclesOf })).catch(() => ({}))),
         painFlags: await repos().painFlags.listActive(p.id),
         checkIn,
         // (Builder v3) Day notes go only with their day (`dayNotesFor`), so ✕ keeps one from the coach that day.
@@ -2061,6 +2075,9 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (result.error === 'network' && result.status === 'failed') lastNetworkFailureMs = toMs(deps.now().utc);
       else if (result.status === 'completed') lastNetworkFailureMs = null;
       if (session !== null && result.cards.some((c) => (c.record.detail.kind === 'adjust_pending_sets' || c.record.detail.kind === 'add_exercise_today' || c.record.detail.kind === 'edit_today' || c.record.detail.kind === 'rename_workout') && c.record.status === 'committed')) {
+        // SF6 (Ben, 8 Nov): a coach edit that moved, added, removed or swapped an exercise replans the built-in targets, as Ben's own does.
+        const moved = result.cards.find((c) => c.record.status === 'committed' && c.record.detail.kind === 'edit_today' && coachEditReorders(c.record.detail.command));
+        if (moved !== undefined) await deps.replanToday?.(session.session.id, moved.record.opId).catch(() => false);
         const fresh = await repos().sessions.get(session.session.id).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
       }
@@ -2234,6 +2251,10 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (landed && (r.result.status === 'written' || r.result.status === 'replayed')) await deps.nextWorkout?.revert(actionId, false).catch(() => false);
       const target = r.result.status === 'written' || r.result.status === 'replayed' ? r.result.target : null;
       if (target?.detail.kind === 'adjust_pending_sets' || target?.detail.kind === 'add_exercise_today' || target?.detail.kind === 'edit_today' || target?.detail.kind === 'rename_workout' || target?.detail.kind === 'log_set' || target?.detail.kind === 'correct_set') {
+        // SF6: its Undo puts the order back, so the built-in targets follow again.
+        if (target.detail.kind === 'edit_today' && coachEditReorders(target.detail.command)) await deps.replanToday?.(target.detail.sessionId, opId).catch(() => false);
+        // (Ben, 8 Nov) A pain hold his go-ahead cleared with the change comes back with its Undo.
+        if (target.detail.kind === 'edit_today' && (target.detail.painCleared?.length ?? 0) > 0) await deps.painHold?.restore(target.detail.painCleared ?? []).catch(() => false);
         const fresh = await repos().sessions.get(target.detail.sessionId).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
       }
@@ -2905,3 +2926,8 @@ export function createCoachService(deps: CoachServiceDeps) {
 }
 
 export type CoachService = ReturnType<typeof createCoachService>;
+
+/** (SF6, Ben 8 Nov) Does a coach edit move, add, remove or swap an exercise (the steps after which Ben's own edits replan)? */
+export function coachEditReorders(command: CommandOf<'coach_edit_today'> | null): boolean {
+  return command !== null && command.steps.some((st) => REPLAN_AFTER.has(st.type));
+}

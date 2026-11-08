@@ -732,6 +732,15 @@ export function createAppServices(deps: AppServicesDeps) {
     builtInNextTargets: (sessionId, reps) => loop.workout.builtInNextTargets(sessionId, reps),
     upNextTitle: (gymId) => loop.workout.upNextTitle(gymId),
     coachAddInputs: (exerciseId, aggregate) => loop.workout.coachAddInputs(exerciseId, aggregate),
+    replanToday: (sessionId, opId) => loop.workout.replanAfterCoach(sessionId, opId),
+    painHold: {
+      clear: async (f) => {
+        const r = await loop.pain.clearConfirmed({ flagId: f.id, expectedVersion: f.version });
+        return r.ok ? r.cleared : null;
+      },
+      restore: (cleared) => loop.pain.undoClear(cleared),
+    },
+    musclesOf: (ids) => loop.workout.musclesOf(ids),
     onSessionChanged: (a) => {
       if (deps.restAlerts) void deps.restAlerts.reconcile(a, toMs(deps.now().utc));
     },

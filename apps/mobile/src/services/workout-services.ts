@@ -3623,6 +3623,20 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }),
       ),
 
+    /**
+     * (Ben, 8 Nov; SF6) After a coach change to today's workout (`edit_today`, its accept or its Undo) that moved, added,
+     * removed or swapped an exercise: the built-in targets are worked out again for the new order, as after his own.
+     * Best effort: a failure changes nothing.
+     */
+    /** (SF7a) The muscles of these exercises, as a lookup (the coach's `doneSoFarToday`). */
+    musclesOf: (ids: Iterable<string>): Promise<MusclesOf> => musclesFor(ids),
+
+    replanAfterCoach: async (sessionId: string, opId: string): Promise<boolean> => {
+      const a = await repos().sessions.get(sessionId).catch(() => null);
+      if (a === null || a.session.status !== 'active') return false;
+      return (await replanToday(a, opId)) !== null;
+    },
+
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => {
       const r = ctx.afterCommand(await domain().dispatch(sessionId, command));
       // SF6 (8 Nov): a reorder, skip, swap, add or remove (or its Undo) works the built-in targets out again.
