@@ -10,7 +10,7 @@ import { EditSetScreen } from '../../src/screens/workout/EditSetScreen';
 import { WorkoutScreen } from '../../src/screens/workout/WorkoutScreen';
 import type { AppServices } from '../../src/services/app-services';
 import { dontCountMenu, setSheetKind, setSheetMenuLabel, setSheetSections, setSheetTitle } from '../../src/workout/set-edit';
-import { logWorkout, type Harness } from '../harness';
+import { dropPlannedWarmups, logWorkout, type Harness } from '../harness';
 import { expectHealthy, renderScreen, type Rendered } from './render-screen';
 import { benWithHistory, harness } from './seed';
 
@@ -42,11 +42,13 @@ async function liveBench(s: AppServices, gymId: string): Promise<{ sessionId: st
   if (!added.ok) throw new Error(added.error.message);
   const ex = added.aggregate.exercises.at(-1);
   if (!ex) throw new Error('no exercise');
-  let own = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
+  // (8 Nov) An added exercise now plans its own warm-ups; these tests are about working sets.
+  const noWarm = await dropPlannedWarmups(h, s, sessionId, ex.id);
+  let own = noWarm.sets.filter((x) => x.sessionExerciseId === ex.id && x.status !== 'deleted').sort((a, b) => a.index - b.index);
   if (own.length < 2) {
     const r = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: h.ids(), sessionExerciseId: ex.id, newSetId: h.ids(), setType: null });
     if (!r.ok) throw new Error(r.error.message);
-    own = r.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
+    own = r.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.status !== 'deleted').sort((a, b) => a.index - b.index);
   }
   const [first, second] = own;
   if (!first || !second) throw new Error('no sets');
