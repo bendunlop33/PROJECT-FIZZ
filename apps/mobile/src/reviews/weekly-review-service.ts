@@ -135,6 +135,8 @@ export interface WeeklyReviewServiceDeps {
   mainLiftIds?: () => Promise<ReadonlySet<string>>;
   /** (Ben, 27 Oct) Sleep and resting heart rate from Apple Health (empty while off). Absent: none. */
   healthSignals?: () => Promise<{ sleep: HealthDailyValue[]; restingHeartRate: HealthDailyValue[] }>;
+  /** (Ben, 8 Nov) Health strength workouts of their own (Progress's `healthSessions`): counted as workouts; absent: none. */
+  healthSessions?: () => Promise<readonly { date: string; startedMs: number; name: string }[]>;
 }
 
 export type WeeklyRun =
@@ -366,6 +368,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .filter((a) => a.deletedAtUtc === null)
       .map((a) => ({ id: a.id, date: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM, durationS: a.fields.durationS, healthType: a.health?.activityType ?? null, fromHealth: a.health !== undefined }));
     const health = (await deps.healthSignals?.().catch(() => null)) ?? null;
+    const healthSessions = ((await deps.healthSessions?.().catch(() => null)) ?? []).map((h) => ({ date: h.date, startedMs: h.startedMs, name: h.name }));
     const pain = await repos()
       .painFlags.listActive(owner.id)
       .catch(() => []);
@@ -411,6 +414,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         painFlagged: new Set(pain.map((p) => p.exerciseId)),
         unit: owner.preferredUnit,
         ...(health === null ? {} : { health }),
+        ...(healthSessions.length === 0 ? {} : { healthSessions }),
       },
     };
   }

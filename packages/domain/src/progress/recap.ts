@@ -5,6 +5,7 @@ import { formatMinutes, formatNumber, NBSP } from '../display';
 import { countSessions, timeInGym } from './activity';
 import { collectExerciseSeries, sessionTopSet, type ExerciseSeries } from './exercise';
 import { seriesUnitText, shortDate, longDate } from './exercise-view';
+import type { CountedSession, HealthStrengthSession } from './health-sessions';
 import { muscleFrequency, type MuscleInfo } from './muscles';
 import type { ProgressSession } from './projection';
 import { recordsInWindow } from './records';
@@ -17,7 +18,8 @@ import { inRange, type ProgressWindow } from './window';
  * facts only, for the month just ended, against the month before. Workouts, time, working sets per muscle,
  * the records set that month, the tracked lifts' heaviest top set against the month before, and (with a plan)
  * the weeks at his aim. No score, nothing invented, nothing estimated: every number is counted from finished
- * workouts (the stored history summaries), and an estimate never appears. Pure.
+ * workouts (the stored history summaries; Workouts and Time also count Health strength workouts of their own, as
+ * Progress › Training does, Ben 8 Nov), and an estimate never appears. Pure.
  *
  * The card shows on Progress for the first `MONTHLY_RECAP.showDays` days of a month, for the month before,
  * when that month had a workout and Ben hasn't dismissed it (Your data, `profile.progress.recapDismissed`).
@@ -105,6 +107,11 @@ export interface MonthlyRecapInput {
   nameOf?: (exerciseId: string) => string | null;
   /** (Ben, 26 Oct) The tracked lifts' `New best`s (`newBestClaims`): the month's records. Absent: not known, none shown. */
   bests?: NewBestRecords | null;
+  /**
+   * (Ben, 8 Nov) Health strength workouts of their own (`healthStrengthSessions`), counted in Workouts and Time as
+   * Progress › Training counts them; never in muscles, records or lifts. Absent: none.
+   */
+  healthSessions?: readonly HealthStrengthSession[];
 }
 
 /** The month before `today`'s, `YYYY-MM`. */
@@ -144,15 +151,17 @@ function bestTop(series: ExerciseSeries, from: string, to: string): TopSet | nul
 
 const setText = (t: TopSet): string => `${formatNumber(t.load)}${NBSP}×${NBSP}${String(t.reps)}`;
 
-/** The recap of one month; null when it had no finished workout. */
+/** The recap of one month; null when it had no finished workout (nor a Health strength workout counted as one). */
 export function buildMonthlyRecap(input: MonthlyRecapInput): MonthlyRecapView | null {
   const month = input.month ?? recapMonthOf(input.today);
   const w = monthWindow(month);
-  const counts = countSessions(input.sessions, w);
+  // (Ben, 8 Nov) Workouts and Time count what Training counts: the app's and imported workouts plus Health ones of their own.
+  const counted: readonly CountedSession[] = input.healthSessions === undefined || input.healthSessions.length === 0 ? input.sessions : [...input.sessions, ...input.healthSessions];
+  const counts = countSessions(counted, w);
   if (counts.count === 0) return null;
   const title = monthName(month);
   const previousTitle = monthName(w.previous.from.slice(0, 7));
-  const time = timeInGym(input.sessions, w);
+  const time = timeInGym(counted, w);
 
   const stats: RecapStatRow[] = [
     { label: 'Workouts', value: String(counts.count), previous: String(counts.previousCount), words: `Workouts: ${String(counts.count)}; ${previousTitle} ${String(counts.previousCount)}.` },

@@ -38,6 +38,7 @@ import { convertMass } from '../units';
  *   Progress's consistency card and Library › Your plan: `planDaysDoneThisWeek`, `planWeekOf`, paused
  *   days left out), and the last 6 weeks the same way. With no plan, Profile's days-a-week aim is the
  *   plan; with neither, workouts only. Runs are counted separately. Missed plan days are named, never scored.
+ *   (Ben, 8 Nov) Health strength workouts of their own count as workouts and days trained, as Training counts them.
  * - **Sets per muscle**, by the builder's one counting convention (workout-builder-v3 §3.7,
  *   `builderGroupOf`): each exercise's completed working sets count in full for the group of its first
  *   primary muscle that has a builder group; secondary muscles get nothing. Against the plan's planned
@@ -253,6 +254,21 @@ export interface WeeklyReviewInput {
   unit: WeightUnit;
   /** (Ben, 27 Oct) Sleep and resting heart rate from Apple Health, a value a day; absent or empty: none (switches off). */
   health?: { sleep: readonly HealthDailyValue[]; restingHeartRate: readonly HealthDailyValue[] };
+  /**
+   * (Ben, 8 Nov) Health strength workouts of their own (`healthStrengthSessions`: none linked to or overlapping an app
+   * or imported workout, none Ben unlinked or marked `Not it`), counted in the week's workouts and days trained as
+   * Progress › Training and Consistency count them. Never a plan day, never in sets, lifts or muscles. Absent: none.
+   */
+  healthSessions?: readonly ReviewHealthSession[];
+}
+
+/** A Health strength workout counted as a session (counts only). */
+export interface ReviewHealthSession {
+  /** Local date. */
+  date: string;
+  startedMs: number;
+  /** Health's label: `Strength`. */
+  name: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +421,9 @@ export function reviewWeekCount(input: WeeklyReviewInput, monday: string): { cou
 function weekCount(input: WeeklyReviewInput, monday: string): { count: ReviewWeekCount; plan: ReviewPlan | null; done: Map<string, string> } {
   const { startMs, endMs } = weekBounds(monday, input.tz);
   const sessions = input.sessions.filter((s) => inWeek(s, monday));
+  // (Ben, 8 Nov) Health strength workouts of their own count as workouts and days trained, never as plan days.
+  const health = healthInWeek(input, monday);
+  const workoutCount = sessions.length + health.length;
   const runs = input.activities.filter((a) => a.status === 'done' && a.kind === 'run' && a.date >= monday && a.date <= addDays(monday, 6)).length;
   const plan = planFor(input.plans, startMs, endMs);
   if (plan !== null) {
@@ -412,12 +431,18 @@ function weekCount(input: WeeklyReviewInput, monday: string): { count: ReviewWee
     const done = planDaysDoneThisWeek({ days: plan.days, appliedAtUtc: plan.appliedAtUtc, workouts, nowMs: Math.min(input.nowMs, endMs - 1), tz: input.tz });
     const paused = pausedInWeek(monday, plan.pausedDates);
     const planned = paused >= 7 ? null : planWeekOf(plan.days.length, done.size, paused);
-    return { count: { monday, done: done.size, planned, workouts: sessions.length, runs }, plan, done };
+    return { count: { monday, done: done.size, planned, workouts: workoutCount, runs }, plan, done };
   }
-  const days = new Set(sessions.map((s) => s.date)).size;
+  const days = new Set([...sessions.map((s) => s.date), ...health.map((h) => h.date)]).size;
   // An aim stays the aim: 4 days against 3 reads `4 of 3`, as the consistency card's `4/3` (review b3-wave3-truth S2).
-  if (input.aim !== null && input.aim > 0) return { count: { monday, done: days, planned: input.aim, workouts: sessions.length, runs }, plan: null, done: new Map() };
-  return { count: { monday, done: sessions.length, planned: null, workouts: sessions.length, runs }, plan: null, done: new Map() };
+  if (input.aim !== null && input.aim > 0) return { count: { monday, done: days, planned: input.aim, workouts: workoutCount, runs }, plan: null, done: new Map() };
+  return { count: { monday, done: workoutCount, planned: null, workouts: workoutCount, runs }, plan: null, done: new Map() };
+}
+
+/** The week's Health strength sessions, oldest first; none started after now (as Consistency). */
+function healthInWeek(input: Pick<WeeklyReviewInput, 'healthSessions' | 'nowMs'>, monday: string): ReviewHealthSession[] {
+  const sunday = addDays(monday, 6);
+  return (input.healthSessions ?? []).filter((h) => h.date >= monday && h.date <= sunday && h.startedMs <= input.nowMs).sort((a, b) => a.startedMs - b.startedMs);
 }
 
 // ---- lifts
@@ -575,7 +600,10 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
           const at = current.done.get(d.routineId);
           return { name: d.name, done: at !== undefined, date: at === undefined ? null : localDateOf(toMs(at), input.tz) };
         })
-      : thisWeek.slice(0, 7).map((s) => ({ name: s.name ?? 'Workout', done: true, date: s.date }));
+      : [...thisWeek.map((s) => ({ name: s.name ?? 'Workout', done: true, date: s.date, ms: s.startedMs })), ...healthInWeek(input, monday).map((h) => ({ name: h.name, done: true, date: h.date, ms: h.startedMs }))]
+          .sort((a, b) => a.ms - b.ms)
+          .slice(0, 7)
+          .map(({ name, done, date }) => ({ name, done, date }));
   const missedCount = complete && current.plan !== null && current.count.planned !== null ? Math.max(0, current.count.planned - current.count.done) : 0;
   const pausedNow = current.plan === null ? 0 : pausedInWeek(monday, current.plan.pausedDates);
   const missed = missedCount > 0 && pausedNow === 0 ? days.filter((d) => !d.done).map((d) => d.name).slice(0, missedCount) : [];

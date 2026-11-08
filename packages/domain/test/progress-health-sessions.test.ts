@@ -187,9 +187,13 @@ describe('counts and time (Progress › Training)', () => {
     expect(muscleFrequency(app, INFO, bar.window, 'body_part')).toEqual(muscleFrequency(app, INFO, bar.window, 'body_part'));
   });
 
-  it('the monthly recap (workouts, sets, lifts) is not given them', () => {
-    const r = buildMonthlyRecap({ sessions: app, exercises: INFO, today: '2026-11-02', lifts: ['bench'], unit: 'kg', planWeeks: null });
-    expect(r?.stats[0]?.value).toBe('3');
+  it('(Ben, 8 Nov) the monthly recap counts them in Workouts; its sets and lifts are unchanged', () => {
+    const base = buildMonthlyRecap({ sessions: app, exercises: INFO, today: '2026-11-02', lifts: ['bench'], unit: 'kg', planWeeks: null });
+    const r = buildMonthlyRecap({ sessions: app, exercises: INFO, today: '2026-11-02', lifts: ['bench'], unit: 'kg', planWeeks: null, healthSessions: hs });
+    expect(base?.stats[0]?.value).toBe('3');
+    expect(r?.stats[0]?.value).toBe('4');
+    expect(r?.muscles).toEqual(base?.muscles);
+    expect(r?.lifts).toEqual(base?.lifts);
   });
 });
 

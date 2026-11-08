@@ -629,7 +629,9 @@ export function createProgressService(deps: ProgressServiceDeps) {
         const picked = (await deps.progressLifts?.().catch(() => null)) ?? [];
         const lifts = trackedLiftPicks({ picked, defaults: defaultLiftPicks({ planMains, sessions: ctx.sessions, info: (id) => ctx.exercises.get(id) ?? null, today }), logged: (id) => names.has(id) }).ids;
         const planWeeks = (await deps.planWeeks?.().catch(() => null)) ?? null;
-        const view = buildMonthlyRecap({ sessions: ctx.sessions, exercises: ctx.exercises, today, lifts, unit: profile.preferredUnit, planWeeks, nameOf: (id) => ctx.exercises.get(id)?.name ?? names.get(id) ?? null, bests: await bestsNow() });
+        // (Ben, 8 Nov) Workouts and Time count Health strength workouts of their own, as Training does.
+        const healthSessions = await healthSessionsOf(profile, ctx.sessions);
+        const view = buildMonthlyRecap({ sessions: ctx.sessions, exercises: ctx.exercises, today, lifts, unit: profile.preferredUnit, planWeeks, nameOf: (id) => ctx.exercises.get(id)?.name ?? names.get(id) ?? null, bests: await bestsNow(), healthSessions });
         return recapCardShown({ today, dismissed: profile.progress?.recapDismissed ?? null, recap: view }) && view !== null ? { view } : null;
       });
     },
