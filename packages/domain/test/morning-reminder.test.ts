@@ -21,9 +21,9 @@ import {
 
 const TZ = 'Europe/London';
 const ON: MorningReminderSettings = { ...DEFAULT_MORNING_REMINDER, on: true };
-const day = (title: string, n: number | null = null, of = 4, aboutMinutes: number | null = null, legs?: boolean): ReminderSession => ({ title, planDay: n === null ? null : { n, of }, aboutMinutes, ...(legs === undefined ? {} : { legs }) });
+const day = (title: string, aboutMinutes: number | null = null, legs?: boolean): ReminderSession => ({ title, aboutMinutes, ...(legs === undefined ? {} : { legs }) });
 
-const PLAN = [day('Push', 1, 4, 55, false), day('Pull', 2, 4, 60, false), day('Legs', 3, 4, 65, true), day('Upper', 4, 4, 50, false)];
+const PLAN = [day('Push', 55, false), day('Pull', 60, false), day('Legs', 65, true), day('Upper', 50, false)];
 const T = PREDICTED_REMINDER_TITLE;
 
 function longRun(date: string, status: 'planned' | 'done' = 'planned'): Activity {
@@ -43,12 +43,14 @@ describe('morningReminderSchedule', () => {
   it('Day 1 is Up next exactly; later days walk the plan forward', () => {
     const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast());
     expect(r).toHaveLength(7);
-    expect(r[0]).toMatchObject({ identifier: 'fizz.morning.2026-10-20', fireAtLocal: { date: '2026-10-20', hour: 7, minute: 0 }, title: 'Today: Pull', body: 'Day 2 of 4 · about 60 min · Main gym' });
+    expect(r[0]).toMatchObject({ identifier: 'fizz.morning.2026-10-20', fireAtLocal: { date: '2026-10-20', hour: 7, minute: 0 }, title: 'Today: Pull', body: 'about 60 min · Main gym' });
+    // (Ben, 8 Nov) No plan day index: `Day 2 of 4` read like a week number.
+    expect(r.every((x) => !/Day \d+ of \d+/u.test(x.body))).toBe(true);
     expect(r[0]?.fireAtMs).toBe(toMs('2026-10-20T06:00:00.000Z'));
     // (Ben, 20 Oct) Predicted days: `Time to train`, the session leads the body.
     expect(r.map((x) => x.title)).toEqual(['Today: Pull', T, T, T, T, T, T]);
     expect(r.slice(1).map((x) => x.body.split(' · ')[0])).toEqual(['Legs is next', 'Upper is next', 'Push is next', 'Pull is next', 'Legs is next', 'Upper is next']);
-    expect(r[1]?.body).toBe('Legs is next · Day 3 of 4 · about 65 min · Main gym');
+    expect(r[1]?.body).toBe('Legs is next · about 65 min · Main gym');
   });
 
   it('after today’s time has passed, starts tomorrow with Up next', () => {
@@ -118,7 +120,7 @@ describe('the run rule on predicted days (Ben, 20 Oct)', () => {
     // the rotation goes on after Upper (review ben-runs-20oct S1: Up next is the one after the last done).
     const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ activities: [longRun('2026-10-22')] }));
     expect(r.map((x) => [x.fireAtLocal.date, x.body.split(' · ')[0]])).toEqual([
-      ['2026-10-20', 'Day 2 of 4'],
+      ['2026-10-20', 'about 60 min'],
       ['2026-10-21', 'Upper is next'],
       ['2026-10-22', 'Push is next'],
       // Fri is the day after the run: Pull isn't a leg day anyway.
@@ -146,7 +148,7 @@ describe('the run rule on predicted days (Ben, 20 Oct)', () => {
   });
 
   it('every day a leg day: legs anyway', () => {
-    const legs = [day('Legs A', null, 4, null, true), day('Legs B', null, 4, null, true)];
+    const legs = [day('Legs A', null, true), day('Legs B', null, true)];
     const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ next: legs[0] ?? null, cycle: { sessions: legs, at: 0 }, activities: [longRun('2026-10-22')] }));
     expect(r[1]?.body).toBe('Legs B is next · Main gym');
   });
@@ -167,7 +169,7 @@ describe('where each reminder starts (review ben-runs-20oct)', () => {
   });
 
   it('a pinned leg day is never moved, on day 1 or in a rotation (B2)', () => {
-    const pinned = { ...day('Legs', 3, 4, 65, true), id: 'legs', pinned: true };
+    const pinned = { ...day('Legs', 65, true), id: 'legs', pinned: true };
     const late = toMs('2026-10-20T07:30:00.000Z');
     // A plan: day 1 Wed, a long run Thu. The service predicted Wed (`firstOn`) with the pin first.
     const plan = morningReminderSchedule(late, TZ, ON, forecast({ next: pinned, cycle: { sessions: [], at: -1 }, ahead: [PLAN[0] as ReminderSession], firstOn: pinned, activities: [longRun('2026-10-22')] }));
@@ -208,7 +210,7 @@ describe('where each reminder starts (review ben-runs-20oct)', () => {
 describe('copy and settings', () => {
   it('body leaves out what is unknown', () => {
     expect(reminderBody(day('Pull'), null)).toBe('');
-    expect(reminderBody(day('Pull', null, 4, 45), 'Main gym')).toBe('about 45 min · Main gym');
+    expect(reminderBody(day('Pull', 45), 'Main gym')).toBe('about 45 min · Main gym');
   });
 
   it('on: Ben’s choice, else on only when notifications are already allowed', () => {

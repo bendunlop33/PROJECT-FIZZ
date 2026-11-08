@@ -69,8 +69,6 @@ export function parseMorningReminder(raw: unknown): MorningReminderSettings {
 export interface ReminderSession {
   /** `Pull`. */
   title: string;
-  /** `Day 2 of 4` of the plan in use; null: not a plan day. */
-  planDay: { n: number; of: number } | null;
   /** `about 60 min` (an estimate); null: unknown. */
   aboutMinutes: number | null;
   /** A leg day (the run rule); absent: unknown, never moved. */
@@ -144,11 +142,12 @@ export function reminderTitle(s: ReminderSession): string {
 export const PREDICTED_REMINDER_TITLE = 'Time to train';
 
 /**
- * `Day 2 of 4 · about 60 min · Main gym`, leaving out what isn't known; a
- * predicted day leads with `Pull is next`.
+ * `about 60 min · Main gym`, leaving out what isn't known; a predicted day
+ * leads with `Pull is next`. No plan day index (`Day 2 of 4` read like a week
+ * number; Ben, 8 Nov).
  */
 export function reminderBody(s: ReminderSession, gymName: string | null, predicted = false): string {
-  const parts = [predicted ? `${s.title} is next` : null, s.planDay === null ? null : `Day ${String(s.planDay.n)} of ${String(s.planDay.of)}`, s.aboutMinutes === null ? null : `about ${String(s.aboutMinutes)} min`, gymName];
+  const parts = [predicted ? `${s.title} is next` : null, s.aboutMinutes === null ? null : `about ${String(s.aboutMinutes)} min`, gymName];
   return parts.filter((p): p is string => p !== null && p.length > 0).join(' · ');
 }
 
