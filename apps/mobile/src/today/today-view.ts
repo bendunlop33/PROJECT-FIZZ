@@ -1,4 +1,4 @@
-import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_PICK_COPY, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type FeedItem, type PlannedLinkChoice, type PlannedLinkState, planDayColourKey, type TodayControls, type TodayDay, type TodayMain, type WeekTile, type WeekTileMark } from '@fizz/domain';
+import { BEHIND_COPY, behindOfferShown, clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_PICK_COPY, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type FeedItem, type PlannedLinkChoice, type PlannedLinkState, planDayColourKey, type TodayControls, type TodayDay, type TodayMain, type WeekTile, type WeekTileMark } from '@fizz/domain';
 
 /**
  * Today (v2)'s screen rules (workout-builder-v3 §2.0, prototypes/today-v2.html), pure so they are tested
@@ -379,6 +379,9 @@ export function daySheetRows(tile: Pick<WeekTile, 'items' | 'marks'> & { past?: 
       }
       case 'rest':
         return { key: `r:${String(i)}`, mark, title: it.text, health: false, detail: null, open: null, accessibilityLabel: it.text };
+      case 'missed':
+        // (Ben, 8 Nov) A plan day that doesn't fit this week: `Pull A · missed`, opening the plan day.
+        return { key: `m:${it.text}:${String(i)}`, mark, title: `${it.text} · missed`, health: false, detail: null, open: { kind: 'plan_day', dayName: it.text }, accessibilityLabel: `${it.text}, missed` };
     }
   });
 }
@@ -462,4 +465,33 @@ export function todayRecentRows(items: readonly FeedItem[]): { item: FeedItem; m
     const health = it.kind === 'activity' && it.fromHealth !== undefined;
     return { item: it, mark, title: it.title, health, line: [day, it.value].filter((x) => x !== '').join(' · '), accessibilityLabel: health ? `${it.accessibilityLabel}, from Apple Health` : it.accessibilityLabel };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Behind this week (Ben, 8 Nov: MS1–MS9)
+
+/** The behind facts Today's row reads (`TodayBehind`). */
+export interface BehindRowInput {
+  k: number;
+  line: string;
+  gate: { lighterWeek: boolean; paused: boolean; trainedOrOpenToday: boolean; pickedToday: boolean; ill: boolean; gapDays: number | null };
+  builtIn: { dayKey: string; name: string; sets: number } | null;
+}
+
+/**
+ * Today's `2 days behind · Adjust today?` (MS2, MS6): shown when behind and nothing excludes it; `Adjust today?` when
+ * the coach can build or the built-in rule has a day other than the card's (else the status only). `picked`: Ben
+ * picked the card's day on this visit. `dismissedOn`: this phone's Skip or ✕ date. Pure.
+ */
+export function behindRowView(b: BehindRowInput | null, o: { today: string; dismissedOn: string | null; picked: boolean; coach: boolean }): { text: string; adjust: string | null; accessibilityLabel: string } | null {
+  if (b === null || !behindOfferShown(b, { ...b.gate, pickedToday: b.gate.pickedToday || o.picked, today: o.today, dismissedOn: o.dismissedOn })) return null;
+  const adjust = o.coach || b.builtIn !== null ? BEHIND_COPY.adjust : null;
+  return { text: b.line, adjust, accessibilityLabel: adjust === null ? b.line : `${b.line}. ${adjust}` };
+}
+
+/** The built-in offer's sheet (MS6): the day whole, `13 sets · ~52 min` (the card's own estimate), `Built-in`. Pure. */
+export function behindOfferView(b: BehindRowInput | null, minutes: number | null): { title: string; line: string; label: string } | null {
+  if (b?.builtIn == null) return null;
+  const sets = `${String(b.builtIn.sets)} sets`;
+  return { title: b.builtIn.name, line: minutes === null ? sets : `${sets} · ~${String(minutes)} min`, label: BEHIND_COPY.builtIn };
 }

@@ -168,11 +168,12 @@ describe('Ben’s week, Thursday 29 (build 478 screenshot)', () => {
     const p = await planOf(s);
     expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'skip', dayIndex: 4 } })).toMatchObject({ ok: true });
     expect(tiles(s, await loaded(s))[4]).toBe('30 plain');
-    // Week 1: Pull B is back (ringed this week); Fri 6 is Up next's (legs trained longest ago).
+    // Week 1: Pull B is back (not skipped); Fri 6 is Up next's (legs trained longest ago). (Ben, 8 Nov, MS1 flag 1)
+    // Pull B, displaced from its Friday, no longer goes onto Sunday (a rest day): it shows as missed on Friday.
     h.clockMs = Date.parse('2026-11-06T08:00:00.000Z');
     const wk1 = tiles(s, await loaded(s));
-    expect(wk1[4]).toBe('06 today planned ring:legs');
-    expect(wk1.some((t) => t.endsWith('ring:pull'))).toBe(true);
+    expect(wk1[4]).toBe('06 today planned ring:legs,missed:pull');
+    expect(wk1.some((t) => t.includes(':pull'))).toBe(true);
   });
 
   it('bug 2: the builder’s superset advice never shows on Today’s card', async () => {

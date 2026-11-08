@@ -10,6 +10,7 @@
  */
 
 import {
+  type BehindFacts,
   liveFocusExerciseIds,
   RECENT_LIFT_SESSIONS,
   actionIdFor,
@@ -251,6 +252,7 @@ import {
   planMuscleGapLines,
   type MuscleGoalInput,
   REPLAN_AFTER,
+  asksBehindToday,
   directMuscleGroup,
   type MusclesOf,
 } from '@fizz/domain';
@@ -472,6 +474,8 @@ export interface BuildChips {
 const WEEK_OFFER_LOOKBACK = 200;
 
 export interface CoachServiceDeps {
+  /** (Ben, 8 Nov: MS9) Behind on the plan this week (Today's facts); absent or null: not behind. */
+  behind?: () => Promise<BehindFacts | null>;
   /**
    * (Ben, 1 Nov) The goal and priority groups weekly muscle ranges are read for (Plan › Muscles'), for the plan
    * proposal's muscle check; absent or null: not checked.
@@ -1487,7 +1491,9 @@ export function createCoachService(deps: CoachServiceDeps) {
     earlierWords: readonly string[] = [],
     /** (19 Oct) Ben asked for a plan of several days, or to change the open plan in this thread (`plan`). */
     planRequest: { plan: PlanDraft | null; basedOn?: PlanDraft | null } | null = null,
-  ): Promise<{ view: BuildContextView; executors: CoachExecutors; inPlay: boolean } | null> {
+  ): Promise<{ view: BuildContextView; executors: CoachExecutors; inPlay: boolean; behind: BehindFacts | null; groupOf: (exerciseId: string) => string | null } | null> {
+    // (Ben, 8 Nov: MS5, MS9) Behind this week and asking about today: the facts, and the coverage check on the build.
+    const behind = planRequest === null && asksBehindToday(said) && deps.behind !== undefined ? await deps.behind().catch(() => null) : null;
     const inPlay = planRequest !== null || asksForBuild({ turnKind: 'general', text: said, draftInContext: draft !== null, followUp });
     // A follow-up ("yes add it") reads length and focus from Ben's earlier request too; never from the coach's text.
     const text = buildRequestWords(said, followUp);
@@ -1782,6 +1788,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       checkContext: checkContextAt(gym),
       gyms: savedGyms.map((x) => x.name),
       gymFor,
+      ...(behind === null || behind.uncovered.length === 0 ? {} : { coverage: { groups: behind.uncovered, groupOf: (id: string) => directMuscleGroup(byId.get(id) ?? null) } }),
       nameOf: (exerciseId) => byId.get(exerciseId)?.name ?? 'Exercise',
       contextHash: deriveId(stableStringify(view)),
       equipmentVersion: equipmentVersionOf(gym),
@@ -1802,7 +1809,7 @@ export function createCoachService(deps: CoachServiceDeps) {
         },
       },
     });
-    return { view, executors: { ...findExecutors, ...executors, ...planExecutors }, inPlay };
+    return { view, executors: { ...findExecutors, ...executors, ...planExecutors }, inPlay, behind, groupOf: (id: string) => directMuscleGroup(byId.get(id) ?? null) };
   }
 
   /** Review S1: a `propose_week` for this week's facts as they are now is already in Ben's coach history. */
@@ -1997,6 +2004,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           store: coachStore(),
           draft: draftHere !== null && draftSummary !== null ? draftHere : null,
           edit: (r) => builderPorts.edit(r),
+          // (Ben, 8 Nov: MS3, MS5) Behind this week: the change to today's draft keeps the behind bounds.
+          behind: build?.behind == null ? null : { uncovered: build.behind.uncovered, groupOf: build.groupOf },
           ...(setupOpen ? { fillSetup: (r: { words: string; opId: string }) => builderPorts.fillSetup(r) } : {}),
         }),
       );
@@ -2029,7 +2038,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           // Coach v3 (Ben 18 Oct): his lighter mid-workout model, if he chose one; `think_harder` returns to the main one.
           ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
-          context: { ...ctx.input, ...(draftHere !== null && draftSummary !== null ? { builderDraft: { name: draftHere.name, ...draftSummary, started: false as const } } : {}), ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(swapView === null || swapView.notPreferred.length === 0 ? {} : { notPreferred: swapView.notPreferred }), ...(weekView === null ? {} : { week: weekView }) },
+          context: { ...ctx.input, ...(draftHere !== null && draftSummary !== null ? { builderDraft: { name: draftHere.name, ...draftSummary, started: false as const } } : {}), ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(swapView === null || swapView.notPreferred.length === 0 ? {} : { notPreferred: swapView.notPreferred }), ...(weekView === null ? {} : { week: weekView }), ...(build?.behind == null ? {} : { behind: build.behind }) },
           structuralSignals: await structuralSignalsFor(p, own).catch(() => []),
           // ADR 0038: a general thread stays general when today's workout is in its context.
           ...(liveHere !== null ? { threadSessionId: own === null ? null : own.session.id } : {}),

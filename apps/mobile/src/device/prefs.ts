@@ -35,6 +35,8 @@ export interface DevicePrefs {
   todayExercisesOpen?: boolean;
   /** (Redesign v3 §A2) Today's Health line: what shows (long-press → `Show on Today`). Absent: Sleep and RHR. */
   todayHealth?: TodayHealthShows;
+  /** (Ben, 8 Nov, MS2) The local date Ben dismissed `N days behind · Adjust today?` (Skip or ✕): hidden that day. */
+  behindDismissedOn?: string;
 }
 
 /** The morning reminder's settings, the defaults until Ben changes one. */
@@ -52,7 +54,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
     const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment, voice, targetsHit } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown; voice?: unknown; targetsHit?: unknown };
-    const { morningReminder, liftsExercise, todayExercisesOpen, todayHealth } = json as { morningReminder?: unknown; liftsExercise?: unknown; todayExercisesOpen?: unknown; todayHealth?: unknown };
+    const { morningReminder, liftsExercise, todayExercisesOpen, todayHealth, behindDismissedOn } = json as { morningReminder?: unknown; liftsExercise?: unknown; todayExercisesOpen?: unknown; todayHealth?: unknown; behindDismissedOn?: unknown };
     const th = typeof todayHealth === 'object' && todayHealth !== null ? (todayHealth as Record<string, unknown>) : null;
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
@@ -65,6 +67,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
       ...(typeof liftsExercise === 'string' && liftsExercise.length > 0 && liftsExercise.length <= 200 ? { liftsExercise } : {}),
       ...(morningReminder === undefined ? {} : { morningReminder: parseMorningReminder(morningReminder) }),
       ...(typeof todayExercisesOpen === 'boolean' ? { todayExercisesOpen } : {}),
+      ...(typeof behindDismissedOn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(behindDismissedOn) ? { behindDismissedOn } : {}),
       ...(th === null ? {} : { todayHealth: { sleep: th.sleep !== false, rhr: th.rhr !== false, bodyweight: th.bodyweight === true } }),
     };
   } catch {

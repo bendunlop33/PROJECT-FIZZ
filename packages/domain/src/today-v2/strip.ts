@@ -47,6 +47,8 @@ export type StripItem =
   | { kind: 'activity'; text: string; activityId: string; planned: boolean }
   | { kind: 'plan_day'; text: string; planned: true }
   | { kind: 'today'; text: string; planned: true }
+  /** (Ben, 8 Nov) A plan day that doesn't fit this week (Today's week tiles only). */
+  | { kind: 'missed'; text: string; planned: false }
   | { kind: 'rest'; text: string; planned: false };
 
 export interface StripCell {

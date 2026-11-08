@@ -60,6 +60,7 @@ import {
   reviewLiftFacts,
   setupContextText,
   signalLine,
+  type BehindEditShape,
   type BuilderCoachEnv,
   type BuilderCoachExtras,
   type BuilderCoachReach,
@@ -81,7 +82,7 @@ import {
   type SetupCoachContext,
   type SetupFill,
 } from '@fizz/coach';
-import { deriveId, estimateBuilderMinutes, infoOrDefault, namedWeights, parseBuildRequest, slotsOf, stableStringify, toMs, type BuilderGroupName, type BuilderWorkout, type LastDaysView, type LoadReferences, type MainFocus } from '@fizz/domain';
+import { deriveId, estimateBuilderMinutes, infoOrDefault, namedWeights, parseBuildRequest, slotsOf, stableStringify, workingCount, toMs, type BuilderGroupName, type BuilderWorkout, type LastDaysView, type LoadReferences, type MainFocus } from '@fizz/domain';
 import {
   BUILDER_COACH_TOOL,
   type ActionDetail,
@@ -227,7 +228,7 @@ export type SetupAsk =
   | { kind: 'failed'; status: CoachCallStatus };
 
 export type EditAsk =
-  | { kind: 'proposal'; proposal: BuilderProposal; status: 'ok' }
+  | { kind: 'proposal'; proposal: BuilderProposal; status: 'ok'; shape?: BehindEditShape }
   /** The coach answered (or nothing it asked for could be done: `notes` says why). */
   | { kind: 'reply'; text: string | null; notes: string[]; status: 'ok' }
   /**
@@ -520,7 +521,8 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const base: ClaimBase = { ...claimBase(world, req.words), extra: [...lastDaysClaimExtras(extras.lastDays), ...readClaimExtras(reads)] };
       const made = makeBuilderProposal({ id: req.opId, snapshot: world.snapshot, ops: answer.args.ops, words: answer.args.reply, check: workoutClaimCheck(world.snapshot.workout, base), env });
       if (made.proposal === null) return { kind: 'reply', text: made.reason, notes: made.outcome.notes, status: 'ok' };
-      return { kind: 'proposal', proposal: made.proposal, status: 'ok' };
+      const slotsOfW = (w: typeof world.snapshot.workout) => slotsOf(w.blocks).map((sl) => ({ exerciseId: sl.exerciseId, sets: workingCount(sl), main: sl.main }));
+      return { kind: 'proposal', proposal: made.proposal, status: 'ok', shape: { before: slotsOfW(world.snapshot.workout), after: slotsOfW(made.outcome.workout), minutesBefore: world.snapshot.minutes, minutesAfter: made.outcome.minutes } };
     },
 
     /**

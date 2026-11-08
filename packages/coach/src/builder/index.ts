@@ -24,3 +24,4 @@ export const BUILDER_STATUS_WORD: Readonly<Record<BuilderCoachReach, string>> = 
 };
 export * from './weekly';
 export * from './reads';
+export * from './behind-edit';

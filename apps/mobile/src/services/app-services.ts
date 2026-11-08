@@ -681,6 +681,12 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   const coach = createCoachService({
+    // (Ben, 8 Nov: MS9) Behind this week, as Today reads it (`todaySession` is made below; this runs on a coach turn).
+    // A deload or lighter week never counts as behind (LW3, MS2).
+    behind: async () => {
+      const b = (await todaySession.load())?.behind ?? null;
+      return b === null || b.gate.lighterWeek || b.gate.paused ? null : b.coach;
+    },
     muscleGoal: muscleGoalNow,
     planMuscleLines: () => planMuscles.coachLines(),
     planWeeksLine: () => planMuscles.coachWeeks(),
@@ -765,7 +771,7 @@ export function createAppServices(deps: AppServicesDeps) {
         const a = await builderCoach.askEdit({ draftId: req.draftId, words: req.words, change: req.change, opId: req.opId });
         switch (a.kind) {
           case 'proposal':
-            return { kind: 'proposal', proposal: a.proposal };
+            return { kind: 'proposal', proposal: a.proposal, ...(a.shape === undefined ? {} : { shape: a.shape }) };
           case 'reply':
             return { kind: 'reply', text: a.text, notes: a.notes };
           case 'unavailable':

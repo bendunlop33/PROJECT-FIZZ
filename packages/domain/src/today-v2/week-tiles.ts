@@ -33,8 +33,11 @@ export function planDayColourKey(name: string): PlanDayColourKey {
 }
 
 export interface WeekTileMark {
-  /** `dot`: a done gym session; `ring`: an activity (done or planned) or a planned session. */
-  shape: 'dot' | 'ring';
+  /**
+   * `dot`: a done gym session; `ring`: an activity (done or planned) or a planned session; `missed` (Ben, 8 Nov): a
+   * plan day that doesn't fit this week, on its own scheduled day (drawn grey and dashed: never colour alone).
+   */
+  shape: 'dot' | 'ring' | 'missed';
   colour: PlanDayColourKey | 'activity';
   planned: boolean;
 }
@@ -85,6 +88,12 @@ export interface WeekTilesInput {
    * days plan it leads the days left from tomorrow. Absent or null: plan order.
    */
   upNext?: string | null;
+  /**
+   * (Ben, 8 Nov, MS1 flag 1) Set days: plan days still to do that don't fit this week (`weekBehind`'s overflow), on
+   * their own scheduled date. Never ringed as planned: each is a `missed` mark on that date, so the tiles agree with
+   * `N days behind`. Absent: none.
+   */
+  missed?: readonly StripPlannedDayInput[];
 }
 
 /**
@@ -136,7 +145,9 @@ export function aheadDates(today: string, ahead: readonly string[], chosen: stri
 export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
   const monday = mondayOf(input.today);
   const doneToday = input.workouts.some((w) => w.localDate === input.today);
-  const ring = todayRing({ ...input, doneToday }, input.plannedDays ?? []);
+  const missed = input.missed ?? [];
+  const missedNames = new Set(missed.map((d) => d.name));
+  const ring = todayRing({ ...input, doneToday }, (input.plannedDays ?? []).filter((d) => !missedNames.has(d.name)));
   const plannedDays = [...ring.planned, ...aheadDates(input.today, input.ahead ?? [], ring.chosen, doneToday ? (input.upNext ?? null) : null)];
   const chosen = ring.chosen;
   return Array.from({ length: 7 }, (_, i) => {
@@ -163,6 +174,11 @@ export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
         marks.push({ shape: 'ring', colour: planDayColourKey(d.name), planned: true });
         spoken.push(`${d.name}, Planned`);
       }
+    }
+    for (const d of missed.filter((x) => x.localDate === date)) {
+      items.push({ kind: 'missed', text: d.name, planned: false });
+      marks.push({ shape: 'missed', colour: planDayColourKey(d.name), planned: false });
+      spoken.push(`${d.name}, missed`);
     }
     let activityDone = false;
     for (const a of input.activities.filter((x) => x.localDate === date)) {

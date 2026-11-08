@@ -1,5 +1,6 @@
 import {
   addDraftVersion,
+  behindCoverageGaps,
   checkBuildQuestion,
   dayMonthText,
   expectedLoad,
@@ -199,6 +200,22 @@ export interface BuildDeps {
   gyms?: readonly string[];
   /** (Coach v3) Another saved gym the model named (`gymName`); null when none matches. */
   gymFor?: (name: string) => Promise<BuildGym | null>;
+  /**
+   * (Ben, 8 Nov: MS5; the coach left biceps out) Behind this week: the top missed day's groups with 0 direct sets this
+   * week and none later (`behindCoverageGaps`). A proposal giving one of them no set is sent back once with the list;
+   * built again without them, it lands with the gap named on the card. Absent: not a behind build.
+   */
+  coverage?: { groups: readonly string[]; groupOf: (exerciseId: string) => string | null };
+}
+
+/** (Ben, 8 Nov, MS5) The tool output when a behind build leaves an uncovered group out: once a turn. */
+export function coverageLine(groups: readonly string[]): string {
+  return `Not built: ${groups.join(', ')} get 0 sets this week and none later. Add them within build.setBudget, or call again as it is and name the trade-off in message.`;
+}
+
+/** (Ben, 8 Nov, MS5) On the card when he still left a group out: never silently dropped. */
+export function coverageNote(groups: readonly string[]): string {
+  return `None this week: ${groups.join(', ')}`;
 }
 
 /**
@@ -479,6 +496,7 @@ export const BUILD_ALREADY_LINE = 'Already built this turn. Reply now.';
 export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
   // Review S2: one request builds one draft (or one version). The executor lives for one turn.
   let landedOpId: string | null = null;
+  let coverageAsked = false;
   const propose: ToolExecutor = async (call, ctx): Promise<ToolResult> => {
     if (call.tool !== 'propose_workout') throw new TypeError(call.tool);
     if (landedOpId !== null && landedOpId !== ctx.opId) return { kind: 'refused', line: BUILD_ALREADY_LINE };
@@ -508,6 +526,17 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
       return { kind: 'action', record: r.action, replayed: r.status === 'replayed' };
     };
     if (check.status === 'unusable') return record('rejected', 'every exercise failed the checks');
+    // (Ben, 8 Nov, MS5) Behind this week: a group nothing else this week covers is never silently left out.
+    const cov = deps.coverage;
+    const gaps = cov === undefined ? [] : behindCoverageGaps(cov.groups, check.plan.slots.map((sl) => ({ exerciseId: sl.exerciseId, sets: sl.setTemplates.filter((t) => t.setType !== 'warmup').length })), cov.groupOf);
+    if (gaps.length > 0 && !coverageAsked) {
+      coverageAsked = true;
+      return { kind: 'refused', line: coverageLine(gaps) };
+    }
+    const named = (g: string) => args.message.toLowerCase().includes(g.toLowerCase());
+    const gapNote = gaps.length === 0 ? null : coverageNote(gaps);
+    const rationaleShown = gapNote === null || gaps.every(named) ? rationale : [`${gapNote}.`, rationale].filter((x): x is string => x !== null).join(' ').slice(0, BUILD_LIMITS.messageMax);
+    const notesShown: GuardNote[] = gapNote === null ? guardNotesOf(check.checks) : [...guardNotesOf(check.checks), { kind: 'build_check', setIds: [], text: gapNote }];
 
     const version: WorkoutDraftVersion = {
       n: 1,
@@ -520,7 +549,7 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
       plan: check.plan,
       fitMinutes: minutes,
       checks: check.checks.slice(0, 60),
-      rationale,
+      rationale: rationaleShown,
       ...(ctx.facts === undefined ? {} : { rationaleNumbersChecked: true as const }),
       contextHash: deps.contextHash,
       equipmentVersion: gym.equipmentVersion,
@@ -547,7 +576,7 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
       leftOut: leftOutCount(check.checks),
       lines: linesOf(previous, current.plan, deps.nameOf),
     };
-    const action = newActionRecord(ctx, detail, { status: 'committed', reason: rationale, guardNotes: guardNotesOf(check.checks) });
+    const action = newActionRecord(ctx, detail, { status: 'committed', reason: rationaleShown, guardNotes: notesShown });
     const r = await deps.store.commit(ctx.ownerId, { kind: 'workout_draft', action, draft: next, expectedVersion });
     if (r.status === 'conflict') return record('stale', 'the draft changed since');
     landedOpId = ctx.opId;

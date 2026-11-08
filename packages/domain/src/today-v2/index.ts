@@ -6,3 +6,4 @@ export * from './split-days';
 export * from './workout-list';
 export * from './week-tiles';
 export * from './day-sheet';
+export * from './behind';

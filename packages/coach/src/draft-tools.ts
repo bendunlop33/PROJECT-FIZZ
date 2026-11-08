@@ -1,6 +1,7 @@
 import type { ActionDetail, ActionRecord } from '@fizz/schemas';
 
 import type { BuilderProposal } from './builder/proposal';
+import { asksBeyondBehind, checkBehindEdit, type BehindEditRules, type BehindEditShape } from './builder/behind-edit';
 import { newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolResult } from './executors';
 
 /**
@@ -20,7 +21,8 @@ import { newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolRe
  */
 
 export type DraftEditOutcome =
-  | { kind: 'proposal'; proposal: BuilderProposal }
+  /** `shape`: the workout before and after (for the behind checks, MS3/MS5). Absent: not checked. */
+  | { kind: 'proposal'; proposal: BuilderProposal; shape?: BehindEditShape }
   | { kind: 'reply'; text: string | null; notes: readonly string[] }
   | { kind: 'unavailable' }
   | { kind: 'gone' };
@@ -35,6 +37,8 @@ export interface DraftToolDeps {
   edit?: (req: { draftId: string; words: string; change: string | null; opId: string }) => Promise<DraftEditOutcome>;
   /** Absent: `fill_setup` isn't wired. */
   fillSetup?: (req: { words: string; opId: string }) => Promise<SetupFillOutcome>;
+  /** (Ben, 8 Nov: MS3, MS5) Behind on the plan this week, on a turn asking about today: the change's bounds and coverage. */
+  behind?: BehindEditRules | null;
 }
 
 /** Fed back when a draft or Set up tool is called with no words of Ben's this turn (a chip, an accepted offer). */
@@ -51,6 +55,7 @@ export function createDraftToolExecutors(deps: DraftToolDeps): CoachExecutors {
   const draft = deps.draft;
   const edit = deps.edit;
   if (draft !== null && edit !== undefined) {
+    let coverageAsked = false;
     out.propose_workout_edit = async (call, ctx): Promise<ToolResult> => {
       if (call.tool !== 'propose_workout_edit') throw new TypeError(call.tool);
       const words = ctx.benWords?.trim() ?? '';
@@ -59,12 +64,20 @@ export function createDraftToolExecutors(deps: DraftToolDeps): CoachExecutors {
       const made = await edit({ draftId: draft.draftId, words, change: change === '' ? null : change, opId: ctx.opId }).catch((): DraftEditOutcome => ({ kind: 'unavailable' }));
       switch (made.kind) {
         case 'proposal': {
-          const p = made.proposal;
+          let p = made.proposal;
+          // (Ben, 8 Nov: MS3, MS5) Behind this week: within the usual length, the main lift kept, at most 2 days' worth
+          // swapped in (unless his words ask for more); a group nothing else this week covers named, never dropped.
+          if (deps.behind != null && made.shape !== undefined) {
+            const v = checkBehindEdit(made.shape, deps.behind, { askedMore: asksBeyondBehind(words), coverageAsked });
+            coverageAsked = v.coverageAsked;
+            if (v.kind === 'refuse') return { kind: 'refused', line: v.line };
+            if (v.notes.length > 0) p = { ...p, warnings: [...p.warnings, ...v.notes] };
+          }
           const detail: ActionDetail = {
             kind: 'propose_workout_edit',
             draftId: draft.draftId,
             draftName: draft.name.slice(0, 120),
-            proposal: { ...p, ops: [...p.ops], lines: [...p.lines], warnings: [...p.warnings], notes: [...p.notes], preconditions: p.preconditions.map((x) => ({ ...x })), hidden: [...p.hidden], ...(p.benLoads === undefined ? {} : { benLoads: p.benLoads.map((b) => ({ ...b })) }), ...(p.topLoadsAfter === undefined ? {} : { topLoadsAfter: { ...p.topLoadsAfter } }) },
+            proposal: { ...p, ops: [...p.ops], lines: [...p.lines], warnings: [...p.warnings], notes: [...p.notes], preconditions: p.preconditions.map((x) => ({ ...x })), hidden: [...p.hidden], ...(p.benLoads === undefined ? {} : { benLoads: p.benLoads.map((b) => ({ ...b })) }), ...(p.topLoadsAfter === undefined ? {} : { topLoadsAfter: { ...p.topLoadsAfter } }), ...(p.asked === undefined ? {} : { asked: p.asked }), ...(p.tradeOff === undefined ? {} : { tradeOff: [...p.tradeOff] }) },
           };
           return record(deps.store, ctx.ownerId, newActionRecord(ctx, detail, { status: 'proposed', reason: call.args.reason.slice(0, 240) }));
         }
