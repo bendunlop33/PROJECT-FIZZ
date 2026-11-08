@@ -841,6 +841,9 @@ export const CoachEditStepSchema = z.discriminatedUnion('type', [
   SetMainLiftCommandSchema,
   /** (Ben, 2 Nov) A pending set's rest (`Today too?` after a rest-settings change); only `restS` is ever patched this way. */
   EditPlannedSetCommandSchema,
+  /** (Ben, 8 Nov) The coach's warm-ups today: a pending warm-up added, or (replacing the ramp) a pending one taken out. */
+  AddWarmupCommandSchema,
+  DeleteSetCommandSchema,
 ]);
 export type CoachEditStep = z.infer<typeof CoachEditStepSchema>;
 

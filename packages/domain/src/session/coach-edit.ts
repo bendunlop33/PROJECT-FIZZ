@@ -1,4 +1,4 @@
-import { coachEditStepOpId, type ActionDetail, type CoachEditStep, type CoachEditTodayCommand, type CommandOf, type EditTodayArgs, type EditTodayOp, type Exercise, type ExerciseTargetChanges, type GuardNote, type PainFlag, type SessionAggregate, type SessionExercise, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
+import { BUILD_LIMITS, coachEditStepOpId, type ActionDetail, type CoachEditStep, type CoachEditTodayCommand, type CommandOf, type EditTodayArgs, type EditTodayOp, type Exercise, type ExerciseTargetChanges, type GuardNote, type PainFlag, type SessionAggregate, type SessionExercise, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 import { isBenLoad, isIncrease, validateTodayAdjustment, type AdjustIntent, type BenLoad, type MessagePain } from '../coach/adjust';
 import { dayMonthText } from '../display';
 import { painFlagForMovement, rowIsMovement } from '../exercise-identity';
@@ -6,7 +6,9 @@ import { PAIN_AREA_WORD } from '../pain-flags';
 import { deriveId } from '../stable';
 import { toMs } from '../time';
 import { checkCoachAdd, type CoachAddInput } from './coach-add';
-import { currentGymEquipment } from './equipment-snapshot';
+import { BUILDER_REST_DEFAULTS } from '../builder/rest';
+import { loadDirection, roundToAvailableLoad } from '../equipment';
+import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { buildSwapExerciseCommand, midSwapSlot, swapPainCarry } from './mid-swap';
 import { doableHere, substituteTargets } from './substitutes';
 import { supersetLinkSides } from './order';
@@ -103,6 +105,7 @@ function rowOf(state: SessionAggregate, op: EditTodayOp): string | null {
     case 'superset':
     case 'split_superset':
     case 'main':
+    case 'warmups':
       return op.sessionExerciseId;
     case 'add':
       return null;
@@ -127,7 +130,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
 
   // An offer's Adjust about one row: that row's targets and set count only (review S1).
   const only = input.onlySessionExerciseId ?? null;
-  if (only !== null && ops.some((op) => (op.op !== 'set' && op.op !== 'set_count' && op.op !== 'sets') || rowOf(s, op) !== only)) return reject(`only ${nameOf(only)}`);
+  if (only !== null && ops.some((op) => (op.op !== 'set' && op.op !== 'set_count' && op.op !== 'sets' && op.op !== 'warmups') || rowOf(s, op) !== only)) return reject(`only ${nameOf(only)}`);
 
   // Rows that a swap or removal takes over can't be changed, moved or used as an anchor by another op.
   const taken = new Map<string, number>();
@@ -548,6 +551,17 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     }
   }
 
+  // 8. (Ben, 8 Nov) Warm-ups today: added in the warm-up block by load (`add_warmup`), or the pending ramp replaced.
+  for (const op of ops) {
+    if (op.op !== 'warmups') continue;
+    const r = coachWarmupSteps(s, op, { at: input.at, opId: input.opId, first: steps.length });
+    for (const n of r.notes) skip(n);
+    if (r.steps.length === 0) continue;
+    steps.push(...r.steps);
+    if (r.line !== null) lines.push({ change: 'edit', text: r.line.slice(0, 200) });
+    names.add(nameOf(op.sessionExerciseId));
+  }
+
   if (steps.length === 0) return reject(skipped[0] ?? 'no change');
   return {
     status: 'ok',
@@ -559,6 +573,84 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     guardNotes: notes.slice(0, 40),
     used,
   };
+}
+
+const RAMP_CONVENTIONS: ReadonlySet<string> = new Set(['total', 'per_hand', 'stack']);
+const fmtLoad = (v: number): string => String(Math.round(v * 100) / 100);
+
+/**
+ * (Ben, 8 Nov) One `warmups` op as the workout's own commands. Pure. Each load is rounded down to the row's item
+ * (rule 4) and must sit under the first working load; a load already among the warm-ups that stay isn't added twice;
+ * at most `BUILD_LIMITS.maxWarmups` in all. `replace` takes out pending warm-ups not asked for; done ones stay (rule 2).
+ * Not in a superset (a warm-up there would count as a round, as `＋ Warm-up`).
+ */
+export function coachWarmupSteps(
+  s: SessionAggregate,
+  op: Extract<EditTodayOp, { op: 'warmups' }>,
+  /** `first`: the index of this op's first step in the whole edit (step op IDs follow it). */
+  ids: { at: ZonedTimestamp; opId: string; first: number },
+): { steps: CoachEditStep[]; notes: string[]; line: string | null } {
+  const notes: string[] = [];
+  const none = (note: string) => ({ steps: [], notes: [note], line: null });
+  const row = liveRow(s, op.sessionExerciseId);
+  if (row === undefined) return none('the coach named an exercise that isn’t in this workout');
+  if (row.supersetGroup !== null) return none(`no warm-ups inside a superset: ${row.exerciseName}`);
+  const own = s.sets.filter((x) => x.sessionExerciseId === row.id && x.status !== 'deleted' && x.status !== 'skipped').sort((a, b) => a.index - b.index);
+  const loadOf = (x: WorkoutSet) => x.actual?.load ?? x.draft?.load ?? x.planned.load;
+  const work = own.find(working);
+  const top = work === undefined ? null : loadOf(work);
+  const eq = equipmentOfRow(s.session.equipmentSnapshot, row);
+  if (top === null || eq === null || !RAMP_CONVENTIONS.has(top.convention) || loadDirection(top.convention) !== 'resistance' || top.convention !== eq.loadConvention || top.unit !== row.unit) {
+    return none(`${row.exerciseName} has no working load to warm up to`);
+  }
+  const roundDown = (v: number): number | null => {
+    const r = roundToAvailableLoad({ value: v, unit: top.unit, convention: top.convention }, eq, 'down');
+    return r.ok && r.load.value <= v + 1e-9 ? r.load.value : null;
+  };
+  const warm = own.filter((x) => x.setType === 'warmup');
+  const same = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
+  const wanted: { load: number; reps: number }[] = [];
+  for (const w of op.sets) {
+    const v = roundDown(w.load);
+    if (v === null || v <= 0) {
+      notes.push(`a ${fmtLoad(w.load)} ${top.unit} warm-up on ${row.exerciseName}`);
+      continue;
+    }
+    if (v >= top.value - 1e-6) {
+      notes.push(`${fmtLoad(w.load)} ${top.unit} isn’t below ${row.exerciseName}’s ${fmtLoad(top.value)} ${top.unit}`);
+      continue;
+    }
+    if (!wanted.some((x) => same(x.load, v))) wanted.push({ load: v, reps: w.reps });
+  }
+  // Pending warm-ups at a load asked for stay as they are; with `replace`, the other pending ones go.
+  const pendingWarm = warm.filter((x) => x.status === 'pending');
+  const drop = op.replace ? pendingWarm.filter((x) => !wanted.some((w) => same(w.load, loadOf(x)?.value ?? -1))) : [];
+  const stays = warm.filter((x) => !drop.includes(x));
+  const add = wanted.filter((w) => !stays.some((x) => same(loadOf(x)?.value ?? -1, w.load))).sort((a, b) => a.load - b.load);
+  const room = Math.max(0, BUILD_LIMITS.maxWarmups - stays.length);
+  if (add.length > room) notes.push(`at most ${String(BUILD_LIMITS.maxWarmups)} warm-ups on ${row.exerciseName}`);
+  const adding = add.slice(0, room);
+  if (adding.length === 0 && drop.length === 0) {
+    return { steps: [], notes: notes.length > 0 ? notes : [`${row.exerciseName}’s warm-ups are already that`], line: null };
+  }
+  const steps: CoachEditStep[] = [];
+  const nextOpId = (): string => coachEditStepOpId(ids.opId, ids.first + steps.length);
+  for (const x of drop) steps.push({ type: 'delete_set', at: ids.at, opId: nextOpId(), setId: x.id, expectedSetVersion: x.version });
+  const restS = warm[0]?.rest.seconds ?? BUILDER_REST_DEFAULTS.warmup;
+  for (const w of adding) {
+    steps.push({
+      type: 'add_warmup',
+      at: ids.at,
+      opId: nextOpId(),
+      sessionExerciseId: row.id,
+      newSetId: deriveId(`${ids.opId}:warmup:${row.id}:${fmtLoad(w.load)}`),
+      planned: { load: { value: w.load, unit: top.unit, convention: top.convention }, reps: { min: w.reps, max: w.reps }, durationS: null, rpe: null, rir: null },
+      restS,
+      expectedVersion: s.session.version,
+    });
+  }
+  const after = [...stays.map((x) => loadOf(x)?.value ?? 0), ...adding.map((w) => w.load)].filter((v) => v > 0).sort((a, b) => a - b);
+  return { steps, notes, line: `${row.exerciseName} warm-ups: ${after.map(fmtLoad).join(', ')} ${top.unit}` };
 }
 
 /**
@@ -639,6 +731,9 @@ export function coachEditPainHold(input: { aggregate: SessionAggregate; command:
       case 'link_superset':
       case 'split_superset':
       case 'set_main_lift':
+      case 'add_warmup':
+      case 'delete_set':
+        // (Ben, 8 Nov) A warm-up added or taken out never makes the working sets harder.
         break;
     }
   }
