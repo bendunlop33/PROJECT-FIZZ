@@ -223,7 +223,8 @@ async function benchThenWarmup(): Promise<{ s: AppServices; sessionId: string }>
   };
   const bench = await add('Bench press');
   let agg = (await s.workout.load(sessionId))?.aggregate;
-  const benchSet = agg?.sets.find((x) => x.sessionExerciseId === bench && x.status === 'pending');
+  // (8 Nov) Its planned warm-ups come first now; Ben logs his working set.
+  const benchSet = agg?.sets.find((x) => x.sessionExerciseId === bench && x.status === 'pending' && x.setType !== 'warmup');
   if (!benchSet) throw new Error('no bench set');
   await log(benchSet.id, 60, 10, 6);
   const press = await add('Overhead press');

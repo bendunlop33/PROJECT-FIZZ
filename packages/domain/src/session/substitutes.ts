@@ -12,6 +12,7 @@ import { loadCell } from './overview';
 import { mapEquipment, snapPlanToGym, type SnapGym, type SnapMapping } from './snap';
 import { swapSource, type SwapPlan } from './swap-plan';
 import { addedSlotShape } from './today-shape';
+import type { JoinWarmupContext } from '../warmup/join';
 
 /**
  * Swap today (overview-today-edits TE6, exercise-library EL4/EL9). Pure.
@@ -42,6 +43,16 @@ export interface SubstituteContext {
   /** Pain mentioned (no movement chosen) in today's check-in: holds every load. */
   sessionPain: PainStatus;
   at: ZonedTimestamp;
+  /**
+   * (Ben, 8 Nov) For an exercise joining a running workout (the coach's add, a swap): the warm-up planner's facts,
+   * main lift and Ben's warm-up preferences (`joinWarmups`). Absent: the joining exercise's own facts only.
+   */
+  warmups?: JoinWarmupContext;
+  /**
+   * (Ben, 8 Nov) The exercise joins the running workout as a secondary lift (`joinsAsSecondary`): a main barbell
+   * lift's rule reads as a compound lift's, reps from his history. Absent: as its own category.
+   */
+  secondaryLift?: boolean;
 }
 
 /** The slot being swapped: how many working sets it has, and its own sets and reps. */

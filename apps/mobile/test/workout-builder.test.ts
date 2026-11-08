@@ -1114,7 +1114,8 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: 'during-add' });
     if (!added.ok) throw new Error(added.error.message);
     const ex = added.aggregate.exercises.at(-1);
-    const set = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.id).sort((a, b) => a.index - b.index)[0];
+    // (8 Nov) The first working set (the planner's warm-ups come first, and go with the other extras).
+    const set = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.id && x.setType !== 'warmup').sort((a, b) => a.index - b.index)[0];
     if (!ex || !set) throw new Error('set');
     for (const extra of added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.id !== set.id)) await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: extra.id, expectedSetVersion: extra.version });
     h.clockMs += 60_000;

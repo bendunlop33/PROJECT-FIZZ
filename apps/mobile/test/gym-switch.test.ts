@@ -4,7 +4,7 @@ import { gymSwitchRefusal, isProposalStale, NBSP, repeatPreviewLines } from '@fi
 
 import { newerWorkoutData } from '../src/workout/load-order';
 import { afterSwitchRefused, cardIsStale, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, reviewSheetView, sheetClosesOn, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
-import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { createHarness, dropPlannedWarmups, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * Mid-workout gym switch through the app's services on real SQLite files
@@ -40,7 +40,8 @@ async function setUp() {
     const r = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: h.ids() });
     if (!r.ok) throw new Error(r.error.message);
   }
-  // Log bench set 1 at Main Gym.
+  // Log bench set 1 at Main Gym. (8 Nov) Its planned warm-ups are skipped first, so set 1 is the focus.
+  await dropPlannedWarmups(h, s, sessionId);
   const data = await s.workout.load(sessionId);
   if (!data) throw new Error('no workout');
   const v = s.workout.view(data, h.clockMs, null);

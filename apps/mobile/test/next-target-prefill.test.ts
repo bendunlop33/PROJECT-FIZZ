@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NBSP } from '@fizz/domain';
 
-import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { createHarness, dropPlannedWarmups, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * Review workout-loop S3 (PM: prefill, labelled): the Summary's Next time is
@@ -24,7 +24,9 @@ async function addBench(s: Awaited<ReturnType<Harness['launch']>>['services'], g
   const bench = (await s.workout.pickerExercises(sessionId, 'bench')).find((p) => p.exercise.name === 'Bench press');
   const r = await s.workout.addExercise({ sessionId, exerciseId: bench?.exercise.id ?? '', equipmentId: bench?.equipment[0]?.id ?? null, opId: h.ids() });
   if (!r.ok) throw new Error(r.error.message);
-  return { sessionId, aggregate: r.aggregate };
+  // (8 Nov) The planner's warm-ups (kept in `added`) are incidental here: set 1 is the first working set.
+  const a = await dropPlannedWarmups(h, s, sessionId);
+  return { sessionId, aggregate: { ...a, sets: a.sets.filter((x) => x.status !== 'deleted').sort((x, y) => x.index - y.index) }, added: r.aggregate };
 }
 
 describe('Next time prefills the next workout', () => {
@@ -38,7 +40,9 @@ describe('Next time prefills the next workout', () => {
     ]);
 
     h.clockMs += 2 * 86_400_000;
-    const { sessionId, aggregate } = await addBench(s, gymId, null);
+    const { sessionId, aggregate, added } = await addBench(s, gymId, null);
+    // (8 Nov) Added from the picker it gets the planner's warm-ups: bench 102.5 × 3–6, cold, PL1's ladder.
+    expect(added.sets.filter((x) => x.setType === 'warmup').map((x) => [x.planned.load?.value, x.planned.reps?.min])).toEqual([[60, 5], [80, 2], [90, 1]]);
     expect(aggregate.sets.map((x) => [x.planned.load?.value, x.planned.reps, x.planned.source])).toEqual([1, 2, 3].map(() => [102.5, { min: 3, max: 6 }, 'built_in_rule']));
     const data = await s.workout.load(sessionId);
     if (!data) throw new Error('no data');

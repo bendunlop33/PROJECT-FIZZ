@@ -106,8 +106,11 @@ describe('add an exercise from chat', () => {
     const after = await rowsOf(s, sessionId);
     const raise = after.find((x) => x.row.exerciseName === 'Lateral raise');
     expect(raise?.row.loadConvention).toBe('per_hand');
-    expect(raise?.sets).toHaveLength(3);
-    for (const set of raise?.sets ?? []) expect(set).toMatchObject({ status: 'pending', planned: { load: { value: 10, unit: 'kg', convention: 'per_hand' }, reps: { min: 10, max: 15 }, rpe: 8, source: 'coach' } });
+    // (8 Nov) WU7: a cold isolation after bench gets the planner's one 50 % warm-up first, on the rack.
+    expect(raise?.sets.filter((x) => x.setType === 'warmup').map((x) => [x.planned.load?.value, x.planned.reps?.min])).toEqual([[5, 8]]);
+    const work = (raise?.sets ?? []).filter((x) => x.setType !== 'warmup');
+    expect(work).toHaveLength(3);
+    for (const set of work) expect(set).toMatchObject({ status: 'pending', planned: { load: { value: 10, unit: 'kg', convention: 'per_hand' }, reps: { min: 10, max: 15 }, rpe: 8, source: 'coach' } });
     // Bench is exactly as it was.
     expect(after.find((x) => x.row.exerciseName === 'Bench press')).toEqual(before.find((x) => x.row.exerciseName === 'Bench press'));
 
@@ -172,7 +175,7 @@ describe('add an exercise from chat', () => {
     await h.forceClose();
     const { services: s2 } = await h.launch();
     const raise = (await rowsOf(s2, sessionId)).find((x) => x.row.exerciseName === 'Lateral raise');
-    expect(raise?.sets).toHaveLength(3);
+    expect(raise?.sets.filter((x) => x.setType !== 'warmup')).toHaveLength(3);
     const first = raise?.sets.sort((a, b) => a.index - b.index)[0];
     if (!first) throw new Error('no set');
     h.clockMs += 120_000;

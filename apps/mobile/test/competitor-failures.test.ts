@@ -55,7 +55,8 @@ async function startWith(s: AppServices, gymId: string, name: string): Promise<{
   if (!pick) throw new Error(`no ${name}`);
   const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: h.ids() });
   if (!added.ok) throw new Error(added.error.message);
-  return { sessionId, sets: [...added.aggregate.sets].sort((a, b) => a.index - b.index) };
+  // (8 Nov) The working sets: the planner's warm-ups come first now.
+  return { sessionId, sets: [...added.aggregate.sets].filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index) };
 }
 
 async function stored(s: AppServices, sessionId: string): Promise<SessionAggregate> {

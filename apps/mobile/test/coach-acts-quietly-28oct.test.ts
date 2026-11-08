@@ -74,6 +74,8 @@ function rowSets(a: SessionAggregate, name: string) {
   const row = a.exercises.find((e) => e.exerciseName === name && e.removed === undefined);
   return a.sets.filter((x) => x.sessionExerciseId === row?.id && x.status !== 'deleted').sort((x, y) => x.index - y.index);
 }
+/** (8 Nov) The row's working sets: an exercise added mid-workout now has the planner's warm-ups first. */
+const workSets = (a: SessionAggregate, name: string) => rowSets(a, name).filter((x) => x.setType !== 'warmup');
 
 const exOf = (w: ContextWorkout, name: string) => {
   const e = w.exercises.find((x) => x.name === name);
@@ -132,7 +134,7 @@ describe('"builds up to 95 kg barbell row as the last set" (Ben, 28 Oct)', () =>
     expect(model.requests[0]?.tools.map((t) => t.name)).toContain('edit_today');
     const record = r.cards[0]?.record;
     expect(record?.status).toBe('committed');
-    const sets = rowSets(await aggregate(s, sessionId), 'Barbell row');
+    const sets = workSets(await aggregate(s, sessionId), 'Barbell row');
     expect(sets.map((x) => x.planned.load?.value)).toEqual([60, 72.5, 85, 95]);
     if (record === undefined) throw new Error('no card');
     const undo = await s.coach.undo(record.actionId, `undo:${record.actionId}`);
@@ -144,16 +146,16 @@ describe('"builds up to 95 kg barbell row as the last set" (Ben, 28 Oct)', () =>
 describe('from Today’s coach while a workout is live: the same tools, applied at once with Undo', () => {
   it('"add a set to rows": applied, with Undo; the thread stays Today’s', async () => {
     const { s, sessionId } = await liveRowsAndCurls();
-    const n = rowSets(await aggregate(s, sessionId), 'Barbell row').length;
+    const n = workSets(await aggregate(s, sessionId), 'Barbell row').length;
     model = new StepModel([edit((w) => [{ op: 'set_count', sessionExerciseId: exOf(w, 'Barbell row').sessionExerciseId, workingSets: n + 1 }], 'add a set to rows'), () => replyWith('Done.')]);
     const r = await say(s, 'add a set to rows', { kind: 'today' });
     expect(model.requests[0]?.tools.map((t) => t.name)).toContain('edit_today');
     expect(r.cards.map((c) => c.record.status)).toEqual(['committed']);
-    expect(rowSets(await aggregate(s, sessionId), 'Barbell row')).toHaveLength(n + 1);
+    expect(workSets(await aggregate(s, sessionId), 'Barbell row')).toHaveLength(n + 1);
     const record = r.cards[0]?.record;
     if (record === undefined) throw new Error('no card');
     expect((await s.coach.undo(record.actionId, `undo:${record.actionId}`)).result.status).toBe('written');
-    expect(rowSets(await aggregate(s, sessionId), 'Barbell row')).toHaveLength(n);
+    expect(workSets(await aggregate(s, sessionId), 'Barbell row')).toHaveLength(n);
     expect((await s.coach.listThreads()).find((t) => t.id === r.threadId)?.sessionId).toBeNull();
   });
 
