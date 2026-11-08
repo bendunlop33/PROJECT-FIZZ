@@ -6,11 +6,13 @@
 3. With no AI, the built-in rule picks the **whole day** that scores best on the same order, labelled `Built-in`. The coach can swap up to 2 items in from other missed days.
 4. It's only ever an offer, at most once a day. It's never shown in a lighter or deload week, after you've trained today, or when you've already picked today's day. Pain holds and every other guardrail apply unchanged.
 
-*Library file with **candidate** rules MS1–MS9 (Coaching knowledge, CLAUDE.md rule 10). They aren't in the playbook until Ben approves them. Not medical advice: pain or injury holds progression on that movement and the coach suggests seeing a professional; it never diagnoses (CLAUDE.md rule 9, one-session hold per CHANGELOG 8 Nov). Compiled by the training researcher on 2026-11-08; all sources checked 2026-11-08 unless a line says otherwise. Builds on approved rules 1 (short week: keep loads, cut sets, no make-up), 2, 3, FQ1–FQ3, VC1–VC4, LW1–LW3, SF1–SF9 (approved 8 Nov), and training-blocks.md §4.1–4.1a (week counting, Up next, this week's slots).*
+***Approved by Ben, 8 Nov 2026:** MS1–MS9 as written (CHANGELOG 8 Nov). Library file (Coaching knowledge, CLAUDE.md rule 10).*
+
+*Not medical advice: pain or injury holds progression on that movement and the coach suggests seeing a professional; it never diagnoses (CLAUDE.md rule 9, one-session hold per CHANGELOG 8 Nov). Compiled by the training researcher on 2026-11-08; all sources checked 2026-11-08 unless a line says otherwise. Builds on approved rules 1 (short week: keep loads, cut sets, no make-up), 2, 3, FQ1–FQ3, VC1–VC4, LW1–LW3, SF1–SF9 (approved 8 Nov), and training-blocks.md §4.1–4.1a (week counting, Up next, this week's slots).*
 
 **Trigger.** Ben, 8 Nov 2026: *"If the app was good it would have seen this all too given I have a plan."* He'd missed Pull A and Upper B and had to ask the coach for the best workout for today. The coach replied: "back work first, then arms and core, not cramming every missed session into today". Ben approved a Today offer (CHANGELOG 8 Nov, "rules researched first").
 
-## Candidate playbook rules
+## Playbook rules (approved 8 Nov 2026)
 
 Terms (all derived from logs and the plan, never stored, never inferred: rule 6):
 - **Week** = Mon–Sun in the plan's time zone (training-blocks §4.1).
@@ -33,7 +35,7 @@ Terms (all derived from logs and the plan, never stored, never inferred: rule 6)
 
 ### Conflicts and flags (for Ben and the PM; not resolved here)
 
-1. **Set days count vs this week's reflow.** MS1 counts Ben's scheduled weekdays only. When Up next's own day has passed, `setDaysWeekSlots` may place displaced days on rest days (training-blocks §4.1a), so the tiles could show every day placed while the card says `2 days behind`. Recommendation: keep MS1 as written (it compares against the days he chose to train) and have the designer make the tiles match, e.g. a borrowed rest day shown as a rest day with the day greyed. That's PM/designer work.
+1. **Set days count vs this week's reflow.** *(Resolved 8 Nov: a displaced day now moves only onto another plan weekday, never a rest day unless Ben moved it there; a day that doesn't fit shows as `missed` on the tiles, on its own day or the rest day Up next borrows, so the marks equal the count.)* MS1 counts Ben's scheduled weekdays only. When Up next's own day has passed, `setDaysWeekSlots` may place displaced days on rest days (training-blocks §4.1a), so the tiles could show every day placed while the card says `2 days behind`. Recommendation: keep MS1 as written (it compares against the days he chose to train) and have the designer make the tiles match, e.g. a borrowed rest day shown as a rest day with the day greyed. That's PM/designer work.
 2. **Any days pace.** ⌈N × days left ÷ 7⌉ makes Any days "behind" once finishing would mean training every day left. The simpler option (behind only when it truly can't fit) would have stayed silent on Ben's Thursday in Any days. Ben may prefer that.
 3. **MS2 extends LW3** ("a lighter week never counts as a stall or as behind") from the planned path to this offer. That's a small extension of an approved rule.
 4. **Rule 3.** The offer is coach-raised, but Ben approved this specific offer (8 Nov) and it only applies on Apply. That fits rule 3's "offers … doesn't apply until Ben accepts". Swapping today's day is structural only for today; nothing future changes (MS7).
