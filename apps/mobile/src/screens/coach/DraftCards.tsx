@@ -67,7 +67,7 @@ export function DraftEditCard({ record, onChanged }: { record: ActionRecord; onC
           {l}
         </AppText>
       ))}
-      {d.proposal.warnings.map((w) => (
+      {[...d.proposal.warnings, ...(d.proposal.tradeOff ?? [])].map((w) => (
         <AppText key={w} variant="callout" color="text.secondary">
           {w}
         </AppText>

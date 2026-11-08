@@ -848,13 +848,17 @@ export function namedWeightGymEdit(input: { aggregate: SessionAggregate; command
   const lines: string[] = [];
   let gymId: string | null = null;
   for (const step of input.command.steps) {
-    if (step.type !== 'adjust_pending_targets') continue;
-    const asked = [...step.changes.map((c) => ({ setId: c.setId, c })), ...step.addSets.map((c) => ({ setId: c.copyFromSetId, c }))];
-    for (const { setId, c } of asked) {
+    // (Ben, 8 Nov) A warm-up weight he named is learned too, as a working one is.
+    if (step.type !== 'adjust_pending_targets' && step.type !== 'add_warmup') continue;
+    const asked: { rowId: string | null; setId: string; c: { loadAsTyped?: true | undefined; target: { load: Load | null } } }[] =
+      step.type === 'add_warmup'
+        ? [{ rowId: step.sessionExerciseId, setId: step.newSetId, c: { ...(step.loadAsTyped === true ? { loadAsTyped: true as const } : {}), target: { load: step.planned.load } } }]
+        : [...step.changes.map((c) => ({ rowId: null, setId: c.setId, c })), ...step.addSets.map((c) => ({ rowId: null, setId: c.copyFromSetId, c }))];
+    for (const { rowId, setId, c } of asked) {
       const load = c.target.load;
       if (c.loadAsTyped !== true || load === null) continue;
       const set = aggregate.sets.find((x) => x.id === setId);
-      const ex = set === undefined ? undefined : aggregate.exercises.find((e) => e.id === set.sessionExerciseId);
+      const ex = rowId !== null ? aggregate.exercises.find((e) => e.id === rowId) : set === undefined ? undefined : aggregate.exercises.find((e) => e.id === set.sessionExerciseId);
       const item = ex?.equipmentId == null ? undefined : current.get(ex.equipmentId);
       if (ex === undefined || item === undefined || item.availability !== 'available' || item.gymId !== aggregate.session.gymId) continue;
       const learn = gymLearnFor(item, load, { id: ex.exerciseId, name: ex.exerciseName }, { named: true });

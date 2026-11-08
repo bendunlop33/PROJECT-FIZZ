@@ -370,7 +370,9 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
 
   function envFor(world: BuilderCoachWorld, words: string): BuilderCoachEnv {
     // ADR 0038: weights Ben named are kept as typed (only a machine's max and pain move them).
-    return { ...world.env, askedHeavier: parseBuildRequest(words).askedHeavier, benLoads: namedWeights(words) };
+    // (Ben, 8 Nov) Your workout's bar and the coach's `propose_workout_edit` are his own ask: the coach ceilings give way
+    // (the card says the trade-off); review suggestions and the pre-session nudge stay held to them.
+    return { ...world.env, askedHeavier: parseBuildRequest(words).askedHeavier, benLoads: namedWeights(words), asked: true };
   }
 
   /** The claim check's base for a workout: code's counts, lengths and Ben's words only (never IDs, slot keys or memories; B2). */
@@ -531,7 +533,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       if (await deps.writer.applied(builderApplyOpId(proposal.id)).catch(() => false)) return { kind: 'applied', lines: proposal.lines };
       const world = await deps.source.world(proposal.draftId);
       if (world === null) return { kind: 'out_of_date', line: 'Out of date. Ask again.' };
-      const env: BuilderCoachEnv = { ...world.env, askedHeavier: proposal.askedHeavier };
+      const env: BuilderCoachEnv = { ...world.env, askedHeavier: proposal.askedHeavier, asked: proposal.asked === true };
       const check = recheckBuilderProposal(proposal, world.snapshot, env);
       if (!check.ok) return { kind: 'out_of_date', line: check.line };
       const w = await deps.writer.applyWorkout({ draftId: proposal.draftId, expectedVersion: world.snapshot.draftVersion, workout: check.outcome.workout, minutes: check.outcome.minutes, lines: proposal.lines, opId: builderApplyOpId(proposal.id), ...(opts.nudge === true ? { nudge: true } : {}) });

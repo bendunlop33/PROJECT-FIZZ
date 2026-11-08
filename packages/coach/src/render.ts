@@ -357,18 +357,21 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
           return a === undefined ? `${l.text}.` : addedPhrase(a);
         })
         .join(' ');
+      // (Ben, 8 Nov) The coach limit his ask went past, one short line each, after the change.
+      const trade = (d.tradeOff ?? []).map((t) => `${t}.`).join(' ');
+      const withTrade = (text: string): string => (trade === '' ? text : `${text} ${trade}`);
       if (st === 'committed') {
         if (d.lines.length === 0) {
           const spoken = adjustSpoken(d.exercises);
           if (surface === 'slot') {
             const slot = adjustSlot(d.exercises, record.author === 'coach');
-            return make(status, slot.title, spoken, slot.detail);
+            return make(status, slot.title, spoken, trade === '' ? slot.detail : [slot.detail, trade].filter((x) => x !== null && x !== '').join(' · '));
           }
-          return make(status, adjustLine(d.exercises, 'committed'), spoken);
+          return make(status, withTrade(adjustLine(d.exercises, 'committed')), spoken);
         }
         const targets = d.exercises.some((e) => partsOf(e).changed.length > 0) ? adjustLine(d.exercises.map((e) => ({ ...e, changes: partsOf(e).changed })).filter((e) => e.changes.length > 0), 'committed') : '';
-        const text = [structural, targets].filter((x) => x !== '').join(' ');
-        if (surface === 'slot') return make(status, d.lines[0]?.text ?? text, speakable(text), d.lines.length > 1 || targets !== '' ? [...d.lines.slice(1).map((l) => l.text), targets].filter((x) => x !== '').join(' · ') : null);
+        const text = [structural, targets, trade].filter((x) => x !== '').join(' ');
+        if (surface === 'slot') return make(status, d.lines[0]?.text ?? text, speakable(text), d.lines.length > 1 || targets !== '' || trade !== '' ? [...d.lines.slice(1).map((l) => l.text), targets, trade].filter((x) => x !== '').join(' · ') : null);
         return make(status, text, speakable(text));
       }
       if (st === 'proposed') {
@@ -377,7 +380,7 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
           return make(status, text, speakable(text));
         }
         const targets = d.exercises.some((e) => partsOf(e).changed.length > 0) ? adjustLine(d.exercises.map((e) => ({ ...e, changes: partsOf(e).changed })).filter((e) => e.changes.length > 0), 'proposed').replace(/^Suggested: /, '').replace(/ Not applied\.$/, '') : '';
-        const text = `Suggested: ${[structural, targets].filter((x) => x !== '').join(' ')} Not applied.`;
+        const text = `Suggested: ${[structural, targets, trade].filter((x) => x !== '').join(' ')} Not applied.`;
         return make(status, text, speakable(text));
       }
       if (st === 'stale') return make(status, "Couldn't change today's workout: your workout moved on. Nothing changed.", 'Your workout moved on. Nothing changed.');

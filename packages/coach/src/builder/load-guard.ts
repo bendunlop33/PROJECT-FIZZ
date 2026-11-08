@@ -25,14 +25,15 @@ import {
  * pain-flagged movement never gets heavier.
  */
 
-export type GuardResult = { ok: true; value: number; notes: string[] } | { ok: false; note: string };
+/** `overrode`: (Ben, 8 Nov) on his ask, the coach ceiling the load went past (the card's trade-off line). */
+export type GuardResult = { ok: true; value: number; notes: string[]; overrode?: string } | { ok: false; note: string };
 
 export interface BuilderLoadGuard {
   /**
    * Check a working load (in the slot's unit) the coach asked for. `step`: the value is one step from
    * the slot's load on this gym's item (a `heavier` / `lighter` op), not a number the coach named.
    */
-  check(slot: BuilderSlot, requested: number, opts: { askedHeavier: boolean; step?: boolean; benNamed?: boolean }): GuardResult;
+  check(slot: BuilderSlot, requested: number, opts: { askedHeavier: boolean; step?: boolean; benNamed?: boolean; asked?: boolean }): GuardResult;
   /** The working load `steps` steps heavier or lighter than `from` on this gym's item; null when there's none. */
   step(slot: BuilderSlot, from: number, dir: 'heavier' | 'lighter', steps: number): number | null;
 }
@@ -78,7 +79,7 @@ export function createBuilderLoadGuard(deps: LoadGuardDeps): BuilderLoadGuard {
     return null;
   };
 
-  const check = (slot: BuilderSlot, requested: number, opts: { askedHeavier: boolean; step?: boolean; benNamed?: boolean }): GuardResult => {
+  const check = (slot: BuilderSlot, requested: number, opts: { askedHeavier: boolean; step?: boolean; benNamed?: boolean; asked?: boolean }): GuardResult => {
     const input = deps.ctx.loads(slot.exerciseId);
     const rc = roundContextOf(input);
     const pain = deps.pain(slot.exerciseId);
@@ -98,7 +99,7 @@ export function createBuilderLoadGuard(deps: LoadGuardDeps): BuilderLoadGuard {
     const refs = deps.refs(slot.exerciseId);
     if (refs === null) {
       // Fail closed: nothing to bound a named number by. One step on the item, or lighter, only.
-      if (heavier && opts.step !== true) return { ok: false, note: 'Not changed: no reference for that load' };
+      if (heavier && opts.step !== true && opts.asked !== true) return { ok: false, note: 'Not changed: no reference for that load' };
     } else {
       const working = slot.rows.find((r) => r.type !== 'warmup');
       // In the slot's unit; `checkProposedLoad` converts to the reference's unit and refuses another convention.
@@ -108,6 +109,17 @@ export function createBuilderLoadGuard(deps: LoadGuardDeps): BuilderLoadGuard {
         refs,
         { pain: pain === null ? null : { text: pain }, askedHeavier: opts.askedHeavier },
       );
+      if (opts.asked === true && heavier && pain === null) {
+        // (Ben, 8 Nov: "If I agree to apply it there shouldn't be any limit") His ask goes past the coach ceilings
+        // (`capE` / `capLastTop`); only the kit and the item's max below apply. The card says what it went past.
+        const checked = (c.source === 'coach' || c.source === 'coach_est') && c.load !== null ? (c.load.unit === rc.unit ? c.load.value : convertMass({ value: c.load.value, unit: c.load.unit }, rc.unit).value) : null;
+        const r = roundDownHere(requested, rc);
+        if (r === null) return { ok: false, note: 'Not changed: no weight this light here' };
+        const out: string[] = r.bounded === 'max' ? [`capped at machine max ${fmt(r.value)} ${r.unit}`] : [];
+        const past = checked === null || compareDifficulty(r.value, checked, d) > EPS;
+        const share = now !== null && now > 0 ? (d === 'resistance' ? r.value / now - 1 : 1 - r.value / now) : 0;
+        return { ok: true, value: r.value, notes: out, ...(past ? { overrode: share > EPS ? `+${String(Math.round(share * 100))}% · above what recent sets support` : 'above what recent sets support' } : {}) };
+      }
       if ((c.source === 'coach' || c.source === 'coach_est') && c.load !== null) {
         const checked = c.load.unit === rc.unit ? c.load.value : convertMass({ value: c.load.value, unit: c.load.unit }, rc.unit).value;
         // The check may round to the nearest load; the builder only ever rounds DOWN from what was asked (§3.1).

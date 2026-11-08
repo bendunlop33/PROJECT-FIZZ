@@ -12,6 +12,9 @@ import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { buildSwapExerciseCommand, midSwapSlot, swapPainCarry } from './mid-swap';
 import { doableHere, substituteTargets } from './substitutes';
 import { supersetLinkSides } from './order';
+import { afterSteps, isParityOp, parityOpSteps } from './coach-edit-parity';
+import { COACH_HARD_CEILINGS, COACH_JUDGEMENT_LIMITS, loadStepTradeOff, painGoAheadTradeOff, volumeTradeOff, warmupTradeOff } from '../coach/coach-limits';
+import { reduceSession } from './reducer';
 
 /**
  * Coach v3 (ADR 0027, Ben 18 Oct): the coach's one tool for today's live workout, `edit_today`.
@@ -69,6 +72,21 @@ export interface CoachEditInput {
   benLoads?: readonly BenLoad[];
   /** ADR 0038: an add or swap to an exercise the gym's profile has nothing for goes ahead with no item (the caller learns the kit). */
   kitOptional?: boolean;
+  /**
+   * (Ben, 8 Nov: "If I agree to apply it there shouldn't be any limit") Ben asked for this change himself (his words
+   * this turn): the coach's judgement limits (`COACH_JUDGEMENT_LIMITS`: the 20% load step, 8 direct sets a muscle a
+   * session, the warm-up count) don't block or trim it, and the plan's `tradeOff` says which one it went past. False:
+   * the coach's own offer, held to them. Absent: neither (the checks as before 8 Nov; no trade-off lines). The gym's
+   * kit, a machine's max and done sets apply either way.
+   */
+  asked?: boolean;
+  /** The muscle group an exercise's working sets count to directly (the per-session cap); null: none. Absent: no volume check. */
+  directGroupOf?: (exerciseId: string) => string | null;
+  /**
+   * (Ben, 8 Nov) Ben told the coach to go ahead despite a pain hold (checked on his own words by the caller): on his
+   * ask, the movements this edit changes aren't held today, and the card says so. Ignored on an offer.
+   */
+  painGoAhead?: boolean;
 }
 
 type Line = Extract<ActionDetail, { kind: 'edit_today' }>['lines'][number];
@@ -84,6 +102,8 @@ export type CoachEditPlan =
       guardNotes: GuardNote[];
       /** The exercises the edit adds or swaps to (the caller saves any not yet in Ben's exercises, in the same write). */
       used: Exercise[];
+      /** (Ben, 8 Nov) The coach limits Ben's ask went past, one line each, for the card. */
+      tradeOff: string[];
     }
   | { status: 'stale'; guardNotes: GuardNote[] }
   /** `already` (Ben, 1 Nov): nothing to do, not a failure: every set asked for already is that (`Already 100 kg`). */
@@ -106,7 +126,13 @@ function rowOf(state: SessionAggregate, op: EditTodayOp): string | null {
     case 'split_superset':
     case 'main':
     case 'warmups':
+    case 'set_details':
+    case 'order_sets':
+    case 'note':
+    case 'load_mode':
       return op.sessionExerciseId;
+    case 'remove_set':
+      return state.sets.find((s) => s.id === op.setId)?.sessionExerciseId ?? null;
     case 'add':
       return null;
   }
@@ -120,7 +146,7 @@ function anchorsOf(op: EditTodayOp): string[] {
   return [];
 }
 
-export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
+function planOnce(input: CoachEditInput): CoachEditPlan {
   const s = input.aggregate;
   const notes: GuardNote[] = [];
   const reject = (failure: string): CoachEditPlan => ({ status: 'rejected', failure: failure.slice(0, 200), guardNotes: notes });
@@ -164,6 +190,10 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     const clash = [...(row === null ? [] : [row]), ...anchorsOf(op)].find((r) => taken.has(r) && taken.get(r) !== i);
     if (clash !== undefined) return reject(`two changes to ${nameOf(clash)} at once`);
   }
+  // (Ben, 8 Nov) A new order of the sets, or `+ Weight`, with the same row's sets or targets changed too would fight.
+  const resets = new Set(ops.filter((op) => op.op === 'set' || op.op === 'sets' || op.op === 'set_count' || op.op === 'warmups' || op.op === 'remove_set').map((op) => rowOf(s, op)));
+  const fights = ops.find((op) => (op.op === 'order_sets' || op.op === 'load_mode') && resets.has(op.sessionExerciseId));
+  if (fights !== undefined && (fights.op === 'order_sets' || fights.op === 'load_mode')) return reject(`two changes to ${nameOf(fights.sessionExerciseId)}’s sets at once`);
 
   const steps: CoachEditStep[] = [];
   /** ADR 0038: an op that can't be done is left out with its line; the rest applies. */
@@ -554,12 +584,24 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   // 8. (Ben, 8 Nov) Warm-ups today: added in the warm-up block by load (`add_warmup`), or the pending ramp replaced.
   for (const op of ops) {
     if (op.op !== 'warmups') continue;
-    const r = coachWarmupSteps(s, op, { at: input.at, opId: input.opId, first: steps.length });
+    const r = coachWarmupSteps(s, op, { at: input.at, opId: input.opId, first: steps.length }, { asked: input.asked === true, ...(input.benLoads === undefined ? {} : { benLoads: input.benLoads }) });
     for (const n of r.notes) skip(n);
     if (r.steps.length === 0) continue;
     steps.push(...r.steps);
     if (r.line !== null) lines.push({ change: 'edit', text: r.line.slice(0, 200) });
     names.add(nameOf(op.sessionExerciseId));
+  }
+
+  // 9. (Ben, 8 Nov, coach parity) The workout's own manual controls: a set out, a set's type, rest or time, the sets'
+  // order, a note, `+ Weight`. Built on the workout as the steps above leave it, so versions and new sets line up.
+  const parity = ops.filter(isParityOp);
+  if (parity.length > 0) {
+    const now = afterSteps(s, steps, { at: input.at, opId: input.opId, baseVersion: input.args.baseVersion, actionId: input.actionId });
+    const r = parityOpSteps(now, parity, { at: input.at, opId: input.opId, first: steps.length });
+    for (const n of r.notes) skip(n);
+    steps.push(...r.steps);
+    lines.push(...r.lines);
+    for (const n of r.names) names.add(n);
   }
 
   if (steps.length === 0) return reject(skipped[0] ?? 'no change');
@@ -572,7 +614,195 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     names: [...names],
     guardNotes: notes.slice(0, 40),
     used,
+    tradeOff: [],
   };
+}
+
+/** Working sets (warm-ups left out) per direct muscle group, across the live rows; done sets count. */
+function directSets(s: SessionAggregate, groupOf: (exerciseId: string) => string | null): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of s.exercises) {
+    if (row.removed !== undefined) continue;
+    const g = groupOf(row.exerciseId);
+    if (g === null) continue;
+    const n = s.sets.filter((x) => x.sessionExerciseId === row.id && x.setType !== 'warmup' && x.status !== 'deleted' && x.status !== 'skipped' && x.pairedWithSetId === null).length;
+    if (n > 0) out.set(g, (out.get(g) ?? 0) + n);
+  }
+  return out;
+}
+
+/** Groups the edit takes above the per-session cap (and above where they already were). */
+function volumeOver(before: SessionAggregate, command: CoachEditTodayCommand, groupOf: (exerciseId: string) => string | null): { group: string; before: number; after: number }[] {
+  const r = reduceSession(before, command);
+  if (!r.ok || r.duplicate === true) return [];
+  const was = directSets(before, groupOf);
+  const now = directSets(r.state, groupOf);
+  const cap = COACH_JUDGEMENT_LIMITS.sessionDirectSets;
+  return [...now.entries()].filter(([g, n]) => n > cap && n > (was.get(g) ?? 0)).map(([group, after]) => ({ group, before: was.get(group) ?? 0, after }));
+}
+
+/**
+ * An offer's ops with each increase in a group cut back so the group stays within the cap (or where it already was).
+ * Latest ops give way first. Pure.
+ */
+function trimToCap(s: SessionAggregate, ops: readonly EditTodayOp[], over: readonly { group: string; before: number; after: number }[], groupOf: (exerciseId: string) => string | null, exerciseOfAdd: (i: number) => string | null): (EditTodayOp | null)[] {
+  const out: EditTodayOp[] = [...ops];
+  const own = (rowId: string): { all: number; pending: number } => {
+    const sets = s.sets.filter((x) => x.sessionExerciseId === rowId && x.setType !== 'warmup' && x.status !== 'deleted' && x.status !== 'skipped');
+    return { all: sets.length, pending: sets.filter((x) => x.status === 'pending').length };
+  };
+  for (const o of over) {
+    let excess = o.after - Math.max(COACH_JUDGEMENT_LIMITS.sessionDirectSets, o.before);
+    for (let i = out.length - 1; i >= 0 && excess > 0; i -= 1) {
+      const op = out[i];
+      if (op === undefined) continue;
+      const rowGroup = (id: string): string | null => {
+        const row = liveRow(s, id);
+        return row === undefined ? null : groupOf(row.exerciseId);
+      };
+      if (op.op === 'set_count' && rowGroup(op.sessionExerciseId) === o.group) {
+        const more = op.workingSets - own(op.sessionExerciseId).all;
+        const cut = Math.min(excess, Math.max(0, more));
+        out[i] = { ...op, workingSets: op.workingSets - cut };
+        excess -= cut;
+      } else if (op.op === 'sets' && rowGroup(op.sessionExerciseId) === o.group) {
+        const more = op.sets.length - own(op.sessionExerciseId).pending;
+        const cut = Math.min(excess, Math.max(0, more), op.sets.length - 1);
+        out[i] = { ...op, sets: op.sets.slice(0, op.sets.length - cut) };
+        excess -= cut;
+      } else if (op.op === 'add') {
+        const id = exerciseOfAdd(i);
+        if (id === null || groupOf(id) !== o.group) continue;
+        const cut = Math.min(excess, op.workingSets);
+        out[i] = { ...op, workingSets: op.workingSets - cut };
+        excess -= cut;
+      }
+    }
+  }
+  // An add cut to nothing doesn't happen at all (null keeps the op indexes, for the exercise reads).
+  return out.map((op) => (op.op === 'add' && op.workingSets <= 0 ? null : op));
+}
+
+const loadShare = (before: number, after: number, dir: ReturnType<typeof loadDirection>): number => (before <= 0 ? 0 : dir === 'resistance' ? after / before - 1 : 1 - after / before);
+
+/**
+ * The coach's own load targets held to the 20% step over each set's target (an offer); `lines`: Ben's ask past it
+ * (asked). Only a load in the set's own unit and convention is compared. Pure.
+ */
+function loadSteps(s: SessionAggregate, ops: readonly EditTodayOp[], asked: boolean, benLoads: readonly BenLoad[] | undefined): { ops: EditTodayOp[]; notes: GuardNote[]; lines: string[] } {
+  const notes: GuardNote[] = [];
+  const lines = new Map<string, string>();
+  const step = COACH_JUDGEMENT_LIMITS.loadStep;
+  const fit = (set: WorkoutSet | undefined, t: Extract<EditTodayOp, { op: 'set' }>['target']): Extract<EditTodayOp, { op: 'set' }>['target'] => {
+    const before = set?.planned.load ?? null;
+    const load = t.load;
+    const row = set === undefined ? undefined : liveRow(s, set.sessionExerciseId);
+    if (set === undefined || row === undefined || before === null || load === null || load.unit !== before.unit || load.convention !== before.convention || load.convention === 'bodyweight' || before.value <= 0) return t;
+    const dir = loadDirection(load.convention);
+    const share = loadShare(before.value, load.value, dir);
+    if (share <= step + 1e-9) return t;
+    if (asked) {
+      const prev = lines.get(row.id);
+      if (prev === undefined || share > Number(prev.split('|')[0])) lines.set(row.id, `${String(share)}|${loadStepTradeOff(row.exerciseName, share)}`);
+      return t;
+    }
+    if (isBenLoad(load, benLoads)) return t;
+    const capped = dir === 'resistance' ? before.value * (1 + step) : before.value * (1 - step);
+    const eq = equipmentOfRow(s.session.equipmentSnapshot, row);
+    const r = eq === null ? null : roundToAvailableLoad({ value: capped, unit: load.unit, convention: load.convention }, eq, 'easier');
+    const value = r !== null && r.ok ? r.load.value : Math.round(capped * 100) / 100;
+    notes.push({ kind: 'capped', setIds: [set.id], text: `${row.exerciseName}: capped at ${String(value)} ${load.unit} · ${String(Math.round(step * 100))}% step`.slice(0, 300) });
+    return { ...t, load: { ...load, value } };
+  };
+  const out = ops.map((op): EditTodayOp => {
+    if (op.op === 'set') return { ...op, target: fit(s.sets.find((x) => x.id === op.setId), op.target) };
+    if (op.op === 'sets') {
+      const pending = s.sets.filter((x) => x.sessionExerciseId === op.sessionExerciseId && x.status === 'pending' && x.setType !== 'warmup').sort((a, b) => a.index - b.index);
+      const last = pending[pending.length - 1] ?? [...s.sets].filter((x) => x.sessionExerciseId === op.sessionExerciseId && x.setType !== 'warmup' && x.status !== 'deleted').sort((a, b) => b.index - a.index)[0];
+      return { ...op, sets: op.sets.map((t, i) => fit(pending[i] ?? last, t)) };
+    }
+    return op;
+  });
+  return { ops: out, notes, lines: [...lines.values()].map((l) => l.slice(l.indexOf('|') + 1)) };
+}
+
+/** The touched movements' pain holds, waved through on Ben's go-ahead. */
+function goAhead(input: CoachEditInput): { input: CoachEditInput; lines: string[] } {
+  const s = input.aggregate;
+  if (s === null || input.painGoAhead !== true || input.asked !== true) return { input, lines: [] };
+  const nowMs = toMs(input.at.utc);
+  const touched: { id: string; name: string }[] = [];
+  for (const [i, op] of input.args.ops.entries()) {
+    const row = rowOf(s, op);
+    const r = row === null ? undefined : liveRow(s, row);
+    if (r !== undefined) touched.push({ id: r.exerciseId, name: r.exerciseName });
+    const e = op.op === 'add' || op.op === 'swap' ? input.exercises.get(i)?.exercise : null;
+    if (e != null) touched.push({ id: e.id, name: e.name });
+  }
+  const waved = new Set<string>();
+  const lines: string[] = [];
+  for (const t of touched) {
+    const f = painFlagForMovement(input.painFlags, t, [t.id], nowMs, input.at.tz);
+    if (f === null || waved.has(f.id)) continue;
+    waved.add(f.id);
+    lines.push(painGoAheadTradeOff(t.name, f.area === null ? null : PAIN_AREA_WORD[f.area]));
+  }
+  const said = input.messagePain !== null && (input.messagePain.mention === 'pain' || input.messagePain.mention === 'unclear');
+  if (lines.length === 0 && (said || input.sessionPainUnspecified)) lines.push(painGoAheadTradeOff(touched[0]?.name ?? 'Today', input.messagePain?.bodyPart ?? null));
+  return { input: { ...input, painFlags: input.painFlags.filter((f) => !waved.has(f.id)), messagePain: null, sessionPainUnspecified: false }, lines };
+}
+
+/**
+ * `planCoachEdit`: `edit_today`'s ops checked and built as one `coach_edit_today` (see the file's header). (Ben, 8 Nov)
+ * On Ben's own ask the coach's judgement limits give way and `tradeOff` says which one; on the coach's own offer the
+ * 20% load step and the per-session cap trim it, with a line each.
+ */
+export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
+  const asked = input.asked === true;
+  const offer = input.asked === false;
+  const s = input.aggregate;
+  if (s === null) return planOnce(input);
+  const waved = goAhead(input);
+  const loads = asked || offer ? loadSteps(s, waved.input.args.ops, asked, input.benLoads) : { ops: [...waved.input.args.ops], notes: [], lines: [] };
+  let ready: CoachEditInput = { ...waved.input, args: { ...waved.input.args, ops: loads.ops } };
+  let plan = planOnce(ready);
+  const tradeOff = [...waved.lines, ...loads.lines];
+  const groupOf = input.directGroupOf;
+  if (plan.status === 'ok' && groupOf !== undefined) {
+    const over = volumeOver(s, plan.command, groupOf);
+    if (over.length > 0 && asked) tradeOff.push(...over.map((o) => volumeTradeOff(o.group, o.after)));
+    else if (over.length > 0 && offer) {
+      // The coach's own offer stays within the cap: each increase in that group is cut back, and said once.
+      const trimmed = trimToCap(s, ready.args.ops, over, groupOf, (i) => {
+        const op = ready.args.ops[i];
+        return op?.op === 'add' ? (input.exercises.get(i)?.exercise?.id ?? op.exerciseId) : null;
+      });
+      const capNotes: GuardNote[] = over.map((o) => ({ kind: 'structural_dropped', setIds: [], text: `Not done: ${o.group} above ${String(COACH_JUDGEMENT_LIMITS.sessionDirectSets)} sets a session`.slice(0, 300) }));
+      // An add the trim dropped shifts the op indexes: the exercise reads follow their ops.
+      const ops: EditTodayOp[] = [];
+      const kept = new Map<number, CoachEditExerciseInputs | null>();
+      trimmed.forEach((op, i) => {
+        if (op === null) return;
+        if (input.exercises.has(i)) kept.set(ops.length, input.exercises.get(i) ?? null);
+        ops.push(op);
+      });
+      ready = { ...ready, args: { ...ready.args, ops }, exercises: kept };
+      plan = ops.length === 0 ? { status: 'rejected', failure: `${over[0]?.group ?? 'that group'} is at ${String(COACH_JUDGEMENT_LIMITS.sessionDirectSets)} sets a session`, guardNotes: capNotes } : planOnce(ready);
+      if (plan.status !== 'stale') plan = { ...plan, guardNotes: [...plan.guardNotes, ...capNotes].slice(0, 40) };
+    }
+  }
+  // Warm-ups past the usual count, on his ask.
+  if (plan.status === 'ok' && asked) {
+    for (const op of ready.args.ops) {
+      if (op.op !== 'warmups') continue;
+      const after = afterSteps(s, plan.command.steps, { at: input.at, opId: input.opId, baseVersion: input.args.baseVersion, actionId: input.actionId });
+      const n = after.sets.filter((x) => x.sessionExerciseId === op.sessionExerciseId && x.setType === 'warmup' && x.status !== 'deleted' && x.status !== 'skipped').length;
+      if (n > COACH_JUDGEMENT_LIMITS.warmups) tradeOff.push(warmupTradeOff(liveRow(s, op.sessionExerciseId)?.exerciseName ?? 'That exercise', n));
+    }
+  }
+  if (plan.status === 'stale') return plan;
+  if (plan.status === 'rejected') return { ...plan, guardNotes: [...plan.guardNotes, ...loads.notes].slice(0, 40) };
+  return { ...plan, guardNotes: [...loads.notes, ...plan.guardNotes].slice(0, 40), tradeOff: [...new Set(tradeOff)].slice(0, 4).map((t) => t.slice(0, 200)) };
 }
 
 const RAMP_CONVENTIONS: ReadonlySet<string> = new Set(['total', 'per_hand', 'stack']);
@@ -589,6 +819,12 @@ export function coachWarmupSteps(
   op: Extract<EditTodayOp, { op: 'warmups' }>,
   /** `first`: the index of this op's first step in the whole edit (step op IDs follow it). */
   ids: { at: ZonedTimestamp; opId: string; first: number },
+  /**
+   * (Ben, 8 Nov) `asked`: Ben asked for these warm-ups himself, so the usual count gives way (up to the data ceiling).
+   * `benLoads`: weights he named this turn: such a warm-up is kept as he typed it (only a machine's max moves it, rule
+   * 4) and the gym learns it with the change; the coach's own loads are rounded down to the kit, under the working load.
+   */
+  opts: { asked?: boolean; benLoads?: readonly BenLoad[] } = {},
 ): { steps: CoachEditStep[]; notes: string[]; line: string | null } {
   const notes: string[] = [];
   const none = (note: string) => ({ steps: [], notes: [note], line: null });
@@ -609,8 +845,16 @@ export function coachWarmupSteps(
   };
   const warm = own.filter((x) => x.setType === 'warmup');
   const same = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
-  const wanted: { load: number; reps: number }[] = [];
+  const wanted: { load: number; reps: number; typed?: true }[] = [];
   for (const w of op.sets) {
+    if (w.load > 0 && isBenLoad({ value: w.load, unit: top.unit, convention: top.convention }, opts.benLoads)) {
+      // His own weight: as typed, never past the item's max (rule 4).
+      const r = roundToAvailableLoad({ value: w.load, unit: top.unit, convention: top.convention }, eq, 'nearest');
+      const v = r.ok && r.bounded === 'max' ? r.load.value : w.load;
+      if (r.ok && r.bounded === 'max') notes.push(`${fmtLoad(w.load)} ${top.unit} is past the most ${row.exerciseName}’s item goes to: ${fmtLoad(v)} ${top.unit}`);
+      if (!wanted.some((x) => same(x.load, v))) wanted.push({ load: v, reps: w.reps, ...(r.ok && r.bounded === 'max' ? {} : { typed: true as const }) });
+      continue;
+    }
     const v = roundDown(w.load);
     if (v === null || v <= 0) {
       notes.push(`a ${fmtLoad(w.load)} ${top.unit} warm-up on ${row.exerciseName}`);
@@ -627,8 +871,9 @@ export function coachWarmupSteps(
   const drop = op.replace ? pendingWarm.filter((x) => !wanted.some((w) => same(w.load, loadOf(x)?.value ?? -1))) : [];
   const stays = warm.filter((x) => !drop.includes(x));
   const add = wanted.filter((w) => !stays.some((x) => same(loadOf(x)?.value ?? -1, w.load))).sort((a, b) => a.load - b.load);
-  const room = Math.max(0, BUILD_LIMITS.maxWarmups - stays.length);
-  if (add.length > room) notes.push(`at most ${String(BUILD_LIMITS.maxWarmups)} warm-ups on ${row.exerciseName}`);
+  const most = opts.asked === true ? COACH_HARD_CEILINGS.warmupsPerExercise : BUILD_LIMITS.maxWarmups;
+  const room = Math.max(0, most - stays.length);
+  if (add.length > room) notes.push(`at most ${String(most)} warm-ups on ${row.exerciseName}`);
   const adding = add.slice(0, room);
   if (adding.length === 0 && drop.length === 0) {
     return { steps: [], notes: notes.length > 0 ? notes : [`${row.exerciseName}’s warm-ups are already that`], line: null };
@@ -647,6 +892,7 @@ export function coachWarmupSteps(
       planned: { load: { value: w.load, unit: top.unit, convention: top.convention }, reps: { min: w.reps, max: w.reps }, durationS: null, rpe: null, rir: null },
       restS,
       expectedVersion: s.session.version,
+      ...(w.typed === true ? { loadAsTyped: true as const } : {}),
     });
   }
   const after = [...stays.map((x) => loadOf(x)?.value ?? 0), ...adding.map((w) => w.load)].filter((v) => v > 0).sort((a, b) => a - b);
@@ -733,7 +979,10 @@ export function coachEditPainHold(input: { aggregate: SessionAggregate; command:
       case 'set_main_lift':
       case 'add_warmup':
       case 'delete_set':
-        // (Ben, 8 Nov) A warm-up added or taken out never makes the working sets harder.
+      case 'reorder_sets':
+      case 'set_note':
+      case 'set_load_mode':
+        // (Ben, 8 Nov) A warm-up added or taken out, the sets' order, a note or `+ Weight` never makes the working sets harder.
         break;
     }
   }

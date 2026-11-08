@@ -115,6 +115,8 @@ export * from './session/main-swap';
 export * from './session/main-lift';
 export * from './session/coach-add';
 export * from './session/coach-edit';
+export * from './session/coach-edit-parity';
+export * from './coach/coach-limits';
 export * from './session/today-shape';
 export * from './session/today-template';
 export * from './coach/trigger';

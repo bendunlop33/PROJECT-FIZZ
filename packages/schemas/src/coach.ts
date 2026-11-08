@@ -16,7 +16,7 @@ import { DraftBasisSchema } from './draft';
 import { GymEditSchema, GymEquipmentKindSchema, type GymEditRecord } from './equipment';
 import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
 import { CustomExerciseFieldsSchema, EquipmentKindSchema, LateralitySchema, MeasurementSchema, MuscleSchema, type Exercise } from './exercise';
-import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SplitDayIdSchema } from './routine';
+import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SetTypeSchema, SplitDayIdSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
@@ -637,7 +637,7 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
    * in order, each with its target. Pending working sets take them in order; more add sets, fewer remove pending
    * ones from the end. Done sets stay and aren't listed.
    */
-  z.strictObject({ op: z.literal('sets'), sessionExerciseId: IdSchema, sets: z.array(CoachTargetSchema).min(1).max(12) }),
+  z.strictObject({ op: z.literal('sets'), sessionExerciseId: IdSchema, sets: z.array(CoachTargetSchema).min(1).max(20) }),
   /** The exercise's working sets today, done ones included: more adds pending sets like its last one, fewer removes pending ones from the end. */
   z.strictObject({ op: z.literal('set_count'), sessionExerciseId: IdSchema, workingSets: z.int().min(0).max(20) }),
   /** The exercise's pending sets move to another exercise (done sets stay). */
@@ -679,17 +679,46 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
   z.strictObject({
     op: z.literal('warmups'),
     sessionExerciseId: IdSchema,
-    sets: z.array(z.strictObject({ load: z.number().min(0).max(2000), reps: z.int().min(1).max(30) })).min(1).max(6),
+    /** (Ben, 8 Nov) Up to 20 (a data ceiling): the warm-up count is the coach's judgement, his ask overrides it. */
+    sets: z.array(z.strictObject({ load: z.number().min(0).max(2000), reps: z.int().min(1).max(30) })).min(1).max(20),
     replace: z.boolean(),
   }),
+  /** (Ben, 8 Nov, coach parity) One pending set taken out (a warm-up or a working set; done sets stay, rule 2). */
+  z.strictObject({ op: z.literal('remove_set'), setId: IdSchema }),
+  /**
+   * (Ben, 8 Nov, coach parity) A pending set's other values, as Ben edits them by hand: its type, the rest after it,
+   * its work time or distance (timed and cardio). `setId` null: every pending set of the exercise (type excepted).
+   * Null keeps a value.
+   */
+  z.strictObject({
+    op: z.literal('set_details'),
+    sessionExerciseId: IdSchema,
+    setId: IdSchema.nullable(),
+    setType: SetTypeSchema.nullable(),
+    restSeconds: z.int().min(0).max(3600).nullable(),
+    workSeconds: z.int().min(1).max(36_000).nullable(),
+    distanceMetres: z.number().min(0).max(100_000).nullable(),
+  }),
+  /** (Ben, 8 Nov, coach parity) The exercise's pending sets in a new order (exactly its pending sets, as the drag). */
+  z.strictObject({ op: z.literal('order_sets'), sessionExerciseId: IdSchema, setIds: z.array(IdSchema).min(2).max(40) }),
+  /** (Ben, 8 Nov, coach parity) A note on an exercise, or one of its sets (`setId`); null clears it. */
+  z.strictObject({ op: z.literal('note'), sessionExerciseId: IdSchema, setId: IdSchema.nullable(), note: z.string().max(500).nullable() }),
+  /** (Ben, 8 Nov, coach parity) `+ Weight` on a bodyweight exercise (`added`), or back to bodyweight. */
+  z.strictObject({ op: z.literal('load_mode'), sessionExerciseId: IdSchema, mode: z.enum(['added', 'bodyweight']) }),
 ]);
 export type EditTodayOp = z.infer<typeof EditTodayOpSchema>;
 
 export const EditTodayArgsSchema = z.strictObject({
   /** The session version the coach read (rule 5). */
   baseVersion: z.int().min(1),
-  ops: z.array(EditTodayOpSchema).min(1).max(12),
+  ops: z.array(EditTodayOpSchema).min(1).max(20),
   reason,
+  /**
+   * (Ben, 8 Nov: pain is a one-session hold he can wave through) Ben said to go ahead despite a pain hold on the
+   * exercises this edit changes. Honoured only on his explicit ask with go-ahead words of his own this turn
+   * (`painGoAheadWords`); never on an offer. Null or absent: the hold applies.
+   */
+  painGoAhead: z.boolean().nullable().optional(),
   ...askClaim,
 });
 export type EditTodayArgs = z.infer<typeof EditTodayArgsSchema>;
@@ -1143,6 +1172,11 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
       .optional(),
     command: CoachEditTodayCommandSchema.nullable(),
     proposalId: IdSchema.optional(),
+    /**
+     * (Ben, 8 Nov: "If I agree to apply it there shouldn't be any limit") The coach limit Ben's ask went past, one line
+     * each (`Biceps 12 sets today · above 8 a session`), shown on the card. Absent: none.
+     */
+    tradeOff: z.array(z.string().min(1).max(200)).max(4).optional(),
     /**
      * (Ben, 28 Oct) What the gym learned from weights Ben named (a dumbbell, a plate), written with the change and
      * taken back by its Undo. Absent: nothing learned.

@@ -486,7 +486,8 @@ export const AdjustPendingTargetsCommandSchema = z.object({
   changes: z.array(z.object({ setId: IdSchema, target: TargetValuesSchema, loadAsTyped: z.literal(true).optional() })).max(40),
   removeSetIds: z.array(IdSchema).max(12),
   /** New pending sets, copying type and rest from `copyFromSetId`. IDs derive from the opId, so a replay adds the same rows. */
-  addSets: z.array(z.object({ newSetId: IdSchema, copyFromSetId: IdSchema, target: TargetValuesSchema, loadAsTyped: z.literal(true).optional() })).max(12),
+  /** (Ben, 8 Nov) Up to 20: "make it 12 sets of curls" adds eight at once. */
+  addSets: z.array(z.object({ newSetId: IdSchema, copyFromSetId: IdSchema, target: TargetValuesSchema, loadAsTyped: z.literal(true).optional() })).max(20),
 });
 
 /**
@@ -639,6 +640,11 @@ export const AddWarmupCommandSchema = z.object({
   planned: PlannedSetSchema,
   restS: DurationSecondsSchema.refine((x) => x <= 3600, { message: 'At most an hour' }),
   expectedVersion: z.int().min(1),
+  /**
+   * (Ben, 8 Nov) The load is a warm-up weight Ben named himself: kept as he typed it (rule 4: only an item's max
+   * refuses it; the gym learns it with the change). Absent: it must be makeable on the row's item, as before.
+   */
+  loadAsTyped: z.literal(true).optional(),
 });
 
 /**
@@ -700,6 +706,11 @@ export const SetNoteCommandSchema = z.object({
   target: z.discriminatedUnion('kind', [z.object({ kind: z.literal('exercise'), sessionExerciseId: IdSchema }), z.object({ kind: z.literal('set'), setId: IdSchema })]),
   note: NoteSchema.nullable(),
   expectedVersion: z.int().min(1),
+  /**
+   * (Ben, 8 Nov, coach parity) The note this replaces, as read (null: none). Present on the coach's note, so its Undo
+   * puts this one back, and refused as stale when the note changed since. Absent (Ben's own note): not checked.
+   */
+  noteBefore: z.string().max(500).nullable().optional(),
 });
 
 /**
@@ -844,6 +855,10 @@ export const CoachEditStepSchema = z.discriminatedUnion('type', [
   /** (Ben, 8 Nov) The coach's warm-ups today: a pending warm-up added, or (replacing the ramp) a pending one taken out. */
   AddWarmupCommandSchema,
   DeleteSetCommandSchema,
+  /** (Ben, 8 Nov, coach parity) The coach can do what Ben can by hand: move a set, a note, `+ Weight`. */
+  ReorderSetsCommandSchema,
+  SetNoteCommandSchema,
+  SetLoadModeCommandSchema,
 ]);
 export type CoachEditStep = z.infer<typeof CoachEditStepSchema>;
 

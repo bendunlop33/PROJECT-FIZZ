@@ -1,4 +1,4 @@
-import { coachEditPainHold, currentGymEquipment, deriveId, doableHere, namedWeightGymEdit, namedWeights, planCoachEdit, type CoachEditExerciseInputs } from '@fizz/domain';
+import { coachEditPainHold, currentGymEquipment, deriveId, doableHere, namedWeightGymEdit, namedWeights, painGoAheadWords, planCoachEdit, type CoachEditExerciseInputs } from '@fizz/domain';
 import type { ActionDetail, ActionRecord, CoachEditTodayCommand, EditTodayOp, EquipmentInstance, Exercise, GuardNote, PainFlag, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 import { actionIdFor, newActionRecord, type CoachWriteStore, type ToolCallContext, type ToolExecutor, type ToolResult } from './executors';
 
@@ -49,6 +49,11 @@ export interface EditTodayDeps {
    * takes it back. Absent: nothing learned.
    */
   gymItems?: (gymId: string) => Promise<readonly EquipmentInstance[]>;
+  /**
+   * (Ben, 8 Nov) The muscle group an exercise's working sets count to directly, for the per-session cap (8 direct sets
+   * a group): the coach's own offer stays within it; Ben's ask goes past it with a trade-off line. Absent: not checked.
+   */
+  directGroupOf?: (exerciseId: string) => string | null;
 }
 
 const NO_ID = '00000000-0000-4000-8000-000000000000';
@@ -144,6 +149,11 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
       exercises: byOp,
       benLoads: namedWeights(ctx.benWords),
       kitOptional: true,
+      // (Ben, 8 Nov) His ask (not an offer) overrides the coach's judgement limits; real kit and done sets still apply.
+      asked: ctx.propose !== true,
+      ...(deps.directGroupOf === undefined ? {} : { directGroupOf: deps.directGroupOf }),
+      // A pain go-ahead counts only on his ask, in his own words this turn (rule 9), never on the model's claim alone.
+      painGoAhead: ctx.propose !== true && a.painGoAhead === true && painGoAheadWords(ctx.benWords),
     });
     if (plan.status === 'stale') return withAlso(await staleNow(plan.guardNotes));
     if (plan.status === 'rejected' && plan.already === true) {
@@ -152,7 +162,7 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
       return withAlso(r.kind === 'action' ? { ...r, line: `${plan.failure}: nothing to change. Say so in a few words; never that it failed.` } : r);
     }
     if (plan.status === 'rejected') return withAlso(await refuse('rejected', plan.failure, plan.guardNotes));
-    const base = editDetail(sessionId, args.baseVersion, { lines: plan.lines, exercises: plan.exercises, ...(plan.added.length > 0 ? { added: plan.added } : {}), names: plan.names, command: plan.command });
+    const base = editDetail(sessionId, args.baseVersion, { lines: plan.lines, exercises: plan.exercises, ...(plan.added.length > 0 ? { added: plan.added } : {}), names: plan.names, command: plan.command, ...(plan.tradeOff.length > 0 ? { tradeOff: plan.tradeOff } : {}) });
     // Rule 3: an offer saves exactly what would apply, and nothing else.
     if (ctx.propose === true) {
       return recordOnly(deps.store, ctx.ownerId, newActionRecord(ctx, base, { status: 'proposed', guardNotes: plan.guardNotes, reason: a.reason }), 'offer');

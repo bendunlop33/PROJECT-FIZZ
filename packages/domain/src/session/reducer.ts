@@ -1,4 +1,4 @@
-import { coachEditStepOpId } from '@fizz/schemas';
+import { coachEditStepOpId, SetLoadModeCommandSchema, SetNoteCommandSchema } from '@fizz/schemas';
 import type {
   CommandOf,
   SetAuditEntry,
@@ -2268,7 +2268,8 @@ function handleAddWarmup(state: SessionAggregate, cmd: CommandOf<'add_warmup'>):
   if (load !== null) {
     if (load.convention !== ex.loadConvention) return fail('convention_mismatch', `Load convention ${load.convention} does not match ${ex.loadConvention}.`);
     if (load.unit !== ex.unit) return fail('unit_mismatch', `Load unit ${load.unit} does not match ${ex.unit}; convert explicitly first.`);
-    const eq = nothingAdded(load, state, ex) ? undefined : checkEquipmentOf(state, ex);
+    // (Ben, 8 Nov) A warm-up weight Ben named is kept as typed (`loadAsTyped`); any other is checked on the kit (rule 4).
+    const eq = nothingAdded(load, state, ex) || cmd.loadAsTyped === true ? undefined : checkEquipmentOf(state, ex);
     if (eq && !isLoadAchievable(load, eq)) return fail('invalid_values', `${eq.name} can’t make that load.`);
   }
   const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
@@ -2534,14 +2535,56 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs:
       const session: WorkoutSession = { ...state.session, routineName: c.fromName, planDay, version: state.session.version + 1 };
       return { ok: true, state: { ...state, session }, events: [{ type: 'MainLiftSet', exerciseId: c.from, undo: true }] };
     }
+    case 'set_note':
+      return undoSetNote(state, prior, cmd);
+    case 'set_load_mode':
+      return undoSetLoadMode(state, prior, cmd);
     default:
       return fail('operation_not_undoable', 'That can’t be undone here.');
   }
 }
 
+/** The command a processed operation recorded (its fingerprint is the command's own JSON, times and new IDs left out). */
+function recordedCommand(prior: ProcessedOperation): Record<string, unknown> | null {
+  try {
+    const v: unknown = JSON.parse(prior.fingerprint);
+    return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * (Ben, 8 Nov, coach parity) Undo of a coach's note (one that recorded `noteBefore`): the note it replaced comes back,
+ * only while the note is still the one it wrote (rule 5). Ben's own notes carry no `noteBefore` and aren't undone here.
+ */
+function undoSetNote(state: SessionAggregate, prior: ProcessedOperation, cmd: CommandOf<'undo_op'>): Handled {
+  const parsed = SetNoteCommandSchema.safeParse({ ...recordedCommand(prior), at: cmd.at, opId: cmd.opId });
+  if (!parsed.success || parsed.data.noteBefore === undefined) return fail('operation_not_undoable', 'That can’t be undone here.');
+  const was = parsed.data.noteBefore;
+  const wrote = parsed.data.note === null || parsed.data.note.trim() === '' ? null : parsed.data.note.trim();
+  return handleSetNote(state, { ...parsed.data, opId: cmd.opId, at: cmd.at, note: was === null || was.trim() === '' ? null : was, noteBefore: wrote, expectedVersion: state.session.version });
+}
+
+/** (Ben, 8 Nov, coach parity) Undo of `+ Weight` / back to bodyweight: the other mode again, while the row is still as it left it. */
+function undoSetLoadMode(state: SessionAggregate, prior: ProcessedOperation, cmd: CommandOf<'undo_op'>): Handled {
+  const parsed = SetLoadModeCommandSchema.safeParse({ ...recordedCommand(prior), at: cmd.at, opId: cmd.opId });
+  if (!parsed.success) return fail('operation_not_undoable', 'That can’t be undone here.');
+  const ex = state.exercises.find((e) => e.id === parsed.data.sessionExerciseId);
+  if (ex?.loadConvention !== parsed.data.mode) return fail('stale_version', STALE_UNDO);
+  return handleSetLoadMode(state, { ...parsed.data, opId: cmd.opId, at: cmd.at, mode: parsed.data.mode === 'added' ? 'bodyweight' : 'added', expectedVersion: state.session.version });
+}
+
 /** `set_note`: Ben's own words on an exercise or a set; never a value, target or rest. */
 function handleSetNote(state: SessionAggregate, cmd: CommandOf<'set_note'>): Handled {
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
+  if (cmd.noteBefore !== undefined) {
+    // The coach's note (rule 5): refused when the note changed since it read it.
+    const t = cmd.target;
+    const nowNote = t.kind === 'exercise' ? state.exercises.find((e) => e.id === t.sessionExerciseId)?.note : state.sets.find((x) => x.id === t.setId)?.note;
+    const was = cmd.noteBefore === null || cmd.noteBefore.trim() === '' ? null : cmd.noteBefore.trim();
+    if ((nowNote ?? null) !== was) return fail('stale_version', 'The note changed. Try again.');
+  }
   const note = cmd.note === null ? null : cmd.note.trim();
   const apply = <T extends { note?: string | undefined }>(row: T): T => {
     const next: T = { ...row };
@@ -2911,6 +2954,9 @@ function atVersion(step: CommandOf<'coach_edit_today'>['steps'][number], version
     case 'split_superset':
     case 'set_main_lift':
     case 'add_warmup':
+    case 'reorder_sets':
+    case 'set_note':
+    case 'set_load_mode':
       return { ...step, at, expectedVersion: version };
     case 'add_exercise':
     case 'skip_exercise':

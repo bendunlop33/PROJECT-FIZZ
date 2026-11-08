@@ -91,7 +91,8 @@ export interface ProposalCardView {
 export function proposalCardView(p: BuilderProposal, state: ProposalState, opts: { applyLabel?: string } = {}): ProposalCardView {
   return {
     lines: p.lines,
-    warnings: p.warnings,
+    // (Ben, 8 Nov) The limit his ask went past reads with the warnings, one line each.
+    warnings: [...p.warnings, ...(p.tradeOff ?? [])],
     reason: p.reason,
     notes: p.notes,
     minutes: `about ${String(p.estimate)} min`,

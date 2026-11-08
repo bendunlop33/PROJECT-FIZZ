@@ -75,6 +75,15 @@ export const BuilderEditOpSchema = z.discriminatedUnion('op', [
    * builder's 15 s steps and clamps it to the builder's limits.
    */
   z.strictObject({ op: z.literal('rest'), slotKey: RefSchema, seconds: z.int().min(0).max(1200) }),
+  /** (Ben, 8 Nov, coach parity) `Make main lift`: today's main lift is this slot (one per day; no set changes). */
+  z.strictObject({ op: z.literal('main'), slotKey: RefSchema }),
+  /**
+   * (Ben, 8 Nov, coach parity) The slot's warm-ups, each load (the slot's unit and convention) and reps, in place of
+   * the planner's (kept as set, like Ben's own). A load Ben named is kept as typed; others are rounded down here.
+   */
+  z.strictObject({ op: z.literal('warmups'), slotKey: RefSchema, sets: z.array(z.strictObject({ load: z.number().min(0).max(2000), reps: z.int().min(1).max(30) })).max(10) }),
+  /** (Ben, 8 Nov, coach parity) A drop set after the slot's last working set (`＋ Drop set`). */
+  z.strictObject({ op: z.literal('drop_set'), slotKey: RefSchema }),
 ]);
 export type BuilderEditOp = z.infer<typeof BuilderEditOpSchema>;
 
@@ -97,6 +106,10 @@ export const BuilderProposalSchema = z.object({
   reason: z.string().max(1000).nullable(),
   hidden: z.array(z.string().max(1000)).max(20),
   askedHeavier: z.boolean(),
+  /** (Ben, 8 Nov) Made on Ben's own ask: the coach's judgement limits (the load ceilings) gave way. Absent: an older proposal or an unprompted one. */
+  asked: z.boolean().optional(),
+  /** (Ben, 8 Nov) The limit his ask went past, one line each. */
+  tradeOff: z.array(z.string().max(200)).max(4).optional(),
   benLoads: z.array(z.object({ value: z.number().min(0).max(2000), unit: WeightUnitSchema.nullable() })).max(20).optional(),
   topLoadsAfter: z.record(z.string(), z.number()).optional(),
 });

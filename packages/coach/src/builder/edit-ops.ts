@@ -1,4 +1,4 @@
-import { BUILDER_MAX_SUPERSET, BUILDER_SET_RULES, adviseBuilder, isTimedSlot, makeExtraSlot, bandInsertIndex, anchorE1rmOf, builderSupersetWithNext, builderUnlink, canPair, clampBuilderRest, clampMinutes, compareDifficulty, editSetRow, estimateBuilderMinutes, fitToMinutes, formulaApplies, infoOrDefault, loadDirection, makeSlot, removeSlot, restClockText, roundContextOf, roundDownHere, setWorkingCount, settleBackoffs, slotsOf, splitInvalidAutoPairs, warmupsFor, withBackoffBases, followTop, workingCount, workingRestS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSetRow, type BuilderSlot, type BuilderWorkout, rirOfRpe, isBenLoad, type BenLoad } from '@fizz/domain';
+import { BUILDER_MAX_SUPERSET, BUILDER_SET_RULES, adviseBuilder, applyBuilderEdit, isTimedSlot, makeExtraSlot, bandInsertIndex, anchorE1rmOf, builderSupersetWithNext, builderUnlink, canPair, clampBuilderRest, clampMinutes, compareDifficulty, editSetRow, estimateBuilderMinutes, fitToMinutes, formulaApplies, infoOrDefault, loadDirection, makeSlot, removeSlot, restClockText, roundContextOf, roundDownHere, setWorkingCount, settleBackoffs, slotsOf, splitInvalidAutoPairs, warmupsFor, withBackoffBases, followTop, workingCount, workingRestS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSetRow, type BuilderSlot, type BuilderWorkout, rirOfRpe, isBenLoad, type BenLoad } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderEditOp, type LoadConvention, type WeightUnit } from '@fizz/schemas';
 import { topLoad, type BuilderLoadGuard } from './load-guard';
 
@@ -37,6 +37,12 @@ export interface BuilderCoachEnv {
   loads: BuilderLoadGuard;
   /** Ben asked heavier in his own words: one more step allowed (BD16). */
   askedHeavier: boolean;
+  /**
+   * (Ben, 8 Nov: "If I agree to apply it there shouldn't be any limit") The change is Ben's own ask (his
+   * `propose_workout_edit`, applied by his tap): the coach load ceilings give way and the outcome's `tradeOff` says so.
+   * False or absent: a review suggestion or a pre-session nudge, held to them.
+   */
+  asked?: boolean;
   /** ADR 0038: weights Ben named in his own words: a `load` op with one of them is kept as typed. */
   benLoads?: readonly BenLoad[];
   /** The day's main group (fit ladder). */
@@ -72,6 +78,8 @@ export interface EditOutcome {
    * `[in the workout, new]` names. Shown as a ⚠ warning on an edit Ben asked for; a review suggestion with one is left out.
    */
   nearDuplicates: [string, string][];
+  /** (Ben, 8 Nov) The coach limit his ask went past, one line each (`Bench press +30% · above what recent sets support`). */
+  tradeOff: string[];
 }
 
 const EPS = 1e-6;
@@ -175,6 +183,7 @@ interface Working {
   /** Base keys an op named (precondition even when unchanged: an anchor, a pair partner). */
   named: Set<string>;
   minutesTouched: boolean;
+  tradeOff: string[];
 }
 
 /** An exercise's name: its builder info's, else (a bike, a rower) its timed info's (Ben, 27 Oct). */
@@ -355,7 +364,7 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
       if (was !== null && moved !== null && compareDifficulty(moved, was, loadDirection(s.convention)) > EPS) {
         // Checked at the new reps / RPE with the load as it was.
         const held = withWorkingLoad(next, was, ctx);
-        const g = env.loads.check(held, moved, { askedHeavier: env.askedHeavier });
+        const g = env.loads.check(held, moved, { askedHeavier: env.askedHeavier, ...(env.asked === true ? { asked: true } : {}) });
         if (!g.ok) {
           next = held;
           st.notes.push(`${name(s.exerciseId)}: stays ${builderLoadText(was, s.unit, s.convention)} · ${g.note}`);
@@ -363,6 +372,7 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
           next = withWorkingLoad(next, g.value, ctx);
           for (const n of g.notes) st.notes.push(`${name(s.exerciseId)}: ${n}`);
         }
+        if (g.ok && g.overrode !== undefined) st.tradeOff.push(`${name(s.exerciseId)} ${g.overrode}`);
       }
       st.w = replaceSlot(st.w, s.key, { ...next, touched: true });
       return;
@@ -383,11 +393,12 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         return;
       }
       const benNamed = op.value !== null && isBenLoad({ value: op.value, unit: op.unit ?? s.unit, convention: s.convention }, env.benLoads);
-      const g = env.loads.check(s, requested, { askedHeavier: env.askedHeavier, step: op.value === null, benNamed });
+      const g = env.loads.check(s, requested, { askedHeavier: env.askedHeavier, step: op.value === null, benNamed, ...(env.asked === true ? { asked: true } : {}) });
       if (!g.ok) {
         st.notes.push(`${name(s.exerciseId)}: ${g.note}`);
         return;
       }
+      if (g.overrode !== undefined) st.tradeOff.push(`${name(s.exerciseId)} ${g.overrode}`);
       if (now !== null && Math.abs(g.value - now) < EPS) {
         st.notes.push(`${name(s.exerciseId)}: stays ${builderLoadText(now, s.unit, s.convention)}${g.notes.length > 0 ? ` · ${g.notes.join(' · ')}` : ''}`);
         return;
@@ -473,6 +484,63 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
       st.w = replaceSlot(st.w, s.key, { ...s, restS: { ...s.restS, top: seconds, backoff: seconds, working: seconds }, touched: true });
       return;
     }
+    case 'main': {
+      // (Ben, 8 Nov, coach parity) `Make main lift`, the builder's own edit.
+      const s = slotFor(op.slotKey);
+      if (s === null) return;
+      const r = applyBuilderEdit(st.w, { kind: 'make_main', slotKey: s.key }, ctx);
+      if (!r.ok) {
+        st.notes.push(`Not changed: ${name(s.exerciseId)} is already the main lift`);
+        return;
+      }
+      for (const k of r.changed) mark(k);
+      st.w = r.workout;
+      st.structure.push(`${name(s.exerciseId)} · main lift`);
+      return;
+    }
+    case 'drop_set': {
+      const s = slotFor(op.slotKey);
+      if (s === null) return;
+      const r = applyBuilderEdit(st.w, { kind: 'add_drop', slotKey: s.key }, ctx);
+      if (!r.ok) {
+        st.notes.push(`Not changed: no drop set on ${name(s.exerciseId)}`);
+        return;
+      }
+      st.w = r.workout;
+      st.structure.push(`${name(s.exerciseId)}: + drop set`);
+      return;
+    }
+    case 'warmups': {
+      // (Ben, 8 Nov, coach parity) The slot's warm-ups as asked, kept as set (like Ben's own). A load he named stays
+      // as typed (only the item's max moves it, rule 4); the coach's own are rounded down here and kept under the top.
+      const s = slotFor(op.slotKey);
+      if (s === null) return;
+      if (isTimedSlot(s)) {
+        st.notes.push(`Not changed: ${name(s.exerciseId)} has no warm-ups`);
+        return;
+      }
+      const top = topLoad(s);
+      const rc = roundContextOf(ctx.loads(s.exerciseId));
+      const rows: BuilderSetRow[] = [];
+      for (const w of op.sets) {
+        const mine = isBenLoad({ value: w.load, unit: s.unit, convention: s.convention }, env.benLoads);
+        const r = roundDownHere(w.load, { ...rc, painCap: null });
+        let v: number | null;
+        if (mine) v = r !== null && r.bounded === 'max' ? r.value : w.load;
+        else v = r?.value ?? null;
+        if (v === null || (!mine && top !== null && v >= top - EPS)) {
+          st.notes.push(`Not changed: a ${fmt(w.load)} ${s.unit} warm-up on ${name(s.exerciseId)}`);
+          continue;
+        }
+        if (!rows.some((x) => Math.abs((x.load ?? -1) - v) < EPS)) rows.push({ type: 'warmup', reps: w.reps, load: v, rpe: null, ...(mine && !(r !== null && r.bounded === 'max') ? { typed: true as const } : {}) });
+      }
+      const most = BUILD_LIMITS.maxWarmups;
+      if (rows.length > most) st.notes.push(`${name(s.exerciseId)}: ${String(most)} warm-ups (limit 0–${String(most)})`);
+      const ramp = rows.sort((a, b) => (a.load ?? 0) - (b.load ?? 0)).slice(0, most);
+      st.w = replaceSlot(st.w, s.key, { ...s, rows: [...ramp, ...working(s)], ownWarmups: true, touched: true });
+      st.structure.push(ramp.length === 0 ? `${name(s.exerciseId)}: no warm-ups` : `${name(s.exerciseId)} warm-ups: ${ramp.map((r) => fmt(r.load ?? 0)).join(', ')} ${s.unit}`);
+      return;
+    }
     case 'minutes': {
       const m = clampMinutes(op.minutes);
       if (m !== op.minutes) st.notes.push(`Length ${String(m)} min (limit ${String(BUILD_LIMITS.minMinutes)}–${String(BUILD_LIMITS.maxMinutes)})`);
@@ -530,7 +598,7 @@ const same = (a: BuilderSlot, b: BuilderSlot): boolean => JSON.stringify(a) === 
  */
 export function applyBuilderEdits(snapshot: BuilderCoachSnapshot, ops: readonly BuilderEditOp[], env: BuilderCoachEnv): EditOutcome {
   const base = snapshot.workout;
-  const st: Working = { w: cloneW(base), minutes: snapshot.minutes, notes: [], structure: [], swapped: new Map(), named: new Set(), minutesTouched: false };
+  const st: Working = { w: cloneW(base), minutes: snapshot.minutes, notes: [], structure: [], swapped: new Map(), named: new Set(), minutesTouched: false, tradeOff: [] };
   for (const op of ops) applyOne(st, op, env, snapshot);
 
   const name = (id: string): string => builderExerciseName(env.ctx, id);
@@ -586,7 +654,7 @@ export function applyBuilderEdits(snapshot: BuilderCoachSnapshot, ops: readonly 
   const preconditions: SlotPrecondition[] = [...new Set([...touched, ...st.named])].filter((k) => beforeSlots.some((s) => s.key === k)).map((slotKey) => ({ slotKey, rev: snapshot.revs[slotKey] ?? 1 }));
   if (st.minutesTouched) preconditions.push({ slotKey: MINUTES_KEY, rev: snapshot.setupRev ?? snapshot.minutes });
 
-  return { workout: after, minutes: st.minutes, estimate: estimateBuilderMinutes(after, env.ctx), lines, warnings: [...new Set(warnings)], notes: st.notes, preconditions, nearDuplicates };
+  return { workout: after, minutes: st.minutes, estimate: estimateBuilderMinutes(after, env.ctx), lines, warnings: [...new Set(warnings)], notes: st.notes, preconditions, nearDuplicates, tradeOff: [...new Set(st.tradeOff)].slice(0, 4) };
 }
 
 export type FreshCheck = { ok: true } | { ok: false; line: typeof OUT_OF_DATE_LINE };
