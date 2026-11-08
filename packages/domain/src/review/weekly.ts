@@ -1,3 +1,4 @@
+import { earlierWorkOf, otherContextSessions, type WorkContext } from '../in-session-fatigue';
 import type { HistoryLike } from '../history-summary';
 import {
   BUILDER_GROUPS,
@@ -115,6 +116,8 @@ export interface ReviewExercise {
    * review v5offers B1).
    */
   plannedWorking: number | null;
+  /** (SF1, Ben 8 Nov) What was done before it in that workout (`earlierWorkOf`); absent: order unknown (imported). */
+  context?: WorkContext;
 }
 
 export interface ReviewSession {
@@ -183,6 +186,10 @@ export function reviewSessionOf(a: HistoryLike, ownerTz: string, nowMs: number):
         equipmentKind: e.equipmentKind,
         equipmentId: e.equipmentId,
         plannedWorking: notEdited.has(e.exerciseId) ? null : (planned.get(e.sessionExerciseId) ?? 0),
+        ...((): { context?: WorkContext } => {
+          const context = earlierWorkOf(a, e.exerciseId);
+          return context === null ? {} : { context };
+        })(),
         sets: e.sets.map((s) => ({ setType: s.setType, load: s.load, reps: s.reps, rpe: s.rpe, targetRpe: targetRpe.get(s.setId) ?? null, counts: isSetCountable(s, 'record') })),
       })),
   };
@@ -249,6 +256,11 @@ export interface WeeklyReviewInput {
   templates: readonly ReviewTemplate[];
   /** Exercises with an active pain flag: never a tweak (rule 9). */
   painFlagged: ReadonlySet<string>;
+  /**
+   * (Rule 9, 8 Nov) Per exercise, the workouts a pain flag held (the report workout and the next one,
+   * `painHeldSessions`): skipped by the stall check like deload workouts. Absent: none.
+   */
+  painHeld?: ReadonlyMap<string, ReadonlySet<string>>;
   /** Ben's unit: a lift's trend is in it unless its target says otherwise. */
   unit: WeightUnit;
   /** (Ben, 27 Oct) Sleep and resting heart rate from Apple Health, a value a day; absent or empty: none (switches off). */
@@ -643,7 +655,12 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
     if (r === null) continue;
     const lastDate = r.all.at(-1)?.date ?? '';
     if (lastDate < monday) continue;
-    const st = liftStall(r.all.map((c) => ({ ...c, ...(deloads.has(c.sessionId) ? { skip: true } : {}) })), r.trend.lowerIsBetter);
+    // Rule 9 (8 Nov): only the workouts a pain flag held are skipped; SF5: so are workouts done in another context.
+    const held = input.painHeld?.get(id);
+    const points = sessions.filter((s) => r.all.some((c) => c.sessionId === s.sessionId)).sort((a, b) => a.startedMs - b.startedMs);
+    const other = otherContextSessions(points.map((s) => ({ sessionId: s.sessionId, context: s.exercises.find((e) => e.exerciseId === id)?.context })), id, input.info);
+    const skip = (sid: string): boolean => deloads.has(sid) || held?.has(sid) === true || other.has(sid);
+    const st = liftStall(r.all.map((c) => ({ ...c, ...(skip(c.sessionId) ? { skip: true } : {}) })), r.trend.lowerIsBetter);
     if (st.state === 'stalled') found.push({ exerciseId: id, name: nameIn(sessions, id), sessions: st.sessionsWithoutBest });
   }
   // ST3: one offer each, never applied here. All found this week fall in the same fortnight.

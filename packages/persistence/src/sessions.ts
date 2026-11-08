@@ -29,7 +29,7 @@ import {
   type WorkoutsRequest,
   type WriteFence,
 } from '@fizz/domain';
-import { saveRoutineTemplateIn } from './documents';
+import { listDocuments, PAIN_FLAG_SPEC, saveRoutineTemplateIn, withPainHoldIn } from './documents';
 import { saveVariationIn } from './plan-days';
 import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
@@ -629,7 +629,8 @@ export async function fenceHolds(tx: SqlExecutor, fence: WriteFence): Promise<bo
       set.kind === 'gym_equipment'
         ? await tx.getAll<{ id: string; version: number }>('SELECT id, version FROM equipment WHERE gym_id = ?', [set.gymId])
         : set.kind === 'active_pain_flags'
-          ? await tx.getAll<{ id: string; version: number }>("SELECT id, version FROM pain_flags WHERE owner_id = ? AND status = 'active'", [set.ownerId])
+          ? // Rule 9 (8 Nov): the flags still holding, as `SqlitePainFlags.listActive` reads them.
+            (await withPainHoldIn(tx, await listDocuments(tx, PAIN_FLAG_SPEC, "owner_id = ? AND status = 'active'", [set.ownerId]))).filter((f) => f.status === 'active').map((f) => ({ id: f.id, version: f.version }))
           : await tx.getAll<{ id: string; version: number }>('SELECT id, version FROM next_session_targets WHERE owner_id = ? AND source_session_id = ?', [set.ownerId, set.sourceSessionId]);
     if (rows.length !== set.members.length) return false;
     const want = new Map(set.members.map((m) => [m.id, m.version]));

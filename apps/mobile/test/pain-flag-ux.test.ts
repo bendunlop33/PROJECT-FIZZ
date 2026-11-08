@@ -170,7 +170,7 @@ describe('in the workout (checks 32, 51)', () => {
     let data = await s.workout.load(sessionId);
     if (!data) throw new Error('load');
     let view = s.workout.view(data, h.clockMs, null);
-    expect(view.focus?.painFlag).toMatchObject({ flagId, checkDue: true, text: 'Pain flag: no increases · check due' });
+    expect(view.focus?.painFlag).toMatchObject({ flagId, checkDue: true, text: 'Pain flag · clears after this workout · check due' });
     expect(view.painReview).toBeNull();
     // The flag holds the target at the last load (no increase).
     expect(view.focus?.logLabel).toContain('100');
@@ -199,34 +199,32 @@ describe('in the workout (checks 32, 51)', () => {
     if (!data) throw new Error('load');
     view = s2.workout.view(data, h.clockMs, null);
     expect(view.painReview).toBeNull();
-    expect(view.focus?.painFlag).toMatchObject({ checkDue: false, text: 'Pain flag: no increases' });
+    expect(view.focus?.painFlag).toMatchObject({ checkDue: false, text: 'Pain flag · clears after this workout' });
   });
 });
 
 describe('pain flag sheet and the pre-flag reference (§2.14.3–2.14.4, check 54)', () => {
   it('before and since the flag as actual results; clearing resets nothing and the reference stays', async () => {
     const { s, gymId, flagId } = await flagBench();
+    const open = await s.pain.sheet({ flagId });
+    expect(open).toMatchObject({ heading: 'Bench press · shoulder', effect: 'No increases · clears after next session', active: true });
     h.clockMs += DAY;
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2, 3].map(() => ({ load: 90, reps: 8, rpe: 7 })) }]);
     h.clockMs += 13 * DAY;
+    // Rule 9 (8 Nov): the next bench workout was the last one held, so the flag has cleared by itself.
     const sheet = await s.pain.sheet({ flagId });
     expect(sheet).toMatchObject({
       heading: 'Bench press · shoulder',
       since: 'Since 9 Oct (14 days) · you, in a check-in',
-      effect: 'No increases',
-      checkDue: true,
-      active: true,
+      effect: 'Cleared 10 Oct.',
+      checkDue: false,
+      active: false,
     });
     expect(sheet?.before).toMatch(/^8\u00a0Oct · 100/);
     expect(sheet?.sinceFlag).toMatch(/^10\u00a0Oct · 90/);
     expect(sheet?.clearConfirm).not.toHaveProperty('message');
-
-    const v = await flagVersion(s, flagId);
-    expect((await s.pain.clearConfirmed({ flagId, expectedVersion: v })).ok).toBe(true);
-    const after = await s.pain.sheet({ flagId });
-    expect(after).toMatchObject({ active: false, checkDue: false, before: sheet?.before, sinceFlag: sheet?.sinceFlag });
-    expect(after?.effect).toMatch(/^Cleared /);
-    // Nothing deleted: both workouts are still in history.
+    // Clearing it again changes nothing; nothing deleted: both workouts are still in history.
+    expect(await s.pain.clearConfirmed({ flagId, expectedVersion: await flagVersion(s, flagId) })).toEqual({ ok: true, cleared: null });
     expect((await s.repeat.candidates()).rows).toHaveLength(2);
   });
 

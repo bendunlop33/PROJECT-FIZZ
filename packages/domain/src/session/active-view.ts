@@ -3,7 +3,7 @@ import { EQUIPMENT_WORD, SET_TYPE_BADGE, SET_TYPE_WORD, formatDistance, formatDu
 import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclusions, notCountedLine, withExclusionWords } from '../exclusions';
 import { getAchievableLoads, isLoadAchievable, isPresenceOnly, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
 import { gymLearnFor, gymLearnText, type GymLearn } from '../quick-gym';
-import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
+import { painClearsAfter, painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, setPlateChain, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
@@ -241,7 +241,7 @@ export interface PainFlagNoteView {
   flagId: string;
   flagVersion: number;
   checkDue: boolean;
-  /** `Pain flag: no increases` (`· check due`). */
+  /** `Pain flag · clears after next session` / `… this workout` (`· check due`). */
   text: string;
   accessibilityLabel: string;
 }
@@ -717,7 +717,12 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   const pre = prefillDraft(state, set.id, prev?.sets ?? [], carry);
   const covering = painFlagCovering(input.painFlags ?? [], ex.exerciseId, input.nowMs, state.session.startedAt.tz);
   const painNote: PainFlagNoteView | null = covering
-    ? { flagId: covering.flag.id, flagVersion: covering.flag.version, checkDue: covering.checkDue, text: painNoteText(covering.checkDue), accessibilityLabel: painNoteAccessibility(covering.checkDue) }
+    ? (() => {
+        // Rule 9 (8 Nov): a flag reported before this workout ends with it.
+        const sci = state.session.checkIn;
+        const last = painClearsAfter(covering.flag, { startedAtUtc: state.session.startedAt.utc, checkInId: sci?.kind === 'answered' ? sci.checkInId : null });
+        return { flagId: covering.flag.id, flagVersion: covering.flag.version, checkDue: covering.checkDue, text: painNoteText(covering.checkDue, last), accessibilityLabel: painNoteAccessibility(covering.checkDue, last) };
+      })()
     : null;
   // Effort is never prefilled; only Ben sets it: a chip after the log, or (Ben, 26 Oct) the row's RIR cell before
   // it, kept in his edits or the set's saved draft (never history's, never on a warm-up). A bodyweight exercise has

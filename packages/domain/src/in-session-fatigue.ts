@@ -269,3 +269,17 @@ export function cushionWhy(today: ResolvedContext, reference: ResolvedContext, l
   const p = today.p ?? 0;
   return `After ${Number.isInteger(p) ? String(p) : p.toFixed(1)} ${muscle}${p === 1 ? 'set' : 'sets'} today; last time ${contextWords(reference)}: ${load} × ${String(lastReps)} → ${String(aim)} est.`;
 }
+
+/**
+ * SF5: the sessions of one lift done in another context than its newest one with a known context, which stall checks
+ * (ST1, ST2, rule 8) and the weekly review skip, as they skip deload weeks. A session with an unknown context
+ * (imported) is never skipped: SF never blocks.
+ */
+export function otherContextSessions(points: readonly { sessionId: string; context?: WorkContext | null | undefined }[], exerciseId: string, musclesOf: MusclesOf): Set<string> {
+  const resolved = points.map((p) => ({ id: p.sessionId, c: resolveContext(p.context, exerciseId, musclesOf) }));
+  const anchor = [...resolved].reverse().find((x) => x.c.p !== null);
+  const out = new Set<string>();
+  if (anchor === undefined) return out;
+  for (const x of resolved) if (x.c.p !== null && !sameContext(anchor.c, x.c)) out.add(x.id);
+  return out;
+}

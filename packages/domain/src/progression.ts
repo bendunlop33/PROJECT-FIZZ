@@ -96,6 +96,11 @@ export interface HistorySession {
    * order. Absent: order unknown (an imported workout), so it's a like-for-like basis only when nothing else is.
    */
   context?: WorkContext;
+  /**
+   * (Rule 9, 8 Nov) A pain flag held this movement in this workout (its report workout or the next one). Still the
+   * load reference (the hold never plans above it), but never a miss towards a stall (ST1).
+   */
+  painHeld?: true;
 }
 
 /**
@@ -307,7 +312,7 @@ export function importedWorkingSetCount(comparable: number, total: number, floor
   return Math.min(10, Math.max(comparable, Math.min(floor, total), 1));
 }
 
-/** Active pain flag for this movement. Set and cleared explicitly by the user. */
+/** A pain flag still holding this movement (rule 9, 8 Nov: the report workout and the next one; `withPainHold`). */
 export interface PainStatus {
   active: boolean;
   reportedAtUtc: string | null;
@@ -439,6 +444,8 @@ interface SideEval {
 interface SessionEval {
   /** From a FitNotes import (B7). */
   imported: boolean;
+  /** Rule 9 (8 Nov): a pain flag held it (`HistorySession.painHeld`): never a miss. */
+  painHeld: boolean;
   sessionId: string;
   performedAtUtc: string;
   /** Local calendar date of the session (its own zone, else UTC): ST1's 7-day span. */
@@ -748,6 +755,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
     const eval_: SessionEval = {
       sessionId: s.sessionId,
       imported: s.imported,
+      painHeld: s.painHeld === true,
       performedAtUtc: s.performedAtUtc,
       date: localDateOf(toMs(s.performedAtUtc), s.tz ?? 'UTC'),
       loggedSets: counted.length,
@@ -966,12 +974,13 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
   if (input.pain.active) {
     const held = reference ? feasibleHold(ctx, reference.load) : null;
     const when = input.pain.reportedAtUtc ? ` on ${day(input.pain.reportedAtUtc)}` : '';
-    pushFact(ctx, 'Targets are not increased while a pain flag is active. Clear the flag when you are ready.');
+    // Rule 9 (8 Nov): the hold covers the workout the pain was reported in and the movement's next one.
+    pushFact(ctx, 'Pain holds the workout it was reported in and the next one, then clears by itself. Clear the flag sooner if you are ready.');
     return {
       decision: 'halted_pain',
       load: held,
       reps: criteria.repRange,
-      summary: `Progression for ${name} is paused because pain was reported${when}. Targets are not increased.`,
+      summary: `Progression for ${name} is held for one session because pain was reported${when}. Targets are not increased.`,
     };
   }
 
@@ -1116,9 +1125,11 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
     }
   }
 
-  if (latest.loggedSets > 0 && latest.anyBelowFloor) {
+  // Rule 9 (8 Nov): a workout a pain flag held is never a miss; the streak reads past it.
+  if (latest.loggedSets > 0 && latest.anyBelowFloor && !latest.painHeld) {
     const misses: SessionEval[] = [];
     for (const s of sessions) {
+      if (s.painHeld) continue;
       const sameLoad = (s.load === null && L === null) || (s.load !== null && L !== null && toScaled(s.load) === toScaled(L));
       if (s.loggedSets === 0 || !s.anyBelowFloor || !sameLoad) break;
       misses.push(s);
@@ -1228,8 +1239,8 @@ export function latestJudgedSession(input: NextTargetsInput): { reps: number[]; 
  * (brief §3, §7). Loads are always achievable on the given equipment and never
  * above its maximum; at the ceiling, reps progress instead. Progress needs every
  * prescribed counted set completed at the top of the range; otherwise hold. One
- * poor session holds; only a repeated trend reduces. An active pain flag halts
- * progression. The output does not depend on the order of `history`.
+ * poor session holds; only a repeated trend reduces. A pain flag still holding
+ * (its report workout and the next one, rule 9) halts progression. The output does not depend on the order of `history`.
  */
 export function calculateNextTargets(input: NextTargetsInput): NextTargets {
   const unit = input.equipment?.unit ?? input.unit;
