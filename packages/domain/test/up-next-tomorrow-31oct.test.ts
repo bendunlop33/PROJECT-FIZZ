@@ -55,8 +55,9 @@ describe('This week’s Set days slots: what he did, then Up next on the plannin
     const days = [day('pushA', 0, 0), day('pullA', 1, 1), day('legs', 2, 0), day('pushB', 4), day('pullB', 3), day('legsB', 5, 4)];
     // The ties' view (no Up next) on Sat morning.
     expect(names(setDaysWeekSlots({ days, planningDay: 5 }))).toMatchObject({ legsB: 4, pushB: 5, pullB: 3 });
-    // Up next Pull B (missed Thu) is Saturday’s; Push B goes to the next free day, Sunday.
-    expect(names(setDaysWeekSlots({ days, planningDay: 5, upNext: 'pullB' }))).toMatchObject({ legsB: 4, pullB: 5, pushB: 6 });
+    // Up next Pull B (missed Thu) is Saturday’s. (Ben, 8 Nov, MS1 flag 1) Push B no longer goes onto Sunday (a rest
+    // day): it doesn't fit this week (null), so the tiles agree with `N days behind`.
+    expect(names(setDaysWeekSlots({ days, planningDay: 5, upNext: 'pullB' }))).toMatchObject({ legsB: 4, pullB: 5, pushB: null });
   });
   it('the displaced day’s own slot passed and no free day left: none (genuinely missed)', () => {
     const days = [day('a', 0), day('b', 1, 0), day('c', 2), day('d', 3), day('e', 4), day('f', 5), day('g', 6)];
