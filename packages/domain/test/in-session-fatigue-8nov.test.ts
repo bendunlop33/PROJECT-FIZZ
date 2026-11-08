@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { EquipmentInstance, ProgressionRule, SetType } from '@fizz/schemas';
+import type { EquipmentInstance, ProgressionRule } from '@fizz/schemas';
 
 import {
   builtInDefaultRule,
@@ -62,7 +62,7 @@ function exposure(n: number, daysAgo: number, load: number, reps: number[], cont
     equipmentId: opts.imported === true ? null : RACK.id,
     gymId: opts.imported === true ? null : GYM,
     imported: opts.imported === true,
-    sets: reps.map((r) => ({ setType: 'working' as SetType, side: null, load: kg(load, 'per_hand'), reps: r, rpe: opts.rpe ?? 8, rir: null })),
+    sets: reps.map((r) => ({ setType: 'working', side: null, load: kg(load, 'per_hand'), reps: r, rpe: opts.rpe ?? 8, rir: null })),
     tz: TZ,
     ...(context !== undefined ? { context } : {}),
   };
@@ -316,7 +316,7 @@ describe('SF5: stalls compare like with like', () => {
 
 describe('SF7: done so far today, for the coach', () => {
   it('per muscle, direct and secondary hard sets; warm-ups and cardio never count', () => {
-    const w = {
+    const w: ContextWorkout = {
       session: { source: 'manual' },
       exercises: [
         { id: id(1), exerciseId: BIKE, order: 0, supersetGroup: null, measurement: 'cardio' as const },
@@ -324,11 +324,11 @@ describe('SF7: done so far today, for the coach', () => {
         { id: id(3), exerciseId: INCLINE, order: 2, supersetGroup: null, measurement: 'reps' as const },
       ],
       sets: [
-        { sessionExerciseId: id(1), setType: 'working' as SetType, status: 'completed' as const, side: null, completedAt: { utc: new Date(T0_MS).toISOString(), tz: TZ }, actual: { load: null, reps: null, durationS: 600, rpe: null, rir: null } },
-        ...[1, 2, 3, 4].map((m) => ({ sessionExerciseId: id(2), setType: (m === 1 ? 'warmup' : 'working') as SetType, status: 'completed' as const, side: null, completedAt: { utc: new Date(T0_MS + m * 60_000).toISOString(), tz: TZ }, actual: { load: kg(60, 'total'), reps: 8, durationS: null, rpe: 8, rir: null } })),
-        { sessionExerciseId: id(3), setType: 'working' as SetType, status: 'pending' as const, side: null, completedAt: null, actual: null },
+        { sessionExerciseId: id(1), setType: 'working', status: 'completed' as const, side: null, completedAt: { utc: new Date(T0_MS).toISOString(), tz: TZ }, actual: { load: null, reps: null, durationS: 600, rpe: null, rir: null } },
+        ...[1, 2, 3, 4].map((m) => ({ sessionExerciseId: id(2), setType: m === 1 ? ('warmup' as const) : ('working' as const), status: 'completed' as const, side: null, completedAt: { utc: new Date(T0_MS + m * 60_000).toISOString(), tz: TZ }, actual: { load: kg(60, 'total'), reps: 8, durationS: null, rpe: 8, rir: null } })),
+        { sessionExerciseId: id(3), setType: 'working', status: 'pending' as const, side: null, completedAt: null, actual: null },
       ],
-    } satisfies ContextWorkout;
+    };
     expect(doneSoFarByMuscle(w, musclesOf)).toEqual([
       { muscle: 'Chest', direct: 3, secondary: 0 },
       { muscle: 'Shoulders', direct: 3, secondary: 0 },

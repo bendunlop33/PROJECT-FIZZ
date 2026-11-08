@@ -7,11 +7,20 @@
 4. A rep drop caused by doing the exercise later never counts as a miss or a stall. The coach always sees "done so far today, by muscle" when it plans or adjusts sets.
 5. No fixed "% off per set" rule. The evidence varies too much for that (rule 6). Pain still stops progression (rule 9).
 
-*Library file with **candidate** rules SF1–SF9 (Coaching knowledge, CLAUDE.md rule 10). Nothing here is in the playbook until Ben approves it. Not medical advice: pain or injury stops progression on that movement and the coach suggests seeing a professional; it never diagnoses (CLAUDE.md rule 9). Compiled by the training researcher on 2026-11-07; all sources checked 2026-11-07. Builds on [history-targets.md](history-targets.md) HT1/HT9/HT13 (candidates), approved rules 1, 4, 5, 7, 8/ST1–ST2 and E1's synergist counting.*
+*Library file with rules SF1–SF9, **approved by Ben on 8 Nov 2026** ("Then fine go with your recommendations"; CHANGELOG 2026-11-08). Coaching knowledge (CLAUDE.md rule 10). Not medical advice: pain or injury holds progression on that movement for that session and its next one (CLAUDE.md rule 9 as changed 8 Nov) and the coach suggests seeing a professional; it never diagnoses. Compiled by the training researcher on 2026-11-07; all sources checked 2026-11-07. Builds on [history-targets.md](history-targets.md) HT1/HT9/HT13 (candidates), approved rules 1, 4, 5, 7, 8/ST1–ST2 and E1's synergist counting.*
 
 **Trigger.** Ben, 7 Nov 2026: *"if you're hitting a push session the coach should consider what you've already hit that day when making the set plan. It shouldn't just look at previous workouts' sets and reps, as I may have hit it secondary, which makes you weaker for the set."* His example: on Push A he does bench first and incline dumbbell press third. The incline "previous" comes from a session where incline was done first.
 
-## Candidate playbook rules
+## Playbook rules (approved 8 Nov 2026)
+
+**As built (8 Nov).** `packages/domain/src/in-session-fatigue.ts` (SF1–SF3, SF5, SF7, SF8), `next-target.ts` (the like-for-like reading), `session/replan.ts` (SF6). Implementation notes, none changing a rule:
+- Muscles are counted by muscle group (`muscleGroupOf`: chest and upper chest are one), the same table as every other muscle count.
+- SF2 is built inside the existing target code (the built-in rule's history filter), not on HT1, which is still a candidate.
+- Today's P for a target worked out before or during the workout counts the sets logged so far **plus** the working sets still planned on exercises ordered before it, so a plan made at Start already fits the order Ben will do (SF6 recomputes when he changes it).
+- FitNotes imports: the file has no set times and its row order isn't documented as the order done, so imported exposures have **unknown context** (SF2: used only when no known-context exposure exists; never blocks a target).
+- SF5 in the weekly review: a lift's sessions in another context than its newest one are skipped by ST2. The block view's ST2 doesn't read context yet (open).
+- SF7(a) "done so far today by muscle" is in the coach context's workout (`doneSoFarToday`) when the caller passes the muscles; SF7(b)/(c) are not built yet (open).
+
 
 Terms:
 - **Earlier sets (P)** for an exercise today = for each of its *primary* muscles (catalogue), the hard sets that muscle has already done in this workout. A set counts **1** where the muscle was primary for the earlier exercise and **½** where it was secondary (same counting as E1 and rule 1). P is the highest value across the exercise's primary muscles.

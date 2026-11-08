@@ -38,7 +38,8 @@ describe('one-session pain hold', () => {
     await logWorkout(h, s, gymId, [BENCH(6)]);
     expect(await s.pain.active()).toEqual([]);
     const after = await s.pain.get(flagId);
-    expect(after).toMatchObject({ status: 'cleared', lapsed: { sessionId: expect.any(String) } });
+    expect(after?.status).toBe('cleared');
+    expect(typeof after?.lapsed?.sessionId).toBe('string');
     // Survives a relaunch: it's read from the workouts, nothing written.
     await h.forceClose();
     const { services: s2 } = await h.launch();
