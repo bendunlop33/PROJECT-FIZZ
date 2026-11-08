@@ -1,7 +1,10 @@
-import type { CheckIn, EquipmentInstance, LoadConvention, Measurement, PainFlag, PlannedSet, ProgressionRule, SetType, WeightUnit } from '@fizz/schemas';
+import type { CheckIn, EquipmentInstance, Load, LoadConvention, Measurement, PainFlag, PlannedSet, ProgressionRule, SetType, WeightUnit } from '@fizz/schemas';
+import { compareDifficulty, loadDirection, stepLoad } from './equipment';
+import { formatNumber } from './display';
+import { cushionReps, cushionWhy, pickLikeForLike, resolveContext, type ContextExposure, type MusclesOf, type ResolvedContext, type WorkContext } from './in-session-fatigue';
 import { painMentionedNotFlagged, painStatusFor } from './checkin';
 import { builtInDefaultRule, ruleCategory, type RuleExerciseInfo } from './default-rule';
-import { calculateNextTargets, latestJudgedSession, type HistorySession, type NextTargets, type PainStatus } from './progression';
+import { calculateNextTargets, latestJudgedSession, type EarlierWorkNote, type HistorySession, type NextTargets, type NextTargetsInput, type PainStatus } from './progression';
 import { aimReps, PERSONAL_REPS, personalRepRange, personalRuleName, ruleRepsFact, typicalReps, type PersonalRepsKind, type RuleReps } from './rep-range';
 import { ruleTargetProvenance, type RuleProvenanceInput } from './target-provenance';
 
@@ -50,15 +53,21 @@ export interface NextTargetRequest {
   accessory?: boolean;
   /** (Ben, 23 Oct) Ben applied the rule's stall reset on the Summary (`NextTargetsInput.acceptReset`). */
   acceptReset?: boolean;
+  /**
+   * (SF1–SF3, Ben 8 Nov) Today's context for this exercise (`earlierWorkOf` on the workout it will be done in, or the
+   * workout whose order the next one repeats) and the muscles of every exercise. Absent: no like-for-like reading.
+   */
+  fatigue?: { today: WorkContext | null; musclesOf: MusclesOf };
 }
 
-export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; rule: ProgressionRule } {
+/** The rule and the rule input for a request (the built-in default unless the routine names a rule). */
+function baseOf(req: NextTargetRequest): { input: NextTargetsInput; base: ProgressionRule; category: ReturnType<typeof ruleCategory> } {
   const own = ruleCategory(req.exercise, req.equipment?.kind ?? null, req.convention);
   const category = req.accessory === true && own === 'main_barbell' ? 'compound' : own;
   const base = req.rule ?? builtInDefaultRule(req.ownerId, req.unit, req.workingSets, category);
   const flagged = painStatusFor(req.painFlags, req.exerciseId);
   const pain = flagged.active ? flagged : req.sessionPain;
-  const input = {
+  const input: NextTargetsInput = {
     exerciseName: req.exerciseName,
     measurement: req.measurement,
     history: req.history,
@@ -71,6 +80,12 @@ export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; r
     ...(req.comparableEquipmentIds !== undefined ? { comparableEquipmentIds: req.comparableEquipmentIds } : {}),
     ...(req.acceptReset === true ? { acceptReset: true } : {}),
   };
+  return { input, base, category };
+}
+
+function coreTargets(req: NextTargetRequest, history: readonly HistorySession[], holdLoad: boolean): { result: NextTargets; rule: ProgressionRule } {
+  const { input: all, base, category } = baseOf(req);
+  const input: NextTargetsInput = { ...all, history, ...(holdLoad ? { holdLoad: true as const } : {}) };
   if (req.measurement !== 'reps' || base.method !== 'double_progression') return { result: calculateNextTargets(input), rule: base };
   // Reps from history (21 Oct): the built-in rule's range follows Ben's last session of this exercise, except
   // on a main barbell lift (its top set / back-offs scheme) or a rule of his own (`fixed`).
@@ -98,6 +113,107 @@ export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; r
   const fact = ruleRepsFact(reps);
   const explanation = fact === null ? result.explanation : { ...result.explanation, facts: [fact, ...result.explanation.facts] };
   return { result: { ...result, explanation, reps }, rule };
+}
+
+/**
+ * The next targets for one exercise. With `fatigue` (SF1–SF3, Ben 8 Nov) the reference is like for like: the newest
+ * exposure done after a similar amount of same-muscle work (SF2). With none, the newest exposure in another context,
+ * and when today has ≥ 2 more earlier sets than it had, SF3's cushion: the same load, 1–2 reps fewer, `est.`, no
+ * load step (one achievable step easier only below the range bottom). A pain hold (rule 9, SF9) reads every
+ * exposure, as before. Nothing here raises a load.
+ */
+export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; rule: ProgressionRule } {
+  const plain = () => coreTargets(req, req.history, false);
+  const f = req.fatigue;
+  if (f === undefined || req.measurement !== 'reps') return plain();
+  const { input } = baseOf(req);
+  if (input.pain.active) return plain();
+  const today = resolveContext(f.today, req.exerciseId, f.musclesOf);
+  if (today.p === null) return plain();
+  const ctxOf = (h: HistorySession): ResolvedContext => resolveContext(h.context, req.exerciseId, f.musclesOf);
+  // Only exposures the rule could judge on today's equipment, unit and convention can be a basis.
+  const exposures: ContextExposure[] = [];
+  for (const h of req.history) {
+    if (h.context === undefined || h.copy === true) continue;
+    if (latestJudgedSession({ ...input, history: [h] }) === null) continue;
+    exposures.push({ sessionId: h.sessionId, performedAtUtc: h.performedAtUtc, context: ctxOf(h) });
+  }
+  const pick = pickLikeForLike(today, exposures);
+  if (pick.kind === 'all') return plain();
+  const only = (ids: ReadonlySet<string>) => req.history.filter((h) => ids.has(h.sessionId) && h.context !== undefined);
+  const note = (basis: EarlierWorkNote['basis'], ref: ContextExposure | null): EarlierWorkNote => ({
+    todayP: today.p ?? 0,
+    muscle: today.muscle,
+    reference: ref === null ? null : { sessionId: ref.sessionId, performedAtUtc: ref.performedAtUtc, p: ref.context.p ?? 0, sameMuscleSuperset: ref.context.sameMuscleSuperset },
+    basis,
+  });
+  const exposureOf = (sessionId: string | undefined): ContextExposure | null => exposures.find((e) => e.sessionId === sessionId) ?? null;
+  if (pick.kind === 'comparable') {
+    const comp = coreTargets(req, only(pick.sessionIds), false);
+    const ref = exposureOf(comp.result.basedOnSessionIds[0]);
+    const out = { ...comp, result: { ...comp.result, earlierWork: note('comparable', ref) } };
+    if (pick.stale === null) return out;
+    // SF2 stale: the newer exposure in another context also gives a target; the lower load wins.
+    const others = exposures.filter((e) => !pick.sessionIds.has(e.sessionId)).map((e) => e.sessionId);
+    const alt = fromOther(req, today, only(new Set(others)), pick.stale, cushionReps(today.p, pick.stale.context.p ?? 0), note);
+    return easierFirstLoad(alt.result, out.result) ? { ...alt, result: { ...alt.result, earlierWork: { ...(alt.result.earlierWork as EarlierWorkNote), staleLower: true } } } : out;
+  }
+  return fromOther(req, today, only(pick.sessionIds), pick.reference, pick.cushion, note);
+}
+
+/** Targets read from another context's exposures: SF3's cushion when today has ≥ 2 more earlier sets, else the rule as is. */
+function fromOther(
+  req: NextTargetRequest,
+  today: ResolvedContext,
+  history: readonly HistorySession[],
+  reference: ContextExposure,
+  cushion: 0 | 1 | 2,
+  note: (basis: EarlierWorkNote['basis'], ref: ContextExposure | null) => EarlierWorkNote,
+): { result: NextTargets; rule: ProgressionRule } {
+  if (cushion === 0) {
+    const r = coreTargets(req, history, false);
+    return { ...r, result: { ...r.result, earlierWork: note('other', reference) } };
+  }
+  const held = coreTargets(req, history, true);
+  const { input } = baseOf(req);
+  const ref = latestJudgedSession({ ...input, history });
+  const last = ref === null ? null : typicalReps(ref.reps);
+  if (held.result.decision !== 'hold' || last === null) return { ...held, result: { ...held.result, earlierWork: note('other', reference) } };
+  const rule = held.rule;
+  const bottom = rule.method === 'double_progression' ? rule.repRange.min : rule.topSet.repRange.min;
+  const aim = last - cushion;
+  const stepDown = aim < bottom;
+  const planned = Math.max(aim, bottom);
+  const eq = req.equipment;
+  const convention = eq?.loadConvention ?? req.convention;
+  const easier = (l: Load | null): Load | null => {
+    if (!stepDown || l === null || l.convention === 'bodyweight' || eq === null) return l;
+    const r = stepLoad(l.value, eq, loadDirection(convention) === 'assistance' ? 'increase' : 'decrease');
+    return r.ok ? { ...l, value: r.value } : l;
+  };
+  const sets = held.result.sets.map((s) => (s.setType === 'warmup' ? s : { ...s, load: easier(s.load), reps: s.setType === 'backoff' ? s.reps : { min: planned, max: planned } }));
+  const first = sets.find((s) => s.setType !== 'warmup');
+  const loadText = first?.load == null || first.load.convention === 'bodyweight' ? 'bodyweight' : formatNumber(ref?.load ?? first.load.value);
+  const why = cushionWhy(today, reference.context, loadText, last, planned);
+  const reps: RuleReps | undefined = held.result.reps === undefined ? undefined : { ...held.result.reps, aim: planned };
+  return {
+    rule,
+    result: {
+      ...held.result,
+      sets,
+      ...(reps !== undefined ? { reps } : {}),
+      explanation: { summary: why, facts: held.result.explanation.facts.filter((x) => !x.startsWith('Reps follow')) },
+      earlierWork: { ...note('cushion', reference), cushion: { reps: cushion, stepDown, lastReps: last, aim: planned } },
+    },
+  };
+}
+
+/** Whether `a`'s first working load is easier than `b`'s (both loaded, same unit). */
+function easierFirstLoad(a: NextTargets, b: NextTargets): boolean {
+  const la = a.sets.find((s) => s.setType !== 'warmup')?.load ?? null;
+  const lb = b.sets.find((s) => s.setType !== 'warmup')?.load ?? null;
+  if (la === null || lb === null || la.unit !== lb.unit || la.convention === 'bodyweight') return false;
+  return compareDifficulty(la.value, lb.value, loadDirection(la.convention)) < 0;
 }
 
 const PLANNABLE = new Set<NextTargets['decision']>(['increase_load', 'increase_reps', 'hold', 'hold_after_miss', 'reduce_load', 'ceiling_reached', 'halted_pain']);

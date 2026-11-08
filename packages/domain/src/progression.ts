@@ -26,6 +26,7 @@ import { stallResetLoad } from './stall-reset';
 import { toMs } from './time';
 import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
 import type { RuleReps } from './rep-range';
+import type { WorkContext } from './in-session-fatigue';
 
 export interface HistorySet {
   setType: SetType;
@@ -90,6 +91,11 @@ export interface HistorySession {
    * coach sees it labelled; `Last`, history, records and Progress volume read it as any other workout.
    */
   deload?: true;
+  /**
+   * (SF1, Ben 8 Nov) What was done before it in that workout (`earlierWorkOf`), read at read time from the logged
+   * order. Absent: order unknown (an imported workout), so it's a like-for-like basis only when nothing else is.
+   */
+  context?: WorkContext;
 }
 
 /**
@@ -340,6 +346,11 @@ export interface NextTargetsInput {
    * then does a stall lower the load (`reduce_load`); otherwise the rule holds and offers the reset (`resetOffer`).
    */
   acceptReset?: boolean;
+  /**
+   * (SF3, Ben 8 Nov) No comparable earlier-work history: hold the reference load (no load step this session, never a
+   * bonus). `nextTargetsFor` sets the reps and the `est.` label.
+   */
+  holdLoad?: true;
 }
 
 export type ProgressionDecision =
@@ -389,6 +400,26 @@ export interface NextTargets {
    * could reduce and Ben hasn't applied (`acceptReset`); the plan itself holds.
    */
   resetOffer?: Load;
+  /**
+   * (SF2/SF3/SF7b, Ben 8 Nov) What today's earlier work did to the target: today's P, the reference's P and date, and
+   * whether SF3's cushion applied (then the load is an estimate, `est.`). Absent when SF didn't apply (P unknown, or
+   * no exposure with a known order).
+   */
+  earlierWork?: EarlierWorkNote;
+}
+
+export interface EarlierWorkNote {
+  /** Today's P (earlier hard sets for its most-worked primary muscle) and that muscle. */
+  todayP: number;
+  muscle: string | null;
+  /** The exposure the target was read from: its P, session and date. */
+  reference: { sessionId: string; performedAtUtc: string; p: number; sameMuscleSuperset: boolean } | null;
+  /** `comparable`: like for like (SF2); `other`: another context, normal rule (today fresher); `cushion`: SF3. */
+  basis: 'comparable' | 'other' | 'cushion';
+  /** SF3: reps fewer than last time (0 when only the load step was held), and whether the load dropped one step. */
+  cushion?: { reps: 0 | 1 | 2; stepDown: boolean; lastReps: number; aim: number };
+  /** SF2 stale: the comparable reference was 28+ days older; SF3 from the newer one gave the lower load. */
+  staleLower?: true;
 }
 
 interface Criteria {
@@ -927,6 +958,11 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
   // The most recent session in which anything counted was performed: the load reference.
   const reference = sessions.find((s) => s.loggedSets > 0);
 
+  if (input.holdLoad === true && !input.pain.active && reference) {
+    // SF3: no comparable reference to judge a step from, so the load stays (the caller sets reps and `est.`).
+    return { decision: 'hold', load: feasibleHold(ctx, reference.load), reps: criteria.repRange, summary: `${name}: holding the load.` };
+  }
+
   if (input.pain.active) {
     const held = reference ? feasibleHold(ctx, reference.load) : null;
     const when = input.pain.reportedAtUtc ? ` on ${day(input.pain.reportedAtUtc)}` : '';
@@ -1179,12 +1215,12 @@ function builderFormatOtherLoad(ctx: Ctx, sessions: readonly SessionEval[], firs
  * within the rule's effort limit (sets without a recorded effort pass).
  * Null when there's none.
  */
-export function latestJudgedSession(input: NextTargetsInput): { reps: number[]; load: number | null; direction: LoadDirection; effortOk: boolean } | null {
+export function latestJudgedSession(input: NextTargetsInput): { reps: number[]; load: number | null; direction: LoadDirection; effortOk: boolean; sessionId: string; performedAtUtc: string } | null {
   const unit = input.equipment?.unit ?? input.unit;
   const convention = input.equipment?.loadConvention ?? input.convention;
   const ctx: Ctx = { input, unit, convention, direction: loadDirection(convention), facts: [], infeasible: false };
   const ref = comparableSessions(ctx).find((s) => s.loggedSets > 0);
-  return ref === undefined ? null : { reps: ref.judgedReps, load: ref.load, direction: ctx.direction, effortOk: ref.effortOk };
+  return ref === undefined ? null : { reps: ref.judgedReps, load: ref.load, direction: ctx.direction, effortOk: ref.effortOk, sessionId: ref.sessionId, performedAtUtc: ref.performedAtUtc };
 }
 
 /**

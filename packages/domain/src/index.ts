@@ -8,6 +8,7 @@ export * from './progression';
 export * from './stall-reset';
 export * from './stall';
 export * from './history';
+export * from './in-session-fatigue';
 export * from './history-summary';
 export * from './gym-presets';
 export * from './stable';
