@@ -1,10 +1,9 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 
-import { isPainCheckDue, toMs } from '@fizz/domain';
+import { toMs } from '@fizz/domain';
 import type { PainArea } from '@fizz/schemas';
 
-import { nowMs as clockNow } from '../../clock';
 import { formatShortDate } from '../../format/dates';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { Group, Row, Screen, StatusLine, TextButton, Toast } from '../../ui';
@@ -14,10 +13,10 @@ const AREA: Record<PainArea, string> = { shoulder: 'Shoulder', elbow: 'Elbow', w
 
 /**
  * Profile → Pain flags (review workout-loop S7): every active flag, and
- * `Clear` once Ben is ready. Only Ben clears a flag (rule 9), always through
- * the AW10 confirmation; while it is active, that movement's targets don't
- * go up. Tapping a flag opens its pain flag sheet (active-workout §2.14.4),
- * which asks `Still hurts?` when the two-weekly check is due. No diagnosis.
+ * `Clear` once Ben is ready, always through the AW10 confirmation; a flag
+ * also clears by itself after one more session (rule 9, 8 Nov). While it is
+ * active, that movement's targets don't go up. Tapping a flag opens its pain
+ * flag sheet (active-workout §2.14.4). No diagnosis.
  */
 export function PainFlagsScreen() {
   const services = useServices();
@@ -34,7 +33,6 @@ export function PainFlagsScreen() {
     );
   }
   const flags = [...data.value].sort((a, b) => (a.reportedAt.utc < b.reportedAt.utc ? 1 : -1));
-  const now = clockNow();
   const report = (t: PainToast) => {
     setToast(t);
     changed();
@@ -54,7 +52,6 @@ export function PainFlagsScreen() {
               iconColor="status.warning"
               title={f.exerciseName}
               subtitle={`${f.area ? `${AREA[f.area]} · ` : ''}flagged ${formatShortDate(toMs(f.reportedAt.utc), f.reportedAt.tz)}${f.source === 'check_in' ? ' from a check-in' : ''}`}
-              secondLine={isPainCheckDue(f, now, services.now().tz) ? 'Check due' : null}
               onPress={() => {
                 navigation.navigate('PainFlag', { flagId: f.id });
               }}

@@ -6,8 +6,9 @@ import { createHarness, dropPlannedWarmups, logWorkout, setUpGym, type Harness }
 /**
  * Pain flags without the coach (active-workout §2.14, exercise-library EL9,
  * today.md region 4b) through the app's services on real SQLite: the picker's
- * `May hurt`, the two-weekly `Still hurts?` (never clears a flag), the clear
- * confirmation (versioned), and the pre-flag reference in the pain flag sheet.
+ * `May hurt`, the clear confirmation (versioned), and the pre-flag reference in
+ * the pain flag sheet. The two-weekly `Still hurts?` check is gone (Ben, 9 Nov):
+ * flags clear by themselves after one more session.
  */
 let h: Harness;
 beforeEach(() => {
@@ -70,93 +71,33 @@ describe('picker `May hurt` (EL9, check 50)', () => {
   });
 });
 
-describe('Today region 4b (today checks 19–20)', () => {
-  it('shows the row 14 days after the flag, not 13; hidden with a workout in progress', async () => {
-    const { s, gymId, flagId } = await flagBench();
-    h.clockMs += 13 * DAY;
-    expect((await s.today.view())?.painCheck).toBeNull();
-    h.clockMs += DAY;
-    expect((await s.today.view())?.painCheck).toEqual({ kind: 'one', flagId, text: 'Still hurts? Bench press · flagged 14 days ago', accessibilityLabel: 'Pain flag check due: Bench press, flagged 14 days ago.' });
-    const started = await s.workout.start({ gymId, opId: 'w2', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
-    if (!started.ok) throw new Error('start');
-    expect((await s.today.view())?.painCheck).toBeNull();
+describe('no `Still hurts?` check (Ben, 9 Nov)', () => {
+  it('Today has no pain check row, however old the flag', async () => {
+    const { s } = await flagBench();
+    h.clockMs += 20 * DAY;
+    const v = await s.today.view();
+    expect(v).not.toBeNull();
+    expect(v).not.toHaveProperty('painCheck');
+    expect(s.pain).not.toHaveProperty('stillHurts');
   });
-});
 
-describe('Still hurts (§2.14.2, checks 52–53)', () => {
-  it('keeps the flag, moves the check 14 days on, and survives a force-close', async () => {
+  it('a flag stays until Ben clears it (versioned) or it lapses; an old flag with stored answers still reads and clears', async () => {
     const { s, flagId } = await flagBench();
     h.clockMs += 14 * DAY;
     const v = await flagVersion(s, flagId);
-    const r = await s.pain.stillHurts({ flagId, opId: 'review-1', expectedVersion: v });
-    expect(r).toMatchObject({ ok: true, kept: 'Pain flag kept · next check 6 Nov', nudge: null, duplicate: false });
-    expect((await s.pain.active()).map((f) => [f.id, f.status])).toEqual([[flagId, 'active']]);
-    expect((await s.today.view())?.painCheck).toBeNull();
-
-    await h.forceClose();
-    const { services: s2 } = await h.launch();
-    expect((await s2.pain.get(flagId))?.reviews?.map((x) => x.opId)).toEqual(['review-1']);
-    expect((await s2.today.view())?.painCheck).toBeNull();
-    h.clockMs += 14 * DAY;
-    expect((await s2.today.view())?.painCheck?.kind).toBe('one');
-  });
-
-  it('the same operation twice records one answer; a second answer elsewhere is not_due; an old version is stale', async () => {
-    const { s, flagId } = await flagBench();
-    h.clockMs += 15 * DAY;
-    const v = await flagVersion(s, flagId);
-    const first = await s.pain.stillHurts({ flagId, opId: 'review-1', expectedVersion: v });
-    expect(first.ok).toBe(true);
-    const retry = await s.pain.stillHurts({ flagId, opId: 'review-1', expectedVersion: v });
-    expect(retry).toMatchObject({ ok: true, duplicate: true });
-    expect((await s.pain.get(flagId))?.reviews).toHaveLength(1);
-    expect(await s.pain.stillHurts({ flagId, opId: 'review-2', expectedVersion: v + 1 })).toMatchObject({ ok: false, reason: 'not_due' });
-
-    // Undo, then answer from a screen that read the flag before the undo: refused, not applied to newer state.
-    expect(await s.pain.undoStillHurts({ flagId, reviewOpId: 'review-1', undoOpId: 'undo-1' })).toBe(true);
-    expect(await s.pain.stillHurts({ flagId, opId: 'review-3', expectedVersion: v + 1 })).toMatchObject({ ok: false, reason: 'stale' });
-    expect((await s.today.view())?.painCheck?.kind).toBe('one');
-  });
-
-  it('Undo makes the check due again; Undo twice is a no-op', async () => {
-    const { s, flagId } = await flagBench();
-    h.clockMs += 14 * DAY;
-    await s.pain.stillHurts({ flagId, opId: 'review-1', expectedVersion: await flagVersion(s, flagId) });
-    expect(await s.pain.undoStillHurts({ flagId, reviewOpId: 'review-1', undoOpId: 'undo-1' })).toBe(true);
-    const v = await flagVersion(s, flagId);
-    expect(await s.pain.undoStillHurts({ flagId, reviewOpId: 'review-1', undoOpId: 'undo-1' })).toBe(true);
-    expect(await flagVersion(s, flagId)).toBe(v);
-    expect((await s.today.view())?.painCheck?.kind).toBe('one');
-  });
-
-  it('the second Still hurts in a row adds the physio-or-doctor line', async () => {
-    const { s, flagId } = await flagBench();
-    h.clockMs += 14 * DAY;
-    await s.pain.stillHurts({ flagId, opId: 'review-1', expectedVersion: await flagVersion(s, flagId) });
-    h.clockMs += 14 * DAY;
-    const second = await s.pain.stillHurts({ flagId, opId: 'review-2', expectedVersion: await flagVersion(s, flagId) });
-    expect(second.ok && second.nudge).toBe('It’s been 4 weeks. Pain that lasts this long is worth getting checked by a physio or doctor.');
-  });
-
-  it('answering never clears: only clearConfirmed does, and only at the version the sheet read', async () => {
-    const { s, flagId } = await flagBench();
-    h.clockMs += 14 * DAY;
-    const v = await flagVersion(s, flagId);
-    await s.pain.stillHurts({ flagId, opId: 'review-1', expectedVersion: v });
     expect(await s.pain.active()).toHaveLength(1);
-    expect(await s.pain.clearConfirmed({ flagId, expectedVersion: v })).toMatchObject({ ok: false, stale: true });
-    expect(await s.pain.active()).toHaveLength(1);
-    const ok = await s.pain.clearConfirmed({ flagId, expectedVersion: v + 1 });
-    expect(ok).toEqual({ ok: true, cleared: { id: flagId, version: v + 2 } });
+    expect(await s.pain.clearConfirmed({ flagId, expectedVersion: v - 1 })).toMatchObject({ ok: false, stale: true });
+    const ok = await s.pain.clearConfirmed({ flagId, expectedVersion: v });
+    expect(ok).toEqual({ ok: true, cleared: { id: flagId, version: v + 1 } });
     // A retry of the same clear is a no-op; the toast's Undo restores it.
-    expect(await s.pain.clearConfirmed({ flagId, expectedVersion: v + 1 })).toEqual({ ok: true, cleared: null });
+    expect(await s.pain.clearConfirmed({ flagId, expectedVersion: v })).toEqual({ ok: true, cleared: null });
     expect(await s.pain.undoClear(ok.ok && ok.cleared ? [ok.cleared] : [])).toBe(true);
-    expect((await s.pain.active()).map((f) => f.reviews?.length)).toEqual([1]);
+    expect((await s.pain.active()).map((f) => f.id)).toEqual([flagId]);
   });
 });
 
 describe('in the workout (checks 32, 51)', () => {
-  it('the note reads `check due`; Still hurts? shows once after the first set of the movement, and goes after the answer', async () => {
+  it('the note is plain (no `check due`), the target holds, and the rest card asks nothing after the first set', async () => {
     const { s, gymId, flagId } = await flagBench();
     h.clockMs += 14 * DAY;
     const started = await s.workout.start({ gymId, opId: 'w2', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
@@ -171,8 +112,7 @@ describe('in the workout (checks 32, 51)', () => {
     let data = await s.workout.load(sessionId);
     if (!data) throw new Error('load');
     let view = s.workout.view(data, h.clockMs, null);
-    expect(view.focus?.painFlag).toMatchObject({ flagId, checkDue: true, text: 'Pain flag · clears after this workout · check due' });
-    expect(view.painReview).toBeNull();
+    expect(view.focus?.painFlag).toMatchObject({ flagId, text: 'Pain flag · clears after this workout' });
     // The flag holds the target at the last load (no increase).
     expect(view.focus?.logLabel).toContain('100');
 
@@ -185,22 +125,8 @@ describe('in the workout (checks 32, 51)', () => {
     data = await s.workout.load(sessionId);
     if (!data) throw new Error('load');
     view = s.workout.view(data, h.clockMs, null);
-    expect(view.painReview).toMatchObject({ flagId, question: 'Bench press: still hurting?', fact: 'Pain flag since 9 Oct · 14 days', afterSetId: first.id });
-
-    // Force-close in the rest: the prompt is derived from stored state, so it's still there.
-    await h.forceClose();
-    const { services: s2 } = await h.launch();
-    data = await s2.workout.load(sessionId);
-    if (!data) throw new Error('load');
-    expect(s2.workout.view(data, h.clockMs, null).painReview?.flagId).toBe(flagId);
-
-    const r = await s2.pain.stillHurts({ flagId, opId: 'review-1', expectedVersion: view.painReview?.flagVersion ?? -1 });
-    expect(r.ok).toBe(true);
-    data = await s2.workout.load(sessionId);
-    if (!data) throw new Error('load');
-    view = s2.workout.view(data, h.clockMs, null);
-    expect(view.painReview).toBeNull();
-    expect(view.focus?.painFlag).toMatchObject({ checkDue: false, text: 'Pain flag · clears after this workout' });
+    expect(view).not.toHaveProperty('painReview');
+    expect(JSON.stringify(view)).not.toMatch(/still hurt/i);
   });
 });
 
@@ -218,7 +144,6 @@ describe('pain flag sheet and the pre-flag reference (§2.14.3–2.14.4, check 5
       heading: 'Bench press · shoulder',
       since: 'Since 9 Oct (14 days) · you, in a check-in',
       effect: 'Cleared 10 Oct.',
-      checkDue: false,
       active: false,
     });
     expect(sheet?.before).toMatch(/^8\u00a0Oct · 100/);

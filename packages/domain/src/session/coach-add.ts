@@ -5,7 +5,6 @@ import { painFlagForMovement } from '../exercise-identity';
 import { PAIN_AREA_WORD } from '../pain-flags';
 import type { HistorySession } from '../progression';
 import { deriveId } from '../stable';
-import { toMs } from '../time';
 import { buildAddExerciseCommand } from './create';
 import { currentGymEquipment } from './equipment-snapshot';
 import { plannedSnapOf, snapPlanToGym } from './snap';
@@ -118,9 +117,8 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
   if (exercise.measurement === 'distance') return reject(`${exercise.name} is measured by distance`);
 
   // 3. Rule 9: a flagged movement is never added by the coach.
-  const nowMs = toMs(input.at.utc);
   const movementIds = [exercise.id, ...(input.sameMovementIds ?? [])];
-  const flag = painFlagForMovement(input.substitute.painFlags, exercise, movementIds, nowMs, input.at.tz);
+  const flag = painFlagForMovement(input.substitute.painFlags, exercise, movementIds);
   if (flag !== null) {
     const area = flag.area === null ? '' : `${PAIN_AREA_WORD[flag.area]} `;
     return reject(`${area}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`);

@@ -812,7 +812,7 @@ export function planFirstLoads(input: PlanFirstLoadsInput): Map<string, { exerci
 /** A builder plan slot's week-1 planned sets (`plan` loads), or null when they don't apply now. */
 function builderFirstSets(slot: PlanDayDraft['plan']['slots'][number], version: PlanDraftVersion, input: PlanFirstLoadsInput, exerciseId: string): (PlannedSet | null)[] | null {
   const sub = input.substitute;
-  if (painHoldFor(exerciseId, sub.painFlags, sub.sessionPain, input.nowMs, sub.at.tz) !== null) return null;
+  if (painHoldFor(exerciseId, sub.painFlags, sub.sessionPain) !== null) return null;
   const built = toMs(version.createdAt.utc);
   if ((input.histories.get(exerciseId) ?? []).some((h) => toMs(h.performedAtUtc) > built)) return null;
   const sets = slot.setTemplates.map((t): PlannedSet | null => {

@@ -66,7 +66,7 @@ export function createExercisePickerService(deps: ExercisePickerDeps) {
       if (!inPickerScope(scope, exercise)) continue;
       const self = exercise.name.trim().toLowerCase();
       const aliases = [...new Set([...(exercise.catalogueKey ? deps.catalogueAliases(exercise.catalogueKey) : []), ...(ownNames.get(exercise.id) ?? [])])].filter((n) => n.trim().toLowerCase() !== self);
-      const covering = flags.length === 0 ? null : painFlagCovering(flags, exercise.id, nowMs, at.tz);
+      const covering = flags.length === 0 ? null : painFlagCovering(flags, exercise.id);
       entries.push({
         exercise,
         aliases,

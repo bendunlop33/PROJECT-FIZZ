@@ -40,12 +40,11 @@ export function rowIsMovement(row: { exerciseId: string; exerciseName: string },
 
 /**
  * The active pain flag on this movement under any of its IDs or its name
- * (rule 9: pain stops that movement, not one row ID). `painFlagCovering`'s
- * order: the one whose check is due first, else the oldest.
+ * (rule 9: pain stops that movement, not one row ID); the oldest first.
  */
-export function painFlagForMovement(flags: readonly PainFlag[], exercise: Identity, ids: readonly string[], nowMs: number, tz: string): PainFlag | null {
+export function painFlagForMovement(flags: readonly PainFlag[], exercise: Identity, ids: readonly string[]): PainFlag | null {
   const matching = flags.filter((f) => f.status === 'active' && rowIsMovement(f, exercise, ids)).map((f) => ({ ...f, exerciseId: exercise.id }));
-  const hit = painFlagCovering(matching, exercise.id, nowMs, tz)?.flag ?? null;
+  const hit = painFlagCovering(matching, exercise.id)?.flag ?? null;
   return hit === null ? null : (flags.find((f) => f.id === hit.id) ?? null);
 }
 

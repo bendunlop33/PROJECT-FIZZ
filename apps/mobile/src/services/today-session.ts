@@ -746,7 +746,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         const dryRun = fromPlan?.source === 'rule' ? anchorOf(fromPlan) : null;
         if (dryRun !== null) ruleTarget = { ...dryRun, rpe: ruleRpe };
       }
-      const flag = painFlagCovering(flags, id, nowMs, deps.now().tz);
+      const flag = painFlagCovering(flags, id);
       // Rule 9: a pain-flagged movement is held at its last working load, never progressed; with no history of its
       // own there's nothing to hold to, so no target at all (`—`, Start light), never the plan's or an estimate.
       const held = flag !== null;
@@ -951,7 +951,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const e = exercises.get(id);
       return e !== undefined && doableHere(e, sub.gym);
     };
-    const pained = (id: string) => painFlagCovering(flags, id, nowMs, tz) !== null;
+    const pained = (id: string) => painFlagCovering(flags, id) !== null;
     const own = [...doneCount.entries()].sort((a, b) => b[1] - a[1] || (lastDoneMs.get(b[0]) ?? 0) - (lastDoneMs.get(a[0]) ?? 0)).map(([id]) => id);
     const byGroup = new Map<BuilderGroupName, string[]>();
     const add = (id: string, cap: boolean) => {

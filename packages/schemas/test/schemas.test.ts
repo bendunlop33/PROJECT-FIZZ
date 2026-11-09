@@ -286,7 +286,7 @@ describe('PlannedSet provenance (Why?, active-workout §2.12)', () => {
   });
 });
 
-describe('PainFlag reviews (Still hurts?, active-workout §2.14.2)', () => {
+describe('PainFlag reviews (legacy: the retired Still hurts? check, kept so older flags and backups parse; Ben, 9 Nov)', () => {
   const flag = {
     ...meta,
     exerciseId: id(20),

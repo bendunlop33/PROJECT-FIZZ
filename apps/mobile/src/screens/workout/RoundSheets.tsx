@@ -171,7 +171,7 @@ export function WorkoutRoundsSheet(p: {
  * in a superset) with `Change`, last time, and the coach's or the rule's
  * reason (`explainTarget`, as in the target's `Why?` panel).
  */
-export function WhySheet(p: { visible: boolean; title: string; view: WhyView | null; panel: WhyPanel; onChangeRest: () => void; onPainFlag: (flagId: string) => void; onClose: () => void }) {
+export function WhySheet(p: { visible: boolean; title: string; view: WhyView | null; panel: WhyPanel; onChangeRest: () => void; onClose: () => void }) {
   const theme = useTheme();
   const v = p.view;
   const line = (label: string, value: string, action?: { label: string; a11y: string; onPress: () => void }) => (
@@ -200,7 +200,7 @@ export function WhySheet(p: { visible: boolean; title: string; view: WhyView | n
           {v.last !== null ? line('Last time', v.last) : null}
         </View>
       ) : null}
-      {p.panel !== null ? <TargetWhyPanel panel={p.panel} onPainFlag={p.onPainFlag} /> : null}
+      {p.panel !== null ? <TargetWhyPanel panel={p.panel} /> : null}
     </BottomCard>
   );
 }

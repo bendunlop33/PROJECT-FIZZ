@@ -568,11 +568,10 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const targets = exerciseId === null ? null : await targetsFor(profile, ctx.sessions, exerciseId, req.targetsHit === true).catch(() => null);
       let extras: ExerciseExtrasView | null = null;
       if (view !== null) {
-        const nowMs = toMs(deps.now().utc);
         const flags = await repos()
           .painFlags.listActive(profile.id)
           .catch(() => []);
-        const pain = painFlagCovering(flags, view.exerciseId, nowMs, profile.timezone);
+        const pain = painFlagCovering(flags, view.exerciseId);
         extras = buildExerciseExtras({
           bests: await bestsNow(),
           sessions: ctx.sessions,
@@ -742,7 +741,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const nowMs = toMs(deps.now().utc);
       const today = localDateOf(nowMs, profile.timezone);
       const [ctx, flags, bests] = await Promise.all([context(profile), repos().painFlags.listActive(profile.id).catch(() => []), bestsNow()]);
-      const pain = painFlagCovering(flags, req.exerciseId, nowMs, profile.timezone);
+      const pain = painFlagCovering(flags, req.exerciseId);
       const opening = req.sessionId != null || req.equipmentId != null || req.gymId != null;
       const view = buildExerciseDetailView({
         bests,

@@ -9,16 +9,15 @@ import { nowMs as clockNow } from '../../clock';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, Icon, SecondaryButton, StatusLine, TextButton, Toast } from '../../ui';
-import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
+import { AppText, Icon, StatusLine, TextButton, Toast } from '../../ui';
+import { confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 
 /**
  * Pain flag sheet (active-workout.md §2.14.4). Opened from the set card's
- * `PainFlagNote`, `Why?`'s `Check due ›`, Today's check row and Profile ›
- * Pain flags. Medium detent; a workout keeps running underneath. Every line
- * comes from `pain.sheet` (`buildPainFlagSheet`): local reads only, no AI.
- * `Still hurts?` is asked only when the check is due, and never clears the
- * flag; only `Clear flag` in the confirmation does (rule 9, CM4).
+ * `PainFlagNote` and Profile › Pain flags. Medium detent; a workout keeps
+ * running underneath. Every line comes from `pain.sheet` (`buildPainFlagSheet`):
+ * local reads only, no AI. A flag clears by itself after one more session
+ * (rule 9, 8 Nov) or by `Clear flag` in the confirmation (CM4).
  */
 export function PainFlagSheet() {
   const theme = useTheme();
@@ -29,7 +28,6 @@ export function PainFlagSheet() {
   const { flagId, sessionId, sessionExerciseId } = useRoute<RouteProp<RootStackParams, 'PainFlag'>>().params;
   const [sheet, setSheet] = useState<PainFlagSheetView | null | 'loading'>('loading');
   const [toast, setToast] = useState<(PainToast & { id: number }) | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setSheet(await services.pain.sheet({ flagId, sessionId: sessionId ?? null, sessionExerciseId: sessionExerciseId ?? null }));
@@ -99,37 +97,9 @@ export function PainFlagSheet() {
           <AppText variant="body">{view.effect}</AppText>
         </View>
 
-        {view.active && view.checkDue ? (
-          <View style={{ gap: theme.space['2'] }}>
-            <AppText variant="headline">Still hurts?</AppText>
-            <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
-              <View style={{ flex: 1 }}>
-                <SecondaryButton
-                  label="Still hurts"
-                  disabled={busy}
-                  onPress={() => {
-                    setBusy(true);
-                    void answerStillHurts(services, view.flagId, view.flagVersion, report).finally(() => {
-                      setBusy(false);
-                    });
-                  }}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <SecondaryButton label="Better: clear…" disabled={busy} onPress={() => void clear()} />
-              </View>
-            </View>
-          </View>
-        ) : null}
-
         {toast ? (
           <View style={{ gap: theme.space['1'] }}>
             <Toast icon={toast.icon} text={toast.text} {...(toast.action && toast.onAction ? { action: toast.action, onAction: toast.onAction } : {})} />
-            {toast.detail ? (
-              <AppText variant="callout" color="text.secondary">
-                {toast.detail}
-              </AppText>
-            ) : null}
           </View>
         ) : null}
 
@@ -152,7 +122,7 @@ export function PainFlagSheet() {
           {view.professional}
         </AppText>
 
-        {view.active && !view.checkDue ? <TextButton label="Clear flag…" onPress={() => void clear()} /> : null}
+        {view.active ? <TextButton label="Clear flag…" onPress={() => void clear()} /> : null}
         {/* From a workout the list would close the workout under it, so it's offered only outside one. */}
         {sessionId ? null : (
           <TextButton

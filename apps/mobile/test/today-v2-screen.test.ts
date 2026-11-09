@@ -147,14 +147,14 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(screen).toContain('nudge.key === nudgeKey');
   });
 
-  it('superseded today.md parts are gone (Up next card, Recent, session picker); Resume, stale, check-in and pain lines stay', () => {
+  it('superseded today.md parts are gone (Up next card, Recent, session picker); Resume, stale and check-in lines stay; no Still hurts? row (Ben, 9 Nov)', () => {
     expect(screen).not.toContain('label="Up next"');
     expect(screen).not.toContain('title="Recent"');
     expect(screen).not.toContain('SessionPickerSheet');
     expect(screen).toContain('label="Resume"');
     expect(screen).toContain('Unfinished · ');
     expect(screen).toContain('checkInLine(unlinked)');
-    expect(screen).toContain('todayView.painCheck.text');
+    expect(screen).not.toContain('painCheck');
   });
 
   it('44 pt targets, VoiceOver for every gesture, lists at accessibility sizes', () => {

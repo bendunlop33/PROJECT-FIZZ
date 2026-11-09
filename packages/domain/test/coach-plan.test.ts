@@ -162,7 +162,7 @@ function dayCtx(dayIndex: number, flags: PainFlag[] = []): WorkoutProposalContex
     newSlotKey: (exerciseId, i) => `00000000-0000-4000-9${String(dayIndex)}${String(i).padStart(2, '0')}-${exerciseId.slice(-12)}`,
     loads: {
       refsFor: (e) => loadReferences({ exercise: e, history: HISTORIES.get(e.id) ?? [], ctx: sub, nowMs }),
-      painFor: (e) => painHoldFor(e.id, flags, sub.sessionPain, nowMs, TZ),
+      painFor: (e) => painHoldFor(e.id, flags, sub.sessionPain),
       askedHeavier: false,
     },
   };

@@ -1,7 +1,6 @@
 import type { EquipmentInstance, LoadConvention, Measurement, PainFlag, WeightUnit } from '@fizz/schemas';
 import { dayMonthText } from '../display';
 import {
-  isPainCheckDue,
   PAIN_NO_INCREASES,
   PAIN_PROFESSIONAL_TEXT,
   painClearConfirm,
@@ -14,9 +13,8 @@ import { historySetsText, lastComparableHistory, painReference } from './target-
 
 /**
  * The pain flag sheet (active-workout.md §2.14.4), opened from the set card's
- * `PainFlagNote`, `Why?`'s `Check due ›`, Today's check row and Profile's
- * Pain flags list. A pure read: it states the flag, asks `Still hurts?` only
- * when the check is due, and shows the last comparable workout before the
+ * `PainFlagNote` and Profile's Pain flags list. A pure read: it states the
+ * flag and shows the last comparable workout before the
  * flag and the latest since, both as actual results. The one before is the
  * reference Ben's history keeps (§2.14.3): it never sets a target, and
  * clearing the flag resets nothing.
@@ -34,8 +32,6 @@ export interface PainFlagSheetView {
   since: string;
   /** `No increases in load, reps or sets.`, or `Cleared 14 Oct.` once cleared elsewhere. */
   effect: string;
-  /** `Still hurts?` is asked only when due. */
-  checkDue: boolean;
   /** `Before the flag`: `2 Oct · 55 kg × 6, 6, 6` (actual; reference only). */
   before: string | null;
   /** `Since the flag`: `13 Oct · 50 kg × 8, 8, 8` (actual). */
@@ -110,7 +106,6 @@ export function buildPainFlagSheet(input: PainFlagSheetInput): PainFlagSheetView
     heading: painFlagHeading(flag),
     since: painFlagSinceText(flag, nowMs, tz),
     effect: active ? PAIN_NO_INCREASES : flag.status === 'retracted' ? 'Undone.' : flag.clearedAtUtc === null ? 'Cleared.' : `Cleared ${dayMonthText(flag.clearedAtUtc, tz)}.`,
-    checkDue: isPainCheckDue(flag, nowMs, tz),
     before: before === null ? null : line(before),
     sinceFlag: since === null ? null : line(since),
     professional: PAIN_PROFESSIONAL_TEXT,

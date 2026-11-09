@@ -41,7 +41,7 @@ export function TargetWhyLink({ open, onPress, slim = false }: { open: boolean; 
   );
 }
 
-export function TargetWhyPanel({ panel, onPainFlag }: { panel: Exclude<WhyPanel, null>; onPainFlag?: (flagId: string) => void }) {
+export function TargetWhyPanel({ panel }: { panel: Exclude<WhyPanel, null> }) {
   const theme = useTheme();
   const { fontScale } = useWindowDimensions();
   // AX sizes: the label sits above its value instead of beside it.
@@ -70,7 +70,7 @@ export function TargetWhyPanel({ panel, onPainFlag }: { panel: Exclude<WhyPanel,
   return (
     <View style={box}>
       {rows.map((row, i) => (
-        <Row key={row.key} row={row} stacked={stacked} innerRef={i === 0 ? first : undefined} onPainFlag={onPainFlag} />
+        <RowBody key={row.key} row={row} stacked={stacked} innerRef={i === 0 ? first : undefined} />
       ))}
       {basisEdited ? (
         <View accessible accessibilityLabel={basisEdited} style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'flex-start' }}>
@@ -80,30 +80,6 @@ export function TargetWhyPanel({ panel, onPainFlag }: { panel: Exclude<WhyPanel,
           </AppText>
         </View>
       ) : null}
-    </View>
-  );
-}
-
-function Row({ row, stacked, innerRef, onPainFlag }: { row: WhyRow; stacked: boolean; innerRef?: RefObject<View | null> | undefined; onPainFlag?: ((flagId: string) => void) | undefined }) {
-  const theme = useTheme();
-  const link = row.link;
-  if (!link || !onPainFlag) return <RowBody row={row} stacked={stacked} innerRef={innerRef} />;
-  // `Check due ›` on the `Pain` row (§2.14.2) opens the pain flag sheet: a separate button after the row's text.
-  return (
-    <View style={{ gap: 2 }}>
-      <RowBody row={row} stacked={stacked} innerRef={innerRef} />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Pain flag check due. Opens the pain flag."
-        onPress={() => {
-          onPainFlag(link.flagId);
-        }}
-        style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', alignSelf: 'flex-start', marginLeft: stacked ? 0 : LABEL_WIDTH + theme.space['2'], opacity: pressed ? 0.6 : 1 })}
-      >
-        <AppText variant="callout" color="accent" style={theme.components.linkAffordance === 'underline' ? { textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] } : undefined}>
-          {link.label}
-        </AppText>
-      </Pressable>
     </View>
   );
 }

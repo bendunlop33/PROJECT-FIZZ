@@ -1207,25 +1207,6 @@ export function TodayScreen() {
           </LinkLine>
         ) : null}
 
-        {todayView?.painCheck ? (
-          <LinkLine
-            accessibilityLabel={todayView.painCheck.accessibilityLabel}
-            onPress={() => {
-              const pc = todayView.painCheck;
-              if (pc?.kind === 'one') navigation.navigate('PainFlag', { flagId: pc.flagId });
-              else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'PainFlags', initial: false } });
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: theme.target.min.height }}>
-              <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
-              <AppText variant="callout" style={{ flex: 1 }}>
-                {todayView.painCheck.text}
-              </AppText>
-              <Icon name="chevron.right" size={14} color="text.tertiary" />
-            </View>
-          </LinkLine>
-        ) : null}
-
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 
         {cardBlock}

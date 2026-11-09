@@ -70,10 +70,10 @@ describe('check-in, gym switch, picker, Why? link (2.6–2.9)', () => {
     expect(flat(src)).toContain('workout grow');
     expect(src.match(/theme\.space\['4'\] \+ insets\.bottom/g)?.length).toBe(2);
   });
-  it('Why? and Check due are underlined in D; the chevron only where the look uses it', () => {
+  it('Why? is underlined in D; the chevron only where the look uses it (no `Check due` link since Ben, 9 Nov)', () => {
     const src = read('TargetWhyPanel.tsx');
     expect(src).toContain("style={underline ? { textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] } : undefined}");
     expect(src).toContain("{chevron ? <Icon name={open ? 'chevron.up' : 'chevron.down'}");
-    expect(src).toContain("style={theme.components.linkAffordance === 'underline' ? { textDecorationLine: 'underline'");
+    expect(src).not.toContain('Check due');
   });
 });

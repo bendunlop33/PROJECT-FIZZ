@@ -282,11 +282,10 @@ export function createPlanMusclesService(deps: PlanMusclesDeps) {
       if (e !== null) notPreferred.add(e.id);
     }
     const flags = await repos().painFlags.listActive(r.p.id).catch(() => [] as PainFlag[]);
-    const at = deps.now();
     const usable = new Map<string, boolean>();
     const allowed = async (e: Exercise | null): Promise<boolean> => {
       if (e === null || isArchivedExercise(e) || e.measurement === 'cardio') return false;
-      if (notPreferred.has(e.id) || painFlagCovering(flags, e.id, toMs(at.utc), at.tz) !== null) return false;
+      if (notPreferred.has(e.id) || painFlagCovering(flags, e.id) !== null) return false;
       if (!usable.has(e.id)) usable.set(e.id, await deps.usableHere(e).catch(() => false));
       return usable.get(e.id) === true;
     };

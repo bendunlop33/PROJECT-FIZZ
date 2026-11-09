@@ -530,7 +530,7 @@ function lastLineOf(prev: PreviousSession | null, ex: SessionExercise, eq: Equip
 
 function painBadgeOf(input: ActiveViewInput, ex: SessionExercise): boolean {
   if (input.painFlagged.has(ex.exerciseId)) return true;
-  return painFlagCovering(input.painFlags ?? [], ex.exerciseId, input.nowMs, input.aggregate.session.startedAt.tz) !== null;
+  return painFlagCovering(input.painFlags ?? [], ex.exerciseId) !== null;
 }
 
 /** The row an exercise block's actions use: the part with pending sets, else its last part. */

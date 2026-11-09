@@ -74,7 +74,7 @@ function executors(store: Awaited<ReturnType<typeof memoryStore>>, opts: { quest
         newSlotKey: (exerciseId: string, i: number) => `00000000-0000-4000-9${String(i).padStart(3, '0')}-${exerciseId.slice(-12)}`,
         loads: {
           refsFor: (e: Exercise) => loadReferences({ exercise: e, history: e.id === BENCH.id ? BENCH_HISTORY : [], ctx: sub, nowMs: NOW }),
-          painFor: (e: Exercise) => painHoldFor(e.id, [], sub.sessionPain, NOW, TZ),
+          painFor: (e: Exercise) => painHoldFor(e.id, [], sub.sessionPain),
           askedHeavier: false,
         },
       }),

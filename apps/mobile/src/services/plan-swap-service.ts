@@ -1,4 +1,4 @@
-import { PB_PREF_QUESTIONS, currentPlanVersion, planRowIsTimed, timedTargetText, directMuscleGroup, type PbPrefParts, planDayEditPreview, type PlanDayEdit, deriveId, liveRoutines, notPreferredInPlan, painFlagCovering, pbAppliedBuilder, pbNotPreferred, pbNotPreferredReplacement, planAddPreview, planRoutines, planSwapDirection, planSwapPreview, toMs, isArchivedExercise, type PlanSwapDayInput } from '@fizz/domain';
+import { PB_PREF_QUESTIONS, currentPlanVersion, planRowIsTimed, timedTargetText, directMuscleGroup, type PbPrefParts, planDayEditPreview, type PlanDayEdit, deriveId, liveRoutines, notPreferredInPlan, painFlagCovering, pbAppliedBuilder, pbNotPreferred, pbNotPreferredReplacement, planAddPreview, planRoutines, planSwapDirection, planSwapPreview, isArchivedExercise, type PlanSwapDayInput } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { ActionDetail, ActionRecord, Exercise, Load, PainFlag, PlanBuilderAnswers, PlanDraft, Routine, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import type { PlanAddPart, PlanAddRequest, PlanDayEditRequest, PlanSwapPrepared } from '@fizz/coach';
@@ -133,8 +133,7 @@ export function createPlanSwapService(deps: PlanSwapServiceDeps) {
 
   async function flagsNow(p: UserProfile): Promise<(id: string) => boolean> {
     const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
-    const at = deps.now();
-    return (id) => painFlagCovering(flags, id, toMs(at.utc), at.tz) !== null;
+    return (id) => painFlagCovering(flags, id) !== null;
   }
 
   /** The live workout's row of the exercise going out, when none of its sets is done (`Today too`). */

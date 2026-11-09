@@ -111,7 +111,7 @@ function ctx(over: Partial<WorkoutProposalContext> = {}, opts: { flags?: PainFla
     newSlotKey: (exerciseId, i) => `00000000-0000-4000-9${String(i).padStart(3, '0')}-${exerciseId.slice(-12)}`,
     loads: {
       refsFor: (e) => loadReferences({ exercise: e, history: (opts.histories ?? HISTORIES).get(e.id) ?? [], ctx: sub, nowMs }),
-      painFor: (e) => painHoldFor(e.id, flags, sub.sessionPain, nowMs, TZ),
+      painFor: (e) => painHoldFor(e.id, flags, sub.sessionPain),
       askedHeavier: false,
     },
     ...over,

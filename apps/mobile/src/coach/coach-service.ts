@@ -1412,14 +1412,12 @@ export function createCoachService(deps: CoachServiceDeps) {
    */
   async function addableFor(p: UserProfile, session: SessionAggregate): Promise<AddableExercise[]> {
     const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
-    const at = deps.now();
-    const nowMs = toMs(at.utc);
     const gym = { id: session.session.gymId ?? 'no-gym', name: 'this gym', equipment: currentGymEquipment(session.session) };
     const pool = await exercisePool();
     // Review S2: the same movement under another ID or name (a FitNotes custom "Lateral Raise") counts as flagged.
     const flagged = movementMatcher(pool, flags.filter((f) => f.status === 'active'));
     return pool
-      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) && e.measurement !== 'distance' && !flagged(e) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
+      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) && e.measurement !== 'distance' && !flagged(e) && painFlagCovering(flags, e.id) === null && doableHere(e, gym))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((e) => ({ exerciseId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
   }
@@ -1523,7 +1521,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
     const at = deps.now();
     const nowMs = toMs(at.utc);
-    const flagged = (id: string) => painFlagCovering(flags, id, nowMs, at.tz) !== null;
+    const flagged = (id: string) => painFlagCovering(flags, id) !== null;
     const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]));
     const keyOf = (id: string): string => byId.get(id)?.catalogueKey ?? id;
     const doable = pool.filter((e) => e.measurement !== 'distance' && !isArchivedExercise(e) && (e.ownerId === null || e.ownerId === p.id) && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
@@ -1588,7 +1586,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       return r;
     };
     const refsFor = refsAt(gym);
-    const painFor = (e: Exercise) => painHoldFor(e.id, flags, sessionPain, nowMs, at.tz);
+    const painFor = (e: Exercise) => painHoldFor(e.id, flags, sessionPain);
     const LOAD_REFERENCE_CAP = 40;
     const lastDone = new Map<string, number>(recentIds.map((id) => [id, toMs(recentHistory.get(id)?.[0]?.performedAtUtc ?? '1970-01-01T00:00:00.000Z')]));
     const withHistory = doable.filter((e) => e.measurement === 'reps' && lastDone.has(e.id)).sort((a, b) => (lastDone.get(b.id) ?? 0) - (lastDone.get(a.id) ?? 0));
@@ -1989,8 +1987,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const proposeHere = proposeDeps(p, everything);
       const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
       const flaggedMove = movementMatcher(everything, flags.filter((f) => f.status === 'active'));
-      const atNow = deps.now();
-      const flaggedHere = (e: Exercise): boolean => flaggedMove(e) || painFlagCovering(flags, e.id, toMs(atNow.utc), atNow.tz) !== null;
+      const flaggedHere = (e: Exercise): boolean => flaggedMove(e) || painFlagCovering(flags, e.id) !== null;
       // ADR 0038: an exercise the gym's profile has nothing for is still found and used (the app learns the kit on add).
       const pool = everything.filter((e) => ids.has(e.catalogueKey ?? e.id) || ((e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) && e.measurement !== 'distance' && !flaggedHere(e)));
       const usableIds = new Set(pool.map((e) => e.id));

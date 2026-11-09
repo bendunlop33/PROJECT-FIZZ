@@ -890,6 +890,8 @@ In `Add exercise` (Pick one) and the Swap sheet, an exercise with an active pain
 
 #### 2.14.2 `Still hurts?` every two weeks
 
+> **Removed (Ben, 9 Nov 2026).** Pain flags now clear by themselves after one more session (CLAUDE.md rule 9, 8 Nov), so the two-weekly check, its rest-card `PainReviewLine`, the note's `· check due`, `Why?`'s `Check due ›` and Today's region 4b row are gone. Ben's `Clear flag…` and the one-session hold stay. Kept below for the record.
+
 - A flag's check falls due `timing.painReview` (14 days) after it was set or last checked. The check never clears the flag, and neither does time or the coach. Only Ben's `Clear flag` in the confirmation does (coach-memory CM4; AW9).
 - **Where it's asked.** All of these are quiet: none is a modal, a banner or a notification.
   1. **Rest card** (wireframe below), once per due flag per workout, after the first logged set of that movement, and only when the coach slot is empty (lowest priority). It is not the coach, it uses no AI, and it is never spoken.

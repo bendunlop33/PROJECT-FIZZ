@@ -117,10 +117,10 @@ export const PainAreaSchema = z.enum(['shoulder', 'elbow', 'wrist', 'neck', 'bac
 export type PainArea = z.infer<typeof PainAreaSchema>;
 
 /**
- * One answer to the two-weekly `Still hurts?` check (active-workout.md
- * §2.14.2). Only `still_hurts` is recorded: `Better…` leads to the clear
- * confirmation instead, and no answer records nothing. A review never clears
- * a flag. Undo marks it `undone` (kept for the audit); it is never deleted.
+ * One answer to the retired two-weekly `Still hurts?` check (active-workout.md
+ * §2.14.2; removed by Ben, 9 Nov: flags clear by themselves after one more
+ * session). Still parsed so flags and backups saved before then stay valid;
+ * nothing reads or writes it now.
  */
 export const PainFlagReviewSchema = z.object({
   at: ZonedTimestampSchema,
@@ -155,9 +155,8 @@ export const PainFlagSchema = RecordMetaSchema.extend({
   /** When and by which operation the flag was retracted; present only on `retracted` flags. */
   retracted: z.object({ atUtc: UtcTimestampSchema, opId: OperationIdSchema }).optional(),
   /**
-   * `Still hurts?` answers, oldest first (2026-10-09). Absent on flags saved
-   * before the check existed, which read as never checked. Bounded: one a
-   * fortnight is about 26 a year.
+   * Legacy (9 Oct–9 Nov): answers to the retired `Still hurts?` check. Kept
+   * only so older flags and backups parse; ignored.
    */
   reviews: z.array(PainFlagReviewSchema).max(200).optional(),
   /**

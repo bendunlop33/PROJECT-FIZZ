@@ -555,8 +555,8 @@ export interface OverviewRow {
   /** The snap changed the target here (rounded, capped or converted): the info glyph. */
   rounded: boolean;
   panel: PanelLine[];
-  /** The active pain flag on the movement (panel `Still hurts?` when `checkDue`). */
-  painFlag: { id: string; version: number; checkDue: boolean } | null;
+  /** The active pain flag on the movement. */
+  painFlag: { id: string; version: number } | null;
   /** The load target was dropped because this gym lacks the equipment (`Edit gym`). */
   missingEquipment: string | null;
   /** The first pending working set: `Why?` explains it. */
@@ -1044,7 +1044,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     const key: PlannedKey = { equipment: notHere ? 'any' : equipmentKey(eq), convention: ex.loadConvention };
     const pasts = input.pasts[ex.exerciseId] ?? [];
     const comparable = lastComparable(key, pasts);
-    const covering = painFlagCovering([...input.painFlags], ex.exerciseId, input.nowMs, input.tz);
+    const covering = painFlagCovering([...input.painFlags], ex.exerciseId);
     const rounded = fits.find((f): f is Extract<SetFit, { kind: 'rounded' }> => f.kind === 'rounded') ?? null;
     const slotKey = slotOf(ex.id);
     const swappedFrom = today?.swapped.get(slotKey);
@@ -1203,7 +1203,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       load,
       rounded: rounded !== null && dropped === null,
       panel,
-      painFlag: covering === null ? null : { id: covering.flag.id, version: covering.flag.version, checkDue: covering.checkDue },
+      painFlag: covering === null ? null : { id: covering.flag.id, version: covering.flag.version },
       missingEquipment: missing,
       firstSetId: first?.id ?? null,
       equipmentId: notHere ? null : ex.equipmentId,

@@ -176,7 +176,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       }
       return infoCache.get(id) ?? null;
     };
-    const painFlagged = (id: string) => painFlagCovering(flags, id, nowMs, at.tz) !== null;
+    const painFlagged = (id: string) => painFlagCovering(flags, id) !== null;
     const here = (e: Exercise) => doableHere(e, snapGym);
 
     // Recent use (Ben's history first, §3.7): one history read per candidate in the groups asked for.
@@ -371,9 +371,9 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         return e === undefined ? null : builderFocusOf(e);
       },
       painFlagged,
-      painText: (id) => painHoldFor(id, flags, { active: false }, nowMs, at.tz)?.text ?? null,
+      painText: (id) => painHoldFor(id, flags, { active: false })?.text ?? null,
       painLine: (id) => {
-        const covering = painFlagCovering(flags, id, nowMs, at.tz);
+        const covering = painFlagCovering(flags, id);
         return covering === null ? null : mayHurtConfirm({ ...covering.flag, exerciseName: byId.get(id)?.name ?? covering.flag.exerciseName }).message;
       },
       refsOf: (id) => refsCache.get(id) ?? null,

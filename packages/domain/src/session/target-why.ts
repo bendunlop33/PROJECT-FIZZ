@@ -14,7 +14,7 @@ import type {
 } from '@fizz/schemas';
 import { cardioValuesText, dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText, effortRir } from '../display';
 import { comparableSetsOf, matchesEquipment, type HistorySession } from '../progression';
-import { isPainCheckDue, PAIN_AREA_WORD } from '../pain-flags';
+import { PAIN_AREA_WORD } from '../pain-flags';
 import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
 import { assumedWhy, isAssumed } from '../quick-gym';
@@ -43,8 +43,6 @@ export interface WhyRow {
   lines: string[];
   /** `actual`: logged results, never targets. `warning`: shown with the warning icon. */
   kind: 'app' | 'actual' | 'warning';
-  /** `Check due ›` on the `Pain` row when the flag's two-weekly check is due: opens the pain flag sheet. */
-  link?: { kind: 'pain_flag'; flagId: string; label: 'Check due ›' };
 }
 
 export interface TargetExplanation {
@@ -400,9 +398,7 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
     const after = p !== undefined && toMs(ref.flag.reportedAt.utc) > toMs(p.setAt.utc);
     // …so it's never called `Held` then: the target may still carry an increase (review S1).
     const lines = [`${after ? 'Flagged after target' : 'Held'} · since ${since}${area === null ? '' : ` (${area})`}`];
-    // `Check due ›` opens the pain flag sheet with `Still hurts?` first (§2.14.2).
-    const checkDue = isPainCheckDue(ref.flag, input.nowMs, tz);
-    rows.push({ key: 'pain', label: 'Pain', lines, kind: 'warning', ...(checkDue ? { link: { kind: 'pain_flag', flagId: ref.flag.id, label: 'Check due ›' } } : {}) });
+    rows.push({ key: 'pain', label: 'Pain', lines, kind: 'warning' });
   }
   if (ref) {
     const before = painReference(input.history, ref.flag, ex);

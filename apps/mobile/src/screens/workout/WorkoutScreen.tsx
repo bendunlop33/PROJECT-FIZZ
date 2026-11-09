@@ -84,7 +84,6 @@ import { TimeFitSheet } from '../../ui/time-fit-sheet';
 import { CoachAskBar } from '../../ui/coach-ask-bar';
 import { createOnDeviceSpeech } from '../../voice/on-device-speech';
 import type { BuilderCoachReach } from '@fizz/coach';
-import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
 import { UNDO_TOAST, undoRefusalText } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
@@ -1175,13 +1174,6 @@ export function WorkoutScreen() {
         if (ok) go();
         else showToast({ icon: 'exclamationmark.triangle', text: 'Couldn’t save. Try again.' });
       });
-  }
-
-  /** Outcomes of `Still hurts` / `Clear flag` in the rest card, as the usual toast. */
-  function painOutcome(t: PainToast) {
-    changed();
-    void reload();
-    showToast({ icon: t.icon, text: t.detail ? `${t.text}. ${t.detail}` : t.text, ...(t.action && t.onAction ? { action: t.action, onAction: t.onAction } : {}) });
   }
 
   async function undo(setId: string, opId: string, name: string) {
@@ -2521,23 +2513,6 @@ export function WorkoutScreen() {
         {view.justSaved ? (
           <RuledSection>
             {recordLine}
-            {view.painReview && view.painReview.afterSetId === view.justSaved.setId ? (
-              <PainReviewLine
-                question={view.painReview.question}
-                fact={view.painReview.fact}
-                onStillHurts={() => {
-                  const r = view.painReview;
-                  if (r) void answerStillHurts(services, r.flagId, r.flagVersion, painOutcome);
-                }}
-                onBetter={() => {
-                  const r = view.painReview;
-                  if (!r) return;
-                  void services.pain.get(r.flagId).then((flag) => {
-                    if (flag) confirmClearFlag(services, flag, painOutcome);
-                  });
-                }}
-              />
-            ) : null}
           </RuledSection>
         ) : null}
         {/* The coach card's place (premium-feel §3.4); takes no space while empty. */}
@@ -2821,12 +2796,7 @@ export function WorkoutScreen() {
         ) : null}
         {focus.snapNote ? <SnapNote note={focus.snapNote} /> : null}
         {why !== null && why.setId === focus.setId && !keypadOpen ? (
-          <TargetWhyPanel
-            panel={why}
-            onPainFlag={(flagId) => {
-              openPainFlag(flagId, focus.sessionExerciseId);
-            }}
-          />
+          <TargetWhyPanel panel={why} />
         ) : null}
         {focus.plateLine ? (
           <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${focus.plateLine}`}>
@@ -3008,27 +2978,9 @@ export function WorkoutScreen() {
   const whySheet = whyFor !== null && whyFor.roundKey === shownRound?.key ? whyView(shownRound, whyFor.index) : null;
   const whyExercise = whyFor !== null ? shownRound?.exercises[whyFor.index] : undefined;
   const afterSetSaved = view.justSaved !== null && view.justSaved.setId === afterSetFor ? view.justSaved : null;
-  const painReviewNode =
-    view.painReview && afterSetSaved && view.painReview.afterSetId === afterSetSaved.setId ? (
-      <PainReviewLine
-        question={view.painReview.question}
-        fact={view.painReview.fact}
-        onStillHurts={() => {
-          const r = view.painReview;
-          if (r) void answerStillHurts(services, r.flagId, r.flagVersion, painOutcome);
-        }}
-        onBetter={() => {
-          const r = view.painReview;
-          if (!r) return;
-          void services.pain.get(r.flagId).then((flag) => {
-            if (flag) confirmClearFlag(services, flag, painOutcome);
-          });
-        }}
-      />
-    ) : null;
   const effortHere = afterSetSaved !== null && effortScale !== 'off';
   const afterSetNode =
-    tableMode && (effortHere || coach.slot !== null || switchSlot !== null || painReviewNode !== null || recordLine !== null) ? (
+    tableMode && (effortHere || coach.slot !== null || switchSlot !== null || recordLine !== null) ? (
       <View style={{ gap: theme.space['3'], paddingVertical: theme.space['3'] }}>
         {switchSlot}
         {effortHere ? (
@@ -3042,7 +2994,6 @@ export function WorkoutScreen() {
           </View>
         ) : null}
         {recordLine}
-        {painReviewNode}
         <CoachSlot>{coach.slot !== null ? <CoachSlotContent coach={coach} /> : null}</CoachSlot>
       </View>
     ) : null;
@@ -3719,9 +3670,6 @@ export function WorkoutScreen() {
           whyEvent({ kind: 'close' });
           setRestEditor({ setId: whySheet.restSetId, stepName: restRow?.r.stepName ?? 'Set', exerciseName: restRow?.e.name ?? '', seconds: whySheet.restSeconds, sourceLabel: stored?.rest.sourceLabel ?? '' });
         }}
-        onPainFlag={(flagId) => {
-          openPainFlag(flagId, whyExercise?.sessionExerciseId);
-        }}
         onClose={() => {
           setWhyFor(null);
           whyEvent({ kind: 'close' });
@@ -3870,27 +3818,6 @@ export function WorkoutScreen() {
         }}
       />
     </SheetKeyboardAvoidingView>
-  );
-}
-
-/**
- * `PainReviewLine` (active-workout §2.14.2) in the rest card's coach slot:
- * quiet text buttons, ≥ 52 pt and `space.8` apart. Never spoken, never a
- * banner; it isn't the coach and uses no AI. No answer keeps the check due.
- */
-function PainReviewLine({ question, fact, onStillHurts, onBetter }: { question: string; fact: string; onStillHurts: () => void; onBetter: () => void }) {
-  const theme = useTheme();
-  return (
-    <View style={{ gap: theme.space['1'] }}>
-      <AppText variant="body">{question}</AppText>
-      <AppText variant="callout" color="text.secondary" numeric>
-        {fact}
-      </AppText>
-      <View style={{ flexDirection: 'row', gap: theme.space['8'], minHeight: theme.target.workout.height, alignItems: 'center' }}>
-        <TextButton label="Still hurts" onPress={onStillHurts} />
-        <TextButton label="Better…" onPress={onBetter} />
-      </View>
-    </View>
   );
 }
 

@@ -355,7 +355,7 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
       add({ kind: 'shape', catalogueId: p.catalogueId, exerciseId: exercise.id, text: `${exercise.name} left out · distance isn't planned here`, leftOut: true });
       continue;
     }
-    const flag = painFlagCovering(ctx.painFlags, exercise.id, ctx.nowMs, ctx.tz)?.flag ?? null;
+    const flag = painFlagCovering(ctx.painFlags, exercise.id)?.flag ?? null;
     if (flag !== null) {
       const area = flag.area === null ? null : PAIN_AREA_WORD[flag.area];
       const flagged = `${area === null ? '' : `${area} `}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`;
@@ -368,7 +368,7 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
     }
     if (!ctx.usable(exercise)) {
       const sub = ctx.substituteFor(exercise);
-      const subFlagged = sub !== null && painFlagCovering(ctx.painFlags, sub.id, ctx.nowMs, ctx.tz) !== null;
+      const subFlagged = sub !== null && painFlagCovering(ctx.painFlags, sub.id) !== null;
       if (sub === null || subFlagged || !ctx.usable(sub) || pending.some((x) => x.exercise.id === sub.id)) {
         add({ kind: 'not_here_left_out', catalogueId: p.catalogueId, exerciseId: exercise.id, text: `${exercise.name} left out · nothing similar here`, leftOut: true });
         continue;
@@ -608,7 +608,7 @@ function insertMainLift(args: ProposeWorkoutArgs, ctx: WorkoutProposalContext, p
   const m = ctx.mainLift ?? null;
   if (m === null || m.skip || pending.some((x) => x.exercise.id === m.exercise.id)) return;
   const ex = m.exercise;
-  const flag = painFlagCovering(ctx.painFlags, ex.id, ctx.nowMs, ctx.tz)?.flag ?? null;
+  const flag = painFlagCovering(ctx.painFlags, ex.id)?.flag ?? null;
   if (flag !== null) {
     const area = flag.area === null ? null : PAIN_AREA_WORD[flag.area];
     add({ kind: 'pain', catalogueId: ex.catalogueKey ?? null, exerciseId: ex.id, text: `${ex.name} not used as main · ${area === null ? '' : `${area} `}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`, leftOut: false });
@@ -817,8 +817,8 @@ export function draftSlotWhy(plan: Pick<CoachDraftPlan, 'version' | 'coachLoads'
 }
 
 /** Pain that holds a movement's load (BD10): its flag (`shoulder flagged 6 Oct`), else session pain (`pain reported today`). */
-export function painHoldFor(exerciseId: string, flags: readonly PainFlag[], sessionPain: { active: boolean }, nowMs: number, tz: string): { text: string } | null {
-  const flag = painFlagCovering(flags, exerciseId, nowMs, tz)?.flag ?? null;
+export function painHoldFor(exerciseId: string, flags: readonly PainFlag[], sessionPain: { active: boolean }): { text: string } | null {
+  const flag = painFlagCovering(flags, exerciseId)?.flag ?? null;
   if (flag !== null) {
     const area = flag.area === null ? null : PAIN_AREA_WORD[flag.area];
     return { text: `${area === null ? '' : `${area} `}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}` };
@@ -844,7 +844,7 @@ export function recheckDraftSlot(slot: DraftSlot, exercise: Exercise, history: r
   });
   if (stored.length === 0 || !stored.some((x) => x.load.source === 'coach' || x.load.source === 'coach_est')) return null;
   const refs = loadReferences({ exercise, history, ctx: substitute, nowMs });
-  const pain = painHoldFor(exercise.id, substitute.painFlags, substitute.sessionPain, nowMs, substitute.at.tz);
+  const pain = painHoldFor(exercise.id, substitute.painFlags, substitute.sessionPain);
   const checks = new Map<number, LoadCheck>();
   for (const { t, i, load } of stored) {
     if (t.reps === null || t.targetRpe === null) continue;
@@ -990,7 +990,7 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   for (const s of version.plan.slots) {
     if (!builderSlots.has(s.slotKey)) continue;
     const exercise = input.start.exercises.get(s.exerciseId);
-    if (exercise === undefined || painHoldFor(s.exerciseId, input.substitute.painFlags, input.substitute.sessionPain, nowMs, input.substitute.at.tz) === null) continue;
+    if (exercise === undefined || painHoldFor(s.exerciseId, input.substitute.painFlags, input.substitute.sessionPain) === null) continue;
     const refs = loadReferences({ exercise, history: input.histories.get(s.exerciseId) ?? [], ctx: input.substitute, nowMs });
     if (refs.latest === null) {
       builderSlots.delete(s.slotKey);

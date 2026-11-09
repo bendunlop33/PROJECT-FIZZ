@@ -350,9 +350,8 @@ function planOnce(input: CoachEditInput): CoachEditPlan {
     }
   }
 
-  const nowMs = toMs(input.at.utc);
   const flagged = (exercise: Exercise, ids: readonly string[]): string | null => {
-    const flag = painFlagForMovement(input.painFlags, exercise, ids, nowMs, input.at.tz);
+    const flag = painFlagForMovement(input.painFlags, exercise, ids);
     if (flag === null) return null;
     const area = flag.area === null ? '' : `${PAIN_AREA_WORD[flag.area]} `;
     return `${exercise.name}: ${area}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`;
@@ -732,7 +731,6 @@ function loadSteps(s: SessionAggregate, ops: readonly EditTodayOp[], asked: bool
 function goAhead(input: CoachEditInput): { input: CoachEditInput; lines: string[]; flags: { id: string; version: number }[] } {
   const s = input.aggregate;
   if (s === null || input.painGoAhead !== true || input.asked !== true) return { input, lines: [], flags: [] };
-  const nowMs = toMs(input.at.utc);
   const touched: { id: string; name: string }[] = [];
   for (const [i, op] of input.args.ops.entries()) {
     const row = rowOf(s, op);
@@ -744,7 +742,7 @@ function goAhead(input: CoachEditInput): { input: CoachEditInput; lines: string[
   const waved = new Set<string>();
   const lines: string[] = [];
   for (const t of touched) {
-    const f = painFlagForMovement(input.painFlags, t, [t.id], nowMs, input.at.tz);
+    const f = painFlagForMovement(input.painFlags, t, [t.id]);
     if (f === null || waved.has(f.id)) continue;
     waved.add(f.id);
     lines.push(painGoAheadTradeOff(t.name, f.area === null ? null : PAIN_AREA_WORD[f.area]));
@@ -912,9 +910,7 @@ export function coachWarmupSteps(
  */
 export function coachEditPainHold(input: { aggregate: SessionAggregate; command: CoachEditTodayCommand; painFlags: readonly PainFlag[]; sessionPainUnspecified: boolean; offeredAtUtc: string; at: ZonedTimestamp }): string | null {
   const s = input.aggregate;
-  const nowMs = toMs(input.at.utc);
-  const tz = input.at.tz;
-  const flagOn = (id: string, name: string): PainFlag | null => painFlagForMovement(input.painFlags, { id, name }, [id], nowMs, tz);
+  const flagOn = (id: string, name: string): PainFlag | null => painFlagForMovement(input.painFlags, { id, name }, [id]);
   const said = (name: string, f: PainFlag): string => `${name}: ${f.area === null ? '' : `${PAIN_AREA_WORD[f.area]} `}flagged ${dayMonthText(f.reportedAt.utc, f.reportedAt.tz)}`;
   const rowOfSet = (setId: string): SessionExercise | undefined => {
     const set = s.sets.find((x) => x.id === setId);
@@ -950,7 +946,7 @@ export function coachEditPainHold(input: { aggregate: SessionAggregate; command:
         if (to !== null) return said(step.exercise.name, to);
         const from = s.exercises.find((e) => e.id === step.sessionExerciseId);
         const since = input.painFlags.filter((f) => toMs(f.reportedAt.utc) > toMs(input.offeredAtUtc));
-        const was = from === undefined ? null : painFlagForMovement(since, { id: from.exerciseId, name: from.exerciseName }, [from.exerciseId], nowMs, tz);
+        const was = from === undefined ? null : painFlagForMovement(since, { id: from.exerciseId, name: from.exerciseName }, [from.exerciseId]);
         if (from !== undefined && was !== null) return said(from.exerciseName, was);
         break;
       }

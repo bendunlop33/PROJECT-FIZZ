@@ -292,7 +292,7 @@ export function substituteRow(exercise: Exercise, slot: SubstituteSlot, history:
   const fit = fitSwap(plan, slot, ctx);
   const found = comparableHistory(exercise, history, ctx);
   const last = found === null ? null : lastTopText(found.session);
-  const covering = painFlagCovering([...ctx.painFlags], exercise.id, ctx.nowMs, ctx.at.tz);
+  const covering = painFlagCovering([...ctx.painFlags], exercise.id);
   const equipmentWord = fit.equipment !== null ? KIND_WORD[fit.equipment.kind] : needsNoEquipment(exercise) ? 'Bodyweight' : kindWord(exercise.compatibleEquipment[0]);
   const target = swapTargetText(fit, exercise);
   const lastText = last?.text ?? 'No history';
@@ -432,7 +432,7 @@ export function rankAddCandidates(input: {
     ranks.set(e.id, rank);
     return input.showAll || doableHere(e, input.gym);
   });
-  const flagged = (e: Exercise) => painFlagCovering([...input.painFlags], e.id, input.nowMs, input.tz) !== null;
+  const flagged = (e: Exercise) => painFlagCovering([...input.painFlags], e.id) !== null;
   return pool
     .map((e) => ({ e, last: lastDone(e.id), hurt: flagged(e), rank: ranks.get(e.id) ?? 0 }))
     .sort((a, b) => Number(a.hurt) - Number(b.hurt) || a.rank - b.rank || b.last - a.last || a.e.name.localeCompare(b.e.name))

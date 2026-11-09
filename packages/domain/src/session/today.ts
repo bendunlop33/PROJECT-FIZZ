@@ -1,7 +1,6 @@
 import type { HistoryLike } from '../history-summary';
-import type { CheckIn, PainFlag, SessionAggregate } from '@fizz/schemas';
+import type { CheckIn, SessionAggregate } from '@fizz/schemas';
 import { reusableCheckIn, type RecentCheckIn } from '../checkin';
-import { todayPainCheck, type TodayPainCheck } from '../pain-flags';
 import { formatMinutes } from '../display';
 import { toIso, toMs } from '../time';
 import { buildActiveSetView } from './active-view';
@@ -107,9 +106,6 @@ export interface TodayInput {
   weekDates?: readonly string[];
   /** Derived names (`Push`) by session ID, for workouts without a stored name (audit F5). */
   titles?: Readonly<Record<string, string>>;
-  /** Ben's active pain flags and the phone's zone, for the `Still hurts?` row (region 4b). */
-  painFlags?: readonly PainFlag[];
-  tz?: string;
   /** Pace samples from Ben's last finished workouts, as the workout screen uses (§2.15.2). */
   recentPace?: PaceSamples;
 }
@@ -164,12 +160,6 @@ export interface TodayView {
   main: TodayMain;
   week: { count: number; text: string; days: WeekDay[] };
   unlinkedCheckIn: (RecentCheckIn & Pick<CheckIn, 'score' | 'reasons'>) | null;
-  /**
-   * Region 4b (rare): one quiet row while a pain flag's two-weekly check is
-   * due. Null while a workout is in progress (Resume or stale): the workout
-   * asks in place. Never a banner or a notification, and never clears a flag.
-   */
-  painCheck: TodayPainCheck | null;
 }
 
 function lastSetUtc(a: HistoryLike): string | null {
@@ -251,7 +241,5 @@ export function buildTodayView(input: TodayInput): TodayView {
     inProgress: d === activeLocalDate,
     today: d === input.todayLocalDate,
   }));
-  const inWorkout = main.kind === 'resume' || main.kind === 'stale';
-  const painCheck = inWorkout || input.tz === undefined ? null : todayPainCheck(input.painFlags ?? [], nowMs, input.tz);
-  return { main, week: { count, text, days }, unlinkedCheckIn: reusableCheckIn(input.recentCheckIns, nowMs), painCheck };
+  return { main, week: { count, text, days }, unlinkedCheckIn: reusableCheckIn(input.recentCheckIns, nowMs) };
 }

@@ -258,7 +258,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
         }
       }
       kits.set(key, kit);
-      if (painFlagCovering(flags, e.id, nowMs, at.tz) !== null) painHeld.add(key);
+      if (painFlagCovering(flags, e.id) !== null) painHeld.add(key);
       const sessions = histories.get(e.id) ?? [];
       hist.set(key, pbHistoryOf(sessions, kit === null || kit === 'bodyweight' ? null : kit.convention, nowMs));
     }

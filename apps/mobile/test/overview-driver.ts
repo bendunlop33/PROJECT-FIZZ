@@ -115,7 +115,6 @@ export const OVERVIEW_COPY = {
   time: 'Time',
   doneBy: 'Done by',
   sets: 'Sets',
-  stillHurts: 'Still hurts?',
   howTo: 'How to',
   why: 'Why?',
   editGym: 'Edit gym',

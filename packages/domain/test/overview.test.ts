@@ -461,7 +461,7 @@ describe('buildWorkoutOverview over the shared dry run', () => {
     const view = overviewOf(out, [lastWeek], { painFlags: [painFlag(INCLINE)] });
     const incline = view.rows[1];
     expect(incline?.marker).toMatchObject({ kind: 'held', word: 'Held', glyph: 'warning', tone: 'warning' });
-    expect(incline?.painFlag).toMatchObject({ id: id(77), checkDue: false });
+    expect(incline?.painFlag).toMatchObject({ id: id(77) });
     expect(incline?.panel.find((l) => l.key === 'flag')).toMatchObject({ label: 'Flag', tone: 'warning' });
     expect(incline?.accessibilityLabel).toContain('held, pain flag');
   });

@@ -3,7 +3,7 @@ import { EQUIPMENT_WORD, SET_TYPE_BADGE, SET_TYPE_WORD, formatDistance, formatDu
 import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclusions, notCountedLine, withExclusionWords } from '../exclusions';
 import { getAchievableLoads, isLoadAchievable, isPresenceOnly, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
 import { gymLearnFor, gymLearnText, type GymLearn } from '../quick-gym';
-import { painClearsAfter, painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
+import { painClearsAfter, painFlagCovering, painNoteAccessibility, painNoteText } from '../pain-flags';
 import { plateBreakdownLine, setPlateChain, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
@@ -209,9 +209,7 @@ export interface ActiveViewInput {
    */
   ruleTargetRpe?: Readonly<Record<string, number>>;
   /**
-   * Ben's pain flags (active ones are enough), for the note's `check due`
-   * and the rest card's `Still hurts?` line (active-workout §2.14.2). Dates
-   * are read in the workout's zone.
+   * Ben's pain flags (active ones are enough), for the set card's pain note.
    */
   painFlags?: readonly PainFlag[];
   edits: DraftEdits | null;
@@ -240,28 +238,9 @@ export interface TimeLeftView {
 export interface PainFlagNoteView {
   flagId: string;
   flagVersion: number;
-  checkDue: boolean;
-  /** `Pain flag · clears after next session` / `… this workout` (`· check due`). */
+  /** `Pain flag · clears after next session` / `… this workout`. */
   text: string;
   accessibilityLabel: string;
-}
-
-/**
- * `PainReviewLine` (§2.14.2): asked in the rest card once per due flag per
- * workout, right after the first logged set of that movement. Derived from
- * stored state, so it survives a force-close; the next Log moves on and it
- * isn't asked again in that workout. Never spoken, never a banner.
- */
-export interface PainReviewPrompt {
-  flagId: string;
-  flagVersion: number;
-  exerciseName: string;
-  /** The just-saved set it follows (the outcome line hides when this changes). */
-  afterSetId: string;
-  /** `Overhead press: still hurting?` */
-  question: string;
-  /** `Pain flag since 6 Oct · 16 days` */
-  fact: string;
 }
 
 export type StepTarget = { enabled: true; value: number; label: string } | { enabled: false; reason: string };
@@ -471,8 +450,6 @@ export interface ActiveSetView {
   focus: FocusView | null;
   rest: RestView | null;
   justSaved: JustSavedView | null;
-  /** The `Still hurts?` line for the rest card, or null. */
-  painReview: PainReviewPrompt | null;
   primary: PrimaryAction;
   /**
    * Cardio's small timer button next to the primary (review S6): `Stop` while
@@ -715,13 +692,13 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   const edits = input.edits?.setId === set.id ? input.edits : null;
   const carry: CarryOptions = { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input) };
   const pre = prefillDraft(state, set.id, prev?.sets ?? [], carry);
-  const covering = painFlagCovering(input.painFlags ?? [], ex.exerciseId, input.nowMs, state.session.startedAt.tz);
+  const covering = painFlagCovering(input.painFlags ?? [], ex.exerciseId);
   const painNote: PainFlagNoteView | null = covering
     ? (() => {
         // Rule 9 (8 Nov): a flag reported before this workout ends with it.
         const sci = state.session.checkIn;
         const last = painClearsAfter(covering.flag, { startedAtUtc: state.session.startedAt.utc, checkInId: sci?.kind === 'answered' ? sci.checkInId : null });
-        return { flagId: covering.flag.id, flagVersion: covering.flag.version, checkDue: covering.checkDue, text: painNoteText(covering.checkDue, last), accessibilityLabel: painNoteAccessibility(covering.checkDue, last) };
+        return { flagId: covering.flag.id, flagVersion: covering.flag.version, text: painNoteText(last), accessibilityLabel: painNoteAccessibility(last) };
       })()
     : null;
   // Effort is never prefilled; only Ben sets it: a chip after the log, or (Ben, 26 Oct) the row's RIR cell before
@@ -987,35 +964,6 @@ function buildJustSaved(state: SessionAggregate): JustSavedView | null {
   };
 }
 
-/**
- * The `Still hurts?` prompt: the just-saved set is the first set of its
- * movement logged in this workout (any set type, any of its session
- * exercises), and a flag on that movement has its check due.
- */
-function buildPainReview(input: ActiveViewInput, justSaved: JustSavedView | null): PainReviewPrompt | null {
-  const state = input.aggregate;
-  if (justSaved === null || state.session.status !== 'active' || !input.painFlags?.length) return null;
-  const set = state.sets.find((s) => s.id === justSaved.setId);
-  const ex = state.exercises.find((e) => e.id === set?.sessionExerciseId);
-  if (!set || !ex) return null;
-  const sameMovement = new Set(state.exercises.filter((e) => e.exerciseId === ex.exerciseId).map((e) => e.id));
-  const first = state.sets
-    .filter((s) => sameMovement.has(s.sessionExerciseId) && s.status === 'completed' && s.completedAt)
-    .sort((a, b) => toMs(a.completedAt?.utc ?? '') - toMs(b.completedAt?.utc ?? '') || a.index - b.index)[0];
-  if (first?.id !== set.id) return null;
-  const tz = state.session.startedAt.tz;
-  const covering = painFlagCovering(input.painFlags, ex.exerciseId, input.nowMs, tz);
-  if (!covering?.checkDue) return null;
-  return {
-    flagId: covering.flag.id,
-    flagVersion: covering.flag.version,
-    exerciseName: ex.exerciseName,
-    afterSetId: set.id,
-    question: painReviewQuestion(ex.exerciseName),
-    fact: painFlagFact(covering.flag, input.nowMs, tz),
-  };
-}
-
 export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   const { aggregate: state, nowMs } = input;
   const phase = getSessionPhase(state, nowMs);
@@ -1066,7 +1014,6 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     focus,
     rest,
     justSaved,
-    painReview: buildPainReview(input, justSaved),
     primary,
     workAction,
     progress: { done: completed.length, total: liveSets.length },

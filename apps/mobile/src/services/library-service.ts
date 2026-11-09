@@ -190,7 +190,7 @@ export function createLibraryService(deps: LibraryServiceDeps) {
         const nowMs = toMs(at.utc);
         const src = sources();
         const entries: BrowseEntry[] = all.map((exercise) => {
-          const covering = painFlagCovering(flags, exercise.id, nowMs, at.tz);
+          const covering = painFlagCovering(flags, exercise.id);
           return {
             exercise,
             aliases: aliasesOf(exercise),
@@ -245,7 +245,7 @@ export function createLibraryService(deps: LibraryServiceDeps) {
           avoid: how?.avoid ?? [],
           hasFullHowTo: hasHowTo(key, src),
         };
-        const covering = painFlagCovering(flags, exercise.id, toMs(at.utc), at.tz);
+        const covering = painFlagCovering(flags, exercise.id);
         const usedIn = liveRoutines(routines)
           .filter((r) => r.exercises.some((e) => e.exerciseId === exercise.id))
           .map((r) => ({ routineId: r.id, name: r.name }));
