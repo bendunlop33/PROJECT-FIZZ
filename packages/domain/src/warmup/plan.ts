@@ -68,6 +68,13 @@ export interface WarmupProfile {
   group: string | null;
   /** Cardio and running never warm a lifting pattern (WU2). */
   cardio: boolean;
+  /** WU2 (Ben, 9 Nov): the catalogue movement pattern as given (any value; null when unknown). */
+  movement: string | null;
+  /**
+   * WU2 (Ben, 9 Nov): a heavy barbell / plate-loaded lift (a compound on a bar, plate-loaded machine or Smith): only
+   * an earlier exercise with the same movement pattern warms it, never the same muscle alone.
+   */
+  patternOnly: boolean;
 }
 
 /** Patterns WU2 matches on. Others (core, arms, calves, carries, lunges) match by muscle group only. */
@@ -132,13 +139,15 @@ export function warmupProfileOf(facts: WarmupExerciseFacts | null, ctx: WarmupPr
   const cardio = measurement === 'cardio' || pattern === 'conditioning';
   const first = facts?.primaryMuscles?.[0];
   const group = (first === undefined ? null : muscleGroupOf(first)) ?? ctx.fallback?.group ?? null;
-  const base = { pattern: pattern !== null && WU2_PATTERNS.has(pattern) ? pattern : null, group, cardio };
   const kind = ctx.itemKind;
   const bar = kind !== null ? BAR_KINDS.has(kind) : ctx.fallback?.barbell === true;
+  const plated = bar || (kind !== null && MACHINE_KINDS.has(kind));
+  const base = { pattern: pattern !== null && WU2_PATTERNS.has(pattern) ? pattern : null, group, cardio, movement: cardio ? null : pattern };
   const family = facts?.family ?? null;
   const key = facts?.catalogueKey ?? null;
   const floorStart = bar && ((family !== null && FLOOR_FAMILIES.has(family)) || (key !== null && FLOOR_KEYS.has(key)));
-  const of = (cls: WarmupClass): WarmupProfile => ({ cls, floorStart, ...base });
+  // (Ben, 9 Nov) Heavy bar and plate-loaded compounds: warm only after the same movement pattern.
+  const of = (cls: WarmupClass): WarmupProfile => ({ cls, floorStart, ...base, patternOnly: plated && (cls === 'heavy' || cls === 'machine') });
   if (measurement !== 'reps' || cardio) return of('none');
   // (Ben, 1 Nov) His per-exercise setting, then prehab work: no warm-up sets.
   if (ctx.setting === 'off') return of('none');
@@ -156,8 +165,22 @@ export function warmupProfileOf(facts: WarmupExerciseFacts | null, ctx: WarmupPr
 /**
  * WU2: warmed when an earlier exercise in today's workout worked the same primary muscle group or WU2 movement
  * pattern (secondary muscles don't count; cardio never warms), or this is a superset partner of one already started.
+ *
+ * (Ben, 9 Nov) A heavy barbell / plate-loaded lift (`patternOnly`) is warm only when an earlier exercise had the same
+ * catalogue movement pattern, any equipment (rows after a cable or seal row; bench after an incline press; squats
+ * after leg press, which the catalogue files as `squat`). The same muscle alone doesn't count (rows after pull-ups,
+ * `vertical_pull`, get the cold ramp), nor does a started superset partner unless it is that pattern and done. An
+ * unknown pattern is cold.
  */
-export function isWarmed(profile: Pick<WarmupProfile, 'pattern' | 'group'>, earlier: readonly Pick<WarmupProfile, 'pattern' | 'group' | 'cardio'>[], supersetPartnerStarted = false): boolean {
+export function isWarmed(
+  profile: Pick<WarmupProfile, 'pattern' | 'group'> & Partial<Pick<WarmupProfile, 'movement' | 'patternOnly'>>,
+  earlier: readonly (Pick<WarmupProfile, 'pattern' | 'group' | 'cardio'> & Partial<Pick<WarmupProfile, 'movement'>>)[],
+  supersetPartnerStarted = false,
+): boolean {
+  if (profile.patternOnly === true) {
+    const m = profile.movement ?? null;
+    return m !== null && earlier.some((e) => !e.cardio && (e.movement ?? null) === m);
+  }
   if (supersetPartnerStarted) return true;
   return earlier.some((e) => !e.cardio && ((e.group !== null && e.group === profile.group) || (e.pattern !== null && e.pattern === profile.pattern)));
 }

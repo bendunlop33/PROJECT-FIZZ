@@ -141,7 +141,7 @@
     },
     {
       "id": "WU2",
-      "short": "A muscle is already warm when Ben logged a working set earlier today with the same primary muscle group or movement pattern, or it's a superset partner of one already started. Cardio and running never warm a lifting pattern. Reason: a warm muscle needs fewer warm-ups.",
+      "short": "A muscle is already warm when Ben logged a working set earlier today with the same primary muscle group or movement pattern, or it's a superset partner of one already started. A heavy bar or plate-loaded compound is warm only after the same movement pattern (Ben, 9 Nov; pull-ups don't warm rows). Cardio and running never warm a lifting pattern. Reason: a warm muscle needs fewer warm-ups.",
       "appliesWhen": "Building each exercise's warm-ups",
       "grade": "Practice / Weak",
       "use": "in_use",
@@ -349,7 +349,7 @@
     },
     {
       "id": "PL1",
-      "short": "Plate ladder: on bars and plate-loaded machines, warm-ups are the bar plus whole 5 kg plates a side, each step only adds plates to the one before, and the working set only adds to the last step. A cold heavy bar lift starts with plates on (at most 60 kg and ⅔ of the working weight; the empty bar only when the working weight is 60 kg or less and not from the floor) and gets 2–3 warm-ups with no jump over 30 % of the working weight (100 → 60, 80; 105 → 60, 90); already warm: one step near 80 % × 2. In lb: the bar + 20 lb steps. Reason: minimal unloading of plates.",
+      "short": "Plate ladder: on bars and plate-loaded machines, warm-ups are the bar plus whole 5 kg plates a side, each step only adds plates to the one before, and the working set only adds to the last step. A cold heavy bar lift starts with plates on (at most 60 kg and ⅔ of the working weight; the empty bar only when the working weight is 60 kg or less and not from the floor) and gets 2–3 warm-ups with no jump over 30 % of the working weight (100 → 60, 80; 105 → 60, 90); already warm (same movement pattern earlier): one step near 80 % × 2. In lb: the bar + 20 lb steps. Reason: minimal unloading of plates.",
       "appliesWhen": "Every generated warm-up on a bar or plate-loaded machine, with Simple warm-up weights on",
       "grade": "Ben's preference + guardrail (rule 4)",
       "use": "in_use",

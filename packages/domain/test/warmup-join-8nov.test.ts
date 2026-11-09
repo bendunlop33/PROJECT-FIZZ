@@ -46,23 +46,47 @@ function pullB(logPullups: boolean, gear: EquipmentInstance[] = [BAR, RACK, STAC
   return first === undefined ? s : apply(s, logCmd(first.id, values(null, 8, { rpe: 8 }), 60, 'log-pu'));
 }
 
+/**
+ * (Ben, 9 Nov) Pull B with another exercise logged before the row: `pattern` picks it (a cable row is the same
+ * movement pattern, horizontal pull; pull-ups are a vertical pull, the same muscle only).
+ */
+function pullBAfter(exerciseId: string, equipment: EquipmentInstance, load: ReturnType<typeof kg> | null): SessionAggregate {
+  const s = startWorkout({
+    opId: 'start-after',
+    owner: profile(),
+    gymId: GYM,
+    routine: routine([routineExercise(825, { exerciseId, equipmentId: equipment.id, order: 0, setTemplates: [template(8251, { targetReps: { min: 10, max: 10 }, ...(load === null ? {} : { targetLoad: load }) })] })]),
+    exercises: EX,
+    gymEquipment: [BAR, RACK, STACK, STATION],
+    at: at(0),
+    newId: idGen(82_500),
+  }).aggregate;
+  const first = s.sets.find((x) => x.setType !== 'warmup');
+  return first === undefined ? s : apply(s, logCmd(first.id, values(load, 10, { rpe: 8 }), 60, 'log-after'));
+}
+
 const row = (state: SessionAggregate, over: Partial<JoinWarmupInput> = {}): JoinWarmupInput => ({ state, exercise: { id: ROW, measurement: 'reps' }, equipment: BAR, convention: 'total', unit: 'kg', ctx: { lookup }, ...over });
 const steps = (sets: ReturnType<typeof joinWarmups>) => sets.map((x) => [x.load?.value ?? null, x.reps?.min ?? null]);
 const work = (load: number, reps: number, convention: 'total' | 'per_hand' | 'stack' = 'total') => ({ load: kg(load, convention), reps: { min: reps, max: reps } });
 
 describe('an exercise added mid-workout warms up by the approved rules (8 Nov)', () => {
-  it('rows 97.5 × 8 after logged pull-ups (back warm, WU2): WU5 warmed, the 80 % step only, on plates (PL1)', () => {
-    expect(steps(joinWarmups(row(pullB(true)), work(97.5, 8)))).toEqual([[80, 4]]);
+  it('(Ben, 9 Nov) rows 97.5 × 8 after logged pull-ups: same muscle, different pattern, so cold: WU5’s full ramp 50 × 8 → 80 × 4', () => {
+    expect(steps(joinWarmups(row(pullB(true)), work(97.5, 8)))).toEqual([[50, 8], [80, 4]]);
+  });
+
+  it('(Ben, 9 Nov) rows 97.5 × 8 after a logged cable row (same pattern, horizontal pull): warm, the 80 % step only', () => {
+    expect(steps(joinWarmups(row(pullBAfter(CABLE, STACK, kg(60, 'stack'))), work(97.5, 8)))).toEqual([[80, 4]]);
   });
 
   it('cold (pull-ups not logged yet): WU5’s full ladder, 50 × 8 then 80 × 4; never a lone light step', () => {
     expect(steps(joinWarmups(row(pullB(false)), work(97.5, 8)))).toEqual([[50, 8], [80, 4]]);
   });
 
-  it('heavy band 97.5 × 6: cold, PL1’s plate ladder from the floor (no empty bar, no jump over 30 % of W); warm, one step near 80 % × 2', () => {
+  it('heavy band 97.5 × 6: cold (also after pull-ups, Ben 9 Nov), PL1’s plate ladder from the floor (no empty bar, no jump over 30 % of W); warm after a row, one step near 80 % × 2', () => {
     const cold = steps(joinWarmups(row(pullB(false)), work(97.5, 6)));
     expect(cold).toEqual([[60, 5], [80, 2]]);
-    expect(steps(joinWarmups(row(pullB(true)), work(97.5, 6)))).toEqual([[80, 2]]);
+    expect(steps(joinWarmups(row(pullB(true)), work(97.5, 6)))).toEqual(cold);
+    expect(steps(joinWarmups(row(pullBAfter(CABLE, STACK, kg(60, 'stack'))), work(97.5, 6)))).toEqual([[80, 2]]);
   });
 
   it('whatever the case, the last warm-up is at 70–90 % of W on a heavy bar lift: no jump from ~50 % straight to W', () => {
@@ -106,12 +130,12 @@ describe('an exercise added mid-workout warms up by the approved rules (8 Nov)',
     expect(joinWarmups(row(pullB(false), { ctx: { lookup, mode: 'none' } }), work(97.5, 8))).toEqual([]);
   });
 
-  it('withJoinWarmups: a plan’s own cold warm-ups give way to the planner’s for the place; the working sets stay as they were', () => {
+  it('withJoinWarmups: a plan’s own warm-ups give way to the planner’s for the place; the working sets stay as they were', () => {
     const plan = [
       { setType: 'warmup' as const, planned: { load: kg(50), reps: { min: 8, max: 8 }, durationS: null, rpe: null, rir: null } },
       ...[1, 2, 3].map(() => ({ setType: 'working' as const, planned: { load: kg(97.5), reps: { min: 8, max: 8 }, durationS: null, rpe: 8, rir: null } })),
     ];
-    const out = withJoinWarmups(plan, row(pullB(true)));
+    const out = withJoinWarmups(plan, row(pullBAfter(CABLE, STACK, kg(60, 'stack'))));
     expect(out?.map((p) => [p.setType, p.planned.load?.value])).toEqual([['warmup', 80], ['working', 97.5], ['working', 97.5], ['working', 97.5]]);
     expect(withJoinWarmups(null, row(pullB(true)))).toBeNull();
   });
@@ -155,7 +179,7 @@ describe('a swap mid-workout plans the substitute’s own warm-ups (8 Nov)', () 
     return r.command;
   };
 
-  it('dumbbell row (one 15 kg warm-up) → barbell row 97.5 × 8 after pull-ups: the planner’s 80 × 4, not the old count at a light load; Undo brings the dumbbell row back exactly', () => {
+  it('dumbbell row (one 15 kg warm-up) → barbell row 97.5 × 8 after pull-ups: the planner’s cold ramp 50 × 8 → 80 × 4 (Ben, 9 Nov), not the old count at a light load; Undo brings the dumbbell row back exactly', () => {
     const s0 = pullBWithDbRow();
     const cmd = swap(s0, true);
     const s1 = (() => {
@@ -164,6 +188,7 @@ describe('a swap mid-workout plans the substitute’s own warm-ups (8 Nov)', () 
       return r.state;
     })();
     expect(rowsOf(s1, ROW)).toEqual([
+      ['warmup', 'pending', 50, 8],
       ['warmup', 'pending', 80, 4],
       ['working', 'pending', 97.5, 8],
       ['working', 'pending', 97.5, 8],
@@ -224,7 +249,7 @@ describe('the coach’s add plans warm-ups and targets from history (8 Nov)', ()
     sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(95), reps: 10, rpe: 8, rir: null })),
     tz: 'Europe/London',
   });
-  it('rows after logged pull-ups, last two sessions 95 × 10 at RIR 2: compound reps from history (not 3–6), the warm 80 % step first', () => {
+  it('rows after logged pull-ups, last two sessions 95 × 10 at RIR 2: compound reps from history (not 3–6), the cold ramp (Ben, 9 Nov: pull-ups don’t warm rows)', () => {
     const s = pullB(true);
     const r = checkCoachAdd({
       aggregate: s,
@@ -248,8 +273,8 @@ describe('the coach’s add plans warm-ups and targets from history (8 Nov)', ()
     }
     const W = work[0]?.planned.load?.value ?? 0;
     const warm = plan.filter((p) => p.setType === 'warmup').map((p) => p.planned.load?.value ?? 0);
-    expect(warm).toHaveLength(1);
-    expect((warm[0] ?? 0) / W).toBeGreaterThanOrEqual(0.7);
+    expect(warm).toHaveLength(2);
+    expect((warm.at(-1) ?? 0) / W).toBeGreaterThanOrEqual(0.7);
     const applied = reduceSession(s, r.command);
     expect(applied.ok).toBe(true);
   });

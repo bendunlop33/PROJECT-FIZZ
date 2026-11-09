@@ -78,8 +78,11 @@ describe('WU2: is the muscle already warm?', () => {
   const run = p('conditioning', 'quads', { cardio: true });
   const squat = p('squat', 'quads');
 
-  it('same primary muscle group warms (pulldowns warm rows)', () => {
-    expect(isWarmed(row, [pulldown])).toBe(true);
+  // Muscle-rule lifts (dumbbells, cables, stack machines) keep WU2 as approved on 22 Oct.
+  const onKit = (pattern: string, primary: string, itemKind: string, mechanic: 'compound' | 'isolation' = 'compound') => warmupProfileOf({ movementPattern: pattern, primaryMuscles: [primary], mechanic }, { main: false, itemKind, convention: itemKind === 'dumbbells' ? 'per_hand' : 'stack' });
+  it('same primary muscle group warms a dumbbell or cable lift (pulldowns warm a cable row)', () => {
+    expect(isWarmed(onKit('horizontal_pull', 'lats', 'weight_stack'), [pulldown])).toBe(true);
+    expect(isWarmed(onKit('horizontal_pull', 'lats', 'dumbbells'), [pulldown])).toBe(true);
   });
   it('same movement pattern warms (leg press after squats)', () => {
     expect(isWarmed(p('squat', 'glutes'), [squat])).toBe(true);
@@ -91,11 +94,67 @@ describe('WU2: is the muscle already warm?', () => {
   it('cardio and running never warm a lifting pattern', () => {
     expect(isWarmed(squat, [run])).toBe(false);
   });
-  it('a superset partner of one already started is warmed', () => {
-    expect(isWarmed(pushdown, [], true)).toBe(true);
+  it('a superset partner of one already started is warmed (muscle-rule lifts)', () => {
+    expect(isWarmed(onKit('arms', 'triceps', 'weight_stack', 'isolation'), [], true)).toBe(true);
   });
   it('nothing earlier: not warmed', () => {
     expect(isWarmed(bench, [])).toBe(false);
+  });
+});
+
+describe('WU2 amendment (Ben, 9 Nov): a heavy bar or plate-loaded lift is warm only after the same movement pattern', () => {
+  const lift = (pattern: string, primary: string, itemKind: string | null, over: { main?: boolean; mechanic?: 'compound' | 'isolation' } = {}) =>
+    warmupProfileOf({ movementPattern: pattern, primaryMuscles: [primary], mechanic: over.mechanic ?? 'compound' }, { main: over.main === true, itemKind, convention: itemKind === 'dumbbells' ? 'per_hand' : itemKind === 'weight_stack' ? 'stack' : itemKind === 'plate_loaded_machine' ? 'added' : 'total' });
+  const barRow = lift('horizontal_pull', 'lats', 'barbell');
+  const pullUp = lift('vertical_pull', 'lats', null);
+  const cableRow = lift('horizontal_pull', 'lats', 'weight_stack');
+  const sealRow = lift('horizontal_pull', 'upper_back', 'barbell');
+  const bench = lift('horizontal_push', 'chest', 'barbell');
+  const inclineDb = lift('horizontal_push', 'chest', 'dumbbells');
+  const flyes = lift('arms', 'chest', 'weight_stack', { mechanic: 'isolation' });
+  const squat = lift('squat', 'quads', 'barbell');
+  const legPress = lift('squat', 'quads', 'plate_loaded_machine');
+  const legExt = lift('arms', 'quads', 'weight_stack', { mechanic: 'isolation' });
+  const rdl = lift('hinge', 'hamstrings', 'barbell');
+  const legCurl = lift('arms', 'hamstrings', 'weight_stack', { mechanic: 'isolation' });
+
+  it('flags heavy bar compounds and plate-loaded machine compounds only', () => {
+    expect([barRow, bench, squat, rdl, legPress].every((x) => x.patternOnly)).toBe(true);
+    expect([cableRow, inclineDb, pullUp, flyes].some((x) => x.patternOnly)).toBe(false);
+    expect(lift('arms', 'biceps', 'barbell', { mechanic: 'isolation' }).patternOnly).toBe(false);
+    // The main lift on dumbbells keeps the muscle rule (not a bar or plates).
+    expect(lift('horizontal_push', 'chest', 'dumbbells', { main: true }).patternOnly).toBe(false);
+  });
+  it('rows after pull-ups: same muscle, not the same pattern → cold', () => {
+    expect(isWarmed(barRow, [pullUp])).toBe(false);
+  });
+  it('rows after another row of any kit (cable row, seal row) → warm', () => {
+    expect(isWarmed(barRow, [cableRow])).toBe(true);
+    expect(isWarmed(barRow, [sealRow])).toBe(true);
+  });
+  it('bench after an incline press (horizontal push) → warm; after chest flyes only → cold', () => {
+    expect(isWarmed(bench, [inclineDb])).toBe(true);
+    expect(isWarmed(bench, [flyes])).toBe(false);
+  });
+  it('squat after leg press (catalogue pattern squat) → warm; after leg extensions only → cold', () => {
+    expect(isWarmed(squat, [legPress])).toBe(true);
+    expect(isWarmed(squat, [legExt])).toBe(false);
+  });
+  it('RDL after a hinge → warm; after leg curls only → cold', () => {
+    expect(isWarmed(rdl, [lift('hinge', 'glutes', 'barbell')])).toBe(true);
+    expect(isWarmed(rdl, [legCurl])).toBe(false);
+  });
+  it('a started superset partner of another pattern doesn’t warm it; an unknown pattern is cold', () => {
+    expect(isWarmed(barRow, [], true)).toBe(false);
+    const unknown = warmupProfileOf({ primaryMuscles: ['lats'], mechanic: 'compound' }, { main: false, itemKind: 'barbell', convention: 'total' });
+    expect(isWarmed(unknown, [unknown])).toBe(false);
+  });
+  it('dumbbell rows after pull-ups keep the muscle rule (warm)', () => {
+    expect(isWarmed(lift('horizontal_pull', 'lats', 'dumbbells'), [pullUp])).toBe(true);
+  });
+  it('rows 97.5 × 8 cold (after pull-ups) get WU5’s full ramp (50 % × 8 → 80 % × 4; 50 × 8 → 80 × 4 on plates, warmup-join-8nov)', () => {
+    const steps = planWarmups(heavy({ load: 97.5, reps: 8, warmed: isWarmed(barRow, [pullUp]), floorStart: true }));
+    expect(fmt(steps)).toBe('47.5×8 77.5×4');
   });
 });
 

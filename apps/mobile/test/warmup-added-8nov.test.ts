@@ -12,7 +12,8 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
  * and no coach model: every path that adds or swaps an exercise into a running workout (the ＋ Add sheet, the picker
  * and library's add, Swap, the coach's add) plans its working targets from his own history as a secondary lift (the
  * compound range, reps from history, never the 3–6 main-lift range) and its warm-ups with the shared planner at its
- * place (WU1–WU12, PL1): warm back after logged pull-ups → one step near 80 %; cold → the full ladder. Loads are
+ * place (WU1–WU12, PL1). Ben, 9 Nov: pull-ups don't warm a barbell row (only the same movement pattern does), so
+ * rows after logged pull-ups get the full cold ladder, as before them. Loads are
  * achievable on the gym's kit (rule 4); logged sets never change (rule 2); everything survives a force-close.
  */
 
@@ -100,7 +101,7 @@ function fromHistory(a: SessionAggregate, sets = 3): void {
 }
 
 describe('an exercise added mid-workout plans its targets and warm-ups like a planned one (8 Nov)', () => {
-  it('＋ Add exercise (the sheet) after logged pull-ups: rows from his 95 × 10 history; one warm-up near 80 % (back warm, WU2/WU5)', async () => {
+  it('＋ Add exercise (the sheet) after logged pull-ups: rows from his 95 × 10 history; the full cold ramp (Ben, 9 Nov: pull-ups don’t warm rows)', async () => {
     const { s, sessionId } = await pullB({ logPullups: true });
     const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null, group: 'Back' });
     const row = (c?.sections ?? []).flatMap((x) => x.items).find((i) => i.name === 'Barbell row');
@@ -108,7 +109,7 @@ describe('an exercise added mid-workout plans its targets and warm-ups like a pl
     const before = await s.workout.load(sessionId);
     const a = ok(await s.workoutEdit.add(sessionId, row.exerciseId, 'add-row'));
     fromHistory(a);
-    expect(warm(a, 'Barbell row')).toEqual([[80, 4]]);
+    expect(warm(a, 'Barbell row')).toEqual([[50, 8], [80, 4]]);
     rampsUp(a, 'Barbell row');
     // The pull-up Ben logged is untouched (rule 2).
     expect(setsOf(a, 'Pull-up').filter((x) => x.status === 'completed')).toEqual(setsOf(before?.aggregate as SessionAggregate, 'Pull-up').filter((x) => x.status === 'completed'));
@@ -118,7 +119,7 @@ describe('an exercise added mid-workout plans its targets and warm-ups like a pl
     await h.forceClose();
     const { services: s2 } = await h.launch();
     const back = await s2.workout.load(sessionId);
-    expect(warm(back?.aggregate as SessionAggregate, 'Barbell row')).toEqual([[80, 4]]);
+    expect(warm(back?.aggregate as SessionAggregate, 'Barbell row')).toEqual([[50, 8], [80, 4]]);
   });
 
   it('cold (pull-ups not logged yet): the full WU5 ladder, 50 × 8 then 80 × 4, never a lone light step', async () => {
@@ -137,7 +138,7 @@ describe('an exercise added mid-workout plans its targets and warm-ups like a pl
     fromHistory(a);
     for (const x of working(a, 'Barbell row')) expect(x.planned.reps).toEqual({ min: 6, max: 10 });
     rampsUp(a, 'Barbell row');
-    expect(warm(a, 'Barbell row')).toHaveLength(1);
+    expect(warm(a, 'Barbell row')).toHaveLength(2);
   });
 
   it('Swap mid-workout: a dumbbell row’s warm-ups don’t carry over; barbell row gets its own from the planner; Undo brings the dumbbell row back', async () => {
@@ -155,7 +156,7 @@ describe('an exercise added mid-workout plans its targets and warm-ups like a pl
     const a = ok(r);
     // A swap keeps the row's set count (the dumbbell row's two).
     fromHistory(a, working(withWarm, 'One-arm dumbbell row').length);
-    expect(warm(a, 'Barbell row')).toEqual([[80, 4]]);
+    expect(warm(a, 'Barbell row')).toEqual([[50, 8], [80, 4]]);
     rampsUp(a, 'Barbell row');
     await h.forceClose();
     const { services: s2 } = await h.launch();

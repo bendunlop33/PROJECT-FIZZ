@@ -11,7 +11,8 @@ import { simpleWarmupLoadsIf } from './simple';
  * (WU1–WU12 with SW1, PH1, PL1) at the exercise's place in the workout, as Start plans a planned exercise. Pure.
  *
  * - WU2 warmed: a working set logged earlier today with the same primary muscle group or movement pattern (the
- *   swapped-out row's logged sets count: Ben did them), or a superset partner already started.
+ *   swapped-out row's logged sets count: Ben did them), or a superset partner already started; a heavy bar or
+ *   plate-loaded lift only by the same movement pattern (Ben, 9 Nov: rows after pull-ups are cold).
  * - WU6's extra light step: only when nothing else in the workout is done or still ahead of it.
  * - WU11: within what is left of the 10-minute allowance after the workout's other warm-ups (logged or planned);
  *   the plan's Warm-ups setting (`short`, `none`) applies as at Start.
