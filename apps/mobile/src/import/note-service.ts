@@ -65,15 +65,6 @@ export interface NoteServiceDeps {
 }
 
 export const NOTE_COPY = {
-  entry: 'Paste',
-  title: 'Paste',
-  placeholder: 'Paste your workout',
-  read: 'Read',
-  nothing: 'Couldn’t read that',
-  choose: 'Choose',
-  open: 'Open workout',
-  checking: 'Checking with coach…',
-  coachMark: 'Coach',
   failed: 'Couldn’t open. Try again.',
   openWorkout: 'Finish the open workout first.',
 } as const;
@@ -315,7 +306,7 @@ export function createNoteService(deps: NoteServiceDeps) {
           const equipmentId = await equipmentFor(p, exercise, state);
           const unit = equipmentId === null ? p.preferredUnit : (currentGymEquipment(state.session).find((e) => e.id === equipmentId)?.unit ?? p.preferredUnit);
           const convention = equipmentId === null ? exercise.defaultLoadConvention : (currentGymEquipment(state.session).find((e) => e.id === equipmentId)?.loadConvention ?? exercise.defaultLoadConvention);
-          const plan = row.sets.map((s) => ({ setType: s.setType as SetType, planned: { load: loadFor(s, unit, convention), reps: { min: s.reps, max: s.reps }, durationS: null, rpe: null, rir: null } }));
+          const plan = row.sets.map((s) => ({ setType: s.setType, planned: { load: loadFor(s, unit, convention), reps: { min: s.reps, max: s.reps }, durationS: null, rpe: null, rir: null } }));
           const added = await deps.workout.addExercise({ sessionId, exerciseId, equipmentId, opId: addOp, plan, warmupsAsGiven: true });
           if (!added.ok) return { ok: false, message: NOTE_COPY.failed };
           state = added.aggregate;

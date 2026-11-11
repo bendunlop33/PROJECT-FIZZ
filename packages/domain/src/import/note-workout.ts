@@ -97,8 +97,9 @@ export function noteDate(text: string): string | null {
   const d = Number(m[1]);
   const mo = Number(m[2]);
   const y = (m[3] ?? '').length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
-  const probe = new Date(Date.UTC(y, mo - 1, d));
-  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== mo - 1 || probe.getUTCDate() !== d) return null;
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1];
+  if (days === undefined || d < 1 || d > days) return null;
   return `${String(y)}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 

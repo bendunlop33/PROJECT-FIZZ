@@ -83,6 +83,7 @@ import { EditSetScreen } from '../screens/workout/EditSetScreen';
 import type { HowToScreen } from '../screens/workout/HowToScreen';
 import { CoachSheetScreen } from '../screens/coach/CoachSheetScreen';
 import { ExerciseFormScreen } from '../screens/library/ExerciseFormScreen';
+import { PasteWorkoutScreen } from '../screens/workout/PasteWorkoutScreen';
 import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import { withScreenBoundary } from '../shell/screen-boundary';
@@ -397,6 +398,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="ExerciseInfo" component={ExerciseInfoScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />
               {/* (19 Oct) Ben's own exercise: New, Edit, or the coach card's Edit; over Library or the coach sheet. */}
               <RootStack.Screen name="ExerciseForm" component={ExerciseFormScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
+              {/* (Ben, 11 Nov) `Paste` from Log a past workout: an Apple Notes workout, reviewed, then opened as a past log. */}
+              <RootStack.Screen name="PasteWorkout" component={PasteWorkoutScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
               {/* The workout builder (workout-builder-v3 §2): Set up and Your workout, full-screen; the coach and the pop-ups are sheets over them. */}
               <RootStack.Screen name="BuilderSetup" component={BuilderSetupScreen} options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="BuilderWorkout" component={BuilderWorkoutScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />

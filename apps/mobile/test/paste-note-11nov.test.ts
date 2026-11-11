@@ -4,6 +4,7 @@ import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import { localDateOf, toIso, toMs } from '@fizz/domain';
 
 import type { NotePreview } from '../src/import/note-service';
+import { canOpenPaste, pasteRows, pasteWhen } from '../src/workout/paste-view';
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, StepModel, toolCall } from './coach-model';
 import { FakeHealth } from './fake-health';
@@ -170,6 +171,14 @@ describe('Paste from Notes, offline (no coach)', () => {
     const p = await read(s, 'Zorblax thing\n40x8x2\nBench\n100x5\n', true);
     expect(p.date).toBe(localDateOf(choices?.defaultStartMs ?? 0, TZ));
     expect(names(p)).toEqual(['Zorblax thing → ?', 'Bench → Bench press']);
+    // The review: `Choose` on the unknown row, Open off until it has one.
+    expect(pasteRows(p, {}, {}).map((r) => [r.name, r.needsPick])).toEqual([
+      ['Choose', true],
+      ['Bench press', false],
+    ]);
+    expect(canOpenPaste(p, {})).toBe(false);
+    expect(canOpenPaste(p, { 0: p.exercises[1]?.exerciseId ?? '' })).toBe(true);
+    expect(pasteRows(p, { 0: 'x' }, { x: 'Leg press' })[0]?.name).toBe('Leg press');
     expect((await s.notes.open({ preview: p, picks: {}, gymId, opId: 'o1' })).ok).toBe(false);
     expect(await s.workout.load()).toBeNull();
     const bench = p.exercises[1]?.exerciseId ?? '';
@@ -185,6 +194,7 @@ describe('Paste from Notes, offline (no coach)', () => {
     await s.health.readNow();
     const p = await read(s);
     expect(p.startMs).toBe(TUE_1730);
+    expect(pasteWhen(p, 'Main Gym', 'en-GB')).toBe('Tue 10 Nov, 17:30 · Main Gym');
     const opened = await s.notes.open({ preview: p, picks: {}, gymId, opId: 'paste-h' });
     if (!opened.ok) throw new Error(opened.message);
     await finishPast(s, opened.sessionId);
@@ -225,11 +235,12 @@ describe('Paste from Notes with the coach (Ben, 11 Nov: "use AI to match exercis
     expect(model.requests).toHaveLength(1);
     expect(r2).toEqual(r1);
     if (r1.kind !== 'answered') throw new Error(r1.kind);
+    expect(pasteRows(r1.preview, {}, {}).filter((r) => r.coach).map((r) => r.header)).toEqual(['Tri raises']);
     expect(names(r1.preview)).toEqual(['Bench → Bench press', 'Shoulder press → Dumbbell shoulder press', 'Flyes → Dumbbell fly', 'Tri raises → Dumbbell overhead triceps extension (coach)', 'Dips → Dip']);
     // The request: fixed instructions, the note only as JSON data, one forced tool.
     const req = model.requests[0];
     expect(req?.toolChoice).toBe('required');
-    expect(req?.tools?.map((t) => t.name)).toEqual(['submit_note_matches']);
+    expect(req?.tools.map((t) => t.name)).toEqual(['submit_note_matches']);
     expect(req?.input).toHaveLength(1);
     // Loads are code's: the sets are as read.
     expect(r1.preview.exercises.map((e) => e.rowsText)).toEqual(p.exercises.map((e) => e.rowsText));
