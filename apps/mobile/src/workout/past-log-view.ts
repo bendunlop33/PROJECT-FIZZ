@@ -14,6 +14,8 @@ export const PAST_LOG_COPY = {
   start: 'Start',
   from: 'Start from',
   empty: 'Empty workout',
+  /** (Ben, 11 Nov) A workout written in Apple Notes. */
+  paste: 'Paste',
   planDays: 'Your plan',
   workouts: 'Saved workouts',
   inFuture: 'Start can’t be in the future',

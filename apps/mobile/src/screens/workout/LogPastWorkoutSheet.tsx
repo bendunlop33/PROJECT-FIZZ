@@ -38,6 +38,8 @@ export function LogPastWorkoutSheet({ visible, onClose }: { visible: boolean; on
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** (Ben, 11 Nov) Ben moved the Start wheel: `Paste` keeps his time (else a Health strength workout's start that day). */
+  const [timePicked, setTimePicked] = useState(false);
   const opId = useRef(newUuid());
   const [lastShown, setLastShown] = useState(false);
   if (visible !== lastShown) {
@@ -48,6 +50,7 @@ export function LogPastWorkoutSheet({ visible, onClose }: { visible: boolean; on
       setOpen(null);
       setNote(null);
       setError(null);
+      setTimePicked(false);
       void services.workout.pastLogChoices().then((c) => {
         setChoices(c);
         if (c !== null) setStartMs(c.defaultStartMs);
@@ -59,6 +62,7 @@ export function LogPastWorkoutSheet({ visible, onClose }: { visible: boolean; on
   function pick(which: 'date' | 'time', date: Date) {
     const picked = which === 'date' ? withPickedDate(startMs, date.getTime(), tz) : withPickedTime(startMs, date.getTime(), tz);
     const next = clampPastStart(picked, clockNow());
+    if (which === 'time') setTimePicked(true);
     setNote(next.note);
     setStartMs(next.startMs);
   }
@@ -158,7 +162,23 @@ export function LogPastWorkoutSheet({ visible, onClose }: { visible: boolean; on
             {note !== null ? <StatusLine icon="info.circle" tone="info" text={note} /> : null}
             <View style={{ gap: theme.space['2'] }}>
               <Eyebrow>{PAST_LOG_COPY.from}</Eyebrow>
-              <Group>{source('empty', PAST_LOG_COPY.empty, null)}</Group>
+              <Group>
+                {source('empty', PAST_LOG_COPY.empty, null)}
+                <Pressable
+                  key="paste"
+                  accessibilityRole="button"
+                  accessibilityLabel={PAST_LOG_COPY.paste}
+                  disabled={busy}
+                  onPress={() => {
+                    onClose();
+                    navigation.navigate('PasteWorkout', { sheetStartMs: clampPastStart(startMs, clockNow()).startMs, startPicked: timePicked });
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.space['4'], opacity: pressed || busy ? TEXT_PRESSED_OPACITY : 1 })}
+                >
+                  <AppText variant="body">{PAST_LOG_COPY.paste}</AppText>
+                  <Icon name="chevron.right" size={14} color="text.tertiary" />
+                </Pressable>
+              </Group>
             </View>
             {choices.days.length > 0 ? (
               <View style={{ gap: theme.space['2'] }}>

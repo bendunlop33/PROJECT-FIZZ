@@ -73,6 +73,11 @@ export interface StartRequest {
    * deload mark is read for this date. Must not be after `at` or before 2000.
    */
   pastStart?: ZonedTimestamp;
+  /**
+   * (Ben, 11 Nov) A past log's name as Ben wrote it (`Push` from a pasted note's title), so it counts as that plan
+   * day by name like any named workout (`plan-day-link`). Only with `pastStart`; absent: unnamed, as before.
+   */
+  pastName?: string;
 }
 
 const MAX_CONFLICT_RETRIES = 2;
@@ -155,8 +160,10 @@ export function createSessionService(repos: Repositories, newId: () => string, o
    * The new session as it is saved: a past log starts at the picked time (Ben, 25 Oct), and the
    * deload mark is read for the date the workout is on.
    */
-  async function finalise(aggregate: SessionAggregate, req: Pick<StartRequest, 'ownerId' | 'at' | 'pastStart'>): Promise<SessionAggregate> {
-    const past = req.pastStart === undefined ? aggregate : asPastLog(aggregate, req.pastStart, req.at);
+  async function finalise(aggregate: SessionAggregate, req: Pick<StartRequest, 'ownerId' | 'at' | 'pastStart' | 'pastName'>): Promise<SessionAggregate> {
+    const logged = req.pastStart === undefined ? aggregate : asPastLog(aggregate, req.pastStart, req.at);
+    const name = req.pastStart === undefined || req.pastName === undefined ? '' : req.pastName.trim().slice(0, 120);
+    const past = name === '' || logged.session.routineName !== null ? logged : { ...logged, session: { ...logged.session, routineName: name } };
     return stampDeload(past, { ownerId: req.ownerId, at: req.pastStart ?? req.at });
   }
 

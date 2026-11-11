@@ -68,6 +68,7 @@ import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createLayoutService } from '../import/layout-service';
+import { createNoteService } from '../import/note-service';
 import { createGymServices, type GymEditOutcome } from './gym-services';
 import { createExercisePickerService } from './exercise-picker-service';
 import { createLibraryService } from './library-service';
@@ -1050,6 +1051,21 @@ export function createAppServices(deps: AppServicesDeps) {
     coach: { availability: () => coach.availability(), ...(deps.coach === undefined ? {} : { model: deps.coach.model }) },
   });
 
+  /**
+   * (Ben, 11 Nov) `Paste` in Log a past workout: an Apple Notes workout read by code (offline), optionally checked by
+   * the coach on its own ChatGPT-plan port and status (one request per operation ID), opened as a past log.
+   */
+  const notes = createNoteService({
+    repos,
+    store: () => deps.manager.store,
+    now: deps.now,
+    profile: getProfile,
+    catalogueExercises,
+    catalogueAliases,
+    coach: { availability: () => coach.availability(), ...(deps.coach === undefined ? {} : { model: deps.coach.model }) },
+    workout: { start: (r) => loop.workout.start(r), addExercise: (r) => loop.workout.addExercise(r), dispatch: (id, c) => loop.workout.dispatch(id, c) },
+  });
+
   /** Progress (progress.md slice A): windows, sessions, time, muscles, records, calendar, `Count it`. Local only. */
   const progress = createProgressService({
     store: () => deps.manager.store,
@@ -1609,6 +1625,7 @@ export function createAppServices(deps: AppServicesDeps) {
     gyms,
     imports,
     importLayouts,
+    notes,
     yourData,
     coachingKnowledge,
     setup,

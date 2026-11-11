@@ -22,6 +22,7 @@ export * from './fit';
 export * from './build';
 export * from './add-exercise';
 export * from './import-reader';
+export * from './note-reader';
 export * from './build-ask';
 export * from './rename';
 export * from './pause-plan';

@@ -231,6 +231,8 @@ export type RootStackParams = {
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };
   EditSet: { sessionId: string; setId: string };
+  /** (Ben, 11 Nov) `Paste` from Log a past workout: the sheet's start, and whether Ben picked its time (else a Health strength workout's start that day). */
+  PasteWorkout: { sheetStartMs: number; startPicked: boolean };
   /** `back`: opened from history (Progress), so Done goes back there rather than to Today. */
   /** `justFinished`: reached by Finish itself; any other visit (Today, Progress) is static. */
   /** `editTimes`: open straight into the time correction and go back when it closes (Progress `Edit times`, progress.md §2.3). */
