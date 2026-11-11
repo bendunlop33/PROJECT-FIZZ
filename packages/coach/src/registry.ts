@@ -773,7 +773,7 @@ export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['
 export interface WithheldTool {
   name: CoachToolName;
   /** For `Why?` → `Not used`. */
-  reason: 'turn_kind' | 'no_target' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off' | 'plan_work';
+  reason: 'turn_kind' | 'no_target' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off' | 'plan_work' | 'why_question';
 }
 
 export interface TurnRegistry {

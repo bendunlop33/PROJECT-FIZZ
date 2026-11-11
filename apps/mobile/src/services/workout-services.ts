@@ -6186,6 +6186,23 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return up?.kind === 'routine' ? up.routine.id : null;
     },
     /**
+     * (Ben, 11 Nov) Why Up next is Up next, for the coach's schedule fact: each plan day's type last trained (the
+     * order `upNextOrder` reads, by routine ID) and the pinned day (`Make next`). Null: no plan driving (none, paused).
+     * Local reads only.
+     */
+    async upNextFacts(): Promise<{ lastTrained: ReadonlyMap<string, string>; pinnedRoutineId: string | null } | null> {
+      const p = await ctx.profile();
+      if (!p) return null;
+      const plan = await ctx.store().repos.planDrafts.applied(p.id).catch(() => null);
+      if (plan === null || activePause(plan, toMs(ctx.now().utc), p.timezone) !== null) return null;
+      const { live } = await routineRows(p.id).catch(() => ({ live: [] as Routine[] }));
+      const planDays = planRoutines(plan, live);
+      if (planDays.length === 0) return null;
+      const training = await ctx.store().repos.trainingProfiles.get(p.id).catch(() => null);
+      const input = await planDueInput(p, planDays, training, plan.pin ?? null);
+      return { lastTrained: planDaysTypeLastTrained(input.days, input.workouts, input.tz), pinnedRoutineId: input.live?.routineId ?? null };
+    },
+    /**
      * (review today-fix-21oct B1) With no plan in use, what the old Today's Up next named: the same resolver (the
      * Profile split's due day, the routines in rotation, the longest gap). Its title, and its routine when it is one.
      */

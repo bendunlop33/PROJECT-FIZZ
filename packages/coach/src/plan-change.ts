@@ -1,6 +1,7 @@
 import { pbWeekdayOf, type PbPlanChangeRequest } from '@fizz/domain';
 import type { ActionDetail, PlanChangeArg } from '@fizz/schemas';
 import { newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
+import { whyQuestionShape } from './request';
 
 /**
  * (Ben, 2 Nov) `propose_plan_change`: plan-level changes to the plan in use from any chat (ADR 0039's one registry):
@@ -76,6 +77,8 @@ const SCHEDULE = /\b(?:set|fixed|any) days\b|\b(?:on|train(?:ing)?|lift(?:ing)?|
  * Any days. Code's reading (rule 3: the tool is offered on these words; Apply is still his tap).
  */
 export function asksPlanSettingChange(text: string): boolean {
+  // (Ben, 11 Nov, build 564) "Why did you give me pull on Tuesday?" asks why, not for a change: no plan work, no nudge.
+  if (whyQuestionShape(text)) return false;
   const t = text.toLowerCase().replace(/[‘’]/g, "'");
   return LIGHTER.test(t) || DAYS.test(t) || LENGTH.test(t) || END.test(t) || SCHEDULE.test(t);
 }

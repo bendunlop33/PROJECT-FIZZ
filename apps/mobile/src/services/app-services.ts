@@ -719,6 +719,12 @@ export function createAppServices(deps: AppServicesDeps) {
     rebalance: { prepare: () => planMuscles.coachProposal() },
     week: {
       view: () => weekly.week.contextView(),
+      // (Ben, 11 Nov) This week's schedule with reasons; a Health strength workout on a passed plan day not logged.
+      schedule: () =>
+        todaySession.scheduleFact(async (date) => {
+          const h = (await health.coachDay(date).catch(() => [])).find((x) => x.link === 'not_paired');
+          return h === undefined ? null : `${h.type} ${String(h.minutes)} min (${h.source})`;
+        }),
       tool: async () => {
         const s = await weekly.week.state();
         return s === null ? null : { facts: s.facts, basis: s.basis, factsKey: s.factsKey };

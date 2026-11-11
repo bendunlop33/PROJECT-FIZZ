@@ -1367,6 +1367,32 @@ export function asksDeepAnalysis(text: string): boolean {
   return DEEP_ANALYSIS.test(lower(text).replace(/[‘’]/g, "'"));
 }
 
+/**
+ * (Ben, 11 Nov, build 564: "Why did you give me pull on Tuesday?" timed out twice) A short "why" question with nothing
+ * asked to change: one sentence, at most 20 words, starting why / how come / what made you, and no change, build,
+ * memory or other request in it. "Why not…" and "why don't we…" are suggestions, never this. It never asks for a plan
+ * setting change, so "on Tuesday" in it never opens plan work (`asksPlanSettingChange`). Code, never the model's reading.
+ */
+const WHY_ASK = /^(?:(?:so|ok(?:ay)?|hey|coach|and|but|just wondering)[,!]?\s+)*(?:why\b|how come\b|what made you\b|what'?s the reason\b|whats the reason\b)/;
+const WHY_SUGGESTS = /^(?:(?:so|ok(?:ay)?|hey|coach|and|but)[,!]?\s+)*why (?:not|don'?t|dont|shouldn'?t|can'?t|won'?t|wouldn'?t)\b/;
+
+export function whyQuestionShape(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'").trim();
+  if (t === '' || t.split(/\s+/).length > 20 || /[.?!]\s+\S/.test(t)) return false;
+  if (!WHY_ASK.test(t) || WHY_SUGGESTS.test(t)) return false;
+  const r = classifyBenRequest(text, 'general');
+  return !(r !== null && r.source === 'words' && r.kinds.length > 0);
+}
+
+/**
+ * (Ben, 11 Nov) A plain why: the shape above, not about what his plan trains (`planLevelAsk`) or a rebuild. Answered
+ * from YOUR DATA (the week's schedule, recent actions), so it is sent at low effort. "How often should I train?" is not
+ * one (a training question keeps medium).
+ */
+export function plainWhyQuestion(text: string): boolean {
+  return whyQuestionShape(text) && !planLevelAsk(text) && !asksPlanRebuild(text);
+}
+
 /** A short follow-up that repeats an open request ("Try again", "Go on then", "Yes do it"), read only after one. */
 const FOLLOW_UP = /^(?:(?:ok(?:ay)?|yes|yeah|yep|right|so|well|please|then|now)[,!.]?\s+)*(?:try (?:it )?again|again|retry|go on|go ahead|do it|do that|yes|yeah|yep|please|ok(?:ay)?|sure|fix (?:it|them|that)|sort (?:it|them)|apply (?:it|them|that)|make the change)(?:\s+(?:then|now|please|again))*[.!]*$/;
 

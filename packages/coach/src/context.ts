@@ -277,6 +277,12 @@ export interface WeekContextView {
   suggestion: { merges: { dayIds: string[]; name: string }[] } | null;
   /** A change Ben applied this week (`This week: Push (Chest + Shoulders)`), else null. */
   applied: string | null;
+  /**
+   * (Ben, 11 Nov, build 564) This week's plan days, each with its date and the app's reason (`Pull A: scheduled Tue
+   * 10 Nov · missed: …`, `Legs A: moved by Ben from Thu to Sat 14 Nov`), then how Today's card (Up next) was picked.
+   * The schedule is the app's rules, never a coach action. Absent: no plan running.
+   */
+  schedule?: string[];
 }
 
 /** ADR 0039: a Your workout draft before Start as the coach sees it: `Bench press: 4 × 6–8 @ 80 kg`. */

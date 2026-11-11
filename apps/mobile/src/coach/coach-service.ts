@@ -558,6 +558,8 @@ export interface CoachServiceDeps {
    */
   week?: {
     view(): Promise<WeekContextView | null>;
+    /** (Ben, 11 Nov) This week's schedule with reasons (`weekScheduleLines`): YOUR DATA week.schedule. Null: no plan running. */
+    schedule?(): Promise<string[] | null>;
     tool(): Promise<WeekToolContext | null>;
     /** ADR 0039: Ben asked for the week change: applied at once (as his Apply), Undo on the card. Absent: a proposal. */
     apply?(actionId: string, opId: string): Promise<{ ok: true } | { ok: false; stale: boolean }>;
@@ -1937,7 +1939,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     let swapView: Awaited<ReturnType<NonNullable<CoachServiceDeps['planSwap']>['context']>> = null;
     // (Ben, 20 Oct) This week on every chat: today, gym days left, the days left, his activities; `log_activity`
     // (logged when his words tell it, else an offer) and `propose_week` (applied at once when he asks, else a proposal).
-    const weekRead = chat && deps.week !== undefined ? await deps.week.view().catch(() => null) : null;
+    const weekBase = chat && deps.week !== undefined ? await deps.week.view().catch(() => null) : null;
+    // (Ben, 11 Nov, build 564) Why a plan day is on its date and how Up next was picked: the app's rules, as one line a day.
+    const schedule = weekBase !== null && deps.week?.schedule !== undefined ? await deps.week.schedule().catch(() => null) : null;
+    const weekRead = weekBase === null || schedule === null || schedule.length === 0 ? weekBase : { ...weekBase, schedule };
     // Review S1 (rule 3): code opens `propose_week` on its own only once for the week as it is now. An offer already made
     // for these facts (open, declined or ignored) keeps it shut until the week changes (a workout, an activity, the plan);
     // Ben's own ask still opens it.

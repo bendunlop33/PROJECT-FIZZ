@@ -194,11 +194,11 @@ describe('one timeout gets one lighter retry; never silent failures in a row', (
   it('a timeout leads to an automatic lighter retry (low effort, answer now) that says it is the short answer', async () => {
     const s = await store();
     const model = new DelayedModel([
-      // (Ben, 1 Nov) Not plan work: a quick question past its 20 s window to the first event.
-      { delayMs: 25_000, events: reply('late') },
+      // (Ben, 1 Nov) Not plan work: a quick question past its window to the first event (Ben, 11 Nov: 45 s at medium).
+      { delayMs: 50_000, events: reply('late') },
       { delayMs: 2_000, events: reply('Short version: curls twice a week.') },
     ]);
-    const timing = coachTurnTiming({ liveWorkout: true, words: QUICK, buildInPlay: false });
+    const timing = coachTurnTiming({ liveWorkout: false, words: QUICK, buildInPlay: false });
     const progress: CoachTurnProgress[] = [];
     const r = await settle(runCoachTurn(request({ input: words(QUICK), planInUse: true, context: ctx, onProgress: (p) => progress.push(p) }), { ...ports(s, model, planExecutors(s)), timing }));
     expect(r.status).toBe('completed');
@@ -216,11 +216,12 @@ describe('one timeout gets one lighter retry; never silent failures in a row', (
   it('when the retry times out too the turn fails once, honestly: two requests, never a third', async () => {
     const s = await store();
     const model = new DelayedModel([
-      { delayMs: 25_000, events: reply('late') },
-      { delayMs: 25_000, events: reply('late again') },
+      // (Ben, 11 Nov) Past the 45 s medium window, then past the chat retry's 45 s budget.
+      { delayMs: 50_000, events: reply('late') },
+      { delayMs: 50_000, events: reply('late again') },
       { delayMs: 0, events: reply('never asked') },
     ]);
-    const timing = coachTurnTiming({ liveWorkout: true, words: QUICK, buildInPlay: false });
+    const timing = coachTurnTiming({ liveWorkout: false, words: QUICK, buildInPlay: false });
     const r = await settle(runCoachTurn(request({ input: words(QUICK), planInUse: true, context: ctx }), { ...ports(s, model, planExecutors(s)), timing }));
     expect(r).toMatchObject({ status: 'failed', error: 'timeout', items: [] });
     expect(model.requests).toHaveLength(2);

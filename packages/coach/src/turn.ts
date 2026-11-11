@@ -28,7 +28,7 @@ import { createReplyFilter, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem 
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { asksDeepAnalysis, asksForPlan, asksLiveChange, asksPlanFix, asksPlanRebuild, planLevelAsk, asksToPausePlan, asksToPlanWeek, declinesChange, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
+import { asksDeepAnalysis, asksForPlan, asksLiveChange, asksPlanFix, asksPlanRebuild, planLevelAsk, asksToPausePlan, asksToPlanWeek, declinesChange, plainWhyQuestion, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
 import { LIVE_TARGET_CORRECTION_LINES } from './corrections';
 import { parseToolCall } from './tool-call';
@@ -102,8 +102,19 @@ export const COACH_PLAN_EVENT_MS = 180_000;
  * steps off. Used for any step sent at high effort (a build, a plan, `think_harder`).
  */
 export const COACH_HIGH_EFFORT_EVENT_MS = 60_000;
-/** (Ben, 31 Oct) After a timeout, the one lighter retry (low effort, answer now): its own whole budget. */
+/**
+ * (Ben, 11 Nov, build 564: `No answer in time` on "Why did you give me pull on Tuesday?") First event and stall at
+ * medium effort. A reasoning model sends nothing while it thinks; at medium on a ~55–70k-character request that silence
+ * can pass 20 s, which cut every medium step (most chats) off and left the retry too little. Low effort keeps 20 s.
+ */
+export const COACH_MEDIUM_EFFORT_EVENT_MS = 45_000;
+/** (Ben, 31 Oct) After a timeout, the one lighter retry (low effort, answer now): its own whole budget. Mid-workout. */
 export const COACH_LIGHT_RETRY_MS = 25_000;
+/**
+ * (Ben, 11 Nov) The lighter retry's budget in a chat with no live workout: room for one read and its answer (two low
+ * steps). 25 s ran out when the retry read first ("Short answer (ran out of time)", then `No answer in time`).
+ */
+export const COACH_LIGHT_RETRY_CHAT_MS = 45_000;
 /**
  * A build turn (F12, 13 Oct): one read, the text-answer nudge, a `propose_workout` whose
  * arguments fail the schema and its corrected retry, then `reply` is five steps; four ended
@@ -120,6 +131,8 @@ export interface CoachTiming {
   totalMs?: number;
   /** (Ben, 31 Oct) First event and stall for a step sent at high effort; absent: `firstEventMs` and `stallMs`. */
   highEffortMs?: number;
+  /** (Ben, 11 Nov) First event and stall for a step sent at medium effort; absent: `firstEventMs` and `stallMs`. */
+  mediumEffortMs?: number;
   /** (Ben, 31 Oct) The lighter retry's whole budget after a timeout; absent: `COACH_LIGHT_RETRY_MS`. 0: no retry. */
   lightRetryMs?: number;
   /**
@@ -132,21 +145,21 @@ export interface CoachTiming {
 /** `timing.coachBuildTimeout` (workout-builder BD13): a whole workout is a bigger answer than a reply. */
 export const COACH_BUILD_TIMEOUT_MS = 60_000;
 
-export const DEFAULT_COACH_TIMING: CoachTiming = { firstEventMs: 20_000, stallMs: 20_000, highEffortMs: COACH_HIGH_EFFORT_EVENT_MS };
+export const DEFAULT_COACH_TIMING: CoachTiming = { firstEventMs: 20_000, stallMs: 20_000, highEffortMs: COACH_HIGH_EFFORT_EVENT_MS, mediumEffortMs: COACH_MEDIUM_EFFORT_EVENT_MS };
 
 /**
  * The time limits that fit the work (ADR 0039 amendments, 31 Oct and 1 Nov). Pure.
  * - Plan work (his words are about the plan, or ask for today's change and a plan change): no visible limit, a 5 min
  *   safety cap, 3 min windows to the first event and between events, and no short-answer retry (Ben, 1 Nov).
  * - A live workout otherwise: 30 s for a simple edit or question; 60 s for a build.
- * - Any other chat: 60 s for a workout build; else no whole-turn cap.
- * - Every other step: 20 s to the first event and between events, 60 s at high effort.
+ * - Any other chat: 60 s for a workout build; else no whole-turn cap, and a 45 s lighter retry (Ben, 11 Nov).
+ * - Every other step: 20 s to the first event and between events (low effort), 45 s at medium, 60 s at high.
  */
 export function coachTurnTiming(input: { liveWorkout: boolean; words: string | null; buildInPlay: boolean; planBuild?: boolean }): CoachTiming {
   const planLevel = input.planBuild === true || (input.words !== null && planLevelAsk(input.words));
   if (planLevel) return { ...DEFAULT_COACH_TIMING, totalMs: COACH_PLAN_WORK_CAP_MS, planEventMs: COACH_PLAN_EVENT_MS, lightRetryMs: 0 };
   const totalMs = input.liveWorkout ? (input.buildInPlay ? COACH_BUILD_TIMEOUT_MS : COACH_WORKOUT_TIMEOUT_MS) : input.buildInPlay ? COACH_BUILD_TIMEOUT_MS : undefined;
-  return { ...DEFAULT_COACH_TIMING, ...(totalMs === undefined ? {} : { totalMs }) };
+  return { ...DEFAULT_COACH_TIMING, ...(totalMs === undefined ? {} : { totalMs }), ...(input.liveWorkout || input.buildInPlay ? {} : { lightRetryMs: COACH_LIGHT_RETRY_CHAT_MS }) };
 }
 
 /** (Ben, 31 Oct) Which timer ended a turn, kept on the failed turn (`failure.code`) so `Why?` and a report can say. */
@@ -586,7 +599,7 @@ export const SHORT_ANSWER_NOTE = 'Short answer (ran out of time).';
  * the app enforces is in COACHING KNOWLEDGE's playbook by ID; the reason names one and Ben's own numbers.
  */
 export const WHY_RULE_LINE =
-  'When Ben asks why something changed or how a rule works, answer in one or two sentences: name the playbook rule (COACHING KNOWLEDGE) and his actual numbers from YOUR DATA (for his plan: plan.inUse.muscles and plan.inUse.weeks) or a tool result, e.g. "Chest had 10 sets on Push A; above 8 in one session adds little, so Rebalance moved 2 to Upper B." Never invent a rule or a reason; if no rule explains it, say so. Don’t explain rules he didn’t ask about.';
+  'When Ben asks why something changed or how a rule works, answer in one or two sentences: name the playbook rule (COACHING KNOWLEDGE) and his actual numbers from YOUR DATA (for his plan: plan.inUse.muscles and plan.inUse.weeks) or a tool result, e.g. "Chest had 10 sets on Push A; above 8 in one session adds little, so Rebalance moved 2 to Upper B." Never invent a rule or a reason; if no rule explains it, say so. Don’t explain rules he didn’t ask about. Which plan day is on which date, a missed day and Up next (Today’s card) are app rules in YOUR DATA week.schedule: explain from it, never "I can’t verify".';
 
 /**
  * (Ben, 8 Nov: "If I agree to apply it there shouldn't be any limit") His explicit ask overrides the coach's judgement
@@ -752,8 +765,10 @@ export async function runModelStep(
       let timer: unknown;
       // (Ben, 31 Oct) A high-effort step thinks in silence: the longer window for its first event and its stalls.
       const high = request.effort === 'high' && timing.highEffortMs !== undefined;
+      // (Ben, 11 Nov) Medium thinks in silence too: its own window (45 s), so a plain chat step isn't cut at 20 s.
+      const mid = request.effort === 'medium' && timing.mediumEffortMs !== undefined;
       // (Ben, 1 Nov) A plan step: its own long window (the turn leaves it out for today's quick part).
-      const limit = Math.max(first ? timing.firstEventMs : timing.stallMs, high ? (timing.highEffortMs ?? 0) : 0, timing.planEventMs ?? 0);
+      const limit = Math.max(first ? timing.firstEventMs : timing.stallMs, high ? (timing.highEffortMs ?? 0) : 0, mid ? (timing.mediumEffortMs ?? 0) : 0, timing.planEventMs ?? 0);
       const timeout = new Promise<'timeout'>((resolve) => {
         timer = timers.set(() => {
           resolve('timeout');
@@ -1016,11 +1031,13 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const targetedPlanWork =
     (settingAsk(sayWords, fullRegistry.tools) && followUp === null) ||
     (chatTurn && req.planInUse === true && planToolsAll && sayWords !== null && req.draftInContext !== true && followUp === null && !asksPlanRebuild(sayWords) && !requestHas(classifyBenRequest(sayWords, 'general'), 'build') && (asksPlanFix(sayWords) || planLevelAsk(sayWords)));
-  const registry: TurnRegistry = targetedPlanWork
-    ? { tools: fullRegistry.tools.filter((t) => !PLAN_WORK_LEAVES_OUT.has(t.name)), withheld: [...fullRegistry.withheld, ...fullRegistry.tools.filter((t) => PLAN_WORK_LEAVES_OUT.has(t.name)).map((t) => ({ name: t.name, reason: 'plan_work' as const }))] }
-    : fullRegistry;
+  // (Ben, 11 Nov, build 564) A plain why ("Why did you give me pull on Tuesday?": nothing to change, no build follow-up, no
+  // pain word) is answered from YOUR DATA: the build tools and their view (about 14,000 characters) are left out too.
+  const whyTrim = !targetedPlanWork && chatTurn && sayWords !== null && req.input.kind === 'words' && followUp === null && req.draftInContext !== true && classifyPainMention(sayWords) === 'none' && plainWhyQuestion(sayWords);
+  const leftOut = (reason: 'plan_work' | 'why_question'): TurnRegistry => ({ tools: fullRegistry.tools.filter((t) => !PLAN_WORK_LEAVES_OUT.has(t.name)), withheld: [...fullRegistry.withheld, ...fullRegistry.tools.filter((t) => PLAN_WORK_LEAVES_OUT.has(t.name)).map((t) => ({ name: t.name, reason }))] });
+  const registry: TurnRegistry = targetedPlanWork ? leftOut('plan_work') : whyTrim ? leftOut('why_question') : fullRegistry;
   const contextInput = { ...req.context, turnKind: req.kind, thread: history };
-  const context = buildCoachContext(targetedPlanWork ? planWorkContext(contextInput, { keepAddable: requestHas(gate.benRequest, 'add') }) : contextInput);
+  const context = buildCoachContext(targetedPlanWork || whyTrim ? planWorkContext(contextInput, { keepAddable: requestHas(gate.benRequest, 'add') }) : contextInput);
 
   const turn: CoachTurn = {
     id: req.turnId,
@@ -1279,8 +1296,11 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // build still thinks hard.
   const planWork = planLevel || forcedPlan;
   const deepAsked = words !== null && asksDeepAnalysis(words);
+  // (Ben, 11 Nov, build 564) A short "why" with nothing to change is answered from YOUR DATA: low effort, so it comes back
+  // in seconds (it was medium, and timed out twice). A pain word keeps the usual effort.
+  const whyAsk = chatTurn && req.input.kind === 'words' && words !== null && mention === 'none' && plainWhyQuestion(words);
   const stepEffort = (): NonNullable<ModelRequest['effort']> =>
-    lightRetry ? 'low' : todayFirst() ? (liveWorkout ? 'low' : 'medium') : thinking || (planWork && deepAsked) ? 'high' : planWork ? 'medium' : buildInPlay || forced ? 'high' : liveWorkout ? 'low' : 'medium';
+    lightRetry ? 'low' : todayFirst() ? (liveWorkout ? 'low' : 'medium') : thinking || (planWork && deepAsked) ? 'high' : planWork ? 'medium' : buildInPlay || forced ? 'high' : liveWorkout || whyAsk ? 'low' : 'medium';
   // (Ben, 1 Nov) Today's quick part of a two-part ask (and the lighter retry) keeps the quick windows; plan steps get theirs.
   const quickTiming: CoachTiming = { ...timing };
   delete quickTiming.planEventMs;
