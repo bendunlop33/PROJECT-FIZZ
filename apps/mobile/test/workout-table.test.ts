@@ -179,7 +179,8 @@ describe('Finish placement and the top bar menu (WT27, WT28, check 14)', () => {
     const src = join(import.meta.dirname, '..', 'src');
     const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? files(join(dir, n)) : [join(dir, n)]));
     const loggers = files(src).filter((f) => /type: 'log_set'/.test(readFileSync(f, 'utf8')));
-    expect(loggers.map((f) => relative(src, f))).toEqual(['screens/workout/WorkoutScreen.tsx']);
+    // (11 Nov) Paste from Notes logs a past workout's sets in its service, not in a screen.
+    expect(loggers.map((f) => relative(src, f)).sort()).toEqual(['import/note-service.ts', 'screens/workout/WorkoutScreen.tsx']);
     expect(readFileSync(join(src, 'screens/workout/WorkoutScreen.tsx'), 'utf8').match(/type: 'log_set'/g)).toHaveLength(1);
     const list = readFileSync(join(src, 'screens/workout/WorkoutTable.tsx'), 'utf8');
     expect(list).not.toMatch(/Finish workout/);

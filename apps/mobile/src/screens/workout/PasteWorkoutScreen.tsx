@@ -138,7 +138,7 @@ export function PasteWorkoutScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <KeyboardScrollView contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom, gap: theme.space['4'] }}>
+      <KeyboardScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom, gap: theme.space['4'] }}>
         <AppText variant="title2" accessibilityRole="header">
           {PASTE_COPY.title}
         </AppText>

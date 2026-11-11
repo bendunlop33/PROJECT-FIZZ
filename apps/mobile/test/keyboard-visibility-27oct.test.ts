@@ -194,6 +194,8 @@ describe('every Add exercise opens the one shared picker with search at the top'
     ['screens/today/DaySheet.tsx', /onPress=\{\(\) => void openSwap\(null, null\)\}/],
     // (Ben, 2 Nov) Profile › Likes & dislikes: Add under Liked and Not preferred.
     ['screens/profile/ExercisePrefsScreen.tsx', /openAdd\(kind\);/],
+    // (Ben, 11 Nov) Log a past workout › Paste: pick an exercise for a note's row.
+    ['screens/workout/PasteWorkoutScreen.tsx', /function choose\(index: number, query: string\)/],
   ];
   for (const [path, entry] of HOSTS) {
     it(path, () => {
