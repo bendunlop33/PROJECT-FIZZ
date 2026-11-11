@@ -35,7 +35,7 @@ export interface NoteRow {
   byCoach?: true;
 }
 
-export type NoteLine = { kind: 'row'; row: NoteRow } | { kind: 'unread'; text: string };
+export type PastedLine = { kind: 'row'; row: NoteRow } | { kind: 'unread'; text: string };
 
 export type NoteSetType = 'warmup' | 'working';
 
@@ -53,7 +53,7 @@ export interface NoteSet {
 export interface NoteExercise {
   /** The name as written (`Bench`). */
   header: string;
-  lines: NoteLine[];
+  lines: PastedLine[];
 }
 
 export interface NoteWorkout {
@@ -419,7 +419,7 @@ export interface NoteCoachResult {
   /** `own:<name>`: the coach thinks it's an exercise Ben would add himself (offered as `Add your own` with the name). */
   ownName: string | null;
   /** The lines it read that code couldn't (each becomes rows, marked `byCoach`). */
-  lines: NoteLine[];
+  lines: PastedLine[];
 }
 
 /**
@@ -442,7 +442,7 @@ export function checkNoteCoachAnswer(workout: NoteWorkout, offered: ReadonlyMap<
       } else if (ids.has(mapping.exercise)) exerciseId = mapping.exercise;
     }
     const unread = new Set(ex.lines.flatMap((l) => (l.kind === 'unread' ? [l.text] : [])));
-    const lines: NoteLine[] = ex.lines.map((l) => {
+    const lines: PastedLine[] = ex.lines.map((l) => {
       if (l.kind === 'row' || !unread.has(l.text)) return l;
       const rows = answer.sets.filter((s) => s.name === ex.header && s.line === l.text);
       if (rows.length !== 1) return l;

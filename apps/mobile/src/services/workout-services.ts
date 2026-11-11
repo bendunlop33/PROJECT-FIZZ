@@ -1116,6 +1116,8 @@ export interface WorkoutStartRequest {
    * today's pre-start drafts are left alone, and the coach's next targets aren't marked used by it.
    */
   pastStart?: ZonedTimestamp;
+  /** (Ben, 11 Nov) With `pastStart` and no `routineOf`: the past log's name (a pasted note's title, `Push`). */
+  pastName?: string;
 }
 
 /** The overview's key check (§7): a retry of a Start that landed, out of date, or fresh with what to re-check in the write. */
@@ -3266,7 +3268,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
       }
-      return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn: null, pastStart: req.pastStart });
+      return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn: null, pastStart: req.pastStart, ...(req.pastName === undefined ? {} : { pastName: req.pastName }) });
     },
 
     /**
@@ -3893,6 +3895,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
        * caller (the builder's load sources, `workoutEdit.add`). Absent: the built-in rule's plan (`planFor`).
        */
       plan?: { setType: SetType; planned: PlannedSet }[];
+      /** (Ben, 11 Nov) `plan` already has the warm-ups Ben wrote (a pasted note): keep them as given, plan none. */
+      warmupsAsGiven?: boolean;
     }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
@@ -3911,7 +3915,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       // The picker's `Sets` count (exercise-library §10.2): only this exercise's new pending sets are shaped (rule 2).
       const shaped = req.shape === undefined ? planned : shapeAddPlan(planned, req.shape);
       // (Ben, 8 Nov) Its warm-ups: the shared planner at its place in the workout, from its first working target.
-      const plan = (await joinedPlan(p, req, shaped, before, reads).catch(() => null)) ?? shaped;
+      const plan = req.warmupsAsGiven === true && shaped !== null ? shaped : ((await joinedPlan(p, req, shaped, before, reads).catch(() => null)) ?? shaped);
       return ctx.afterCommand(
         await domain().addExercise(req.sessionId, {
           ownerId: p.id,
