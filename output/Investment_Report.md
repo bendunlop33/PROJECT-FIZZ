@@ -231,7 +231,7 @@ The bear cases are taken from the independent challenge review (`research/challe
 - Regulatory and mandatory demand across marine, buildings, certification and consumer products.
 - Asset-light, with about 4.8% post-lease FCF yield and FCF/net income of about 1.2x over three years.
 - Average ROIC of about 20%.
-- Trades at 12.7x EV/EBITDA, in line with its own median, and is the top-5 combined score under every weight set (rank 2–5).
+- Trades at 12.7x EV/EBITDA, in line with its own median, and ranks in the top 5 on combined score under every weight set (rank 2–5).
 
 **Bear case**
 - Organic growth slowed to 5% in H1-26 from 10.2% in 2024.
