@@ -1,0 +1,31 @@
+{
+ "id": "UNF", "name": "UniFirst Corporation", "as_of": "2026-11-12", "agent": "S1",
+ "listing": {"status": "pending_takeover", "exchange": "NYSE", "ticker": "UNF", "isin": "US9047081040 (recall, not re-verified)", "hq": "Wilmington, Massachusetts, USA", "domicile": "USA (Massachusetts corporation)",
+  "corporate_actions": [
+   {"date": "2026-03-11", "event": "Definitive agreement to be acquired by Cintas: $155.00 cash + 0.7720 CTAS shares per UNF share (~$310/sh at CTAS $200.77 on 9-Mar-2026); EV ~$5.5bn. Croatti family entities (~2/3 of combined voting power) signed voting support agreement. UNF stopped guidance/calls.", "source": "S1"},
+   {"date": "2026-06-11", "event": "UNF shareholders approved the merger at Special Meeting", "source": "S2"},
+   {"date": "2026-10-02", "event": "FTC Second Request substantial compliance certified; Canadian Competition Bureau response completed 29-Sep-2026; parties agreed not to close before 11-Dec-2026 absent FTC closing letter; FTC staff concerns reported 27-Oct-2026. Not closed as of valuation date.", "source": "S3"}]},
+ "pitchbook_pbid": "41230-09",
+ "geography": {"fy": "FY2026 (Aug)", "basis": "revenue", "europe_pct": null, "north_america_pct": null, "uk_pct": 0, "other_pct": null, "largest_country": "United States", "largest_country_pct": null, "china_pct": 0, "em_pct": null, "fx_notes": "US and Canada (plus small Europe/Latin America operations); INFERENCE US >90%.", "source_ids": ["S4"]},
+ "organic_growth": [{"fy": "FY2026", "organic_pct": null, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "reported_pct": null, "source_id": "not extracted (deal-dominated; Q4 FY26 8-K exists)"}],
+ "kpis": [{"name": "TTM EBIT margin (provider)", "value": "5.3% vs Cintas 23.4% (TTM Aug-2026)", "period": "TTM Aug-2026", "class": "FACT", "source_id": "S4"}],
+ "company_fcf": [],
+ "lease": {"lease_principal_paid": [], "lease_interest_paid": [], "source_id": "not extracted (G6 = A)"},
+ "acquisitions": [],
+ "management": {"ceo": "Steven Sintros", "ceo_since": "2017 (recall)", "cfo": "not verified", "cfo_since": "", "senior_turnover_5y": "n/a", "succession_notes": "Company being acquired", "guidance_record": "Guidance withdrawn after deal announcement"},
+ "ownership": {"controlling_holders": "Croatti family (Class B shares, ~2/3 of combined voting power)", "dual_class": true, "activists": [], "board_independence": "n/a", "remuneration_notes": "Change-of-control benefits flagged by plaintiff firms", "related_party": "n/a"},
+ "guidance": [],
+ "scores": {
+  "A": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored: G6 = A (pending agreed takeover)."}, "B": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "C": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "D": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "E": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "F": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "G": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "H": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "I1": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "I2": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "I3": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "I4": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "J": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "K": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}},
+ "ai": {"ai_dc_capex_revenue_pct": null, "semis_revenue_pct": null, "notes": "n/a"},
+ "sector_specific": {"subsector": "uniform rental", "deal_break_risk": "FTC review ongoing; if blocked, UNF reverts to a standalone ~5% EBIT margin, family-controlled operator (would need re-scoring)."},
+ "gates": {"G1": "C", "G2": "C", "G3": "C", "G4": "C", "G5": "C", "G6": "A", "G7": "C", "notes": "G6 = A: agreed cash-and-share takeover by Cintas approved by shareholders; awaiting FTC/Canadian clearance (earliest close 11-Dec-2026). Price is largely set by CTAS share price + $155 cash - merger-arbitrage, not a compounding investment. Provider net cash (-$111m)."},
+ "bull_points": ["Deal consideration floor: $155 cash + 0.772 CTAS per share."],
+ "bear_points": ["FTC could block or require divestitures; standalone UNF has ~5% EBIT margins.", "Value tied to CTAS share price via the stock component.", "Family control limits standalone strategic options."],
+ "thesis_breakers": ["n/a - excluded under G6"],
+ "sources": [
+  {"id": "S1", "title": "Cintas to Acquire UniFirst in $5.5 Billion Transaction", "publisher": "Cintas / Business Wire (via FT markets)", "url": "https://markets.ft.com/data/announce/detail?dockey=600-202603110630BIZWIRE_USPRX____20260310_BW478114-1", "doc_date": "2026-03-11", "retrieved": "2026-11-12", "page_ref": "Transaction details; Timing and Approvals"},
+  {"id": "S2", "title": "UniFirst Shareholders Approve Transaction with Cintas", "publisher": "UniFirst / GlobeNewswire", "url": "https://www.globenewswire.com/news-release/2026/06/12/3311010/33488/en/UniFirst-Shareholders-Approve-Transaction-with-Cintas.html", "doc_date": "2026-06-12", "retrieved": "2026-11-12", "page_ref": "press release"},
+  {"id": "S3", "title": "Cintas 10-Q quarter ended 31-Aug-2026 (pending acquisition) / FTC concerns report", "publisher": "SEC EDGAR / PYMNTS", "url": "https://www.sec.gov/Archives/edgar/data/0000723254/000072325426000047/ctas-20260831.htm", "doc_date": "2026-10", "retrieved": "2026-11-12", "page_ref": "https://www.pymnts.com/cpi-posts/ftc-raises-antitrust-concerns-over-cintas-5-5-billion-deal/"},
+  {"id": "S4", "title": "PitchBook company financials UniFirst (PBID 41230-09)", "publisher": "PitchBook", "url": "data/raw/pitchbook/UNF.json", "doc_date": "2026-11", "retrieved": "2026-11-12", "page_ref": "TTM 4Q2026"}]
+}

@@ -1,0 +1,215 @@
+{
+ "id": "ALC",
+ "verified_on": "2026-11-12",
+ "organic_growth": [
+  {
+   "fy": "2019",
+   "organic_pct": 5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": -2,
+   "reported_pct": 3,
+   "term_used": "net sales growth in constant currency (Alcon does not report an 'organic' measure; cc includes acquisitions)",
+   "source_id": "V1"
+  },
+  {
+   "fy": "2020",
+   "organic_pct": -8,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": 0,
+   "reported_pct": -8,
+   "term_used": "constant currency",
+   "source_id": "V2"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": 20,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": 2,
+   "reported_pct": 22,
+   "term_used": "constant currency",
+   "source_id": "V3"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 11,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": -6,
+   "reported_pct": 5,
+   "term_used": "constant currency",
+   "source_id": "V4"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 10,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": -2,
+   "reported_pct": 8,
+   "term_used": "constant currency; Vision Care cc +14% included 4pp from products acquired in 2022 (Aerie etc.) - group acquisition contribution not quantified",
+   "source_id": "V5"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": -1,
+   "reported_pct": 5,
+   "term_used": "constant currency",
+   "source_id": "V6"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": 1,
+   "reported_pct": 5,
+   "term_used": "constant currency (Surgical +4% cc, Vision Care +5% cc; Implantables flat)",
+   "source_id": "V7"
+  }
+ ],
+ "latest_interim": {
+  "period": "9M 2026",
+  "organic_pct": 6,
+  "reported_pct": 7,
+  "detail": "Constant currency. Q3 2026: +5% cc (Surgical +4%, Vision Care +6%; IOLs -1% cc on US competitive pressure). FY2026 guidance tightened 10-Nov-2026 to ~+6% cc net sales (from +5-7%); core op. margin +100-150bp cc; core EPS +12-14% cc (TARGET).",
+  "source_id": "V8"
+ },
+ "geography": {
+  "fy": "2025",
+  "north_america_pct": null,
+  "europe_pct": null,
+  "uk_pct": null,
+  "china_pct": null,
+  "em_other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": 45,
+  "basis_note": "Net sales by location of third-party customer: United States $4,657m (45%), International $5,662m (55%). Country table (Switzerland, Japan, China, other) exists in the audited notes (Note 4 of the 2025 financial statements) but was not extracted; North America/Europe/China shares not published in the earnings release. No customer >10% of sales.",
+  "source_id": "V9"
+ },
+ "claim_checks": [
+  {
+   "claim": "Segments Surgical ~55% / Vision Care ~45% (recalled)",
+   "status": "confirmed",
+   "finding": "FY2025 net sales $10,319m: Surgical $5,751m (55.7%; implantables 1,782, consumables 3,028, equipment/other 941) and Vision Care $4,568m (44.3%; contact lenses 2,770, ocular health 1,798).",
+   "source_id": "V7"
+  },
+  {
+   "claim": "US ~45% of sales (recalled, not re-verified)",
+   "status": "confirmed",
+   "finding": "US 45% / International 55% of FY2025 net sales; US is largest market.",
+   "source_id": "V9"
+  },
+  {
+   "claim": "Patent / regulatory issues",
+   "status": "confirmed",
+   "finding": "20-F 2025: ~2,650 patent families; 'no single patent, or group of related patents, currently is of material importance in relation to our business as a whole'. No material regulatory action disclosed in Q3-26 release (FDA approval of BRYTLY in Oct-2026). Key recent issues are commercial: IOL competitive pressure in US (IOLs -1% cc Q3-26), legacy contact-lens declines, tariffs (FY26 net impact ~$40m after ~$60m US refund in Q3). Neurotech (ENCELTO) acquisition announced Oct-2026; STAAR deal not completed.",
+   "source_id": "V8"
+  }
+ ],
+ "sources": [
+  {
+   "id": "V1",
+   "title": "Alcon Q4/FY2019 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000162828020002210/q42019pressrelease.htm",
+   "doc_date": "2020-02-25",
+   "page_ref": "Full-year highlights",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT"
+  },
+  {
+   "id": "V2",
+   "title": "Alcon Q4/FY2020 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000116737921000006/q42020pressrelease.htm",
+   "doc_date": "2021-02-23",
+   "page_ref": "Full-year highlights",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT"
+  },
+  {
+   "id": "V3",
+   "title": "Alcon Q4/FY2021 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000116737922000010/q42021pressrelease.htm",
+   "doc_date": "2022-02-15",
+   "page_ref": "Full-year highlights",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT"
+  },
+  {
+   "id": "V4",
+   "title": "Alcon Q4/FY2022 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000116737923000010/q42022pressrelease.htm",
+   "doc_date": "2023-02-27",
+   "page_ref": "Full-year highlights",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT"
+  },
+  {
+   "id": "V5",
+   "title": "Alcon Q4/FY2023 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000116737924000006/q42023pressrelease.htm",
+   "doc_date": "2024-02-27",
+   "page_ref": "Full-year highlights; Vision Care paragraph",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT"
+  },
+  {
+   "id": "V6",
+   "title": "Alcon Q4/FY2024 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000116737925000007/q42024pressrelease.htm",
+   "doc_date": "2025-02-25",
+   "page_ref": "Full-year highlights",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT"
+  },
+  {
+   "id": "V7",
+   "title": "Alcon Q4/FY2025 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000116737926000013/q42025pressrelease.htm",
+   "doc_date": "2026-02-24",
+   "page_ref": "Full-year net sales table by segment/product; 2026 outlook",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT / TARGET"
+  },
+  {
+   "id": "V8",
+   "title": "Alcon Q3 2026 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000116737926000033/q32026pressrelease.htm",
+   "doc_date": "2026-11-10",
+   "page_ref": "Q3 and nine-month net sales tables; 2026 outlook; tariff note",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT / TARGET"
+  },
+  {
+   "id": "V9",
+   "title": "Alcon Q4 2025 interim financial report (6-K) and Form 20-F 2025",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1167379/000116737926000013/q42025interimfinancialrepo.htm",
+   "doc_date": "2026-02-24",
+   "page_ref": "Net sales by location of third-party customer (US 45%/International 55%); 20-F Item 4 (no customer >10%; patents) at https://www.sec.gov/Archives/edgar/data/1167379/000116737926000014/alc-20251231.htm",
+   "retrieved": "2026-11-12",
+   "evidence_class": "FACT"
+  }
+ ],
+ "notes": "Alcon only reports constant-currency growth, which INCLUDES acquisitions (e.g. ophthalmic pharmaceutical products acquired in 2022; majority interest in Aurion). It is therefore not a strict organic figure; acq_pct left null because the company does not quantify group M&A contribution (except Vision Care 2023: 4pp). fx_pct is derived as reported minus cc (INFERENCE, subject to rounding). China share not extracted (country table is in Note 4 of the audited statements)."
+}

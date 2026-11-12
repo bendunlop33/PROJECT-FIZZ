@@ -1,0 +1,52 @@
+{
+ "id": "ARMK", "name": "Aramark", "as_of": "2026-11-12", "agent": "S1",
+ "listing": {"status": "listed", "exchange": "NYSE", "ticker": "ARMK", "isin": "US03852U1060 (recall, not re-verified)", "hq": "Philadelphia, Pennsylvania, USA", "domicile": "USA (Delaware corporation)",
+  "corporate_actions": [
+   {"date": "2023-09-30", "event": "Spin-off of Vestis (uniform services) - pre-FY24 data not comparable", "source": "S4"},
+   {"date": "2026-11-16", "event": "FY2026 (Sep/Oct YE) results scheduled after valuation date", "source": "S1"}]},
+ "pitchbook_pbid": "10518-22",
+ "geography": {"fy": "FY2025", "basis": "revenue", "europe_pct": null, "north_america_pct": null, "uk_pct": null, "other_pct": null, "largest_country": "United States", "largest_country_pct": null, "china_pct": null, "em_pct": null,
+  "fx_notes": "Two segments: FSS United States and FSS International (UK, Germany, Spain, Ireland, Canada, Chile, China JV etc.). INFERENCE (recall): US ~72-75% of revenue; split not extracted.", "source_ids": ["S5"]},
+ "organic_growth": [
+  {"fy": "FY2025", "organic_pct": 7.0, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "reported_pct": 6.0, "source_id": "S2"},
+  {"fy": "Q3 FY2026", "organic_pct": 9.0, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "reported_pct": null, "source_id": "S1"}],
+ "kpis": [
+  {"name": "Client retention", "value": "96.3% FY25 (company record); 'industry-leading' in FY26", "period": "FY2025", "class": "FACT", "source_id": "S2"},
+  {"name": "Leverage (company)", "value": "3.25x FY25 (lowest in ~two decades); target <3.0x in 2026", "period": "FY2025", "class": "FACT", "source_id": "S2"},
+  {"name": "Mobilisation", "value": "Record new-business openings; Nexus sites $400-500m annualised revenue ramping FY27-28", "period": "Q3 FY2026", "class": "FACT", "source_id": "S1"},
+  {"name": "53rd week", "value": "Added ~2pts to FY25 reported growth", "period": "FY2025", "class": "FACT", "source_id": "S2"}],
+ "company_fcf": [{"fy": "FY2025", "definition": "Company free cash flow (OCF $921m less net capex)", "value": 454, "currency": "USD", "source_id": "S2"}],
+ "lease": {"lease_principal_paid": [{"fy": "FY2025", "value": null}], "lease_interest_paid": [{"fy": "FY2025", "value": null}], "source_id": "US GAAP filer; not extracted"},
+ "acquisitions": [{"fy": "FY2025-26", "cash_spent": null, "currency": "USD", "earnouts": "not disclosed", "notes": "Small bolt-ons (e.g., procurement/GPO); focus on deleveraging (not extracted)", "source_id": "S2"}],
+ "management": {"ceo": "John Zillmer", "ceo_since": "2019-10 (recall)", "cfo": "James Tarangelo", "cfo_since": "2023 (recall)", "senior_turnover_5y": "Moderate; post-spin reorganisation", "succession_notes": "CEO tenure 7 years; succession not disclosed", "guidance_record": "Good recently: FY26 organic outlook raised to 9-10% (from 7-9%)"},
+ "ownership": {"controlling_holders": "None", "dual_class": false, "activists": [{"name": "Mantle Ridge (Paul Hilal)", "since": "2019", "objective": "Operational turnaround, CEO change (Zillmer appointment), Vestis separation", "company_response": "Settlement with board seats 2019; Mantle Ridge reportedly exited later (recall, not re-verified)"}], "board_independence": "Majority independent (not re-verified)", "remuneration_notes": "not reviewed", "related_party": "None identified"},
+ "guidance": [
+  {"date": "2026-08", "item": "FY2026 organic revenue growth", "value": "9-10% (raised)", "class": "TARGET", "source_id": "S1"},
+  {"date": "2025-11-17", "item": "FY2026 revenue / leverage", "value": "$19.55-19.95bn; leverage below 3.0x", "class": "TARGET", "source_id": "S2"}],
+ "scores": {
+  "A": {"score": 4, "confidence": "M", "evidence": ["Retention 96.3% [S2]", "Education, healthcare, B&I, sports, corrections contracts"], "rationale": "High retention; sports/leisure discretionary element."},
+  "B": {"score": 3, "confidence": "M", "evidence": ["GPO/procurement scale", "Margin below Compass (provider EBIT 4.3% vs 6.4%)"], "rationale": "Some differentiation."},
+  "C": {"score": 3, "confidence": "M", "evidence": ["#2-3 US contract caterer", "Win rates improving"], "rationale": "Scale with improving but unproven economics."},
+  "D": {"score": 4, "confidence": "M", "evidence": ["Organic 9-10% FY26; self-op conversion", "Nexus mobilisations $400-500m"], "rationale": "Strong near-term runway."},
+  "E": {"score": 1, "confidence": "M", "evidence": ["US ~72-75% (INFERENCE)"], "rationale": "One country >70%."},
+  "F": {"score": 4, "confidence": "M", "evidence": ["FY26 outlook raised; deleveraged"], "rationale": "Delivering."},
+  "G": {"score": 3, "confidence": "M", "evidence": ["Vestis spin; leverage reduced to 3.25x"], "rationale": "Average; leverage still high."},
+  "H": {"score": 3, "confidence": "L", "evidence": ["Widely held"], "rationale": "Standard."},
+  "I1": {"score": 5, "confidence": "H", "evidence": ["On-site service"], "rationale": "Very low."},
+  "I2": {"score": 4, "confidence": "L", "evidence": ["Nexus sites: nature not verified (possibly large tech campuses)"], "rationale": "Low; verify Nexus clients."},
+  "I3": {"score": 3, "confidence": "M", "evidence": ["Labour scheduling, procurement analytics"], "rationale": "Some."},
+  "I4": {"score": 2, "confidence": "M", "evidence": ["Management-fee/cost-plus contracts in education/healthcare"], "rationale": "Limited."},
+  "J": {"score": 3, "confidence": "M", "evidence": ["FY20-21 losses (COVID) show volume sensitivity [PitchBook]"], "rationale": "Partial."},
+  "K": {"score": 3, "confidence": "M", "evidence": ["FCF $454m vs NI ~$330m FY25; adjusted vs GAAP gaps"], "rationale": "Some adjustments."}},
+ "ai": {"ai_dc_capex_revenue_pct": null, "semis_revenue_pct": null, "notes": "None identified."},
+ "sector_specific": {"subsector": "contract catering & facilities", "retention_pct": 96.3, "net_new_business_pct": null, "mobilisation_costs": "Record openings FY26; not quantified", "pricing_pct": null, "volume_pct": null, "wage_pass_through": "not quantified"},
+ "gates": {"G1": "B", "G2": "C", "G3": "C", "G4": "C", "G5": "C", "G6": "C", "G7": "C", "notes": "G1 = B: provider net debt/EBITDA 4.4x (TTM Jun-26, US GAAP EBITDA = EBITDAaL) > 3.5x; company covenant-basis 3.25x with dated path to <3.0x; provider EBIT/interest ~2.5x (INFERENCE, interest ~$340m) < 4x. G6: Vestis spin is historic (Sep-2023)."},
+ "bull_points": ["Organic growth accelerating to 9-10% with record 96.3% retention and new-business mobilisations.", "Deleveraging path (<3.0x) supports equity value accretion.", "Structural US self-op outsourcing runway."],
+ "bear_points": ["Leverage still high (4.4x provider basis) and interest cover weak.", "US-concentrated (~75%) with thinner margins than Compass.", "Cost-plus contracts limit productivity capture; sports/leisure volume sensitivity."],
+ "thesis_breakers": ["Retention below 95%.", "Company leverage not below 3.0x by end FY2027.", "Organic growth below 5% in FY2027."],
+ "sources": [
+  {"id": "S1", "title": "Aramark Q3 FY2026 earnings release (8-K Ex 99.1) / call highlights", "publisher": "SEC EDGAR / Nasdaq", "url": "https://www.sec.gov/Archives/edgar/data/0001584509/000158450926000118/ex991armkq3fy2026.htm", "doc_date": "2026-08", "retrieved": "2026-11-12", "page_ref": "press release; https://www.nasdaq.com/articles/aramark-q3-earnings-call-highlights"},
+  {"id": "S2", "title": "Aramark Reports Earnings Results for Fiscal 2025", "publisher": "Aramark / Business Wire", "url": "https://www.businesswire.com/news/home/20251116901416/en", "doc_date": "2025-11-17", "retrieved": "2026-11-12", "page_ref": "press release"},
+  {"id": "S4", "title": "PitchBook company financials Aramark (PBID 10518-22)", "publisher": "PitchBook", "url": "data/raw/pitchbook/ARMK.json", "doc_date": "2026-11", "retrieved": "2026-11-12", "page_ref": "TTM 3Q2026"},
+  {"id": "S5", "title": "Analyst recall of Aramark 10-K segment data, management and Mantle Ridge history (not re-fetched)", "publisher": "Recall", "url": "", "doc_date": "", "retrieved": "2026-11-12", "page_ref": "Confidence L"}]
+}

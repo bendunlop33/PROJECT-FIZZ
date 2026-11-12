@@ -1,0 +1,32 @@
+{
+ "id": "ITRK", "name": "Intertek Group plc", "as_of": "2026-11-12", "agent": "S1",
+ "listing": {"status": "pending_takeover", "exchange": "London Stock Exchange (FTSE 100)", "ticker": "ITRK", "isin": "GB0031638363 (recall, not re-verified)", "hq": "London, United Kingdom", "domicile": "United Kingdom (England & Wales plc)",
+  "corporate_actions": [
+   {"date": "2026-04/05", "event": "EQT approaches at 5,150p, 5,400p and 5,800p rejected; strategic review launched", "source": "S2"},
+   {"date": "2026-05-13", "event": "Board minded to recommend EQT 'final' proposal of 6,000p cash (+ 2025 final dividend 107.7p); equity ~GBP9.2-9.5bn, EV ~GBP10.6bn; ~59% premium to undisturbed price", "source": "S2"},
+   {"date": "2026-06-10/11", "event": "Firm recommended offer by Isotope Bidco (EQT) at 6,000p cash via court-sanctioned scheme of arrangement; GBP5.8bn debt financing committed", "source": "S3"},
+   {"date": "2026-10-28", "event": "Q3 trading update: guidance maintained; acquisition on track to complete Q4 2026 or Q1 2027, subject to outstanding regulatory approvals; shares ~5,920p", "source": "S1"}]},
+ "pitchbook_pbid": "13412-89",
+ "geography": {"fy": "", "basis": "revenue", "europe_pct": null, "north_america_pct": null, "uk_pct": null, "other_pct": null, "largest_country": "", "largest_country_pct": null, "china_pct": null, "em_pct": null, "fx_notes": "Not researched - excluded under G6.", "source_ids": []},
+ "organic_growth": [],
+ "kpis": [{"name": "Offer price", "value": "6,000p cash per share (plus 107.7p 2025 final dividend)", "period": "2026", "class": "FACT", "source_id": "S1"}],
+ "company_fcf": [],
+ "lease": {"lease_principal_paid": [], "lease_interest_paid": [], "source_id": "not extracted (G6 = A)"},
+ "acquisitions": [],
+ "management": {"ceo": "Andre Lacroix", "ceo_since": "2015 (recall)", "cfo": "not verified", "cfo_since": "", "senior_turnover_5y": "n/a", "succession_notes": "Company being acquired", "guidance_record": "FY2026 guidance maintained at Q3"},
+ "ownership": {"controlling_holders": "None (widely held); bidder EQT", "dual_class": false, "activists": [], "board_independence": "n/a", "remuneration_notes": "n/a", "related_party": "n/a"},
+ "guidance": [],
+ "scores": {
+  "A": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored: G6 = A (recommended cash takeover by EQT)."}, "B": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "C": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "D": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "E": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "F": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "G": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "H": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "I1": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "I2": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "I3": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "I4": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "J": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}, "K": {"score": null, "confidence": "", "evidence": [], "rationale": "Not scored (G6)."}},
+ "ai": {"ai_dc_capex_revenue_pct": null, "semis_revenue_pct": null, "notes": "n/a"},
+ "sector_specific": {"subsector": "TIC", "deal": "EQT take-private, 6,000p cash, scheme of arrangement, completion expected Q4-2026/Q1-2027"},
+ "gates": {"G1": "C", "G2": "C", "G3": "C", "G4": "C", "G5": "C", "G6": "A", "G7": "C", "notes": "G6 = A: recommended cash offer from EQT (6,000p) via scheme; shares trade at ~1.3% discount to offer (5,920p on 28-Oct-2026). Return capped at offer; delisting expected. Excluded and not scored. PitchBook profile already describes Intertek as 'set to be taken over by EQT'."},
+ "bull_points": ["Cash offer at a ~59% premium to the undisturbed price provides a defined exit."],
+ "bear_points": ["Upside capped at 6,000p; residual regulatory/financing risk.", "Will delist on completion.", "Not a long-term compounding holding."],
+ "thesis_breakers": ["n/a - excluded under G6"],
+ "sources": [
+  {"id": "S1", "title": "Intertek quarterly sales rise ahead of GBP9.5 billion takeover by EQT", "publisher": "AJ Bell (Alliance News)", "url": "https://www.ajbell.co.uk/news/articles/intertek-quarterly-sales-rise-ahead-gbp95-billion-takeover-eqt", "doc_date": "2026-10-28", "retrieved": "2026-11-12", "page_ref": "n/a"},
+  {"id": "S2", "title": "Intertek poised to accept sweetened GBP10.6B EQT take-private offer", "publisher": "PitchBook LCD", "url": "https://my.pitchbook.com/news-center/lcd12546036", "doc_date": "2026-05-13", "retrieved": "2026-11-12", "page_ref": "n/a"},
+  {"id": "S3", "title": "Intertek nets GBP5.8B debt commitment for take-private by EQT", "publisher": "PitchBook LCD", "url": "https://my.pitchbook.com/news-center/lcd12547853", "doc_date": "2026-06-19", "retrieved": "2026-11-12", "page_ref": "n/a"},
+  {"id": "S4", "title": "PitchBook company financials Intertek (PBID 13412-89)", "publisher": "PitchBook", "url": "data/raw/pitchbook/ITRK.json", "doc_date": "2026-11", "retrieved": "2026-11-12", "page_ref": "TTM 2Q2026"}]
+}
