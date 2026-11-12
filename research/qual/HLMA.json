@@ -1,0 +1,52 @@
+{
+ "id": "HLMA", "name": "Halma plc", "as_of": "2026-11-12", "agent": "S4",
+ "listing": {"status": "listed", "exchange": "London Stock Exchange (FTSE 100)", "ticker": "HLMA", "isin": "GB0004052071", "hq": "Amersham, United Kingdom", "domicile": "United Kingdom (England & Wales plc)",
+  "corporate_actions": [
+   {"date": "2026-06-11", "event": "FY2026 results (YE 31-Mar-2026): organic cc revenue +16.2%, EBIT margin 22.7%, record M&A GBP475m (E2S GBP226m, Safetec GBP64m)", "source": "S1"},
+   {"date": "2026-11", "event": "H1 FY2027 results due around valuation date (not captured in this run)", "source": "S1"}]},
+ "pitchbook_pbid": "54926-47",
+ "geography": {"fy": "FY2025", "basis": "revenue", "europe_pct": null, "north_america_pct": null, "uk_pct": null, "other_pct": null, "largest_country": "United States", "largest_country_pct": null, "china_pct": null, "em_pct": null,
+  "fx_notes": "USA is the largest destination market (~40%+, ESTIMATE), followed by Mainland Europe, UK and Asia-Pacific; >75% of sales in US, Europe and UK (Morningstar/PitchBook profile). US share has risen with photonics customer growth. Exact split not extracted (data gap). China not separately quantified (part of Asia-Pacific).", "source_ids": ["S2"]},
+ "organic_growth": [
+  {"fy": "FY2026 (Mar)", "organic_pct": 16.2, "price_pct": 1.5, "volume_mix_pct": null, "acq_pct": 2.5, "fx_pct": -2.8, "reported_pct": 14.4, "source_id": "S1"}],
+ "kpis": [
+  {"name": "Adjusted EBIT margin", "value": "22.7% (+110bp); target range 19-23%", "period": "FY2026", "class": "FACT", "source_id": "S1"},
+  {"name": "ROTIC", "value": "16.2% (+120bp)", "period": "FY2026", "class": "FACT", "source_id": "S1"},
+  {"name": "Cash conversion", "value": "93% (KPI target 90%)", "period": "FY2026", "class": "FACT", "source_id": "S1"},
+  {"name": "Single hyperscaler customer (Avo Photonics optical switches)", "value": "~20% of group revenue; photonics grew 52% in FY26 contributing ~8pp of organic growth; FY27 expected +30% (~5pp of group growth)", "period": "FY2026", "class": "FACT", "source_id": "S1"},
+  {"name": "Sector organic growth", "value": "Safety +6.5% (margin 26.8%); E&A +34.4% (23.5%); Healthcare +6.3% (23.9%)", "period": "FY2026", "class": "FACT", "source_id": "S1"},
+  {"name": "R&D", "value": "GBP123m, 4.7% of revenue", "period": "FY2026", "class": "FACT", "source_id": "S1"}],
+ "company_fcf": [{"fy": "FY2026", "definition": "Company cash conversion (adjusted operating cash flow / adjusted EBIT) 93%", "value": null, "currency": "GBP", "source_id": "S1"}],
+ "lease": {"lease_principal_paid": [{"fy": "FY2026", "value": null}], "lease_interest_paid": [{"fy": "FY2026", "value": null}], "source_id": "IFRS filer; not extracted this run"},
+ "acquisitions": [{"fy": "FY2026", "cash_spent": 475, "currency": "GBP", "earnouts": "Contingent consideration used (not quantified here)", "notes": "Record spend incl. E2S (GBP226m, largest ever) and Safetec (GBP64m), Brownline, Lamidey Noury; acquisitions +2.5% revenue, +3.9% profit; 'acquisition profit growth' 8.3% vs KPI 5%", "source_id": "S1"}],
+ "management": {"ceo": "Marc Ronchetti", "ceo_since": "2025-02 (former CFO; not re-verified to month)", "cfo": "Carole Cran", "cfo_since": "2025 (not re-verified)", "senior_turnover_5y": "Orderly: CEO succession Andrew Williamson -> Marc Ronchetti (internal)", "succession_notes": "Internal promotion", "guidance_record": "Strong: 23rd consecutive year of record profit; FY26 well ahead of targets"},
+ "ownership": {"controlling_holders": "None; widely held", "dual_class": false, "activists": [], "board_independence": "UK Code compliant (not re-verified)", "remuneration_notes": "not reviewed", "related_party": "None identified"},
+ "guidance": [
+  {"date": "2026-06-11", "item": "FY2027 organic cc revenue growth", "value": "Low double-digit % incl. ~5pp photonics premium", "class": "TARGET", "source_id": "S1"},
+  {"date": "2026-06-11", "item": "FY2027 adjusted EBIT margin", "value": "In line with FY2026 (22.7%) excl. Nuvonic one-off", "class": "TARGET", "source_id": "S1"},
+  {"date": "2026-06-11", "item": "KPIs", "value": "Organic revenue growth 5%+, EBIT margin 19-23%, ROTIC 12%+, cash conversion 90%+, leverage up to 2x", "class": "TARGET", "source_id": "S1"}],
+ "scores": {
+  "A": {"score": 3, "confidence": "H", "evidence": ["One hyperscaler customer = 20% of revenue [S1]", "Safety/Healthcare products driven by regulation and replacement [S1]", "~50 decentralised companies"], "rationale": "Core regulated niches are durable, but a single 20% customer on project-like optical switches lowers durability to average."},
+  "B": {"score": 5, "confidence": "M", "evidence": ["Regulation-driven safety niches (fire, gas detection) with 26.8% margins [S1]", "Decade-long co-design with hyperscaler [S1]", "ROTIC 16.2% incl. goodwill [S1]"], "rationale": "Accreditation/regulatory and specification niches with demonstrable pricing power."},
+  "C": {"score": 4, "confidence": "M", "evidence": ["Niche leadership rather than group scale", "Margins at top of 19-23% range [S1]", "-"], "rationale": "Niche scale economics evident."},
+  "D": {"score": 4, "confidence": "M", "evidence": ["Record M&A GBP475m [S1]", "Ex-photonics organic still ~8% (INFERENCE from 16.2% minus ~8pp) [S1]", "R&D 4.7% of revenue [S1]"], "rationale": "Strong runway in safety/environment/health niches."},
+  "E": {"score": 3, "confidence": "L", "evidence": ["US largest market (~40%+ ESTIMATE)", "Europe, UK, APAC spread [S2]", "-"], "rationale": "Balanced developed mix but US now >40%."},
+  "F": {"score": 5, "confidence": "M", "evidence": ["23 consecutive record profit years [S1]", "Internal CEO succession", "Targets exceeded [S1]"], "rationale": "Excellent delivery."},
+  "G": {"score": 4, "confidence": "M", "evidence": ["Acquisitions profit-accretive [S1]", "Leverage ~1x [S1]", "47 years of 5%+ dividend growth [S1]"], "rationale": "Disciplined."},
+  "H": {"score": 4, "confidence": "L", "evidence": ["Widely held, single class", "-", "-"], "rationale": "Good."},
+  "I1": {"score": 4, "confidence": "M", "evidence": ["Physical regulated devices", "-", "-"], "rationale": "Low."},
+  "I2": {"score": 2, "confidence": "H", "evidence": ["Hyperscaler optical-switch customer ~20% of revenue [S1]", "FY27 photonics growth +30% => share rising toward ~23% (ESTIMATE)", "Management flags data-centre supply-side constraints and technology-choice risk [S1]"], "rationale": "AI/data-centre dependence ~20% of revenue: in the 15-25% band."},
+  "I3": {"score": 3, "confidence": "L", "evidence": ["-", "-", "-"], "rationale": "Moderate."},
+  "I4": {"score": 4, "confidence": "L", "evidence": ["Value-priced niche products", "-", "-"], "rationale": "Good."},
+  "J": {"score": 4, "confidence": "M", "evidence": ["Price increases 1-2% typical [S1]", "Low cyclicality in safety/healthcare", "Photonics demand volatile"], "rationale": "Resilient core."},
+  "K": {"score": 4, "confidence": "M", "evidence": ["93% cash conversion [S1]", "Nuvonic one-off disclosed separately [S1]", "Standard adjusted EBIT"], "rationale": "Clean."}},
+ "ai": {"ai_dc_capex_revenue_pct": 20, "semis_revenue_pct": null, "notes": "FACT: single large hyperscaler technology customer (Avo Photonics, optical switches for data centres) = ~20% of group revenue in FY2026, expected to grow ~30% in FY2027. This is direct AI/data-centre capex exposure."},
+ "sector_specific": {"ai_dc_pct": 20, "semis_pct": null, "construction_pct": null, "acquisition_growth_pct": 2.5, "notes": "ai_dc_pct FACT (FY2026). acquisition_growth_pct = FY2026 revenue contribution (FACT). Fire safety tied to non-res construction (share not extracted). Halma is NOT an AI diversifier on current mix."},
+ "gates": {"G1": "C", "G2": "C", "G3": "B", "G4": "C", "G5": "B", "G6": "C", "G7": "C", "notes": "G3 -> B: single customer ~20% of group revenue (>15%). G5 -> B: AI/data-centre-tied revenue ~20% (>15%), rising toward ~23% in FY27 (ESTIMATE); would move to A if >30%. G1 ~1x. G4 cash conversion 93%."},
+ "bull_points": ["Regulated safety/environmental/healthcare niches with 23-27% margins and 23 years of profit growth (S1)", "Ex-photonics organic growth still ~8% with record, accretive M&A (S1)", "93% cash conversion and ~1x leverage (S1)"],
+ "bear_points": ["20% of revenue from one hyperscaler optical-switch programme - concentration and AI-capex cyclicality (S1)", "Technology-choice risk in fast-moving data-centre optics (management's own caveat) (S1)", "Record and larger acquisitions (E2S largest ever) raise integration/return risk (S1)"],
+ "thesis_breakers": ["Hyperscaler customer share rising above 30% of revenue (G5 -> A)", "Loss of a generation of the hyperscaler programme or photonics revenue decline >20%", "ROTIC falling below 12% KPI"],
+ "sources": [
+  {"id": "S1", "title": "Halma (HLMA) FY2026 results call transcript (Q4 2026)", "publisher": "PitchBook Transcripts", "url": "https://my.pitchbook.com/research-center/report/585f39a8-a79c-3629-9eed-d84920bea0b7", "doc_date": "2026-06-11", "retrieved": "2026-11-12", "page_ref": "CFO remarks (photonics customer 20% of revenue)"},
+  {"id": "S2", "title": "PitchBook company profile Halma", "publisher": "PitchBook", "url": "https://my.pitchbook.com/profile/54926-47/company/profile", "doc_date": "2026-11-12", "retrieved": "2026-11-12", "page_ref": "Description"}]
+}

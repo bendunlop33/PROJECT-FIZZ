@@ -1,0 +1,8 @@
+symbol,date,type,detail,yahoo_handling,attribution_flag
+ARMK,2023-09-30,spin-off,Vestis (uniforms) spun off,history back-adjusted (split factor 1.385),EBITDA/EV discontinuity
+BDX,2022-04-01,spin-off,Embecta (diabetes care) spun off,history back-adjusted (1.025),minor
+BDX,2026-02-09,reverse Morris trust,Biosciences & Diagnostics combined with Waters; BDX holders received Waters shares,history back-adjusted (1.272),EBITDA/EV discontinuity
+ULVR.L,2025-12-08,demerger,Magnum Ice Cream Company demerged,history back-adjusted (0.889 factor),EBITDA/EV discontinuity
+SW.PA,2024-02-01,spin-off,Pluxee spun off,history appears back-adjusted (no step change on ex-date),EBITDA/EV discontinuity
+CPG.L,2026-01-02,currency change,LSE quote moved from GBP to USD,override applied (config/price_currency_overrides.csv),none
+KVUE,2026-10-30,acquisition,Acquired by Kimberly-Clark; delisted,last price retained; excluded (G6),n/a

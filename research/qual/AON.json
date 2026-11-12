@@ -1,0 +1,412 @@
+{
+ "id": "AON",
+ "name": "Aon plc",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "AON",
+  "isin": "IE00BLP1HW54",
+  "hq": "Dublin, Ireland (company-stated principal executive office; PitchBook lists London)",
+  "domicile": "Ireland",
+  "corporate_actions": [
+   {
+    "date": "2026-08-31",
+    "event": "Agreed to acquire USI Insurance Services from KKR for $17.0bn cash ($16.7bn net of tax attributes, ~14.5x synergised TTM adj EBITDA); debt-funded; expected close Q4-2026 subject to regulatory approval. Aon is ACQUIRER (not a G6 target).",
+    "source": "S3"
+   },
+   {
+    "date": "2024",
+    "event": "Acquired NFP (~$13bn) - middle-market US broker/benefits platform",
+    "source": "S7"
+   }
+  ]
+ },
+ "pitchbook_pbid": "10466-11",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Irish-domiciled, global (120+ countries). Exact 10-K geographic split not extracted in this pass (not disclosed here). NFP (2024) and USI (pending, ~$3bn US revenue) raise US weight materially (INFERENCE).",
+  "source_ids": [
+   "S1",
+   "S7"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2024",
+   "organic_pct": 6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 9,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": 6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3-26 organic: Risk Capital / Human Capital",
+   "value": "+7% / +5%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Net market impact (rate & exposure) on organic",
+   "value": "'slightly positive', within expected 0-2pt range despite softer pricing",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Free cash flow",
+   "value": "$3.2bn (+14%)",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S5"
+  },
+  {
+   "name": "Q3-26 free cash flow",
+   "value": "$1.1bn (+2% y/y)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Total debt",
+   "value": "~$26.3bn at 30-Sep-2026 (pre-funding USI) vs $14.7bn start of 2026",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S6"
+  },
+  {
+   "name": "Leverage (company definition)",
+   "value": "2.9x end-2025 -> ~4.5x at USI close; target 2.8-3.0x within 24 months",
+   "period": "2025-2028",
+   "class": "TARGET",
+   "source_id": "S4"
+  },
+  {
+   "name": "Gross debt / EBITDA (provider)",
+   "value": "~4.3x (PitchBook TTM 3Q26 total debt $28.9bn incl. leases & pre-funded USI debt / EBITDA $6.7bn)",
+   "period": "TTM Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Company FCF = cash from operations less capex",
+   "value": 3200,
+   "currency": "USD m",
+   "source_id": "S5"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2026 (pending)",
+   "cash_spent": 16700,
+   "currency": "USD m (net purchase price)",
+   "earnouts": "not disclosed",
+   "notes": "USI: $17.0bn gross; ~14.5x synergised TTM adj EBITDA (pre-synergy multiple higher, not disclosed); funded by new debt incl. ~$4bn term loan A; Aon to repay USI's ~$4.4bn debt at close",
+   "source_id": "S3"
+  },
+  {
+   "fy": "2024",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "not disclosed",
+   "notes": "NFP ~$13bn (cash + stock + assumed debt; exact split not extracted)",
+   "source_id": "S7"
+  }
+ ],
+ "management": {
+  "ceo": "Greg Case",
+  "ceo_since": "2005",
+  "cfo": "Edmund Reese",
+  "cfo_since": "2023 (not re-verified)",
+  "senior_turnover_5y": "CEO stable since 2005; CFO change 2023 (Christa Davies -> Edmund Reese, not re-verified)",
+  "succession_notes": "Long-tenured CEO; no announced succession plan found - key-person risk",
+  "guidance_record": "'3x3' plan final year 2026; management reaffirmed organic, margin, EPS and FCF guidance in Q3-26 (S2); FY25 'achieved all full-year objectives' (S5)"
+ },
+ "ownership": {
+  "controlling_holders": "None (widely held)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Irish plc; standard - not re-verified",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-01-30",
+   "item": "FY2026",
+   "value": "mid-single-digit or greater organic growth; 70-80bp adj operating margin expansion; adj EPS growth; double-digit FCF growth",
+   "class": "TARGET",
+   "source_id": "S5"
+  },
+  {
+   "date": "2026-08-31",
+   "item": "USI accretion",
+   "value": "accretive to adj EPS in 2028 and thereafter; no near-term buybacks",
+   "class": "TARGET",
+   "source_id": "S3"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Organic 6% in 2024, 2025 and Q3-26 (S5,S2)",
+    "Commercial risk, reinsurance and benefits brokerage are annually renewing (S1)"
+   ],
+   "rationale": "Highly recurring broking/benefits revenue with stable organic growth."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Treaty reinsurance grew with new business and retention despite lower rates (S2)"
+   ],
+   "rationale": "Top-3 global broker with reinsurance and analytics depth; switching costs for large clients."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "FCF $3.2bn 2025 (+14%) (S5)",
+    "Guided 70-80bp margin expansion 2026 (S5)"
+   ],
+   "rationale": "Aon Business Services platform delivers operating leverage; margins among the highest of global brokers (INFERENCE)."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Guide mid-single-digit-or-greater organic (S5)",
+    "USI adds US middle-market runway (S3)"
+   ],
+   "rationale": "Moderate organic runway; middle-market push depends on executing two large integrations."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Operations in 120+ countries; Irish domicile (S1)"
+   ],
+   "rationale": "Balanced developed-market spread, but US weight rising with NFP/USI; exact split not extracted."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Reaffirmed 3x3 guidance in final year (S2)",
+    "Met 2025 objectives incl. leverage target (S5)"
+   ],
+   "rationale": "Long, credible delivery record; CEO tenure 21 years raises succession risk."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "USI $17bn at ~14.5x synergised EBITDA, fully debt-funded (S3)",
+    "Leverage ~4.5x at close; S&P outlook to negative; buybacks suspended (S4)"
+   ],
+   "rationale": "Two consecutive large, high-multiple, debt-funded deals (NFP, USI) before returns are evidenced; balance-sheet stretched."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Widely held Irish plc (S1)"
+   ],
+   "rationale": "Standard governance; not reviewed in depth."
+  },
+  "I1": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "AI-enabled Aon Business Services cited for lower unit costs (S2)"
+   ],
+   "rationale": "Large-account broking resilient; Human Capital/benefits admin more automatable - moderate (INFERENCE)."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No material data-centre-capex-linked revenue identified (S2)"
+   ],
+   "rationale": "Revenue not tied to AI capex."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "ABS platform delivering operating leverage and lower unit costs (S2)"
+   ],
+   "rationale": "Large labour cost base addressable."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Commission/fee pricing; large clients negotiate (INFERENCE)"
+   ],
+   "rationale": "Mixed ability to retain savings."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Net market impact slightly positive, within 0-2pt range, despite softer pricing (S2)"
+   ],
+   "rationale": "Limited dependence on rate cycle; fiduciary income sensitive to rates."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Heavy restructuring/integration adjustments around NFP and USI (S2,S3)"
+   ],
+   "rationale": "Adjusted vs GAAP gap will widen with USI transaction and integration costs."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "No identified revenue tied to AI/data-centre capex; AI used for ABS productivity (S2)."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "Company states net market impact (rate & exposure) was 'slightly positive' and within a 0-2pt range in Q3-26 (S2), implying ~4-6pts of the 6% organic came from new business/retention (INFERENCE from company commentary).",
+  "retention_pct": "not disclosed in sources used",
+  "contingent_consideration": "not disclosed in sources used",
+  "producer_retention": "not disclosed"
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 = B: company guides leverage ~4.5x at USI close (> 4.0x broker threshold) with dated path to 2.8-3.0x within 24 months (S4); PitchBook TTM gross debt/EBITDA already ~4.3x on pre-funded debt. G6 = C: Aon is the acquirer (USI pending close Q4-26), not a takeover target; acquisition is large (~$3bn revenue vs Aon ~$17.7bn) - monitor. G4 not computed here; FCF $3.2bn vs NI ~$3.7bn 2025 (PitchBook) suggests >80% conversion."
+ },
+ "bull_points": [
+  "Most consistent organic growth among global brokers (6% three years running) with management stating rate is only a 0-2pt contributor.",
+  "USI + NFP create a scaled US middle-market platform on Aon's ABS cost engine; synergies could drive double-digit FCF growth from 2028.",
+  "High FCF conversion supports rapid deleveraging (repaid $1.9bn debt in 2025)."
+ ],
+ "bear_points": [
+  "Leverage ~4.5x after a $17bn debt-funded deal at ~14.5x synergised EBITDA (higher pre-synergy); S&P outlook negative; buybacks paused.",
+  "Integration risk of two large US acquisitions in three years; middle-market producer attrition is a known post-deal risk.",
+  "Long-tenured CEO (since 2005) without public succession plan."
+ ],
+ "thesis_breakers": [
+  "Leverage not back below 3.5x by end-2027 (company target 2.8-3.0x within 24 months of close).",
+  "Organic growth below 4% for a full year.",
+  "Rating downgrade below BBB+/Baa2."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: Aon (10466-11)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/10466-11/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile; TTM 3Q2026 Total Debt $28.9bn, EBITDA $6.7bn (data/raw/pitchbook/AON.json)"
+  },
+  {
+   "id": "S2",
+   "title": "Aon (AON) Q3 2026 earnings call transcript",
+   "publisher": "PitchBook (transcript)",
+   "url": "https://my.pitchbook.com/research-center/report/a9ca93b3-dc40-3129-ad36-064ebbfede3b",
+   "doc_date": "2026-10-28",
+   "retrieved": "2026-11-12",
+   "page_ref": "Prepared remarks and Q&A"
+  },
+  {
+   "id": "S3",
+   "title": "Aon to acquire USI to establish the premier U.S. middle-market platform",
+   "publisher": "PR Newswire (company press release)",
+   "url": "https://www.prnewswire.com/news-releases/aon-to-acquire-usi-to-establish-the-premier-us-middle-market-platform-302864628.html",
+   "doc_date": "2026-08-31",
+   "retrieved": "2026-11-12",
+   "page_ref": "Transaction details: $17.0bn / $16.7bn net, ~14.5x synergised TTM adj EBITDA, debt-funded, no near-term buybacks, accretive 2028"
+  },
+  {
+   "id": "S4",
+   "title": "Aon plans $4B TLA as part of USI acquisition financing",
+   "publisher": "PitchBook LCD",
+   "url": "https://my.pitchbook.com/news-center/lcd12551011",
+   "doc_date": "2026-09-14",
+   "retrieved": "2026-11-12",
+   "page_ref": "Leverage ~4.5x at close vs 2.9x end-2025; target 2.8-3.0x within 24 months; S&P outlook revised to negative"
+  },
+  {
+   "id": "S5",
+   "title": "Aon Reports Fourth Quarter and Full Year 2025 Results",
+   "publisher": "Aon (company press release)",
+   "url": "https://aon.mediaroom.com/2026-01-30-Aon-Reports-Fourth-Quarter-and-Full-Year-2025-Results",
+   "doc_date": "2026-01-30",
+   "retrieved": "2026-11-12",
+   "page_ref": "Headline: FY25 revenue $17.2bn +9%, organic 6% (matching 2024), FCF $3.2bn +14%, $1.9bn debt repaid; 2026 outlook"
+  },
+  {
+   "id": "S6",
+   "title": "Gallagher's 5% organic growth looks modest - until you compare it with the competition",
+   "publisher": "Insurance Business",
+   "url": "https://www.insurancebusinessmag.com/us/news/breaking-news/gallagher-posts-5-organic-growth-as-brown-and-brown-slows-595591.aspx",
+   "doc_date": "2026-10-30",
+   "retrieved": "2026-11-12",
+   "page_ref": "Aon total debt ~$26.3bn at 30-Sep-2026 vs $14.7bn at start of year"
+  },
+  {
+   "id": "S7",
+   "title": "Aon to Acquire Rival USI for $17bn",
+   "publisher": "BondBlox",
+   "url": "https://bondblox.com/news/aon-to-acquire-rival-usi-for-17bn",
+   "doc_date": "2026-09-03",
+   "retrieved": "2026-11-12",
+   "page_ref": "NFP ~$13bn acquisition 2024; USI ~$3bn revenue; shares -6% on announcement"
+  }
+ ]
+}

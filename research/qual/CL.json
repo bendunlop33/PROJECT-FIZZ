@@ -1,0 +1,434 @@
+{
+ "id": "CL",
+ "name": "Colgate-Palmolive Company",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "CL",
+  "isin": "US1941621039",
+  "hq": "New York, New York, USA",
+  "domicile": "United States (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2025-2026",
+    "event": "Exit of Hill's private-label pet food business (-0.7pt FY2025 organic; -0.2pt Q3-2026)",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "10687-15",
+ "geography": {
+  "fy": "Q3 2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 17,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "North America oral/personal/home care 17% of Q3-2026 sales (S1); Hill's Pet Nutrition ~23% (USD1.21bn of USD5.37bn, majority US) (S1). ~70% of sales international, nearly half from emerging regions (S3) - EM % not exactly disclosed this session. Latin America (Brazil, Mexico) is a major FX exposure.",
+  "source_ids": [
+   "S1",
+   "S3"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": 5.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 7.5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 8.5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 8.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 1.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 1.4,
+   "source_id": "S2"
+  },
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 3.6,
+   "price_pct": 2.0,
+   "volume_mix_pct": 1.7,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 4.6,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Q3-2026 North America organic (volume / price-mix)",
+   "value": "-1.6% (-3.7% / +2.2%)",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Q3-2026 Hill's organic (volume / pricing)",
+   "value": "+5.7% (+1.8% / +3.9%); +6.4% ex private-label exit",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Oral care share of sales",
+   "value": ">40%",
+   "period": "latest",
+   "source_id": "S3"
+  },
+  {
+   "class": "FACT",
+   "name": "Hill's share of sales",
+   "value": "~one-quarter",
+   "period": "latest",
+   "source_id": "S3"
+  },
+  {
+   "class": "FACT",
+   "name": "Walmart share of sales",
+   "value": "~11% (10-K disclosure; recalled, not re-fetched)",
+   "period": "FY2025",
+   "source_id": "S4"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Free cash flow before dividends (OCF - capex)",
+   "value": null,
+   "currency": "USD",
+   "source_id": "S2",
+   "note": "not retrieved this session"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "US GAAP; operating lease cost in EBITDA"
+ },
+ "acquisitions": [
+  {
+   "fy": "2023",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "not disclosed",
+   "notes": "Purchased Red Collar pet food plants (~USD700m, 2023; recalled); amounts not re-verified",
+   "source_id": "S4"
+  }
+ ],
+ "management": {
+  "ceo": "Noel R. Wallace",
+  "ceo_since": "2019-04",
+  "cfo": "Stanley J. Sutula III",
+  "cfo_since": "2020",
+  "senior_turnover_5y": "Low",
+  "succession_notes": "Wallace also Chairman since 2020",
+  "guidance_record": "Consistent through 2022-24; FY2026 organic guidance narrowed to 9M run-rate after 1-4% range; EPS outlook raised Q3-26 (S5)"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None identified",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Majority independent; combined Chair/CEO (not re-verified)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-10-30",
+   "item": "FY2026 organic sales growth",
+   "value": "broadly in line with 9M performance (prior 1-4%)",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "H",
+   "evidence": [
+    "Oral care >40% and pet nutrition ~25% of sales, both consumables (S3)",
+    "Walmart ~11% (S4)"
+   ],
+   "rationale": "Highly repeat consumables; one retailer ~11%."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Global toothpaste leadership (S3)",
+    "Hill's pricing +3.9% with positive volume Q3-26 (S1)"
+   ],
+   "rationale": "Brand leadership and vet-channel moat in Hill's."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "EBIT margin ~15% on PitchBook TTM 3Q2026 (reported basis incl. charges) (S6)",
+    "Global toothpaste share leadership (S3)"
+   ],
+   "rationale": "Oral-care scale leadership, but reported EBIT margin (~15%) does not evidence superior economics vs PG (~24%)."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "FY2025 organic only 1.4% (S2)",
+    "Hill's +6.4% ex PL exit (S1)"
+   ],
+   "rationale": "Moderate runway via pet nutrition and EM oral care premiumisation."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "~70% international, ~half EM (S3)",
+    "North America only 17% (S1)"
+   ],
+   "rationale": "Diversified but heavy EM/LatAm FX exposure."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "CEO since 2019, delivered 2022-24 growth (S4)",
+    "FY2026 EPS outlook raised (S5)"
+   ],
+   "rationale": "Stable experienced management."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Bolt-on M&A (Red Collar plants) (S4)"
+   ],
+   "rationale": "Disciplined capital allocation; steady buybacks/dividends."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Combined Chair/CEO"
+   ],
+   "rationale": "Standard governance."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical consumables"
+   ],
+   "rationale": "Very low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Global productivity programme (INFERENCE)"
+   ],
+   "rationale": "Some productivity scope."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Retailer bargaining (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Cost inflation cited Q3-26 (S7)"
+   ],
+   "rationale": "Partial pass-through; FX volatility."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Restructuring programmes and pet impairments historically (S4)"
+   ],
+   "rationale": "Generally clean with some recurring charges."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue (business mix)."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "Q3-2026": 2.0
+  },
+  "volume_pct": {
+   "Q3-2026": 1.7
+  },
+  "price_volume_note": "Annual 2021-2025 price/volume split not retrieved this session (data gap)",
+  "private_label_risk": "Low-medium in toothpaste; higher in personal/home care in Europe/NA; Hill's exited private-label manufacturing (S1)",
+  "top_customer_pct": 11,
+  "top_customer_note": "Walmart ~11% (recalled 10-K, confidence M)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G3: Walmart ~11% (<15%). G7: UK exposure small. G1: leverage ~1.5x (PitchBook TTM, ESTIMATE)."
+ },
+ "bull_points": [
+  "Oral care global leadership with structural EM penetration runway",
+  "Hill's vet-channel pet nutrition growing ~6% organically (S1)",
+  "Stable management and disciplined capital allocation"
+ ],
+ "bear_points": [
+  "North America volumes falling (-3.7% Q3-26) amid private label and value-seeking (S1)",
+  "FY2025 organic only 1.4%; 2022-24 growth heavily price-led",
+  "EM/LatAm FX volatility"
+ ],
+ "thesis_breakers": [
+  "Organic growth below 2% in FY2027",
+  "Hill's organic growth below 3%",
+  "Gross margin falls >150bp"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Colgate-Palmolive Announces 3rd Quarter 2026 Results",
+   "publisher": "Colgate-Palmolive (via Finviz/Business Wire)",
+   "url": "https://finviz.com/news/412451/colgate-palmolive-announces-3rd-quarter-2026-results",
+   "doc_date": "2026-10-30",
+   "page_ref": "Segment and organic tables (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "Colgate-Palmolive Company Announces 4th Quarter and Full Year 2025 Results",
+   "publisher": "Colgate-Palmolive (Business Wire)",
+   "url": "https://www.businesswire.com/news/home/20260130289242/en/Colgate-Palmolive-Company-Announces-4th-Quarter-and-Full-Year-2025-Results",
+   "doc_date": "2026-01-30",
+   "page_ref": "Headline"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "PitchBook company profile and financials: Colgate-Palmolive (10687-15)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/10687-15/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/CL.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "Colgate-Palmolive annual results 2021-2024 and Form 10-K",
+   "publisher": "Colgate-Palmolive",
+   "url": "https://investor.colgatepalmolive.com/",
+   "doc_date": "2022-01 to 2025-02",
+   "page_ref": "Organic growth headline; Walmart %; recalled, not re-fetched (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "Colgate-Palmolive raised its 2026 earnings outlook after a beat",
+   "publisher": "Finimize",
+   "url": "https://finimize.com/content/colgate-palmolive-raised-its-2026-earnings-outlook-after-a-beat",
+   "doc_date": "2026-10-30",
+   "page_ref": "Headline"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "PitchBook TTM EBIT/revenue (calculation)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/10687-15/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/CL.json; ESTIMATE"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S7",
+   "title": "Colgate Q3 Earnings: Organic Growth Holds Amid Cost Inflation",
+   "publisher": "Panabee",
+   "url": "https://www.panabee.com/news/colgate-palmolive-earnings-q3-2026-report",
+   "doc_date": "2026-10-30",
+   "page_ref": "Headline"
+  }
+ ]
+}

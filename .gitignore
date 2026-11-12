@@ -1,0 +1,6 @@
+# Raw provider extracts are not redistributed (licensing). Rebuild per docs/REFRESH.md.
+data/raw/
+__pycache__/
+*.pyc
+.pytest_cache/
+monitoring/state/

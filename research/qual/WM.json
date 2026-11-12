@@ -1,0 +1,501 @@
+{
+ "id": "WM",
+ "name": "WM (Waste Management, Inc.)",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "WM",
+  "isin": "US94106L1098",
+  "hq": "Houston, Texas, USA",
+  "domicile": "USA (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2024-11-04",
+    "event": "Completed acquisition of Stericycle (medical waste) - now 'WM Healthcare Solutions' segment",
+    "source": "S1"
+   },
+   {
+    "date": "2026-08-26",
+    "event": "CEO Jim Fish to retire; President John Morris named CEO effective 2027-01-04",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "54200-53",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Overwhelmingly US with Canadian operations; Stericycle added small international (Europe/LatAm) exposure. Exact split not collected in this pass (10-K segment note) - INFERENCE: US >85%.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 5.9,
+   "price_pct": 3.4,
+   "volume_mix_pct": 0.8,
+   "acq_pct": 0.6,
+   "fx_pct": -0.1,
+   "reported_pct": 6.3,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3-26 collection & disposal core price",
+   "value": "5.8%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Q3-26 C&D yield",
+   "value": "3.4%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Q3-26 C&D volume (reported / workday-adj.)",
+   "value": "-0.4% / -0.5% (release text); internal-growth table shows C&D volume +$53m (+0.8%) - inconsistency in summary, check release",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Internal revenue growth",
+   "value": "5.9% ($380m), of which energy surcharge/mandated fees $112m",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adjusted operating EBITDA margin",
+   "value": "31.0% (31.1% prior year)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Healthcare Solutions (Stericycle) adj. EBITDA margin",
+   "value": "22.4% vs 17.5% prior year",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "YTD FCF / adj. operating EBITDA",
+   "value": "50%",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Active landfills",
+   "value": "257",
+   "period": "latest PitchBook/Morningstar profile",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "Blended single-stream recycled commodity price",
+   "value": "~$82/ton vs ~$68/ton",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "RIN (RFS credit) price",
+   "value": "$2.32 vs $2.56",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Capex intensity 2026E",
+   "value": "~10.4% of revenue (~$2.75bn / ~$26.4bn); ~9.5% excl. sustainability growth capex",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "2.98x (PitchBook TTM 3Q2026: ND $23.1bn / EBITDA $7.77bn)",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "9M 2026",
+   "definition": "Operating cash flow less capex plus proceeds from divestitures",
+   "value": 3009,
+   "currency": "USD m",
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "definition": "as above (high end of range)",
+   "value": 3850,
+   "currency": "USD m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "n/a (US GAAP)",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "n/a (US GAAP)",
+    "value": null
+   }
+  ],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2024",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "",
+   "notes": "Stericycle ~ $7.2bn EV incl. debt (closed Nov-2024) - figure from prior knowledge, not re-verified in this pass",
+   "source_id": ""
+  },
+  {
+   "fy": "Q3 2026",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "",
+   "notes": "Acquisitions contributed $33m (0.6%) to Q3 revenue growth",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Jim Fish (to 2027-01-03); John Morris from 2027-01-04",
+  "ceo_since": "2016-11 (Fish); 2027-01-04 (Morris)",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "Planned CEO succession announced Aug-2026 (Fish -> Morris, President since May-2025); other C-suite changes not catalogued",
+  "succession_notes": "Orderly internal succession; Morris >30 years industry experience",
+  "guidance_record": "2026 guidance affirmed at Q3 with revenue/FCF at high end; Q3 adj. EPS slightly below consensus ($2.15 vs $2.18 Zacks)"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Majority independent (standard S&P 500) - not re-verified",
+  "remuneration_notes": "Not reviewed in this pass",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-28",
+   "item": "FY2026 revenue",
+   "value": "high end of $26.275-26.475bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-28",
+   "item": "FY2026 adj. operating EBITDA",
+   "value": "$8.15-8.25bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-28",
+   "item": "FY2026 FCF",
+   "value": "high end of $3.75-3.85bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-28",
+   "item": "2026 share repurchases",
+   "value": "~$2bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Collection & disposal under municipal franchises/subscriptions; non-discretionary demand (S1)",
+    "C&D yield +3.4% with volume ~flat in Q3-26 (S1)"
+   ],
+   "rationale": "Essential, recurring route-based and disposal revenue with high retention; small cyclical C&D/special waste component."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "257 active landfills; permits very hard to obtain (S3)",
+    "Morningstar wide moat for WM/RSG/WCN (MS1)",
+    "Core price 5.8% vs volume ~0% shows pricing power (S1)"
+   ],
+   "rationale": "Vertically integrated landfill network is a regulated scarce asset with demonstrated pricing power."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adj. EBITDA margin ~31% in line with RSG, below WCN 34% (S1)",
+    "Largest landfill network in US (S3)"
+   ],
+   "rationale": "Scale delivers margins in line with top peers but not superior to WCN's secondary-market model."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Organic growth ~5% driven by price; volumes flat (S1)",
+    "RNG/recycling growth capex ($191m YTD) with commodity-linked returns (S1)"
+   ],
+   "rationale": "Mature market; growth from price, tuck-ins and sustainability projects of variable return."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "Overwhelmingly US revenue (S1, INFERENCE)"
+   ],
+   "rationale": "Single-country (>70% US) concentration per anchor; developed market so risk is diversification not EM."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Planned internal CEO succession (S2)",
+    "Guidance affirmed, FCF high end (S1)"
+   ],
+   "rationale": "Long-tenured management with orderly succession; minor EPS misses."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "~90% of YTD FCF returned; $2bn buybacks 2026 (S1)",
+    "Stericycle a large diversifying deal; margin improving but integration charges continue (S1)"
+   ],
+   "rationale": "Sensible returns policy; Stericycle return on capital not yet proven."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Widely held, single share class (INFERENCE)"
+   ],
+   "rationale": "Standard large-cap US governance; pay not reviewed."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical collection/disposal (S1)"
+   ],
+   "rationale": "Physical, permitted service not substitutable by AI."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No disclosed DC dependence; C&D/special waste only partly linked to construction (INFERENCE)"
+   ],
+   "rationale": "<2% revenue tied to AI/data-centre capex (INFERENCE)."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Route optimisation, automated MRFs and customer service automation cited by industry (INFERENCE)"
+   ],
+   "rationale": "Moderate cost base addressable (labour, routing)."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Price-led contracts, landfill pricing power (S1)"
+   ],
+   "rationale": "Strong position likely retains most savings; some municipal CPI-indexed contracts."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Energy surcharges/mandated fees recovered ($112m Q3) (S1)",
+    "Recycling/RIN prices create volatility (S1)"
+   ],
+   "rationale": "Fuel pass-through and low cyclicality; commodity/RNG exposure partial."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adjustments for Stericycle integration ($30m Q3) and $18m landfill impairment (S1)"
+   ],
+   "rationale": "Mostly clean; recurring integration adjustments to monitor."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not disclosed; INFERENCE <2% of revenue (some special-waste/C&D from DC construction)."
+ },
+ "sector_specific": {
+  "landfills": 257,
+  "maintenance_capex_pct_rev": 9.5,
+  "env_liabilities": "Landfill final capping, closure/post-closure and remediation obligations (multi-$bn; 10-K note not re-read in this pass). PFAS: leachate treatment/regulatory cost risk at landfills - quantum not disclosed.",
+  "commodity_sensitivity": "Recycled commodities (~$82/t single stream Q3-26), RNG/RIN prices ($2.32), electricity; energy surcharge offsets fuel. Sustainability growth capex sized on these prices."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: provider ND/EBITDA 2.98x < 4.0x waste threshold; EBIT/interest comfortable (TTM EBIT $4.8bn). G4: FCF ~ net income (9M FCF $3.0bn vs TTM NI $3.1bn) - pass. G6: CEO change is not a transaction."
+ },
+ "bull_points": [
+  "Largest US landfill network (257) gives durable pricing power: core price 5.8% in Q3-26 with flat volumes.",
+  "FCF inflecting: 9M-26 FCF +42% to $3.0bn as RNG/recycling growth capex rolls off; ~90% returned to shareholders.",
+  "Stericycle margin repair (22.4% vs 17.5%) offers self-help upside."
+ ],
+ "bear_points": [
+  "Volumes flat/negative: growth is almost entirely price - risk of customer/political pushback if inflation falls.",
+  "Healthcare Solutions (Stericycle) dilutes returns and carries integration charges; acquired at a premium multiple.",
+  "Sustainability investments (RNG, recycling) expose returns to RIN and commodity prices outside management control."
+ ],
+ "thesis_breakers": [
+  "C&D core price falls below 4% for 2+ consecutive quarters while volume stays negative.",
+  "FCF/adj. EBITDA conversion falls back below 40% for FY2027.",
+  "Healthcare Solutions adj. EBITDA margin fails to exceed 22% by FY2027."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "WM Q3 2026 earnings release (Form 8-K Ex.99.1)",
+   "publisher": "WM / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0000823768/000110465926119188/tm2628322d1_ex99-1.htm",
+   "doc_date": "2026-10-27",
+   "retrieved": "2026-11-12",
+   "page_ref": "Revenue bridge, C&D price/yield/volume, FCF reconciliation, guidance, Healthcare Solutions"
+  },
+  {
+   "id": "S2",
+   "title": "Jim Fish to Retire from WM; John Morris Named as Next CEO",
+   "publisher": "WM press release",
+   "url": "https://mediaroom.wm.com/2026-08-26-Jim-Fish-to-Retire-from-WM-John-Morris-Named-as-Next-CEO",
+   "doc_date": "2026-08-26",
+   "retrieved": "2026-11-12",
+   "page_ref": "Full release"
+  },
+  {
+   "id": "S3",
+   "title": "PitchBook company profile: Waste Management (Morningstar description: 257 active landfills, ~342 transfer stations)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/54200-53/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  },
+  {
+   "id": "MS1",
+   "title": "Waste Management Industry: Core Pricing Should Lead to Healthy Cash Flows; Valuations Remain Elevated (Morningstar)",
+   "publisher": "Morningstar via PitchBook",
+   "url": "https://my.pitchbook.com/research-center/report/2e1659f9-bf3a-3bfc-b91e-0619ec8f9d0f",
+   "doc_date": "2026-01-23",
+   "retrieved": "2026-11-12",
+   "page_ref": "Industry note; landfill counts, wide-moat ratings"
+  },
+  {
+   "id": "MS2",
+   "title": "Waste Connections Should Be Able To Maintain Industry Leading Margins (Morningstar)",
+   "publisher": "Morningstar via PitchBook",
+   "url": "https://my.pitchbook.com/research-center/report/2aa3b0c2-ccf7-3b03-b609-2393b80403f4",
+   "doc_date": "2026-03-13",
+   "retrieved": "2026-11-12",
+   "page_ref": "Weighted-average remaining landfill life: WCN ~31y, RSG ~56y, WM ~40y (as summarised)"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 54200-53",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/54200-53/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/WM.json"
+  }
+ ]
+}

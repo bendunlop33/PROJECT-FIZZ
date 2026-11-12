@@ -1,0 +1,347 @@
+{
+ "id": "WTW",
+ "name": "Willis Towers Watson plc (WTW)",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "WTW",
+  "isin": "IE00BDB6Q211",
+  "hq": "London, UK",
+  "domicile": "Ireland",
+  "corporate_actions": [
+   {
+    "date": "2025",
+    "event": "Sold TRANZACT (direct-to-consumer Medicare marketplace); reported revenue -2% in 2025 reflects divestiture",
+    "source": "S3"
+   },
+   {
+    "date": "2026",
+    "event": "Re-entering reinsurance broking via Willis Re joint venture with Bain Capital; JV to acquire BMS Re's US reinsurance broking business (expected close Q4-26); Neil Eckert appointed JV CEO from early 2027",
+    "source": "S2"
+   },
+   {
+    "date": "2025-2026",
+    "event": "Acquired Newfront (US) and Cushon (UK workplace savings) - integrations 'on track'",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "11642-95",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Irish domicile, London HQ; material GBP/EUR revenue and costs. Exact 10-K split not extracted in this pass. Career business exposed to Middle East.",
+  "source_ids": [
+   "S1",
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2025",
+   "organic_pct": 5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -2,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": 4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3-26 organic: Risk & Broking / Health, Wealth & Career",
+   "value": "+5% / +4% (Health +6%, Wealth +2%, Career +9%, BD&O -2%)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Adjusted operating margin",
+   "value": "21.9% Q3-26 (+150bp); FY25 25.2% (+130bp)",
+   "period": "2025-26",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Free cash flow",
+   "value": "$1.55bn FY25 (vs $1.27bn); $1.064bn 9M-26 (vs $838m)",
+   "period": "2025-26",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "Share buybacks",
+   "value": "$1.65bn FY25; $970m 9M-26 (guide >$1bn FY26)",
+   "period": "2025-26",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Gross debt / EBITDA (provider)",
+   "value": "~2.6x (PitchBook TTM 3Q26)",
+   "period": "TTM Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Company FCF = cash from operations less capex",
+   "value": 1550,
+   "currency": "USD m",
+   "source_id": "S3"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2025-2026",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "not disclosed",
+   "notes": "Newfront, Cushon; Willis Re/Bain JV with BMS Re US acquisition; amounts not extracted",
+   "source_id": "S2"
+  }
+ ],
+ "management": {
+  "ceo": "Carl Hess",
+  "ceo_since": "2021-01",
+  "cfo": "Andrew Krasner",
+  "cfo_since": "2022 (not re-verified)",
+  "senior_turnover_5y": "High after failed Aon merger (2021): sale of Willis Re to Gallagher, executive departures; stabilised since (not quantified)",
+  "succession_notes": "not reviewed",
+  "guidance_record": "Transformation program completed; margin expansion delivered 2024-25; ~100bp FY26 expansion reaffirmed"
+ },
+ "ownership": {
+  "controlling_holders": "None",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-29",
+   "item": "FY2026 adj operating margin",
+   "value": "~100bp expansion",
+   "class": "TARGET",
+   "source_id": "S2"
+  },
+  {
+   "date": "2026-10-29",
+   "item": "Adj operating margin target",
+   "value": "~30% enterprise target by 2028 (per transcript summary; not re-verified)",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Broking and benefits consulting largely renewing (S1)",
+    "BD&O -2% on implementation delays shows some project timing risk (S2)"
+   ],
+   "rationale": "Mostly recurring with some project/consulting timing."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Exited reinsurance broking 2021, now rebuilding via JV (S2)"
+   ],
+   "rationale": "Strong in specialty and HWC, but weaker reinsurance franchise than MMC/Aon."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Adj op margin 25.2% vs higher at peers (S3)"
+   ],
+   "rationale": "Scale present but margins lag top peers; improving."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Organic 5% 2025, 4% Q3-26 (S3,S2)"
+   ],
+   "rationale": "Moderate runway; re-entry into reinsurance adds optionality."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "London HQ, Irish domicile, global operations (S1)"
+   ],
+   "rationale": "Balanced NA/Europe spread; split not extracted."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Margin expansion delivered; FCF improved (S3)",
+    "Post-2021 disruption and re-entry into reinsurance (S2)"
+   ],
+   "rationale": "Mixed: recent delivery good, strategy volatile."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "$1.65bn buybacks 2025 (S3)",
+    "Reinsurance exit 2021 then re-entry via JV 2026 (S2)"
+   ],
+   "rationale": "Buybacks sensible; strategic reversals cost value."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Widely held (S1)"
+   ],
+   "rationale": "Standard governance."
+  },
+  "I1": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "HWC includes benefits administration/outsourcing (S2)"
+   ],
+   "rationale": "Benefits admin and actuarial consulting more automatable than large-risk broking (INFERENCE)."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No identified AI-capex-linked revenue (S2)"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Propel AI/automation programme drives margin plan (S2)"
+   ],
+   "rationale": "Large addressable cost base."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Fee and commission mix (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "R&B +5% despite rate softening (S2)"
+   ],
+   "rationale": "Limited rate-cycle dependence."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "FY25 GAAP EPS $16.26 vs adj $17.08 (S3)"
+   ],
+   "rationale": "Moderate adjustments; transformation costs ended."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Propel AI programme for internal productivity."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "INFERENCE: R&B +5% in Q3-26 amid declining property rates; NA growth double-digit in construction/surety/transactional; rate contribution judged ~0-1pt in 2026.",
+  "retention_pct": "not disclosed in sources used",
+  "contingent_consideration": "not disclosed in sources used",
+  "producer_retention": "not disclosed"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: ~2.6x gross debt/EBITDA (PitchBook). FCF $1.55bn vs NI $1.6bn 2025 -> ~95% conversion (company FCF / PitchBook NI). No pending takeover."
+ },
+ "bull_points": [
+  "Margin catch-up story: +130bp 2025, +~100bp 2026, 30% target, with FCF rising faster than revenue.",
+  "Large buybacks (~$1bn+/yr) at a lower multiple than MMC/AON (INFERENCE).",
+  "Reinsurance re-entry via capital-light JV adds growth optionality."
+ ],
+ "bear_points": [
+  "Lowest organic growth of the global three (4% Q3-26).",
+  "HWC exposed to benefits-admin automation and Middle East disruption; BD&O implementation delays.",
+  "Strategic stop-start (Willis Re sold 2021, re-entered 2026) raises execution risk."
+ ],
+ "thesis_breakers": [
+  "Organic growth < 3% for a full year.",
+  "Adjusted operating margin fails to expand in 2027.",
+  "FCF < $1.4bn in 2027."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: Willis Towers Watson (11642-95)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/11642-95/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile; TTM 3Q2026 total debt $7.1bn, EBITDA $2.75bn (data/raw/pitchbook/WTW.json)"
+  },
+  {
+   "id": "S2",
+   "title": "Willis Towers Watson (WTW) Q3 2026 earnings call transcript",
+   "publisher": "PitchBook (transcript)",
+   "url": "https://my.pitchbook.com/research-center/report/ce805bc3-7bcf-32c6-a56e-b26448cdd3b5",
+   "doc_date": "2026-10-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "Prepared remarks and Q&A"
+  },
+  {
+   "id": "S3",
+   "title": "WTW Reports Fourth Quarter and Full Year 2025 Earnings",
+   "publisher": "WTW (company press release via Barchart)",
+   "url": "https://www.barchart.com/story/news/36479926/wtw-reports-fourth-quarter-and-full-year-2025-earnings",
+   "doc_date": "2026-02",
+   "retrieved": "2026-11-12",
+   "page_ref": "FY25 revenue $9,708m (-2% reported, organic 5%); adj op margin 25.2%; FCF $1.55bn; buybacks $1.65bn"
+  }
+ ]
+}

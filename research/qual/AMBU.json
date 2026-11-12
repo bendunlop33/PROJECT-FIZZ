@@ -1,0 +1,251 @@
+{
+ "id": "AMBU",
+ "name": "Ambu A/S",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq Copenhagen",
+  "ticker": "AMBU B",
+  "isin": "DK0060946788 (not re-verified)",
+  "hq": "Ballerup, Denmark",
+  "domicile": "Denmark",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "62459-74",
+ "geography": {
+  "fy": "FY2025/26",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports DKK; North America ~ half (recalled; PB lists NA, Europe, RoW segments)",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2025/26",
+   "organic_pct": 10.1,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026/27 guidance",
+   "organic_pct": "9.5-11.5",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "EBIT margin",
+   "value": "13.2%",
+   "period": "FY2025/26",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Endoscopy Solutions organic",
+   "value": "16.4%",
+   "period": "FY2025/26",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "EBIT margin guide",
+   "value": "13-15%",
+   "period": "FY2026/27",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Buyback",
+   "value": "DKK 400m",
+   "period": "FY2026/27",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Britt Meelby Jensen",
+  "ceo_since": "2022-08 (recalled)",
+  "cfo": "not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "Turnaround since 2022",
+  "succession_notes": "n/a",
+  "guidance_record": "Meeting guidance"
+ },
+ "ownership": {
+  "controlling_holders": "Founding families/foundation hold A shares (dual class)",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "Not reviewed",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None"
+ },
+ "guidance": [],
+ "scores": {
+  "A": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "B": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "C": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "D": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "E": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "F": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "G": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "H": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "I1": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "I2": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "I3": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "I4": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "J": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "K": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "Endoscopy Solutions majority",
+  "litigation": "None material",
+  "reimbursement": "Hospital budgets; US single-use endoscope add-on payments (TPT) relevant"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Screen: all C; dual-class noted."
+ },
+ "bull_points": [
+  "Single-use endoscopy penetration runway (~15% growth)",
+  "Margin recovery"
+ ],
+ "bear_points": [
+  "Competition from Boston Scientific/Olympus single-use",
+  "Sustainability/cost debate vs reusable scopes"
+ ],
+ "thesis_breakers": [
+  "Endoscopy organic <10%"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Ambu A/S - Interim report for Q4 2025/26 and outlook for FY 2026/27",
+   "publisher": "Ambu A/S (via Inderes)",
+   "url": "https://www.inderes.dk/en/releases/interim-report-for-q4-202526-and-outlook-for-fy-202627",
+   "doc_date": "2026-11-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "results; outlook"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/62459-74/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ],
+ "extra": {
+  "depth": "screen"
+ }
+}

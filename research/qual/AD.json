@@ -1,0 +1,330 @@
+{
+ "id": "AD",
+ "name": "Koninklijke Ahold Delhaize N.V.",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "Euronext Amsterdam (also Euronext Brussels)",
+  "ticker": "AD",
+  "isin": "NL0011794037",
+  "hq": "Zaandam, Netherlands",
+  "domicile": "Netherlands",
+  "corporate_actions": [
+   {
+    "date": "2026-10",
+    "event": "Cybersecurity incident in US operations; Q4-2026 US net sales hit ~USD225-282m; 2026 outlook lowered",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "10439-83",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": 0,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": 60,
+  "china_pct": 0,
+  "em_pct": null,
+  "fx_notes": "US >60% of group sales (S2); Europe (Netherlands, Belgium, Greece, Romania, Serbia, Czech Republic, Luxembourg) the rest. No UK or China operations (FACT, zeros not missing). EUR reporter with large USD translation exposure.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1",
+   "note": "Comparable sales ex gasoline: US +0.5% (hit ~1.5pt by SNAP cuts, cyclospora), Europe +2.1%; group figure not retrieved"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Q3-2026 comparable sales ex gasoline",
+   "value": "US +0.5%; Europe +2.1%",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Online sales growth",
+   "value": "Group +9.0% (actual FX); US +14.2% constant FX (10th straight double-digit quarter); Europe +3.1% to EUR1.34bn",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Q3 net sales",
+   "value": "EUR23.1bn",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "name": "2026 underlying operating margin",
+   "value": "approaching 4.0% (was ~4.0%)",
+   "period": "FY2026 guide",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Free cash flow (company: OCF incl. lease payments - net capex)",
+   "value": null,
+   "currency": "EUR",
+   "source_id": "",
+   "note": "not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "IFRS filer with very large store lease book; lease cash costs material - not retrieved this session (use methodology proxy)"
+ },
+ "acquisitions": [
+  {
+   "fy": "2025",
+   "cash_spent": null,
+   "currency": "EUR",
+   "earnouts": "not disclosed",
+   "notes": "Profi (Romania) acquired 2024-25 (amount not re-verified)",
+   "source_id": ""
+  }
+ ],
+ "management": {
+  "ceo": "Frans Muller",
+  "ceo_since": "2018-07",
+  "cfo": "Jolanda Poots-Bijl",
+  "cfo_since": "2023",
+  "senior_turnover_5y": "Low-moderate",
+  "succession_notes": "No successor announced (S1)",
+  "guidance_record": "2026 EPS/margin guidance lowered Nov-2026 after cyber incident (S1)"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Two-tier Dutch board (not re-verified)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-11-04",
+   "item": "FY2026 underlying operating margin",
+   "value": "approaching 4.0%",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-11-04",
+   "item": "FY2026 underlying EPS growth",
+   "value": "low-single-digit at constant FX (lowered)",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Grocery consumables; no customer concentration (S2)"
+   ],
+   "rationale": "Highly recurring non-discretionary demand."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Regional density (Food Lion, Albert Heijn, Delhaize) (S2)",
+    "US comps only +0.5% (S1)"
+   ],
+   "rationale": "Local density advantages but competitive US grocery (Walmart, Aldi, Kroger)."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Underlying op. margin ~4% (S1)"
+   ],
+   "rationale": "Scale present, economics average for grocers."
+  },
+  "D": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "US comps +0.5%; Europe +2.1% (S1)"
+   ],
+   "rationale": "Mature markets; growth from online and omnichannel."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "US >60%, Europe remainder (S2)"
+   ],
+   "rationale": "Two-region mix."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Guidance lowered after cyber incident (S1)"
+   ],
+   "rationale": "Mixed recent execution; long-tenured CEO."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Steady buybacks/dividends (INFERENCE)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Widely held"
+   ],
+   "rationale": "Standard Dutch governance."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical grocery"
+   ],
+   "rationale": "Very low AI risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Large store labour base (INFERENCE)"
+   ],
+   "rationale": "Some scope."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Competitive grocery pricing passes savings to consumers (INFERENCE)"
+   ],
+   "rationale": "Low retention."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Cyber incident; SNAP benefit cuts (S1)"
+   ],
+   "rationale": "Resilient demand; operational/cyber risk demonstrated."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Standard IFRS; lease-heavy (INFERENCE)"
+   ],
+   "rationale": "Generally clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre revenue."
+ },
+ "sector_specific": {
+  "price_pct": null,
+  "volume_pct": null,
+  "price_volume_note": "Retailer: inflation vs volume not retrieved (data gap)",
+  "private_label_risk": "Beneficiary (own brands) (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "retail - not applicable"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: pre-lease leverage modest; lease-adjusted leverage higher (ESTIMATE pending calc). G2: cyber incident is operational, not accounting. G7: no UK exposure."
+ },
+ "bull_points": [
+  "Defensive grocery with no UK/China exposure; US online +14% (S1)",
+  "Strong Benelux franchises (Albert Heijn, Delhaize)",
+  "Cash returns via buybacks/dividends"
+ ],
+ "bear_points": [
+  "US comps weak (+0.5%) amid Walmart/Aldi competition and SNAP cuts (S1)",
+  "Low margins (~4%) and 2026 guidance cut after cyberattack (S1)",
+  "Lease-heavy balance sheet"
+ ],
+ "thesis_breakers": [
+  "US comparable sales ex gas negative for FY2027",
+  "Underlying operating margin below 3.7%",
+  "Further material cyber/operational incidents"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Ahold Delhaize reports EUR23.1bn in Q3 sales, lowers 2026 outlook (and related coverage)",
+   "publisher": "FreshPlaza / Supermarket News / Grocery Trade News",
+   "url": "https://www.supermarketnews.com/finance/ahold-delhaize-u-s-sales-rise-1-1-as-cyberattack-weighs-on-q4-outlook",
+   "doc_date": "2026-11-04",
+   "page_ref": "Q3 comps, online, outlook (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "PitchBook company profile and financials: Ahold Delhaize (10439-83)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/10439-83/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/AD.json"
+  }
+ ]
+}

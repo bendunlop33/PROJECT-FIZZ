@@ -1,0 +1,221 @@
+{
+ "id": "KVUE",
+ "name": "Kenvue Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "delisted",
+  "exchange": "NYSE (former)",
+  "ticker": "KVUE",
+  "isin": "US49177J1025 (not re-verified)",
+  "hq": "Summit, NJ, USA",
+  "domicile": "Delaware, USA",
+  "corporate_actions": [
+   {
+    "date": "2025-11",
+    "event": "Agreed acquisition by Kimberly-Clark (EV ~$48.7bn)",
+    "source": "S2"
+   },
+   {
+    "date": "2026-01-29",
+    "event": "Both shareholder bases approved",
+    "source": "S2"
+   },
+   {
+    "date": "2026-11-02",
+    "event": "Acquisition completed: each KVUE share -> $3.50 cash + 0.14625 KMB shares; ~$6.7bn cash, ~281.1m KMB shares issued; KVUE delisted (Yahoo series ends 30-Oct-2026)",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "517696-93",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Screen depth only; not collected",
+  "source_ids": []
+ },
+ "organic_growth": [],
+ "kpis": [
+  {
+   "name": "TTM revenue (PitchBook)",
+   "value": "$15.5bn",
+   "period": "TTM 3Q2026",
+   "class": "FACT",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "n/a (acquired)",
+  "ceo_since": "",
+  "cfo": "",
+  "cfo_since": "",
+  "senior_turnover_5y": "",
+  "succession_notes": "",
+  "guidance_record": ""
+ },
+ "ownership": {
+  "controlling_holders": "Kimberly-Clark (100%) from 2-Nov-2026",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "",
+  "remuneration_notes": "",
+  "related_party": ""
+ },
+ "guidance": [],
+ "scores": {
+  "A": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "B": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "C": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "D": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "E": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "F": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "G": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "H": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "I1": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "I2": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "I3": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "I4": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "J": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  },
+  "K": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: delisted/acquired - historical comparator only"
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "n/a"
+ },
+ "sector_specific": {
+  "patent_exposure_pct": null,
+  "top_product_pct": "Tylenol largest brand (not quantified)",
+  "litigation": "Tylenol/acetaminophen-autism litigation and talc legacy (J&J retained talc) - context only",
+  "reimbursement": "n/a"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "A",
+  "G7": "C",
+  "notes": "G6 A: acquired by Kimberly-Clark, completed 2-Nov-2026, delisted. Historical comparator only."
+ },
+ "bull_points": [],
+ "bear_points": [],
+ "thesis_breakers": [],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Kimberly-Clark Form 10-Q for quarter ended 30-Sep-2026 (subsequent events)",
+   "publisher": "Kimberly-Clark / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0000055785/000162828026070754/kmb-20260930.htm",
+   "doc_date": "2026-10/11",
+   "retrieved": "2026-11-12",
+   "page_ref": "Subsequent events: Kenvue Acquisition completed 2-Nov-2026"
+  },
+  {
+   "id": "S2",
+   "title": "Kimberly-Clark and Kenvue shareholders approve acquisition",
+   "publisher": "Barchart / Business Wire",
+   "url": "https://www.barchart.com/story/news/37298472/kimberly-clark-and-kenvue-shareholders-overwhelmingly-approve-kimberly-clark-s-acquisition-of-kenvue",
+   "doc_date": "2026-01-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "vote"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/517696-93/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

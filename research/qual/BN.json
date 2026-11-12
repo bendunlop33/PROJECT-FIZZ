@@ -1,0 +1,427 @@
+{
+ "id": "BN",
+ "name": "Danone S.A.",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "Euronext Paris (CAC 40)",
+  "ticker": "BN",
+  "isin": "FR0000120644",
+  "hq": "Paris, France",
+  "domicile": "France",
+  "corporate_actions": [
+   {
+    "date": "2021-03",
+    "event": "CEO/Chair Emmanuel Faber removed after activist pressure (Bluebell, Artisan); roles split",
+    "source": "S4"
+   },
+   {
+    "date": "2024",
+    "event": "Exit from Russia (EDP business) and sale of US organic dairy brands (Horizon/Wallaby) - recalled",
+    "source": "S4"
+   },
+   {
+    "date": "2026-10",
+    "event": "COO Vikram Agarwal to retire",
+    "source": "S5"
+   }
+  ]
+ },
+ "pitchbook_pbid": "11502-91",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "not verified",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "EUR reporter; 2026 reporting regions EMEA / Americas / APAC (S1). Regional % not retrieved. China material via Specialized Nutrition (infant formula) and Mizone water; Mizone decline cost ~1pt of group LFL in Q3-26 (S1).",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": 3.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 7.8,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 7.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 4.3,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 4.5,
+   "price_pct": 1.8,
+   "volume_mix_pct": 2.7,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2",
+   "note": "price inferred as LFL minus volume/mix (search summary of aide-memoire)"
+  },
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 4.0,
+   "price_pct": 3.6,
+   "volume_mix_pct": 0.4,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 5.2,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Q3-2026 LFL by region (volume-mix / price)",
+   "value": "EMEA +3.9% (-0.4/+4.3); Americas +4.4% (+0.7/+3.7); APAC +3.6% (+1.7/+1.9)",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Q3-2026 sales",
+   "value": "EUR7.2bn",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Mizone impact on group LFL",
+   "value": "~-1pt",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Free cash flow (company: OCF - capex net of disposals of PP&E, excl. M&A costs)",
+   "value": null,
+   "currency": "EUR",
+   "source_id": "",
+   "note": "not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [
+  {
+   "fy": "2025",
+   "cash_spent": null,
+   "currency": "EUR",
+   "earnouts": "not disclosed",
+   "notes": "Kate Farms (US plant-based medical nutrition, 2025) - amount not retrieved",
+   "source_id": "S4"
+  }
+ ],
+ "management": {
+  "ceo": "Antoine de Saint-Affrique",
+  "ceo_since": "2021-09",
+  "cfo": "Juergen Esser",
+  "cfo_since": "2022",
+  "senior_turnover_5y": "High in 2021 (CEO/Chair change under activist pressure); stable since",
+  "succession_notes": "Chair/CEO roles separated (Gilles Schnepp Chair)",
+  "guidance_record": "Good: 3-5% LFL medium-term guidance met 2022-2025"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "Bluebell Capital Partners; Artisan Partners",
+    "since": "2020",
+    "objective": "Governance reform, removal of CEO/Chair Faber, improve TSR",
+    "company_response": "Faber removed Mar-2021; roles split; new CEO Sep-2021"
+   }
+  ],
+  "board_independence": "Separated Chair/CEO; majority independent (not re-verified)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-10-28",
+   "item": "FY2026 LFL sales growth",
+   "value": "+3% to +5%",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2024-06",
+   "item": "Medium-term (CMD)",
+   "value": "LFL +3-5%; recurring operating income growing faster than sales",
+   "source_id": "S4"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Daily dairy, water, infant/medical nutrition (S3)"
+   ],
+   "rationale": "Repeat consumption; infant formula sensitive to birth rates/China."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Specialized nutrition (Aptamil, Nutricia) has medical/HCP moat (S3)",
+    "Essential dairy commoditised, price-led Q3-26 (S1)"
+   ],
+   "rationale": "Mixed: strong in specialised nutrition, average in dairy/water."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Operating margin ~13% recurring (PitchBook TTM EBIT/revenue ~10%, S6)"
+   ],
+   "rationale": "Scale without superior margins vs peers."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "LFL 4-5% 2024-25, guided 3-5% (S1)"
+   ],
+   "rationale": "Moderate runway via health/medical nutrition and gut health."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Global spread; China nutrition and Mizone exposure (S1)"
+   ],
+   "rationale": "Diversified but with China/EM risk."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Met 3-5% LFL targets since 2022 (S4)"
+   ],
+   "rationale": "Credible turnaround management."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Russia exit write-offs; portfolio rotation (S4)"
+   ],
+   "rationale": "Improving discipline after past value destruction."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Chair/CEO split after activist campaign (S4)"
+   ],
+   "rationale": "Improved governance."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical food/nutrition"
+   ],
+   "rationale": "Very low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Local First productivity programme (S4)"
+   ],
+   "rationale": "Some scope."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Retailer pressure (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Milk-price and commodity pass-through lags; price +3.6% Q3-26 (S1)"
+   ],
+   "rationale": "Partial pass-through."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Large impairments in 2023-24 (Russia, brands) (S4)"
+   ],
+   "rationale": "Material non-recurring items in recent years."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "2025": 1.8,
+   "Q3-2026": 3.6
+  },
+  "volume_pct": {
+   "2025": 2.7,
+   "Q3-2026": 0.4
+  },
+  "price_volume_note": "2021-2024 split not retrieved this session",
+  "private_label_risk": "High in Essential Dairy (yogurt) in Europe; low in Specialized Nutrition (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "not disclosed",
+  "glp1_risk": "Low/positive: high-protein dairy (Oikos) seen as GLP-1 beneficiary (INFERENCE)",
+  "china_note": "Infant formula and Mizone; Mizone weak in 2026"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: net debt ~USD9.6bn vs EBITDA ~USD4.8bn (PitchBook 2Q2026) ~2x - C, ESTIMATE. G7: UK small."
+ },
+ "bull_points": [
+  "Turnaround delivered: LFL 4-5% in 2024-25 with positive volume/mix (S2)",
+  "Health-focused portfolio (protein, gut health, medical nutrition) aligned with GLP-1 era",
+  "Governance improved post-activist"
+ ],
+ "bear_points": [
+  "Q3-26 growth price-led (+3.6% price, +0.4% vol/mix); EMEA volume negative (S1)",
+  "China exposure (Mizone, infant formula) and declining birth rates",
+  "Private label in European dairy; history of write-downs"
+ ],
+ "thesis_breakers": [
+  "LFL below 3% in FY2027",
+  "Volume/mix negative for full-year 2027",
+  "Recurring operating margin below 13%"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Danone reports US$8.1B sales in Q3 FY26 / Danone Q3 2026 sales",
+   "publisher": "DairyBusiness MEA / DairyReporter / Danone release",
+   "url": "https://www.dairyreporter.com/Article/2026/10/28/danone-q3-sales-rise-4-as-health-focused-brands-and-price-increases-drive-growth/",
+   "doc_date": "2026-10-28",
+   "page_ref": "Q3 LFL and regional split (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "Danone: Q3 2026 Sales Aide-Memoire",
+   "publisher": "Danone (via finanznachrichten)",
+   "url": "https://www.finanznachrichten.de/nachrichten-2026-10/69733706-danone-q3-2026-sales-aide-memoire-399.htm",
+   "doc_date": "2026-10",
+   "page_ref": "FY2025 LFL and volume/mix (garbled table; verify)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "PitchBook company profile and financials: Danone (11502-91)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/11502-91/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/BN.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "Danone annual results 2021-2024, CMD 2024, governance changes 2021",
+   "publisher": "Danone",
+   "url": "https://www.danone.com/investor-relations.html",
+   "doc_date": "2021-2025",
+   "page_ref": "LFL headlines, activist episode, portfolio moves; recalled, not re-fetched (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "Danone reports 4% sales growth in third quarter; COO Vikram Agarwal to retire",
+   "publisher": "FoodBev Media",
+   "url": "https://www.foodbev.com/news/danone-reports-4-sales-growth-in-third-quarter-coo-vikram-agarwal-to-retire",
+   "doc_date": "2026-10-28",
+   "page_ref": "Headline"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "PitchBook TTM EBIT/revenue and net debt (calculation)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/11502-91/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/BN.json; ESTIMATE"
+  }
+ ]
+}

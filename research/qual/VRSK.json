@@ -1,0 +1,326 @@
+{
+ "id": "VRSK",
+ "name": "Verisk Analytics, Inc. (ADJACENT - insurance data & analytics)",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "VRSK",
+  "isin": "US92345Y1064",
+  "hq": "Jersey City, NJ, USA",
+  "domicile": "US (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2025-12/2026-01",
+    "event": "Terminated agreement to acquire AccuLynx after extended FTC review; redeemed $1.5bn 2030/2036 notes issued for the deal on 6-Jan-2026",
+    "source": "S3"
+   },
+   {
+    "date": "2025-2026",
+    "event": "Divested Verisk Marketing Solutions ($68m 2025 revenue)",
+    "source": "S3"
+   }
+  ]
+ },
+ "pitchbook_pbid": "13473-01",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": 83,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "~83% US (PitchBook/Morningstar profile); remainder mainly UK/Europe (cat models, specialty).",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2025",
+   "organic_pct": 6.6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 6.6,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": 7.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 5.3,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3-26 OCC growth: subscription / transactional",
+   "value": "+8.2% / +3.2%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "FY2026 guidance",
+   "value": "Revenue $3,190-3,240m; adj EBITDA $1,790-1,830m (56.0-56.5% margin); adj EPS $7.45-7.75 - reaffirmed Q3",
+   "period": "FY2026",
+   "class": "TARGET",
+   "source_id": "S3"
+  },
+  {
+   "name": "Q3-26 free cash flow",
+   "value": "$200m (-40.5% y/y); operating cash flow -33.8%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Gross debt / EBITDA (provider)",
+   "value": "~2.75x (PitchBook TTM 3Q26)",
+   "period": "TTM Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2026 Q3",
+   "definition": "Company FCF = OCF - capex",
+   "value": 200,
+   "currency": "USD m",
+   "source_id": "S2"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2025-26",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "not extracted",
+   "notes": "AccuLynx (~$2.35bn, announced 2025 - amount not re-verified) terminated; no large deal completed",
+   "source_id": "S3"
+  }
+ ],
+ "management": {
+  "ceo": "Lee Shavel",
+  "ceo_since": "2022 (not re-verified)",
+  "cfo": "Elizabeth Mann",
+  "cfo_since": "2022 (not re-verified)",
+  "senior_turnover_5y": "Portfolio simplification 2021-23 (energy/Wood Mackenzie, financial services sold) under new leadership",
+  "succession_notes": "not reviewed",
+  "guidance_record": "FY26 guidance reaffirmed (toward midpoint); Q1-26 described as trough"
+ },
+ "ownership": {
+  "controlling_holders": "None (widely held)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-05",
+   "item": "FY2026",
+   "value": "revenue $3.19-3.24bn, adj EBITDA margin 56.0-56.5%, toward midpoint",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Subscription revenue growing 8.2% OCC and the large majority of revenue (S2)",
+    "Embedded statutory/ISO forms and loss costs used by P&C insurers (S1)"
+   ],
+   "rationale": ">80% recurring subscription with very high retention (INFERENCE from model; retention % not extracted)."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "ISO statistical-agent data, policy forms and Xactimate claims estimating are industry standards (S1)"
+   ],
+   "rationale": "Unique contributory data and regulatory embedding create strong moat."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Adj EBITDA margin guided 56-56.5% (S3)"
+   ],
+   "rationale": "Network/data scale yields exceptional margins."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "OCC growth 6.6% 2025, 6-8% 2026 (S3,S2)"
+   ],
+   "rationale": "Mature core; moderate runway."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "~83% US (S1)"
+   ],
+   "rationale": "One country >70%."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Guidance met; portfolio refocus (S3)",
+    "AccuLynx deal abandoned after FTC delay (S3)"
+   ],
+   "rationale": "Generally delivers."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "$100m ASR Q3-26; AccuLynx terminated; buybacks at high multiples (S2)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Widely held (S1)"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Transactional revenue +3.2% only; claims (Xactimate) exposed to AI estimating (S2)",
+    "Proprietary statutory data not replicable (S1)"
+   ],
+   "rationale": "Data moat strong, but analytics/claims software layers face AI-native competition - moderate, scored seriously given market concern (INFERENCE)."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Software/data cost base (S1)"
+   ],
+   "rationale": "Some-to-large."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Subscription value pricing (S2)"
+   ],
+   "rationale": "Can retain savings."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Subscription model; insurer budgets stable (S2)"
+   ],
+   "rationale": "Low cyclicality."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "FCF down 40% in Q3-26 needs explanation (S2)"
+   ],
+   "rationale": "Generally clean; watch cash conversion."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "High AI-substitution relevance: genAI could lower barriers in underwriting analytics and claims estimating; ISO statutory data moat mitigates."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "Not a broker: subscription pricing loosely linked to insurer premium volumes; no direct rate pass-through.",
+  "retention_pct": "not disclosed in sources used",
+  "contingent_consideration": "not extracted",
+  "producer_retention": "n/a"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: ~2.75x. G4: Q3-26 FCF -40% - lead agent to check 3y FCF/NI (historically ~100%)."
+ },
+ "bull_points": [
+  "Irreplaceable ISO statutory data and Xactimate standard; 56% margins.",
+  "Subscription growth 8% with pricing power."
+ ],
+ "bear_points": [
+  "AI could erode claims estimating/analytics differentiation; transactional growth only 3%.",
+  "Mature growth (6-8%) and US concentration; FCF weakness in Q3-26.",
+  "Failed AccuLynx deal leaves growth M&A uncertain."
+ ],
+ "thesis_breakers": [
+  "OCC growth < 5% for a full year.",
+  "Subscription growth < 6%.",
+  "Adj EBITDA margin < 54%."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: Verisk Analytics (13473-01)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/13473-01/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile ('About 83% of revenue is US-based'; ISO origins); TTM 3Q26 revenue $3.18bn, EBITDA $1.69bn, debt $4.63bn"
+  },
+  {
+   "id": "S2",
+   "title": "Verisk Reports Third-Quarter 2026 Financial Results (8-K Ex.99.1)",
+   "publisher": "SEC EDGAR / Verisk newsroom",
+   "url": "https://www.verisk.com/company/newsroom/verisk-reports-third-quarter-2026-financial-results/",
+   "doc_date": "2026-11-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "Revenue $809m +5.3%, OCC +7.4%; subscription OCC +8.2%, transactional +3.2%; FCF $200m -40.5%; $100m ASR; guidance unchanged"
+  },
+  {
+   "id": "S3",
+   "title": "Verisk Reports Fourth-Quarter and Full-Year 2025 Financial Results",
+   "publisher": "Verisk (company press release via Seeking Alpha)",
+   "url": "https://seekingalpha.com/pr/20403331",
+   "doc_date": "2026-02-18",
+   "retrieved": "2026-11-12",
+   "page_ref": "FY25 OCC revenue growth 6.6%; 2026 guidance; Marketing Solutions divestiture ($68m 2025 revenue); AccuLynx agreement terminated; $1.5bn notes repaid 6-Jan-2026"
+  }
+ ]
+}

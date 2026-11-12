@@ -1,0 +1,418 @@
+{
+ "id": "CLH",
+ "name": "Clean Harbors, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "CLH",
+  "isin": "US1844961078",
+  "hq": "Norwell, Massachusetts, USA",
+  "domicile": "USA (Massachusetts)",
+  "corporate_actions": [
+   {
+    "date": "2026-10-28",
+    "event": "Co-CEO Mike Battles to retire YE2026; Eric Gerstenberg sole CEO from 2027-01-01",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "13142-62",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "US majority with material Canada (oil-sands/industrial); INFERENCE US ~85%.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 21.0,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Revenue Q3-26 (ES / SKSS)",
+   "value": "$1,538.4m / $331.0m; total $1,869.4m (+21%)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "One large emergency-response event",
+   "value": "~$120m revenue in Q3 (non-recurring)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "ES adj. EBITDA margin",
+   "value": "27.4% (18th consecutive quarter of y/y expansion)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "SKSS adj. EBITDA",
+   "value": "$126.5m (+209% y/y) on higher base-oil/lubricant prices",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Incinerator utilisation",
+   "value": "87%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Waste oil collected",
+   "value": "62m gallons; average charge-for-oil position",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Capex intensity 2026E",
+   "value": "~8-9% of revenue (additions $530-590m / ~$6.6bn)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adj. FCF / adj. EBITDA 2026E",
+   "value": "~43% ($630m / $1,460m)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Net debt (approx.)",
+   "value": "~$2.37bn (debt ~$2.89bn less cash/securities ~$0.52bn); provider ND/EBITDA 1.99x",
+   "period": "30-Sep-2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "9M 2026",
+   "definition": "Adj. FCF: OCF less PP&E additions plus disposal proceeds, adj. for non-operating items, excl. significant strategic growth investments",
+   "value": 383.0,
+   "currency": "USD m",
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "definition": "as above (midpoint)",
+   "value": 630,
+   "currency": "USD m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "9M 2026",
+   "cash_spent": 689.0,
+   "currency": "USD m",
+   "earnouts": "",
+   "notes": "Five transactions incl. ES&H and EnviroServe",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Co-CEOs Eric Gerstenberg & Mike Battles; Gerstenberg sole CEO from 2027-01-01",
+  "ceo_since": "Co-CEOs since 2023 (prior knowledge)",
+  "cfo": "Eric Dugas (prior knowledge, not re-verified)",
+  "cfo_since": "",
+  "senior_turnover_5y": "Founder Alan McKim moved to Executive Chair (2023); co-CEO structure ending 2026",
+  "succession_notes": "Orderly, internal",
+  "guidance_record": "2026 adj. EBITDA and FCF midpoint raised $80m at Q3"
+ },
+ "ownership": {
+  "controlling_holders": "Founder Alan McKim significant holder (~5-6%, prior knowledge)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-28",
+   "item": "FY2026 adj. EBITDA",
+   "value": "$1.44-1.48bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-28",
+   "item": "FY2026 adj. FCF",
+   "value": "$600-660m",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-28",
+   "item": "Q4-26 adj. EBITDA growth",
+   "value": "+23-26% y/y",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Emergency response ~$120m one-off in Q3 (S1)",
+    "Industrial services and SKSS re-refining are cyclical (S1)"
+   ],
+   "rationale": "Mix of recurring hazardous disposal and project/event/commodity revenue."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Largest North American hazardous-waste incineration/landfill network, 87% utilisation (S1)",
+    "RCRA permits effectively impossible to replicate (INFERENCE)"
+   ],
+   "rationale": "Permitted incinerators and haz landfills are scarce; pricing power evidenced by margin expansion."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "ES margin 27.4%, 18 quarters of expansion (S1)"
+   ],
+   "rationale": "Network scale shows in utilisation and margins."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "PFAS pipeline 'robust' (S1)",
+    "Hub expansion ($55m LA) (S1)"
+   ],
+   "rationale": "PFAS and reshoring provide runway."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "US ~85% (INFERENCE)"
+   ],
+   "rationale": "US >70%."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Guidance raised; orderly succession (S1)"
+   ],
+   "rationale": "Good delivery."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "$689m M&A 9M; Kimball incinerator growth capex; modest buybacks (S1)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Founder influence"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical permitted disposal"
+   ],
+   "rationale": "Not substitutable."
+  },
+  "I2": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Industrial services to manufacturers/semis fabs possible (INFERENCE)"
+   ],
+   "rationale": "Low single-digit tied; not disclosed."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Field services labour"
+   ],
+   "rationale": "Moderate."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Mixed T&M and priced disposal"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "SKSS profit highly sensitive to base-oil prices (+209% EBITDA swing) (S1)"
+   ],
+   "rationale": "Material unhedged commodity exposure (re-refining)."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adj. FCF excludes strategic growth capex (S1)"
+   ],
+   "rationale": "Reasonably clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not disclosed; INFERENCE 1-3% (industrial services to semis/data-centre-related manufacturing)."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Large closure/post-closure and remedial liabilities from acquired legacy sites (Safety-Kleen, landfills); amounts not re-read this pass. PFAS is an opportunity (incineration, remediation) and a liability risk.",
+  "commodity_sensitivity": "HIGH for SKSS: base oil/lubricant spreads vs charge-for-oil; Q3-26 SKSS EBITDA +209% on global supply disruption - reversal risk. Oil price also drives Canadian industrial activity."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: provider ND/EBITDA ~2.0x. G4: 9M adj. FCF $383m vs TTM NI $528m (~73%, partial year) - C, monitor. CEO change orderly."
+ },
+ "bull_points": [
+  "Irreplicable haz-waste incineration network running at 87% utilisation.",
+  "PFAS destruction/remediation demand pipeline.",
+  "ES margin expansion 18 consecutive quarters."
+ ],
+ "bear_points": [
+  "2026 earnings flattered by one-off emergency response (~$120m) and spike in base-oil prices - peak-ish earnings.",
+  "SKSS re-refining is commodity-exposed.",
+  "Active M&A ($689m YTD)."
+ ],
+ "thesis_breakers": [
+  "ES adj. EBITDA margin falls below 25%.",
+  "SKSS adj. EBITDA returns to < $150m/yr with no charge-for-oil offset.",
+  "Incinerator utilisation <80% for a full year."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Clean Harbors Q3 2026 financial results (Form 8-K Ex.99)",
+   "publisher": "Clean Harbors / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0000822818/000082281826000045/clh-q32026pressrelease.htm",
+   "doc_date": "2026-10-28",
+   "retrieved": "2026-11-12",
+   "page_ref": "Segment tables, adj. FCF, guidance"
+  },
+  {
+   "id": "S2",
+   "title": "PitchBook company profile: Clean Harbors",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/13142-62/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description (US & Canada)"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 13142-62",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/13142-62/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/CLH.json"
+  }
+ ]
+}

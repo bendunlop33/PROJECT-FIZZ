@@ -1,0 +1,453 @@
+{
+ "id": "RSG",
+ "name": "Republic Services, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "RSG",
+  "isin": "US7607591002",
+  "hq": "Phoenix, Arizona, USA",
+  "domicile": "USA (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2026-10-29",
+    "event": "New $5bn buyback authorisation effective 2027-01-01 to 2029-12-31",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "41921-38",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "US-only solid waste plus North American environmental solutions; INFERENCE >95% US.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 6.9,
+   "price_pct": 2.9,
+   "volume_mix_pct": -0.6,
+   "acq_pct": 1.3,
+   "fx_pct": null,
+   "reported_pct": 8.2,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Core price on total revenue / related business",
+   "value": "5.3% / 6.3%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Average yield / volume",
+   "value": "+2.9% / -0.6%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Organic growth composition",
+   "value": "4.8% recycling & waste + 2.1% environmental solutions (organic_pct = sum, ESTIMATE); fuel +1.8%, commodities +0.3% within",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adj. EBITDA margin",
+   "value": "31.8% (32.8% prior year)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Environmental Solutions revenue / adj. EBITDA margin",
+   "value": "$529m / 25.4%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Average recycled commodity price",
+   "value": "$142/ton (+$16 y/y)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Active landfills",
+   "value": "~207-208",
+   "period": "2025/26",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Capex intensity 2026E",
+   "value": "~11.4% of revenue ($1.97-2.01bn / ~$17.45bn)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "FCF / adj. EBITDA 2026E",
+   "value": "~46% ($2.575bn / $5.5625bn midpoints)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "2.70x",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "9M 2026",
+   "definition": "Adjusted FCF: OCF less property & equipment received plus equipment sale proceeds plus restructuring/labour-disruption payments (net of tax)",
+   "value": 2276,
+   "currency": "USD m",
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "definition": "as above",
+   "value": 2575,
+   "currency": "USD m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "9M 2026",
+   "cash_spent": 1120,
+   "currency": "USD m",
+   "earnouts": "",
+   "notes": "Cash invested in acquisitions YTD (~$1.1bn)",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Jon Vander Ark",
+  "ceo_since": "2021-06 (from prior knowledge; not re-verified)",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO transition 2021 (Slager -> Vander Ark); not otherwise catalogued",
+  "succession_notes": "",
+  "guidance_record": "2026 guidance raised at Q3 (revenue, adj. EBITDA, adj. FCF)"
+ },
+ "ownership": {
+  "controlling_holders": "Cascade Investment (Gates-related) historically a large holder (~30%+) - from prior knowledge, not re-verified; treat as significant holder",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-29",
+   "item": "FY2026 revenue",
+   "value": "$17.425-17.475bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-29",
+   "item": "FY2026 adj. EBITDA",
+   "value": "$5.550-5.575bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-29",
+   "item": "FY2026 adj. FCF",
+   "value": "$2.565-2.585bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Core price 5.3% with volume -0.6% (S1)",
+    "Recycling & waste ~89% of revenue (S3)"
+   ],
+   "rationale": "Recurring, essential collection/disposal under contracts and subscriptions."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "~207 active landfills; ~56 years weighted landfill life (MS2)",
+    "Wide moat (MS1)"
+   ],
+   "rationale": "Permitted disposal capacity and route density give durable pricing power."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adj. EBITDA margin ~32% vs WM ~31%, WCN 34% (S1)"
+   ],
+   "rationale": "Scale economics visible but margins not peer-leading."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "~$1.1bn acquisitions YTD; organic growth price-led (S1)",
+    "Environmental Solutions growth +22% in Q3 (S1)"
+   ],
+   "rationale": "Mature core plus tuck-ins and environmental solutions; moderate runway."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "US-only solid waste (S3)"
+   ],
+   "rationale": "Single country >70%."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Guidance raised in Q3-26 (S1)"
+   ],
+   "rationale": "Consistent delivery."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Leverage ~2.7x provider; disciplined tuck-ins; $5bn buyback 2027-29 (S1)"
+   ],
+   "rationale": "Balanced, disciplined allocation."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Large anchor holder (prior knowledge, unverified)"
+   ],
+   "rationale": "Standard; significant holder noted neutrally."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical service (S1)"
+   ],
+   "rationale": "Not AI-substitutable."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No DC dependence disclosed (INFERENCE)"
+   ],
+   "rationale": "<2% AI-capex tied."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Routing/automation opportunity (INFERENCE)"
+   ],
+   "rationale": "Moderate."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Pricing power (S1)"
+   ],
+   "rationale": "Likely retains savings."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Fuel recovery fees +1.8% (S1)",
+    "Q3 margin -100bp y/y (S1)"
+   ],
+   "rationale": "Good pass-through; some margin pressure in Q3."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adjusted EPS $1.94 vs reported $1.93 (S1)"
+   ],
+   "rationale": "Clean, small adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not disclosed; INFERENCE <2%."
+ },
+ "sector_specific": {
+  "landfills": 207,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Closure/post-closure and remediation liabilities incl. legacy Bridgeton/West Lake (Missouri) remediation - amounts not re-read this pass. PFAS leachate regulation is a cost risk.",
+  "commodity_sensitivity": "Recycled commodity price $142/ton (+$16); landfill gas/RNG JV exposure; fuel recovered via surcharge. maintenance capex split not disclosed in release."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: 2.70x provider ND/EBITDA (< 4.0x). G4: 9M adj. FCF $2.28bn vs TTM NI $2.23bn - pass."
+ },
+ "bull_points": [
+  "Long landfill life (~56y weighted) and strong core price (6.3% on related revenue).",
+  "Environmental Solutions recovering strongly (+22% revenue, margin 25.4%).",
+  "$5bn 2027-29 buyback plus ~$1bn/yr tuck-ins compounding per-share FCF."
+ ],
+ "bear_points": [
+  "Negative volumes (-0.6%) - price-only growth vulnerable to political/municipal resistance.",
+  "Margin slipped 100bp in Q3-26; environmental solutions is more cyclical (industrial/event-driven).",
+  "Elevated valuation for a ~5-7% organic grower (Morningstar notes valuations remain elevated, MS1)."
+ ],
+ "thesis_breakers": [
+  "Core price on related revenue falls below 4.5%.",
+  "Adj. FCF growth <5% p.a. over 2026-28.",
+  "Net leverage >3.5x after M&A."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Republic Services Q3 2026 results (Form 8-K Ex.99.1)",
+   "publisher": "Republic Services / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001060391/000106039126000326/exhibit991q32026.htm",
+   "doc_date": "2026-10-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "Revenue growth table, adj. FCF reconciliation, guidance"
+  },
+  {
+   "id": "S2",
+   "title": "Republic's Core Pricing Should Remain Strong as Volume Headwinds Persist (Morningstar)",
+   "publisher": "Morningstar via PitchBook",
+   "url": "https://my.pitchbook.com/research-center/report/c9cb7623-6372-3a59-87a4-dad9456bcb02",
+   "doc_date": "2026-01-23",
+   "retrieved": "2026-11-12",
+   "page_ref": "Landfill count ~207-208"
+  },
+  {
+   "id": "S3",
+   "title": "PitchBook company profile: Republic Services",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41921-38/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description: 208 active landfills, 89% recycling & waste"
+  },
+  {
+   "id": "MS1",
+   "title": "Waste Management Industry: Core Pricing Should Lead to Healthy Cash Flows; Valuations Remain Elevated (Morningstar)",
+   "publisher": "Morningstar via PitchBook",
+   "url": "https://my.pitchbook.com/research-center/report/2e1659f9-bf3a-3bfc-b91e-0619ec8f9d0f",
+   "doc_date": "2026-01-23",
+   "retrieved": "2026-11-12",
+   "page_ref": "Industry note; landfill counts, wide-moat ratings"
+  },
+  {
+   "id": "MS2",
+   "title": "Waste Connections Should Be Able To Maintain Industry Leading Margins (Morningstar)",
+   "publisher": "Morningstar via PitchBook",
+   "url": "https://my.pitchbook.com/research-center/report/2aa3b0c2-ccf7-3b03-b609-2393b80403f4",
+   "doc_date": "2026-03-13",
+   "retrieved": "2026-11-12",
+   "page_ref": "Weighted-average remaining landfill life: WCN ~31y, RSG ~56y, WM ~40y (as summarised)"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 41921-38",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41921-38/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/RSG.json"
+  }
+ ]
+}

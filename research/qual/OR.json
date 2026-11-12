@@ -1,0 +1,433 @@
+{
+ "id": "OR",
+ "name": "L'Oreal S.A.",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "Euronext Paris (CAC 40)",
+  "ticker": "OR",
+  "isin": "FR0000120321",
+  "hq": "Clichy (Paris), France",
+  "domicile": "France",
+  "corporate_actions": [
+   {
+    "date": "2025-10-19",
+    "event": "Agreed acquisition of Kering Beaute (Creed + long-term fragrance/beauty licences incl. Gucci) for ~EUR4bn; completion status not verified this session",
+    "source": "S4"
+   }
+  ]
+ },
+ "pitchbook_pbid": "11352-16",
+ "geography": {
+  "fy": "2024",
+  "basis": "revenue",
+  "europe_pct": 33,
+  "north_america_pct": 27,
+  "uk_pct": null,
+  "other_pct": 40,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Approximate 2024 zone split recalled from L'Oreal annual report (Europe ~33%, North America ~27%, North Asia ~24%, SAPMENA-SSA ~10%, Latin America ~7%) - confidence M, not re-fetched. China mainland is a major part of North Asia (Luxe/travel retail) - exact % not verified. Morningstar: EM <20% as L'Oreal classifies North Asia as developed (S3).",
+  "source_ids": [
+   "S3",
+   "S5"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": 16.1,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 10.9,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 7.6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 5.1,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 1.3,
+   "source_id": "S1",
+   "note": "FY2025 sales EUR44.05bn (+1.3% reported); LFL not retrieved"
+  },
+  {
+   "fy": "9M2026",
+   "organic_pct": 6.9,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2",
+   "note": "adjusted like-for-like (company's 2026 measure)"
+  },
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 7.7,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 11.9,
+   "source_id": "S1",
+   "note": "adjusted LFL; reported LFL 7.2%"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Q3-2026 adjusted LFL by division",
+   "value": "Professional 13.9%; Dermatological Beauty 11.6%; Luxe ~7%; Consumer Products 4.2% (unit growth accelerating)",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Q3-2026 regional growth",
+   "value": "North Asia +7.8%; SAPMENA-SSA +19.5%",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Global beauty market share",
+   "value": "~12%, >2x nearest competitor",
+   "period": "latest",
+   "source_id": "S3"
+  },
+  {
+   "class": "FACT",
+   "name": "Net profit",
+   "value": "EUR6.13bn (-4.4%)",
+   "period": "FY2025",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Net cash provided by operating activities - capex - lease repayments (company 'free cash flow')",
+   "value": null,
+   "currency": "EUR",
+   "source_id": "",
+   "note": "not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [
+  {
+   "fy": "2025-2026",
+   "cash_spent": null,
+   "currency": "EUR",
+   "earnouts": "not disclosed",
+   "notes": "Kering Beaute ~EUR4bn (announced Oct-2025); Aesop (2023, USD2.5bn); 10% Galderma stake (2024) - amounts recalled",
+   "source_id": "S4"
+  }
+ ],
+ "management": {
+  "ceo": "Nicolas Hieronimus",
+  "ceo_since": "2021-05",
+  "cfo": "Christophe Babule",
+  "cfo_since": "2018",
+  "senior_turnover_5y": "Low; orderly (Agon to Chairman 2021)",
+  "succession_notes": "Internal succession; Jean-Paul Agon Chairman",
+  "guidance_record": "Consistently outgrew beauty market 2021-24; slowdown 2024-25 (China, US); 2026 rebound"
+ },
+ "ownership": {
+  "controlling_holders": "Bettencourt Meyers family (~34%) and Nestle (~20%) - recalled, not re-verified",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Board includes family and Nestle representatives; double voting rights for long-held French shares (noted)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Nestle shareholding; no abuse identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-10",
+   "item": "FY2026 outlook",
+   "value": "Another year of growth in sales and profit; outperform beauty market",
+   "source_id": "S6"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Repeat-purchase beauty consumables across 4 divisions (S3)"
+   ],
+   "rationale": "Recurring but partly discretionary (Luxe)."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "~12% global share, >2x nearest competitor (S3)",
+    "Q3-26 adjusted LFL 7.7% with unit growth (S1)"
+   ],
+   "rationale": "Unmatched brand portfolio, R&D and pricing power."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Operating margin ~20% vs beauty peers lower (PitchBook TTM EBIT/revenue ~20%, S7)"
+   ],
+   "rationale": "Scale in media/R&D/distribution translates into superior margins and share gains."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Beauty market mid-single-digit growth; SAPMENA +19.5% (S1)"
+   ],
+   "rationale": "Structural runway (premiumisation, EM, derm)."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Europe ~33%, NA ~27%, North Asia ~24% (S5)"
+   ],
+   "rationale": "Balanced developed spread; China/travel retail risk."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Orderly succession; long outperformance record (S5)"
+   ],
+   "rationale": "Strong, stable management."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Aesop, Kering Beaute, Galderma stake (S4)",
+    "Low leverage (PitchBook)"
+   ],
+   "rationale": "Disciplined but recently larger-ticket M&A."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Family + Nestle anchor holders"
+   ],
+   "rationale": "Stable ownership; minority protections standard (noted neutrally)."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "AI beauty advisers could shift brand discovery (INFERENCE)"
+   ],
+   "rationale": "Low substitution risk; some discovery-channel disintermediation."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "A&P ~30% of sales addressable by gen-AI content (INFERENCE)"
+   ],
+   "rationale": "Large marketing cost base addressable."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Pricing power (S3)"
+   ],
+   "rationale": "Likely to retain savings."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "High gross margin buffers inputs (PitchBook)"
+   ],
+   "rationale": "Good resilience; China/travel retail volatility."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Clean French GAAP/IFRS reporting; FCF ~ net income (INFERENCE)"
+   ],
+   "rationale": "High accounting quality."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue."
+ },
+ "sector_specific": {
+  "price_pct": null,
+  "volume_pct": null,
+  "price_volume_note": "L'Oreal does not report a formal price/volume split; Q3-26 commentary cites accelerating unit growth in Consumer Products (S1). Data gap.",
+  "private_label_risk": "Low-medium: mass beauty faces retailer brands/dupes (e.g. e.l.f., private label) but Luxe/Derma insulated (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "not disclosed",
+  "china_note": "North Asia (incl. China, travel retail) ~24% of sales; North Asia +7.8% Q3-26 (S1)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G6 C: Kering Beaute is a bolt-on (~EUR4bn vs ~EUR200bn+ market cap). China exposure material but not Chinese domicile. G7: UK small."
+ },
+ "bull_points": [
+  "Category leader with ~12% global share and accelerating growth (Q3-26 adj. LFL 7.7%) (S1)",
+  "Structural beauty-market growth plus premiumisation and derm runway",
+  "Strong balance sheet and anchor shareholders"
+ ],
+ "bear_points": [
+  "China/North Asia and travel-retail volatility; 2024-25 slowdown (S1)",
+  "Valuation typically premium; Kering Beaute price ~EUR4bn adds integration risk",
+  "Dupes/indie brands and social-commerce disruption in mass beauty"
+ ],
+ "thesis_breakers": [
+  "Adjusted LFL below 3% for FY2027",
+  "Operating margin falls below 19.5%",
+  "North Asia decline >5% for two consecutive quarters"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "L'Oreal accelerates growth in the 3rd quarter of 2026 (and related coverage)",
+   "publisher": "Luxury Tribune / L'Oreal release reprints",
+   "url": "https://www.luxurytribune.com/en/loreal-accelerates-growth-in-the-3rd-quarter-of-2026-driven-by-luxury-and-emerging-markets",
+   "doc_date": "2026-10",
+   "page_ref": "Q3 sales, divisions, regions (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "L'Oreal 9-month sales rise 7.7%",
+   "publisher": "RTTNews",
+   "url": "https://www.rttnews.com/3701966/l-or-al-9-month-sales-rise-7-7.aspx",
+   "doc_date": "2026-10",
+   "page_ref": "9M adjusted LFL"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "PitchBook company profile and financials: L'Oreal (11352-16)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/11352-16/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/OR.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "L'Oreal to acquire Kering Beaute",
+   "publisher": "Glossy / L'Oreal press",
+   "url": "https://www.glossy.co/?p=193578",
+   "doc_date": "2025-10",
+   "page_ref": "Announcement (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "L'Oreal annual results 2021-2024",
+   "publisher": "L'Oreal",
+   "url": "https://www.loreal-finance.com/",
+   "doc_date": "2022-02 to 2025-02",
+   "page_ref": "LFL growth and zone split; recalled, not re-fetched (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "L'Oreal Q3 2026: EUR11.56bn sales; 2026 outlook",
+   "publisher": "Newsquawk",
+   "url": "https://www.newsquawk.com/headlines/loreal-or-fp-q3-2026-eur-sales-1156bln-exp-1123bln-adj-lfl-revenue-77-exp-543-2026-outlook-sees-another-year-of-growth-in-sales-and-profit",
+   "doc_date": "2026-10",
+   "page_ref": "Headline"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S7",
+   "title": "PitchBook TTM EBIT/revenue (calculation)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/11352-16/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/OR.json; ESTIMATE"
+  }
+ ]
+}

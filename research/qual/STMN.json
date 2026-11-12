@@ -1,0 +1,346 @@
+{
+ "id": "STMN",
+ "name": "Straumann Holding AG",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "SIX Swiss Exchange",
+  "ticker": "STMN",
+  "isin": "CH1175448666 (not re-verified)",
+  "hq": "Basel, Switzerland",
+  "domicile": "Switzerland",
+  "corporate_actions": [
+   {
+    "date": "2026-04",
+    "event": "Founder Thomas Straumann stepped back from board; son-in-law proposed",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "51704-20",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": 41.6,
+  "north_america_pct": 26.4,
+  "uk_pct": null,
+  "other_pct": 32.0,
+  "largest_country": "not disclosed",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "EMEA 41.6%, North America 26.4%, APAC 23.0%, LatAm 9.0%; reports CHF (FX -4.8pp FY25)",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2024",
+   "organic_pct": 13.7,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 10.0,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 8.9,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 4.1,
+   "source_id": "S1"
+  },
+  {
+   "fy": "9M 2026",
+   "organic_pct": 8.3,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 4.9,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2026 guidance",
+   "organic_pct": "high single digit",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Core EBIT margin",
+   "value": "25.2% reported / 26.5% at constant 2024 FX",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "APAC organic ex-China",
+   "value": "10.2%",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Core EBIT margin improvement guide",
+   "value": "140-170bp cc",
+   "period": "FY2026",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Company FCF",
+   "value": 290.2,
+   "currency": "CHF m",
+   "source_id": "S1"
+  },
+  {
+   "fy": "2024",
+   "definition": "Company FCF",
+   "value": 373,
+   "currency": "CHF m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Guillaume Daniellot",
+  "ceo_since": "2021-01",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "Stable; ex-CEO Marco Gadola leaves board 2026",
+  "succession_notes": "Internal CEO succession 2021",
+  "guidance_record": "Met 2025 targets; raised 2026 margin guide"
+ },
+ "ownership": {
+  "controlling_holders": "Thomas Straumann/family ~17% (recalled, not re-verified)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Majority independent",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-02",
+   "item": "2026 organic growth",
+   "value": "high single digit",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-06",
+   "item": "Core EBIT margin improvement",
+   "value": "+140-170bp at constant 2025 FX",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Implants are procedure-driven, partly discretionary (self-pay) (PB)"
+   ],
+   "rationale": "Recurring procedures but discretionary."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "~1/3 global implant share; ~half of premium (PB)"
+   ],
+   "rationale": "Strong brand/clinical evidence."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Core EBIT ~26% vs Dentsply/Envista low-teens"
+   ],
+   "rationale": "Scale yields superior margins."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "High-single-digit organic; EM/value runway (S1)"
+   ],
+   "rationale": "Strong runway."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "H",
+   "evidence": [
+    "EMEA 42%, NA 26%, APAC 23%, LatAm 9% (S1)"
+   ],
+   "rationale": "Balanced; China VBP risk."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Met guidance (S1,S2)"
+   ],
+   "rationale": "Good."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Neodent/Anthogyr value acquisitions successful; exited DrSmile"
+   ],
+   "rationale": "Good."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Founder family minority"
+   ],
+   "rationale": "Good."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical implants"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Digital workflows"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Premium pricing"
+   ],
+   "rationale": "Good."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "China VBP pricing"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Modest core adjustments (S1)"
+   ],
+   "rationale": "Clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "Implants majority (not disclosed)",
+  "litigation": "None material",
+  "reimbursement": "Mostly self-pay; China volume-based procurement (VBP) for implants sets price caps - next round delayed (S2)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "China within APAC (23%); VBP risk disclosed."
+ },
+ "bull_points": [
+  "Market leader with superior margins and premium+value brands",
+  "High-single-digit organic with margin expansion",
+  "Balanced geography"
+ ],
+ "bear_points": [
+  "Discretionary procedures sensitive to consumer confidence",
+  "China VBP repricing",
+  "Aligner business competition"
+ ],
+ "thesis_breakers": [
+  "Organic below 5% for a year",
+  "China VBP round cuts prices >30%"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Straumann Group full-year 2025 results press release",
+   "publisher": "Straumann Holding AG",
+   "url": "https://www.straumann.com/content/dam/data/media-release/en/2026/32053e54-7676-4f7e-9d3d-92d71b19e0ea/StraumannGroup_Press+Release_FY2025.pdf",
+   "doc_date": "2026-02",
+   "retrieved": "2026-11-12",
+   "page_ref": "p1-2, regional table p5, board changes p7"
+  },
+  {
+   "id": "S2",
+   "title": "Straumann lifts 2026 margin outlook on stronger execution, China recovery",
+   "publisher": "Reuters via Stockopedia",
+   "url": "https://www.stockopedia.com/share-prices/straumann-holding-ag-SWX:STMN/news/straumann-lifts-2026-margin-outlook-on-stronger-execution-china-recovery-updated-019ed4a6-75f7-77a2-be6a-7b30d4ef79a8/",
+   "doc_date": "2026-06",
+   "retrieved": "2026-11-12",
+   "page_ref": "margin guide raise"
+  },
+  {
+   "id": "S3",
+   "title": "Straumann Group company page (Q3 2026 summary)",
+   "publisher": "Quartr",
+   "url": "https://quartr.com/companies/straumann-holding-ag_12100",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "9M organic 8.3%"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/51704-20/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

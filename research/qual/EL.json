@@ -1,0 +1,300 @@
+{
+ "id": "EL",
+ "name": "EssilorLuxottica SA",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "Euronext Paris",
+  "ticker": "EL",
+  "isin": "FR0000121667 (not re-verified)",
+  "hq": "Paris (Charenton-le-Pont), France",
+  "domicile": "France",
+  "corporate_actions": [
+   {
+    "date": "2021-07",
+    "event": "GrandVision acquisition completed",
+    "source": "PB"
+   },
+   {
+    "date": "2025",
+    "event": "Meta Platforms reported to have taken ~3% stake (not re-verified)",
+    "source": "PB"
+   }
+  ]
+ },
+ "pitchbook_pbid": "41360-68",
+ "geography": {
+  "fy": "Q3 2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 43,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Q3 2026: North America €3.2bn of €7.49bn (~43%, ESTIMATE); EMEA €2.89bn (~39%); APAC fastest-growing +15.7% cc; reports EUR",
+  "source_ids": [
+   "S1",
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "9M 2026 (constant FX, incl. M&A)",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "Q3 2026 (constant FX)",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Revenue growth at constant FX",
+   "value": "+7.2% Q3; +8.9% 9M",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Wearables (AI glasses, Nuance Audio) revenue",
+   "value": "€486m, +20% cc",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Direct-to-consumer growth cc",
+   "value": "+10.6%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Myopia management growth",
+   "value": "+24%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Francesco Milleri (Chairman & CEO)",
+  "ceo_since": "2022 (CEO since 2021)",
+  "cfo": "Stefano Grassi (recalled)",
+  "cfo_since": "",
+  "senior_turnover_5y": "Stable post-merger governance since 2021",
+  "succession_notes": "Del Vecchio family succession via Delfin",
+  "guidance_record": "Delivers mid-term plan broadly"
+ },
+ "ownership": {
+  "controlling_holders": "Delfin (Del Vecchio holding) ~32% (recalled, not re-verified); employee shareholders",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Mixed; Delfin-influenced",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "Delfin heirs governance disputes reported historically"
+ },
+ "guidance": [],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Rx lenses recurring (vision correction) but frames/sun discretionary/luxury (PB)"
+   ],
+   "rationale": "Mixed."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Dominant in lenses (Essilor) and frames/licensed brands (Ray-Ban, Oakley) and retail (LensCrafters, Sunglass Hut) (PB)"
+   ],
+   "rationale": "Very strong vertical integration."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Both lens and frame businesses significantly larger than next competitor (PB)"
+   ],
+   "rationale": "Scale demonstrably drives margins/distribution."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Myopia management +24%, wearables +20% (S2)"
+   ],
+   "rationale": "Good runway."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "NA ~43%, EMEA ~39%, APAC/LatAm rest (S1,S2)"
+   ],
+   "rationale": "Balanced."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Consistent growth (S1)"
+   ],
+   "rationale": "Good."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Serial M&A (GrandVision, Supreme, med-tech hearing)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Delfin influence"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Physical products; AI glasses actually a growth vector"
+   ],
+   "rationale": "Low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No DC exposure; wearables are consumer AI devices (~6% Q3 rev)"
+   ],
+   "rationale": "Not DC-dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Brand pricing"
+   ],
+   "rationale": "Good."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Retail cost base; tariffs"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Adjusted measures exclude PPA amortisation from merger"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "Smart/AI glasses with Meta (~€486m/quarter, ~6.5% of Q3 revenue) - consumer AI theme exposure, not DC capex. Flag for 'speculative themes' overlap (modest)."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "Ray-Ban (incl. Ray-Ban Meta) largest brand; % not disclosed",
+  "litigation": "French competition authority fine (2022, appealed) - not re-verified",
+  "reimbursement": "Partial (vision insurance e.g. EyeMed; France 100% Santé)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G7: travel retail (Sunglass Hut airports) small; wearables ~6% AI-consumer theme, below thresholds."
+ },
+ "bull_points": [
+  "Unmatched vertical integration in eyewear",
+  "Myopia and wearables growth",
+  "Balanced geography"
+ ],
+ "bear_points": [
+  "Discretionary/luxury sunglass exposure",
+  "Wearables dependence on Meta partnership",
+  "Controlling-shareholder governance"
+ ],
+ "thesis_breakers": [
+  "Constant-FX growth below 4%",
+  "Meta partnership terminated"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "EssilorLuxottica revenue +9% in Q3 to €7.49bn, +7.2% at constant exchange rates",
+   "publisher": "Il Sole 24 Ore",
+   "url": "https://en.ilsole24ore.com/art/essilux-9-per-cent-revenue-in-q3-749-billion-72-per-cent-at-constant-exchange-rates-AJVDnVpB",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Q3 and 9M"
+  },
+  {
+   "id": "S2",
+   "title": "DTC and wearables propel EssilorLuxottica to 7.49 billion euros in Q3",
+   "publisher": "FashionUnited",
+   "url": "https://fashionunited.uk/news/business/dtc-and-wearables-propel-essilorluxottica-to-7-49-billion-euros-in-q3/2026102190951",
+   "doc_date": "2026-10-21",
+   "retrieved": "2026-11-12",
+   "page_ref": "regional, wearables €486m"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41360-68/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

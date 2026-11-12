@@ -1,0 +1,422 @@
+{
+ "id": "VIE",
+ "name": "Veolia Environnement SA",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "Euronext Paris",
+  "ticker": "VIE",
+  "isin": "FR0000124141",
+  "hq": "Paris (Aubervilliers), France",
+  "domicile": "France",
+  "corporate_actions": [
+   {
+    "date": "2026-06-01",
+    "event": "Completed acquisition of Clean Earth (US hazardous waste) from Enviri, EV ~$3.0bn",
+    "source": "S3"
+   },
+   {
+    "date": "2026-11-05",
+    "event": "EUR570m of disposals signed at 10.4x EBITDA within >EUR2bn plan",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "12326-77",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "France",
+  "largest_country_pct": 19.0,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "France 19%, US 11% of 2025 revenue (EUR44.4bn); North America ~$5.3bn incl. Water Technologies; rest spread across Central/Eastern Europe, UK, Germany, Australia, Asia, LatAm, Middle East (EM share not quantified; China operations exist - % not disclosed in sources reviewed).",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "9M-2026",
+   "organic_pct": 2.6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 2.8,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 1.4,
+   "source_id": "S2"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "9M-26 revenue / EBITDA",
+   "value": "EUR33,310m / EUR5,404m (+5.1% organic), margin 16.2% (+50bp)",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Water Technologies revenue",
+   "value": "EUR3,403m, -2.5% (+2.6% excl. projects)",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "2025 revenue / EBITDA / current net income",
+   "value": "EUR44,396m / EUR7,050m / EUR1,643m",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Net financial debt",
+   "value": "EUR24,548m (H1-26) vs EUR20,764m (H1-25); leverage ~3x guided YE26",
+   "period": "H1 2026",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "Clean Earth synergies",
+   "value": "$120m by year 4; ~9.8x 2026 EBITDA post-synergy",
+   "period": "2026",
+   "class": "TARGET",
+   "source_id": "S3"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "2.28x (PitchBook TTM 2Q2026; definitions differ from company)",
+   "period": "TTM 2Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Net free cash flow (company definition)",
+   "value": null,
+   "currency": "EUR m",
+   "source_id": "not collected"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "not collected (IFRS cash-flow statement in 2025 URD)"
+ },
+ "acquisitions": [
+  {
+   "fy": "2026",
+   "cash_spent": 3040,
+   "currency": "USD m",
+   "earnouts": "",
+   "notes": "Clean Earth aggregate cash consideration $3.04bn (EV ~$3.0bn / EUR2.57bn)",
+   "source_id": "S3"
+  }
+ ],
+ "management": {
+  "ceo": "Estelle Brachlianoff",
+  "ceo_since": "2022-07 (prior knowledge)",
+  "cfo": "Emmanuelle Menning (prior knowledge, not re-verified)",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO transition 2022 (Frérot -> Brachlianoff), Frérot remained Chairman; not otherwise catalogued",
+  "succession_notes": "",
+  "guidance_record": "2026 guidance 'fully confirmed' at 9M; GreenUp plan on track"
+ },
+ "ownership": {
+  "controlling_holders": "None; Caisse des Dépôts and employees are notable holders (prior knowledge)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "French AFEP-MEDEF code; double voting rights possible under French law (not verified)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-07-30",
+   "item": "2026 organic EBITDA growth",
+   "value": "+5% to +6%",
+   "class": "TARGET",
+   "source_id": "S4"
+  },
+  {
+   "date": "2026-07-30",
+   "item": "2026 current net income growth",
+   "value": "min. +8% incl. Clean Earth",
+   "class": "TARGET",
+   "source_id": "S4"
+  },
+  {
+   "date": "2026-07-30",
+   "item": "YE2026 leverage",
+   "value": "equal to or slightly above 3x",
+   "class": "TARGET",
+   "source_id": "S4"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Long-term municipal water concessions and waste contracts; energy services (S2)"
+   ],
+   "rationale": "Largely contracted, but Water Tech projects and energy prices add volatility."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "#1 global water operator; hazardous-waste permits (S3)"
+   ],
+   "rationale": "Permits, concessions and technology; contract renewals competitive."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "EBITDA margin ~16% (S1)"
+   ],
+   "rationale": "Scale without clear margin superiority."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Organic +2.6% 9M (S1)",
+    "Hazardous waste, water tech, PFAS growth focus (S3)"
+   ],
+   "rationale": "Moderate; growth via US hazardous waste."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "France 19%, US 11%; no country >40% (S2)",
+    "EM exposure present, not quantified"
+   ],
+   "rationale": "Broad spread; some EM."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Guidance confirmed (S1)"
+   ],
+   "rationale": "Delivered."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "$3bn Clean Earth at ~9.8x post-synergy; disposals at 10.4x (S1, S3)"
+   ],
+   "rationale": "Portfolio rotation sensible; leverage ~3x."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Standard French governance"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical utility operations"
+   ],
+   "rationale": "Not substitutable."
+  },
+  "I2": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Water Technologies serves data-centre cooling/ultrapure water (INFERENCE); not quantified"
+   ],
+   "rationale": "Low-single-digit DC exposure; not disclosed."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Large labour base (~200k employees, prior knowledge)"
+   ],
+   "rationale": "Large addressable cost base."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Many contracts cost-plus/indexed with productivity sharing (INFERENCE)"
+   ],
+   "rationale": "Concession formulas pass savings to clients."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Indexation clauses; energy-price pass-through (S1 'excl. energy prices')"
+   ],
+   "rationale": "Good contractual pass-through."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Current vs reported metrics; PPA adjustments (S1)"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Data-centre water/cooling services exist in Water Technologies; revenue share not disclosed. INFERENCE <3%."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Landfill/hazardous site closure provisions; PFAS treatment is a growth line (and liability risk in hazardous waste). Not quantified this pass.",
+  "commodity_sensitivity": "Energy prices (district heating, Central Europe), recycled materials; Water Tech project cyclicality."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: provider 2.28x; company ~3x guided - below services thresholds (3.5x). G6: no pending transaction for Veolia itself. G7: UK exposure (waste PFI) <40%."
+ },
+ "bull_points": [
+  "Diversified, inflation-indexed contracts across >40 countries.",
+  "US hazardous waste doubled via Clean Earth with $120m synergy target.",
+  "Asset rotation at 10.4x supports deleveraging."
+ ],
+ "bear_points": [
+  "Low organic growth (+2.6%) and ~16% EBITDA margin; Water Tech projects declining.",
+  "Leverage ~3x with large concession capital needs.",
+  "Complex conglomerate with EM/China and energy exposure."
+ ],
+ "thesis_breakers": [
+  "Organic EBITDA growth <4% in FY2027.",
+  "Leverage above 3.3x at YE2027.",
+  "Clean Earth synergies below $60m by 2028."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Veolia nine months 2026 key figures",
+   "publisher": "Veolia",
+   "url": "https://www.veolia.com/en/our-media/press-releases/nine-months-2026-key-figures.md",
+   "doc_date": "2026-11-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "Headline table"
+  },
+  {
+   "id": "S2",
+   "title": "Veolia full year 2025 results",
+   "publisher": "Veolia",
+   "url": "https://www.veolia.com/en/our-media/press-releases/full-year-2025-results",
+   "doc_date": "2026-02-26",
+   "retrieved": "2026-11-12",
+   "page_ref": "Headline table; revenue by country (France, US)"
+  },
+  {
+   "id": "S3",
+   "title": "Veolia completes $3 billion Clean Earth acquisition",
+   "publisher": "Pulse 2.0 / Waste Dive (secondary)",
+   "url": "https://pulse2.com/veolia-completes-3-billion-clean-earth-acquisition-doubling-u-s-hazardous-waste-business/",
+   "doc_date": "2026-06-01",
+   "retrieved": "2026-11-12",
+   "page_ref": "Deal terms"
+  },
+  {
+   "id": "S4",
+   "title": "Very Solid H1 Performance Confirming Strength of Veolia Business Model",
+   "publisher": "Veolia via Business Wire",
+   "url": "https://www.businesswire.com/news/home/20260729716027/en/Very-Solid-H1-Performance-Confirming-Strength-of-Veolia-Business-Model",
+   "doc_date": "2026-07-30",
+   "retrieved": "2026-11-12",
+   "page_ref": "Guidance, net financial debt"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 12326-77",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/12326-77/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/VIE.json"
+  }
+ ]
+}

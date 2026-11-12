@@ -1,0 +1,368 @@
+{
+ "id": "COST",
+ "name": "Costco Wholesale Corporation",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "COST",
+  "isin": "US22160K1051",
+  "hq": "Issaquah, Washington, USA",
+  "domicile": "United States (Washington)",
+  "corporate_actions": [
+   {
+    "date": "2024-09",
+    "event": "US/Canada membership fee increase (to USD65/130) - recalled",
+    "source": "S4"
+   }
+  ]
+ },
+ "pitchbook_pbid": "41133-61",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 86,
+  "uk_pct": null,
+  "other_pct": 14,
+  "largest_country": "United States",
+  "largest_country_pct": 73,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Costco US ~73%, Canada ~13%, Other International ~14% (incl. Mexico, Japan, Korea, Taiwan, UK, Australia, Spain, France, China, Sweden, NZ) (S2). UK and China small (<2% each, INFERENCE from warehouse counts).",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "FY2026",
+   "organic_pct": 6.6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 10.1,
+   "source_id": "S1",
+   "note": "organic = comparable sales excl. gasoline and FX (company measure); traffic/ticket split not retrieved"
+  },
+  {
+   "fy": "Q4-FY2026",
+   "organic_pct": 6.7,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 11.2,
+   "source_id": "S1",
+   "note": "comparable sales excl. gas/FX; total comps +9.4%"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Net sales",
+   "value": "USD297.2bn (+10.1%)",
+   "period": "FY2026 (to 30-Aug-2026)",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Membership fee income",
+   "value": "USD5.91bn (FY2025: USD5.32bn)",
+   "period": "FY2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Warehouses",
+   "value": "939 at FY-end; 25 net new in FY2026",
+   "period": "FY2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Renewal rate",
+   "value": "~92% US & Canada; ~90% worldwide",
+   "period": "FY2025",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Grocery share of sales",
+   "value": "~55% food/grocery; ~25% general merchandise",
+   "period": "FY2025",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Net income",
+   "value": "USD9.2bn; Q4 incl. USD0.15/sh IEEPA tariff refund benefit",
+   "period": "FY2026",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "FY2026",
+   "definition": "OCF - capex (no company-defined FCF)",
+   "value": null,
+   "currency": "USD",
+   "source_id": "",
+   "note": "not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "FY2026",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "FY2026",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "US GAAP; mostly owned warehouses"
+ },
+ "acquisitions": [
+  {
+   "fy": "FY2026",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "not disclosed",
+   "notes": "No material acquisitions; organic warehouse growth",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Ron Vachris",
+  "ceo_since": "2024-01-01",
+  "cfo": "Gary Millerchip",
+  "cfo_since": "2024-03",
+  "senior_turnover_5y": "Low; orderly (Jelinek -> Vachris)",
+  "succession_notes": "Internal, planned",
+  "guidance_record": "No formal guidance; consistent comps delivery"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Majority independent (not re-verified)",
+  "remuneration_notes": "Modest executive pay vs peers (INFERENCE)",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-09-24",
+   "item": "Warehouse openings",
+   "value": "~25-30 net new per year (management commentary; not re-verified)",
+   "source_id": "S3"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Membership fees USD5.9bn, ~90%+ renewal (S1,S2)",
+    "Grocery ~55% of sales (S2)"
+   ],
+   "rationale": "Recurring membership model with high retention and consumable mix."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Renewal ~92% US/Canada (S2)",
+    "Comps +6.6% ex gas/FX (S1)"
+   ],
+   "rationale": "Membership/bulk-buying model with structural price advantage and loyalty."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Purchasing scale drives lowest prices and share gains; 939 warehouses (S1)"
+   ],
+   "rationale": "Scale demonstrably converts into price leadership and traffic."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "25 net new warehouses FY2026 (S1)",
+    "International and e-commerce runway"
+   ],
+   "rationale": "Long runway with high incremental returns."
+  },
+  "E": {
+   "score": 2,
+   "confidence": "H",
+   "evidence": [
+    "US ~73% of revenue (S2)"
+   ],
+   "rationale": "Single country >70%."
+  },
+  "F": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Orderly succession; consistent execution (S3)"
+   ],
+   "rationale": "Excellent management continuity."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Organic expansion, special dividends, no M&A (S2)"
+   ],
+   "rationale": "Disciplined; buybacks modest."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Widely held; independent board"
+   ],
+   "rationale": "Strong governance culture."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Physical warehouse model; AI shopping agents a minor disintermediation risk (INFERENCE)"
+   ],
+   "rationale": "Low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue (electronics resale immaterial)"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Lean SG&A ~9% of sales (INFERENCE)"
+   ],
+   "rationale": "Limited cost base to address."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Capped mark-up philosophy passes savings to members (INFERENCE)"
+   ],
+   "rationale": "Savings largely passed through by design."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Grocery-heavy, gains share in downturns; tariff refunds (S1)"
+   ],
+   "rationale": "Resilient model; low margin buffer."
+  },
+  "K": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Simple accounts; cash ~ profit (INFERENCE)"
+   ],
+   "rationale": "High accounting quality."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre revenue."
+ },
+ "sector_specific": {
+  "price_pct": null,
+  "volume_pct": null,
+  "price_volume_note": "Retailer: traffic vs ticket split and inflation not retrieved (data gap); adjusted comps +6.6% FY2026",
+  "private_label_risk": "Beneficiary: Kirkland Signature private label is a core advantage (~one-third of sales, INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "retail - not applicable"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: net cash (PitchBook). G7: UK ~small; no UK consumer concentration."
+ },
+ "bull_points": [
+  "Membership flywheel: ~USD5.9bn fees, ~90%+ renewal (S1,S2)",
+  "Consistent mid-to-high single digit comps ex gas/FX (+6.6% FY2026) (S1)",
+  "25+ net new warehouses per year with international runway"
+ ],
+ "bear_points": [
+  "US ~73% of revenue: limited diversification (S2)",
+  "Thin margins (~3-4% EBIT) leave little room for error; tariff/wage pressure",
+  "Valuation historically very high (multiple risk)"
+ ],
+ "thesis_breakers": [
+  "US/Canada renewal rate below 90%",
+  "Adjusted comps below 3% for a full fiscal year",
+  "Net new warehouses below 15 per year"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Costco reports USD93.9bn Q4 sales and USD297.2bn fiscal 2026 sales",
+   "publisher": "Pulse 2.0 / Costco release; Grocery Dive",
+   "url": "https://pulse2.com/costco-reports-93-9-billion-in-q4-sales-and-297-2-billion-in-fiscal-2026-sales-as-net-income-reaches-9-2-billion/",
+   "doc_date": "2026-09-24",
+   "page_ref": "Q4/FY2026 results (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "PitchBook company profile and financials: Costco (41133-61)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/41133-61/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile (segment mix, renewal); data/raw/pitchbook/COST.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "Transcript: Costco Wholesale Q4 earnings call highlights",
+   "publisher": "MarketBeat",
+   "url": "https://www.marketbeat.com/instant-alerts/transcript-costco-wholesale-q4-earnings-call-highlights-2026-09-24/",
+   "doc_date": "2026-09-24",
+   "page_ref": "Management commentary (not fetched; title only)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "Costco membership fee increase 2024",
+   "publisher": "Costco",
+   "url": "https://investor.costco.com/",
+   "doc_date": "2024-07",
+   "page_ref": "Recalled, not re-fetched"
+  }
+ ]
+}

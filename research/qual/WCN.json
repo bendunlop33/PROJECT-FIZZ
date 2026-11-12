@@ -1,0 +1,436 @@
+{
+ "id": "WCN",
+ "name": "Waste Connections, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE / TSX",
+  "ticker": "WCN",
+  "isin": "CA94106B1013",
+  "hq": "Woodbridge, Ontario, Canada (US admin in The Woodlands, TX)",
+  "domicile": "Canada (Ontario)",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "41912-74",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 100.0,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Canada segment is one of six; INFERENCE Canada ~15-20% of revenue, US ~80-85%. CAD translation small (FX -0.2% Q3-26).",
+  "source_ids": [
+   "S1",
+   "S3"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 4.5,
+   "price_pct": 4.3,
+   "volume_mix_pct": -1.2,
+   "acq_pct": null,
+   "fx_pct": -0.2,
+   "reported_pct": 7.3,
+   "source_id": "S1"
+  },
+  {
+   "fy": "9M-2026",
+   "organic_pct": 3.8,
+   "price_pct": 4.5,
+   "volume_mix_pct": -1.5,
+   "acq_pct": null,
+   "fx_pct": 0.1,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": 7.0,
+   "volume_mix_pct": -3.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "MS1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Solid waste core price",
+   "value": "5.5% (Q3) / 5.7% (9M)",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adj. EBITDA margin",
+   "value": "34.0% Q3; 33.1% 9M",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adj. FCF / revenue",
+   "value": "14.4% (9M)",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Active landfills",
+   "value": "113 (incl. E&P and specialty)",
+   "period": "2024/25",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "Weighted-average remaining landfill life",
+   "value": "~31 years",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "MS2"
+  },
+  {
+   "name": "Capex intensity 2026E",
+   "value": "~12.4% of revenue ($1.25bn / $10.09bn)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "FCF / adj. EBITDA 2026E",
+   "value": "~43% ($1.425bn / $3.345bn)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "3.11x",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "9M 2026",
+   "definition": "Adjusted FCF: OCF adj. for book overdrafts, plus disposal proceeds, less capex; adds back transaction/exec separation costs and contingent consideration",
+   "value": 1090,
+   "currency": "USD m",
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 outlook",
+   "definition": "as above",
+   "value": 1425,
+   "currency": "USD m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "9M 2026",
+   "cash_spent": 368.7,
+   "currency": "USD m",
+   "earnouts": "Contingent consideration payments added back in adj. FCF",
+   "notes": "~$130m annualised revenue acquired",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Ronald J. Mittelstaedt (President & CEO)",
+  "ceo_since": "Founder-CEO 1997-2019; returned as CEO 2023 (prior knowledge)",
+  "cfo": "Mary Anne Whitney (prior knowledge, not re-verified)",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO Worthing Jackman departed 2023 (executive separation costs referenced in release); founder returned",
+  "succession_notes": "Succession is a key-person risk given founder return",
+  "guidance_record": "2026 outlook raised again at Q3"
+ },
+ "ownership": {
+  "controlling_holders": "None",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-21",
+   "item": "FY2026 revenue",
+   "value": "~$10.09bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-21",
+   "item": "FY2026 adj. EBITDA",
+   "value": "~$3.345bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-21",
+   "item": "FY2026 adj. FCF",
+   "value": "$1.40-1.45bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "~40%+ of solid waste in exclusive/franchise markets (company strategy; prior knowledge)",
+    "Core price 5.7% 9M (S1)"
+   ],
+   "rationale": "Recurring, franchise-heavy revenue."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Secondary/rural exclusive markets; 113 landfills (S3)",
+    "Wide moat (MS1)"
+   ],
+   "rationale": "Exclusive franchises and disposal ownership give strongest pricing power in group."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Peer-leading 34% adj. EBITDA margin (S1, MS2)"
+   ],
+   "rationale": "Demonstrable margin advantage vs WM/RSG from market selection and density."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Steady tuck-ins ($130m revenue acquired 9M) (S1)",
+    "Fragmented secondary markets (INFERENCE)"
+   ],
+   "rationale": "Long M&A runway in fragmented markets; organic volume weak."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "US ~80-85% (INFERENCE)"
+   ],
+   "rationale": "US >70% per anchor; Canada adds some diversification."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "2023 CEO departure; founder return (S1 mention of separation costs)",
+    "Repeated guidance raises (S1)"
+   ],
+   "rationale": "Strong delivery but succession uncertainty."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Disciplined tuck-ins, 16th consecutive dividend raise, >$0.9bn buybacks 9M (S1)"
+   ],
+   "rationale": "Good allocation record."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "No controlling holder"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical service"
+   ],
+   "rationale": "Not AI-substitutable."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No DC dependence (INFERENCE)"
+   ],
+   "rationale": "<2%."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Routing/automation (INFERENCE)"
+   ],
+   "rationale": "Moderate."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Exclusive markets (S1)"
+   ],
+   "rationale": "Retains savings."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Diesel spike absorbed; surcharges +1.3% (S1)",
+    "E&P waste and commodity exposure (S1)"
+   ],
+   "rationale": "Good pass-through; some E&P cyclicality."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adj. NI $398.9m vs reported $359.2m Q3 (S1)"
+   ],
+   "rationale": "Moderate adjustments (amortisation, transaction costs)."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not disclosed; INFERENCE <2%."
+ },
+ "sector_specific": {
+  "landfills": 113,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Closure/post-closure obligations (amount not re-read); Chiquita Canyon (CA) landfill reaction/odour event - remediation and legal costs since 2023 and landfill closure (prior knowledge; verify in 10-K). PFAS leachate risk.",
+  "commodity_sensitivity": "Recycling small (+0.3% Q3); E&P waste (oil & gas activity) and RNG; diesel recovered via surcharges."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: 3.11x provider < 4.0x waste threshold. G2: Chiquita Canyon regulatory/legal matters are operational, not accounting - C but monitor. G4: 9M adj. FCF $1.09bn vs TTM NI $1.13bn - pass."
+ },
+ "bull_points": [
+  "Industry-leading margins from exclusive/secondary markets.",
+  "Long M&A runway and consistent dividend growth.",
+  "Adj. FCF 14% of revenue, double-digit growth targeted."
+ ],
+ "bear_points": [
+  "Unit volumes negative (-1.5% 9M) for several years; reliance on price.",
+  "Chiquita Canyon environmental liability and reputational risk.",
+  "Founder-CEO succession risk."
+ ],
+ "thesis_breakers": [
+  "Solid waste core price <4.5%.",
+  "Material incremental Chiquita Canyon charge (>$250m) or new landfill incident.",
+  "Adj. EBITDA margin <32% in FY2027."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Waste Connections Q3 2026 results (Form 8-K Ex.99.1)",
+   "publisher": "Waste Connections / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001318220/000110465926117838/wcn-ex99d1.htm",
+   "doc_date": "2026-10-21",
+   "retrieved": "2026-11-12",
+   "page_ref": "Organic growth table, adj. FCF, outlook"
+  },
+  {
+   "id": "S3",
+   "title": "PitchBook company profile: Waste Connections (113 landfills, 222 transfer stations as of 2024)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41912-74/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  },
+  {
+   "id": "MS1",
+   "title": "Waste Connections Will Continue to Achieve Strong Yields Given Its Advantageous Footprint (Morningstar)",
+   "publisher": "Morningstar via PitchBook",
+   "url": "https://my.pitchbook.com/research-center/report/ce4595ff-70ee-3fc5-bae0-2a29c415b34a",
+   "doc_date": "2026-01-23",
+   "retrieved": "2026-11-12",
+   "page_ref": "2024 core price ~7%, ~3pt volume headwind (as summarised)"
+  },
+  {
+   "id": "MS2",
+   "title": "Waste Connections Should Be Able To Maintain Industry Leading Margins (Morningstar)",
+   "publisher": "Morningstar via PitchBook",
+   "url": "https://my.pitchbook.com/research-center/report/2aa3b0c2-ccf7-3b03-b609-2393b80403f4",
+   "doc_date": "2026-03-13",
+   "retrieved": "2026-11-12",
+   "page_ref": "Weighted-average remaining landfill life: WCN ~31y, RSG ~56y, WM ~40y (as summarised)"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 41912-74",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41912-74/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/WCN.json"
+  }
+ ]
+}

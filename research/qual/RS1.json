@@ -1,0 +1,346 @@
+{
+ "id": "RS1",
+ "name": "RS Group plc",
+ "as_of": "2026-11-12",
+ "agent": "S4",
+ "listing": {
+  "status": "listed",
+  "exchange": "London Stock Exchange (FTSE 250)",
+  "ticker": "RS1",
+  "isin": "GB0003096442",
+  "hq": "London, United Kingdom",
+  "domicile": "United Kingdom (England & Wales plc)",
+  "corporate_actions": [
+   {
+    "date": "2026-11-05",
+    "event": "H1 FY2026/27 results (to 30-Sep-2026): 'strong first half; outperformance in all regions'; PBT +8% to GBP121m",
+    "source": "S1"
+   },
+   {
+    "date": "2026-05-20",
+    "event": "FY2025/26 results: group like-for-like revenue broadly flat; reported -1%",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "59368-42",
+ "geography": {
+  "fy": "FY2025/26",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "not extracted",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Segments EMEA (majority), Americas, Asia Pacific (PitchBook). INFERENCE: EMEA ~55-60% incl. UK ~20-25%, Americas ~30%, APAC ~10%; not verified this run.",
+  "source_ids": [
+   "S3"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "FY2025/26 (Mar)",
+   "organic_pct": 0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -1,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "PitchBook gross margin (TTM)",
+   "value": "~43.5%",
+   "period": "TTM 2Q2027",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "PitchBook EBITDA margin (TTM)",
+   "value": "~10.8%",
+   "period": "TTM 2Q2027",
+   "class": "FACT",
+   "source_id": "S4"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "FY2025/26",
+   "definition": "not extracted (screen depth)",
+   "value": null,
+   "currency": "GBP",
+   "source_id": "S2"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "latest",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "latest",
+    "value": null
+   }
+  ],
+  "source_id": "screen-depth: not extracted"
+ },
+ "acquisitions": [
+  {
+   "fy": "2023-2025",
+   "cash_spent": null,
+   "currency": "GBP",
+   "earnouts": "",
+   "notes": "Distrelec (2023) and other bolt-ons historically; not quantified at screen depth",
+   "source_id": "S3"
+  }
+ ],
+ "management": {
+  "ceo": "Simon Pryce",
+  "ceo_since": "not verified (appointed after Lindsley Ruth's 2024 departure)",
+  "cfo": "not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO change 2024-25 (not verified in detail)",
+  "succession_notes": "",
+  "guidance_record": "FY24-FY26 weak (LFL declines/flat); H1 FY27 beat consensus (S1)"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-05",
+   "item": "Outlook",
+   "value": "Good start to FY26/27; tougher H2 comparatives; managing inflation/fuel costs (no numeric guidance found)",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "High-mix, small-ticket electronics/MRO orders [S3]",
+    "Cyclical electronics demand (FY25-26 flat) [S2]",
+    "-"
+   ],
+   "rationale": "Repeat small-ticket purchases but cyclical design/electronics exposure."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Broad catalogue and digital channel",
+    "Competition from Farnell/Mouser/Digi-Key and Amazon Business",
+    "-"
+   ],
+   "rationale": "Some differentiation."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "EBITDA margin ~11% [S4]",
+    "Global scale",
+    "-"
+   ],
+   "rationale": "Scale with average economics."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Service solutions growth",
+    "Fragmented MRO",
+    "-"
+   ],
+   "rationale": "Moderate."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "EMEA/Americas/APAC spread [S3]",
+    "UK likely <30%",
+    "-"
+   ],
+   "rationale": "Reasonably balanced."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "CEO change",
+    "Multi-year LFL declines [S2]",
+    "H1 FY27 beat [S1]"
+   ],
+   "rationale": "Mixed/weak record."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "-",
+    "-",
+    "-"
+   ],
+   "rationale": "Not assessed in depth."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Widely held",
+    "-",
+    "-"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Online catalogue distribution exposed to AI-enabled procurement/marketplaces",
+    "-",
+    "-"
+   ],
+   "rationale": "Moderate."
+  },
+  "I2": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Electronics/design engineer customers; DC exposure not quantified",
+    "-",
+    "-"
+   ],
+   "rationale": "Low-moderate."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "-",
+    "-",
+    "-"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "-",
+    "-",
+    "-"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Inflation/fuel cost pressure [S1]",
+    "-",
+    "-"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Adjusted measures used",
+    "-",
+    "-"
+   ],
+   "rationale": "Not assessed in depth."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not disclosed; electronics component distribution has indirect semiconductor-cycle exposure."
+ },
+ "sector_specific": {
+  "ai_dc_pct": null,
+  "semis_pct": null,
+  "construction_pct": null,
+  "acquisition_growth_pct": null,
+  "notes": "Screen depth; electronics share of revenue tied to semiconductor/electronics cycle (not quantified)."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Screen depth: PitchBook ND/EBITDA ~1.1x (incl. leases); no transaction pending identified; UK B2B not consumer."
+ },
+ "bull_points": [
+  "H1 FY27 outperformance in all regions and PBT +8% (S1)",
+  "Cyclical recovery leverage after flat FY26 (S2)"
+ ],
+ "bear_points": [
+  "Multi-year flat/declining like-for-like revenue (S2)",
+  "Price-transparent online catalogue model vs large competitors (INFERENCE)",
+  "Electronics/semiconductor cycle sensitivity (INFERENCE)"
+ ],
+ "thesis_breakers": [
+  "LFL revenue negative for a full year again",
+  "Adjusted operating margin below 8%"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "RS Group Half Year Financial Report (to 30 Sep 2026)",
+   "publisher": "RS Group plc via Investegate / HL",
+   "url": "https://www.investegate.co.uk/announcement/rns/rs-group--rs1/half-year-financial-report/9859169",
+   "doc_date": "2026-11-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "Headline and CEO comment (via search summaries)"
+  },
+  {
+   "id": "S2",
+   "title": "RS Group Final Results 2025/26",
+   "publisher": "RS Group plc",
+   "url": "https://www.rsgroup.com/media/oyxhkuz1/rs-group-2025-26-results.pdf",
+   "doc_date": "2026-05-20",
+   "retrieved": "2026-11-12",
+   "page_ref": "Group LFL revenue (via search summary)"
+  },
+  {
+   "id": "S3",
+   "title": "PitchBook company profile RS Group",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/59368-42/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  },
+  {
+   "id": "S4",
+   "title": "PitchBook financials RS Group (59368-42)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/59368-42/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/RS1.json"
+  }
+ ]
+}

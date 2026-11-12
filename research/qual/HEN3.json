@@ -1,0 +1,278 @@
+{
+ "id": "HEN3",
+ "name": "Henkel AG & Co. KGaA",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "Xetra (DAX)",
+  "ticker": "HEN3 (preferred, non-voting); HEN (ordinary)",
+  "isin": "DE0006048432 (HEN3)",
+  "hq": "Dusseldorf, Germany",
+  "domicile": "Germany",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "11933-92",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": 38,
+  "north_america_pct": 26,
+  "uk_pct": null,
+  "other_pct": 36,
+  "largest_country": "not verified",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Europe 38%, North America 26%, Asia-Pacific 17%, other (IMEA, LatAm) remainder (S2).",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "H1-2026",
+   "organic_pct": 3.2,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1",
+   "note": "AT +4.5% (pricing and volume), Consumer Brands +1.7%"
+  },
+  {
+   "fy": "Q3-2026",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1",
+   "note": "AT +7.9% (mainly pricing), Consumer Brands +4.8% (pricing and volume); group not retrieved"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Segment mix",
+   "value": "Adhesive Technologies ~53%, Consumer Brands ~47%",
+   "period": "FY2025",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Carsten Knobel",
+  "ceo_since": "2020-01",
+  "cfo": "Marco Swoboda",
+  "cfo_since": "2020",
+  "senior_turnover_5y": "not reviewed (screen depth)",
+  "succession_notes": "",
+  "guidance_record": "FY2026 organic guidance raised to 3-4% at Q3 (S1)"
+ },
+ "ownership": {
+  "controlling_holders": "Henkel family share-pooling agreement controls majority of ordinary (voting) shares",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "KGaA structure (family-controlled personally liable partner)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "not reviewed"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-10-29",
+   "item": "FY2026 organic sales growth",
+   "value": "+3% to +4% (raised from 1.5-3.5%)",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "53% industrial adhesives - cyclical (S2)"
+   ],
+   "rationale": "Mixed recurring consumer + cyclical industrial."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Global #1 in adhesives (Loctite, Technomelt) (INFERENCE)"
+   ],
+   "rationale": "Specification-driven adhesives moat; consumer brands average."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Scale in adhesives"
+   ],
+   "rationale": "Unclear economics vs peers."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "AT +7.9% Q3-26 (S1)"
+   ],
+   "rationale": "Moderate."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Europe 38%, NA 26%, APAC 17% (S2)"
+   ],
+   "rationale": "Balanced spread."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Guidance raised 2026 (S1)"
+   ],
+   "rationale": "Mixed history; improving."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Consumer merger (Henkel Consumer Brands) and portfolio pruning"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Non-voting HEN3 prefs; family-controlled KGaA (S2)"
+   ],
+   "rationale": "Weak minority voting rights (structure)."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical products"
+   ],
+   "rationale": "Very low AI risk."
+  },
+  "I2": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Electronics adhesives/thermal materials for semis/data centres (INFERENCE)"
+   ],
+   "rationale": "Small AI/semis tie; not quantified."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "SG&A base"
+   ],
+   "rationale": "Some scope."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Spec pricing in AT"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Industrial cyclicality; raw materials"
+   ],
+   "rationale": "Partial pass-through."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Restructuring charges (INFERENCE)"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Adhesive Technologies Electronics serves semiconductor packaging and data-centre hardware; share of group revenue not disclosed this session (likely mid-single digit, INFERENCE)."
+ },
+ "sector_specific": {
+  "price_pct": null,
+  "volume_pct": null,
+  "private_label_risk": "High in laundry/home care in Europe (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "not disclosed"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Screen depth. G5: AI/semis exposure via electronics adhesives likely <15% - C, low confidence. Dual-class/KGaA governance noted (H=2)."
+ },
+ "bull_points": [
+  "Adhesives leadership with pricing (AT +7.9% Q3-26) (S1)",
+  "Balanced geography"
+ ],
+ "bear_points": [
+  "Half the business is cyclical industrial",
+  "Non-voting prefs; family control",
+  "Consumer laundry faces private label and P&G/Unilever"
+ ],
+ "thesis_breakers": [
+  "AT organic negative for a full year",
+  "Consumer Brands organic <0% FY2027"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Henkel lifts 2026 sales outlook after pricing drives Q3 beat / H1 2026 coverage",
+   "publisher": "Reuters via Euronext; ESM Magazine",
+   "url": "https://live.euronext.com/en/financial-news/henkel-lifts-2026-sales-outlook-after-pricing-drives-q3-beat",
+   "doc_date": "2026-10-29",
+   "page_ref": "Segment organic growth (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "PitchBook company profile and financials: Henkel (11933-92)",
+   "publisher": "PitchBook / Morningstar",
+   "url": "https://my.pitchbook.com/profile/11933-92/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/HEN3.json"
+  }
+ ]
+}

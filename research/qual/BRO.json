@@ -1,0 +1,379 @@
+{
+ "id": "BRO",
+ "name": "Brown & Brown, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "BRO",
+  "isin": "US1152361010",
+  "hq": "Daytona Beach, FL, USA",
+  "domicile": "US (Florida)",
+  "corporate_actions": [
+   {
+    "date": "2025-08-01",
+    "event": "Completed acquisition of Accession Risk Management Group (Risk Strategies, One80 Intermediaries), ~$9.83bn",
+    "source": "S6"
+   }
+  ]
+ },
+ "pitchbook_pbid": "11665-90",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Geographic disclosure: US, UK and Other; US is the large majority (>80%, INFERENCE - exact % not extracted).",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2024",
+   "organic_pct": 10.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 2.8,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 22.8,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": 1.2,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 7.4,
+   "source_id": "S3"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3-26 organic by segment: Retail / Specialty Distribution",
+   "value": "+2.6% / -0.8%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "Adj EBITDAC margin",
+   "value": "34.6% Q3-26 (-200bp y/y)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "Fiduciary cash",
+   "value": "$2,442m at 30-Sep-2026",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Investment and other income",
+   "value": "$25m Q3-26 vs $56m Q3-25",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Total debt (current + LT)",
+   "value": "~$7,759m at 30-Sep-2026 (sum of balance-sheet lines)",
+   "period": "Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S2"
+  },
+  {
+   "name": "Share repurchases",
+   "value": "~$756m 9M-26",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Gross debt / EBITDA (provider)",
+   "value": "~3.2x (PitchBook TTM 3Q26)",
+   "period": "TTM Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2025",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "Change in estimated earn-out payables: +$27m expense Q3-26, $(7)m benefit 9M-26; escrow liability MTM benefit $(83)m 9M-26 (S2). Liability balance not extracted.",
+   "notes": "Accession ~$9.83bn (~$4bn equity, ~$4bn new debt). Implied ~16x adj EBITDAC using reported ~$1.7bn revenue and ~36.7% margin - ESTIMATE, not a company multiple.",
+   "source_id": "S6"
+  }
+ ],
+ "management": {
+  "ceo": "J. Powell Brown",
+  "ceo_since": "2009",
+  "cfo": "R. Andrew Watts",
+  "cfo_since": "2014 (not re-verified)",
+  "senior_turnover_5y": "Low",
+  "succession_notes": "Brown family-led; succession plan not reviewed",
+  "guidance_record": "Guided improved organic for 2026 in Jan-2026 (S4) but Q2-26 organic negative and Q3-26 only 1.2% (S3) - miss vs expectation"
+ },
+ "ownership": {
+  "controlling_holders": "Brown family (J. Hyatt Brown and family) significant but non-controlling holders - % not extracted",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "not reviewed"
+ },
+ "guidance": [
+  {
+   "date": "2026-01",
+   "item": "2026 organic",
+   "value": "Expected improved organic performance vs 2025 (qualitative)",
+   "class": "TARGET",
+   "source_id": "S4"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Organic swung from +10.4% (2024) to +2.8% (2025) to negative (Q4-25 -2.8%, Q2-26) (S5,S4,S3)",
+    "Specialty Distribution (wholesale/programs/MGA) exposed to cat property rates and contingents (S3)"
+   ],
+   "rationale": "Retail is recurring, but Specialty/MGA revenue proved more volatile than peers."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Competition from admitted carriers pulling accounts out of E&S hit Specialty Distribution (S3)"
+   ],
+   "rationale": "Decentralised culture is a strength but specialty programmes lack durable pricing power in a soft market."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adj EBITDAC margin ~35% even after -200bp (S3)"
+   ],
+   "rationale": "Best-in-class margin evidences scale/cost discipline, though now declining."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Accession adds ~$1.7bn revenue and specialty MGA scale (S6)"
+   ],
+   "rationale": "Runway via M&A; organic runway currently weak."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "Segments US / UK / Other with US large majority (S1)"
+   ],
+   "rationale": "One country >70%."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Organic well below Jan-2026 expectations (S4,S3)"
+   ],
+   "rationale": "Experienced team, but recent operating misses."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Accession ~$9.83bn half equity-funded (S6)",
+    "$756m buybacks 9M-26 (S2)"
+   ],
+   "rationale": "Large deal at a high multiple; leverage kept ~3.2x."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Brown family significant holders (S1)"
+   ],
+   "rationale": "Founding-family influence; no dual class."
+  },
+  "I1": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Retail mix includes personal lines and small commercial; wholesale/MGA placement (S1)"
+   ],
+   "rationale": "Small-account and personal lines more exposed to digital/embedded distribution (INFERENCE)."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "None identified"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "~5,000 Accession teammates added (S3)"
+   ],
+   "rationale": "Large cost base."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Commission-based (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Specialty Distribution organic -0.8% Q3-26, -7.8% Q4-25 on property cat rate declines (S3,S4)"
+   ],
+   "rationale": "Above-average exposure to the property pricing cycle and contingent commissions."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Earn-out and escrow MTM swings through P&L (S2)"
+   ],
+   "rationale": "Moderate adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None identified."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "INFERENCE: BRO had the highest rate leverage among US brokers (cat property programmes, flood claims processing, wholesale). Organic fell from 10.4% (2024) to 2.8% (2025) and ~1% (2026); management cites soft property/specialty pricing and admitted carriers pulling E&S accounts - i.e. most of the 2023-24 organic premium was rate-driven.",
+  "retention_pct": "not disclosed in sources used",
+  "contingent_consideration": "Earn-out payable P&L change +$27m Q3-26 / -$7m 9M-26; balance not extracted (S2)",
+  "producer_retention": "Q4-25 call flagged 'talent poaching risk' (Coverager, not used as primary)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: ~3.2x PitchBook (company debt ~$7.76bn / EBITDA $2.5bn ~3.1x) < 4.0x. G4 not computed here."
+ },
+ "bull_points": [
+  "Industry-leading ~35% EBITDAC margin and decentralised culture; Accession adds specialty scale and diversifies.",
+  "Organic at cyclical trough; property rate declines eventually lap.",
+  "Buybacks ($756m 9M-26) while keeping leverage ~3x."
+ ],
+ "bear_points": [
+  "Organic growth collapsed from 10.4% to ~1% - evidence that much prior growth was rate-driven.",
+  "Specialty Distribution losing E&S flow to admitted carriers; margins down 200bp.",
+  "Large Accession deal at ~16x (ESTIMATE) closed near the top of the cycle."
+ ],
+ "thesis_breakers": [
+  "Organic growth < 2% for FY2027.",
+  "Adj EBITDAC margin < 33% for a full year.",
+  "Accession revenue declines organically in 2027."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: Brown & Brown (11665-90)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/11665-90/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile (segments; US/UK/Other); TTM 3Q26 debt $8.0bn, EBITDA $2.5bn"
+  },
+  {
+   "id": "S2",
+   "title": "Brown & Brown Form 10-Q for quarter ended 30-Sep-2026",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0000079282/000119312526432146/bro-20260930.htm",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Income statement p.5; balance sheet p.7; equity p.8"
+  },
+  {
+   "id": "S3",
+   "title": "Brown & Brown organic growth recovers to 1.2% as soft market weighs on results",
+   "publisher": "Insurance Business",
+   "url": "https://www.insurancebusinessmag.com/us/news/breaking-news/brown-and-brown-organic-growth-recovers-to-1-2-as-soft-market-weighs-on-results-595056.aspx",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Q3-26 organic 1.2% (1.5% incl. contingents); Retail 2.6%; Specialty Distribution -0.8%; margin 34.6% (-200bp)"
+  },
+  {
+   "id": "S4",
+   "title": "Brown & Brown, Inc. announces fourth quarter 2025 results",
+   "publisher": "Brown & Brown (company press release)",
+   "url": "https://brownandbrown.gcs-web.com/news-releases/news-release-details/brown-brown-inc-announces-fourth-quarter-2025-results-including",
+   "doc_date": "2026-01",
+   "retrieved": "2026-11-12",
+   "page_ref": "FY25 revenue $5.9bn +22.8%, organic +2.8%; Q4 organic -2.8%; Retail FY organic 2.8%"
+  },
+  {
+   "id": "S5",
+   "title": "Brown & Brown announces fourth quarter 2024 results",
+   "publisher": "Brown & Brown (company press release)",
+   "url": "https://brownandbrown.gcs-web.com/node/21481/pdf",
+   "doc_date": "2025-01-27",
+   "retrieved": "2026-11-12",
+   "page_ref": "FY24 organic 10.4%"
+  },
+  {
+   "id": "S6",
+   "title": "Brown & Brown completes acquisition of specialty MGU Accession Risk Management",
+   "publisher": "Insurance Business",
+   "url": "https://insurancebusinessmag.com/us/news/mergers-acquisitions/brown-and-brown-completes-acquisition-of-specialty-mgu-accession-risk-management-544903.aspx",
+   "doc_date": "2025-08-01",
+   "retrieved": "2026-11-12",
+   "page_ref": "~$9.83bn; ~$4bn equity + ~$4bn debt; Accession revenue ~$1.7bn"
+  }
+ ]
+}

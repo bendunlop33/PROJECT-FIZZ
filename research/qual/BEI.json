@@ -1,0 +1,422 @@
+{
+ "id": "BEI",
+ "name": "Beiersdorf AG",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "Xetra / Frankfurt Stock Exchange (DAX)",
+  "ticker": "BEI",
+  "isin": "DE0005200000",
+  "hq": "Hamburg, Germany",
+  "domicile": "Germany",
+  "corporate_actions": [
+   {
+    "date": "2026-10",
+    "event": "9M-2026: guidance cut for Consumer to low-single-digit organic decline; Nivea -6.2% organic 9M",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "59881-06",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "Germany",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "EUR reporter. Regional split (Europe/Americas/Africa-Asia-Australia) not retrieved this session; Europe historically the largest region (~half of sales, not verified). China relevant via La Prairie and Nivea (restructured 2025). tesa (~15% of sales) is industrial/electronics-exposed.",
+  "source_ids": [
+   "S2",
+   "S3"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": 10.2,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 8.3,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 10.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 6.5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 2.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  },
+  {
+   "fy": "9M2026",
+   "organic_pct": -2.8,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Nivea organic growth",
+   "value": "+0.9% FY2025; -6.2% 9M-2026 (EUR3.97bn)",
+   "period": "2025/9M-2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Derma organic growth",
+   "value": "+11.7% FY2025; +8.7% 9M-2026 (EUR1.24bn)",
+   "period": "2025/9M-2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "La Prairie organic growth",
+   "value": "-4.5% FY2025; +8.5% Q3-2026 (China-driven)",
+   "period": "2025/Q3-2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "tesa organic growth",
+   "value": "-4.3% Q3-2026",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Group sales",
+   "value": "EUR9.9bn (FY2025); EUR7.3bn (9M-2026)",
+   "period": "2025/2026",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Net free cash flow (company)",
+   "value": null,
+   "currency": "EUR",
+   "source_id": "",
+   "note": "not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [
+  {
+   "fy": "2025",
+   "cash_spent": null,
+   "currency": "EUR",
+   "earnouts": "not disclosed",
+   "notes": "No material acquisitions identified",
+   "source_id": ""
+  }
+ ],
+ "management": {
+  "ceo": "Vincent Warnery",
+  "ceo_since": "2021-05",
+  "cfo": "Astrid Hermann",
+  "cfo_since": "2022",
+  "senior_turnover_5y": "Moderate: CEO De Loecker -> Warnery (2021)",
+  "succession_notes": "not reviewed",
+  "guidance_record": "Weak: 2025 and 2026 sales guidance cut; Nivea turnaround slower than expected (S4)"
+ },
+ "ownership": {
+  "controlling_holders": "maxingvest ag (Herz family, Tchibo owners) ~51% (PitchBook: 'majority-owned by Maxingvest')",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None identified",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "German two-tier board; controlling holder represented on Supervisory Board (not re-verified)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Controlling shareholder relationship noted neutrally; no abuse identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-10",
+   "item": "FY2026 Consumer organic sales",
+   "value": "low-single-digit decline",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-10",
+   "item": "FY2026 tesa organic sales",
+   "value": "flat to slightly growing",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Skin-care consumables (Nivea, Eucerin) (S3)"
+   ],
+   "rationale": "Repeat consumer purchases; tesa more cyclical."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Derma +11.7% (S2) but Nivea -6.2% 9M-26 (S1)"
+   ],
+   "rationale": "Derma has dermatologist-recommendation moat; Nivea mass skin care losing share."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Mid-sized vs L'Oreal (S3)"
+   ],
+   "rationale": "Scale in mass skin care but no evidenced cost advantage."
+  },
+  "D": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Group organic -2.8% 9M-26 (S1)"
+   ],
+   "rationale": "Core Nivea shrinking; Derma runway insufficient to offset."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Europe-heavy with global spread (S3)"
+   ],
+   "rationale": "Two-region skew; regional split not verified."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Repeated guidance cuts 2025-26 (S4)"
+   ],
+   "rationale": "Execution misses."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Net cash balance sheet (PitchBook, S6)"
+   ],
+   "rationale": "Conservative balance sheet; limited M&A; capital return modest."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "maxingvest ~51% control (S3)"
+   ],
+   "rationale": "Controlling holder provides stability; minority influence limited (noted neutrally)."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical consumables"
+   ],
+   "rationale": "Very low AI substitution risk."
+  },
+  "I2": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "tesa electronics adhesives exposure (S3)"
+   ],
+   "rationale": "Small indirect electronics/AI hardware exposure via tesa; not quantified."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Marketing/SG&A base (INFERENCE)"
+   ],
+   "rationale": "Some scope."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Brand pricing vs retailer pressure (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Middle East war cited as Q3-26 drag (S1)"
+   ],
+   "rationale": "Moderate resilience; tesa cyclical."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Net cash, simple structure (S6)"
+   ],
+   "rationale": "Generally clean accounts."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "tesa supplies adhesives to electronics/automotive; share tied to AI/semis not disclosed - likely small (<2% of group) but unquantified (INFERENCE)."
+ },
+ "sector_specific": {
+  "price_pct": null,
+  "volume_pct": null,
+  "price_volume_note": "Price/volume split not disclosed in retrieved sources (data gap)",
+  "private_label_risk": "Medium-high for mass skin/body care (Nivea) vs retailer brands (e.g. Aldi/Lidl/dm in Germany); low for Derma/La Prairie (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "not disclosed"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: net cash (PitchBook). G5: tesa electronics exposure small. Controlling holder (maxingvest) noted neutrally. G7: UK small."
+ },
+ "bull_points": [
+  "Derma (Eucerin/Aquaphor) growing double digits with clinical moat (S2)",
+  "Net cash balance sheet and stable controlling owner",
+  "La Prairie China recovery (+8.5% Q3-26) (S1)"
+ ],
+ "bear_points": [
+  "Nivea (over half of sales) in organic decline (-6.2% 9M-26) (S1)",
+  "Repeated guidance cuts; management credibility (S4)",
+  "Private label and L'Oreal competition in mass skin care; tesa cyclical"
+ ],
+ "thesis_breakers": [
+  "Group organic growth below 0% in FY2027",
+  "Nivea organic decline persists through H1-2027",
+  "Consumer EBIT margin below 12%"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Nivea sales drag down Beiersdorf in Q3 2026 amid Middle East war concerns",
+   "publisher": "Cosmetics Business",
+   "url": "https://cosmeticsbusiness.com/nivea-sales-drag-down-beiersdorf-in-q3-2026",
+   "doc_date": "2026-10",
+   "page_ref": "9M figures (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "Beiersdorf forecasts slower 2026 amid challenging skin care",
+   "publisher": "Cosmetics Business",
+   "url": "https://cosmeticsbusiness.com/beiersdorf-forecasts-slower-2026-amid-challenging-skin-care",
+   "doc_date": "2026-03",
+   "page_ref": "FY2025 results"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "PitchBook company profile and financials: Beiersdorf (59881-06)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/59881-06/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/BEI.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "Beiersdorf cuts sales guidance as Nivea turnaround slower than expected",
+   "publisher": "Cosmetics Business",
+   "url": "https://cosmeticsbusiness.com/beiersdorf-cuts-sales-guidance-nivea-turnaround-slower-excpected",
+   "doc_date": "2026",
+   "page_ref": "Headline"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "Beiersdorf annual reports 2021-2024",
+   "publisher": "Beiersdorf AG",
+   "url": "https://www.beiersdorf.com/investors",
+   "doc_date": "2022-03 to 2025-03",
+   "page_ref": "Group organic growth; recalled, not re-fetched (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "PitchBook net debt (calculation)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/59881-06/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/BEI.json; net debt negative (net cash) through 2Q2026"
+  }
+ ]
+}

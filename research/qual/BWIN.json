@@ -1,0 +1,310 @@
+{
+ "id": "BWIN",
+ "name": "The Baldwin Insurance Group, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "pending_takeover",
+  "exchange": "Nasdaq",
+  "ticker": "BWIN",
+  "isin": "",
+  "hq": "Tampa, FL, USA",
+  "domicile": "US (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2026-01",
+    "event": "Completed CAC Group and two other acquisitions (balance sheet: total assets $3.9bn -> $5.9bn, debt $1.76bn -> $2.46bn in 1Q26)",
+    "source": "S1"
+   },
+   {
+    "date": "2026-09-14",
+    "event": "Signed merger agreement to be taken private by Sequence Holdings and DFO Management (Michael Dell family office) at $32.50 cash per Class A share (~$7.7bn EV); expected close Q1-2027; requires majority vote of Class A + B",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "231362-56",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": 0,
+  "north_america_pct": 100,
+  "uk_pct": 0,
+  "other_pct": 0,
+  "largest_country": "United States",
+  "largest_country_pct": 100,
+  "china_pct": 0,
+  "em_pct": 0,
+  "fx_notes": "'Insurance distribution company operating in the United States' (PitchBook) - treated as ~100% US (INFERENCE from description; no foreign segment).",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2026 Q3",
+   "organic_pct": 6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 31,
+   "source_id": "S4"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Adj EBITDA / margin",
+   "value": "$106.9m (+47%), 22% (Q3-26)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "TTM adj EBITDA (deal basis)",
+   "value": "~$396m",
+   "period": "TTM to mid-2026",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "Net loss",
+   "value": "-$81.6m Q3-26; PitchBook TTM -$121m",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "Gross debt / adj EBITDA",
+   "value": "~6.4x (PitchBook debt $2.54bn / ~$396m deal-basis adj EBITDA) - ESTIMATE",
+   "period": "TTM Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2026",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "not extracted",
+   "notes": "CAC Group + 2 others closed Jan-2026; three deals grew revenue 16% y/y in Q3 (secondary)",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Trevor Baldwin",
+  "ceo_since": "2019 (not re-verified)",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "not reviewed",
+  "succession_notes": "n/a - company being taken private",
+  "guidance_record": "Persistent GAAP losses since IPO (PitchBook)"
+ },
+ "ownership": {
+  "controlling_holders": "Founders/management hold Class B (Up-C); take-private by Sequence Holdings/DFO",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "Special committee ran sale process (25 investors contacted, 6 bids)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Management/founder participation in buyer group not confirmed in sources used"
+ },
+ "guidance": [],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Commission-based renewing revenue; Mainstreet personal lines (S1)"
+   ],
+   "rationale": "Typical broker recurring mix."
+  },
+  "B": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Persistent GAAP losses (S1)"
+   ],
+   "rationale": "Limited evidence of advantage."
+  },
+  "C": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Adj EBITDA margin 22% vs 30%+ peers (S4)"
+   ],
+   "rationale": "Subscale margins."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Organic 6% Q3-26 (preliminary) (S4)"
+   ],
+   "rationale": "Moderate."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "US-only (S1)"
+   ],
+   "rationale": "Single country."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "GAAP losses every year 2018-2026 (S1)"
+   ],
+   "rationale": "Weak delivery on GAAP profitability."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Debt-funded M&A roll-up; leverage ~6x (S1,S3)"
+   ],
+   "rationale": "Leverage-heavy roll-up."
+  },
+  "H": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Up-C dual class (S3)"
+   ],
+   "rationale": "Weak minority protection; now moot."
+  },
+  "I1": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Personal lines and embedded homebuilder channel (S1)"
+   ],
+   "rationale": "Personal lines exposed to digital/embedded distribution."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Labour-heavy distribution (S1)"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Commission-based (INFERENCE)"
+   ],
+   "rationale": "Limited."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Property/personal lines rate exposure (S1)"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "Net loss -$81.6m Q3-26 vs adj EBITDA +$106.9m (S4)"
+   ],
+   "rationale": "Large recurring adjustments; GAAP losses."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "Not analysed in depth: pending take-private (G6 = A).",
+  "retention_pct": "not disclosed",
+  "contingent_consideration": "not extracted",
+  "producer_retention": "not disclosed"
+ },
+ "gates": {
+  "G1": "A",
+  "G2": "C",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "A",
+  "G7": "C",
+  "notes": "G6 = A: agreed take-private at $32.50 cash (signed 14-Sep-2026, close expected Q1-2027) - transaction-dominated, delisting. G1 = A: gross debt/adj EBITDA ~6.4x (>5.0x) with no standalone deleveraging path (buyer to refinance). G4 = B: persistent GAAP losses make FCF/NI not meaningful. Screened at reduced depth after G6 finding."
+ },
+ "bull_points": [
+  "Deal price $32.50 offers 87.5% premium to unaffected price; no financing condition."
+ ],
+ "bear_points": [
+  "Excluded: pending take-private - no long-term listed equity exposure available.",
+  "Standalone: leverage ~6x and persistent GAAP losses."
+ ],
+ "thesis_breakers": [
+  "Merger agreement terminated (would require full re-underwriting)."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: The Baldwin Insurance Group (231362-56)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/231362-56/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile; TTM 3Q26 revenue $1.85bn, EBITDA $43m, debt $2.54bn, NI -$121m"
+  },
+  {
+   "id": "S2",
+   "title": "The Baldwin Group to go private in $7.7 billion deal",
+   "publisher": "Coverager / company announcement coverage",
+   "url": "https://coverager.com/the-baldwin-group-to-go-private-in-7-7-billion-deal/",
+   "doc_date": "2026-09-14",
+   "retrieved": "2026-11-12",
+   "page_ref": "$32.50 cash per Class A share; Sequence Holdings and DFO Management (Dell family office); close expected Q1-2027"
+  },
+  {
+   "id": "S3",
+   "title": "Baldwin Enters $7.7 Billion Take-Private Agreement with Sequence and DFO",
+   "publisher": "Panabee (summary of merger agreement 8-K)",
+   "url": "https://www.panabee.com/news/baldwin-enters-7-7-billion-take-private-agreement-with-sequence-and-dfo",
+   "doc_date": "2026-09",
+   "retrieved": "2026-11-12",
+   "page_ref": "Equity ~$4.6bn + ~$3.1bn debt; ~20x TTM adj EBITDA (~$396m); 87.5% premium to 17-Jun-2026 unaffected price; no financing condition; termination fees"
+  },
+  {
+   "id": "S4",
+   "title": "The Baldwin Group announces third quarter 2026 results",
+   "publisher": "Finviz (company press release)",
+   "url": "https://finviz.com/news/419500/the-baldwin-group-announces-third-quarter-2026-results",
+   "doc_date": "2026-11-09",
+   "retrieved": "2026-11-12",
+   "page_ref": "Revenue $480.3m +31%; net loss $81.6m; adj EBITDA $106.9m +47%, 22% margin; preliminary organic 6%"
+  }
+ ]
+}

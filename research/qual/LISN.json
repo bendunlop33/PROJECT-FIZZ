@@ -1,0 +1,336 @@
+{
+ "id": "LISN",
+ "name": "Chocoladefabriken Lindt & Spruengli AG",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "SIX Swiss Exchange",
+  "ticker": "LISN (registered shares); LISP (participation certificates)",
+  "isin": "CH0010570759 (LISN)",
+  "hq": "Kilchberg, Switzerland",
+  "domicile": "Switzerland",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "62053-84",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": 47,
+  "north_america_pct": 40,
+  "uk_pct": null,
+  "other_pct": 13,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Europe 47%, North America 40%, rest of world 13% (S2). UK share not disclosed (Lindt UK a notable subsidiary). CHF reporter.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": 14.2,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 10.9,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 8.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 7.8,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S3"
+  },
+  {
+   "fy": "H1-2026",
+   "organic_pct": 4.3,
+   "price_pct": 11.8,
+   "volume_mix_pct": -7.5,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "H1-2026 EBIT margin",
+   "value": "11.2% (+0.2pt)",
+   "period": "H1 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "H1-2025 organic growth",
+   "value": "11.2% (comparison base)",
+   "period": "H1 2025",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Adalbert Lechner",
+  "ceo_since": "2024-10",
+  "cfo": "not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "Ernst Tanner long-time Chair/ex-CEO; CEO Dario Bossi then Lechner (recalled)",
+  "succession_notes": "not reviewed (screen depth)",
+  "guidance_record": "FY2026 organic 4-6% confirmed at H1 per company; one report claims cut to 0-2% (unverified)"
+ },
+ "ownership": {
+  "controlling_holders": "Lindt & Spruengli pension fund/foundation holds a large voting stake (~20%, recalled)",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "not reviewed"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-07-21",
+   "item": "FY2026 organic sales growth",
+   "value": "4-6% (confirmed per company release; conflicting report of 0-2%)",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-07-21",
+   "item": "Medium-term",
+   "value": "organic 6-8%, EBIT margin +20-40bp p.a. (recalled long-standing target)",
+   "source_id": "S3"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Premium chocolate - semi-discretionary, seasonal gifting (S2)"
+   ],
+   "rationale": "Repeat but discretionary."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Price +11.8% H1-26 (S1)",
+    "Premium brand, own retail (S2)"
+   ],
+   "rationale": "Strong premium brand pricing power, now testing elasticity."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "EBIT margin ~11% (S1)"
+   ],
+   "rationale": "Premium niche leader; margin below HPC peers."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Volume/mix -7.5% H1-26 (S1)"
+   ],
+   "rationale": "Runway in US/Asia but volume currently shrinking."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Europe 47%, NA 40% (S2)"
+   ],
+   "rationale": "Balanced developed-market spread."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Guidance confirmations mixed (S1)"
+   ],
+   "rationale": "Mixed."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Net cash, buybacks (PitchBook)"
+   ],
+   "rationale": "Conservative."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Dual listing structure; pension-fund stake"
+   ],
+   "rationale": "Standard; dual class noted."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical food"
+   ],
+   "rationale": "Very low AI risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI revenue"
+   ],
+   "rationale": "None."
+  },
+  "I3": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Manufacturing-heavy"
+   ],
+   "rationale": "Limited."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Premium pricing"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Cocoa price spike forced 11.8% price and volume loss (S1)"
+   ],
+   "rationale": "High commodity exposure, lagged pass-through."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Simple accounts"
+   ],
+   "rationale": "Clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "H1-2026": 11.8
+  },
+  "volume_pct": {
+   "H1-2026": -7.5
+  },
+  "private_label_risk": "Low-medium (premium) (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "not disclosed",
+  "glp1_risk": "Meaningful for confectionery volumes (INFERENCE)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Screen depth. Net cash. Dual share class noted."
+ },
+ "bull_points": [
+  "Premium global chocolate brand with pricing power",
+  "Balanced Europe/North America footprint",
+  "Net cash"
+ ],
+ "bear_points": [
+  "Growth now price-only: H1-26 price +11.8%, volume/mix -7.5% (S1)",
+  "Cocoa volatility and GLP-1/health headwinds to confectionery",
+  "Conflicting guidance reports"
+ ],
+ "thesis_breakers": [
+  "Volume/mix negative for FY2027",
+  "EBIT margin below 14% for FY (annual basis)"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Lindt hits pricing power limit as growth slows (H1 2026)",
+   "publisher": "FoodNavigator / Lindt release",
+   "url": "https://www.foodnavigator.com/Article/2026/07/21/lindt-growth-slows-as-cocoa-costs-continue-to-weigh-on-volumes/",
+   "doc_date": "2026-07-21",
+   "page_ref": "H1 organic, price, vol/mix (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "PitchBook company profile and financials: Lindt & Spruengli (62053-84)",
+   "publisher": "PitchBook / Morningstar",
+   "url": "https://my.pitchbook.com/profile/62053-84/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/LISN.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "Lindt annual results 2021-2024",
+   "publisher": "Lindt & Spruengli",
+   "url": "https://www.lindt-spruengli.com/investors",
+   "doc_date": "2022-2025",
+   "page_ref": "Organic growth; recalled, not re-fetched (confidence M)"
+  }
+ ]
+}

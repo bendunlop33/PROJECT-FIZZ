@@ -1,0 +1,434 @@
+{
+ "id": "KO",
+ "name": "The Coca-Cola Company",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "KO",
+  "isin": "US1912161007",
+  "hq": "Atlanta, Georgia, USA",
+  "domicile": "United States (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2026-03-31",
+    "event": "Henrique Braun succeeded James Quincey as CEO (Quincey Executive Chairman) - announced Dec-2025",
+    "source": "S3"
+   },
+   {
+    "date": "2026-01 / 2026-10",
+    "event": "Costa Coffee sale abandoned Jan-2026 after low bids; sale reportedly being explored again Oct-2026",
+    "source": "S5"
+   }
+  ]
+ },
+ "pitchbook_pbid": "12021-31",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "~60% of revenue outside the US, sizable EM (LatAm, APAC) (S2). Price/mix inflated by hyperinflationary markets (Argentina) in 2023-25 - organic growth overstates real pricing power. Costa (UK) small share of revenue.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": 16.0,
+   "price_pct": 6.0,
+   "volume_mix_pct": 10.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S6",
+   "note": "volume_mix = concentrate sales"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 16.0,
+   "price_pct": 11.0,
+   "volume_mix_pct": 5.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S6"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 12.0,
+   "price_pct": 10.0,
+   "volume_mix_pct": 2.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S6"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 12.0,
+   "price_pct": 11.0,
+   "volume_mix_pct": 1.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S6"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "",
+   "note": "not retrieved (guidance was 5-6%)"
+  },
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 7.0,
+   "price_pct": 1.0,
+   "volume_mix_pct": 7.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 7.0,
+   "source_id": "S1",
+   "note": "concentrate sales +7% (2pts ahead of unit case volume +5%)"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Unit case volume",
+   "value": "+5% Q3-2026 (India, China, Mexico, Brazil); North America flat",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Net revenue",
+   "value": "USD13.4bn (+7%)",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "IRS transfer-pricing dispute",
+   "value": "USD6bn paid 2024; up to ~USD14bn more if 11th Circuit appeal fails; argued Jun-2026, decision pending",
+   "period": "2026",
+   "source_id": "S4"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Free cash flow (non-GAAP; OCF - capex, excluding fairlife contingent payment)",
+   "value": null,
+   "currency": "USD",
+   "source_id": "",
+   "note": "not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "US GAAP"
+ },
+ "acquisitions": [
+  {
+   "fy": "2025-2026",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "fairlife contingent consideration (very large, ~USD6bn payable 2026 per prior disclosures - not re-verified)",
+   "notes": "BodyArmor 2021 (USD5.6bn) impaired; Costa 2019 (USD5.1bn) under sale review",
+   "source_id": "S5"
+  }
+ ],
+ "management": {
+  "ceo": "Henrique Braun",
+  "ceo_since": "2026-03-31",
+  "cfo": "John Murphy",
+  "cfo_since": "2019",
+  "senior_turnover_5y": "Low; orderly internal succession",
+  "succession_notes": "Quincey Executive Chairman",
+  "guidance_record": "Strong: met/raised organic guidance; 2026 raised to >=5% (S1)"
+ },
+ "ownership": {
+  "controlling_holders": "None; Berkshire Hathaway ~9% (long-standing, recalled)",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Majority independent (not re-verified)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Equity stakes in bottlers (CCEP, FEMSA, HBC etc.) - transactions with equity-method bottlers disclosed"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-10",
+   "item": "FY2026 organic revenue growth",
+   "value": ">= 5% (raised from ~5%)",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Concentrate sold to bottler system in 200+ countries (S2)"
+   ],
+   "rationale": "Highly recurring; bottler concentration not disclosed."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Largest non-alcoholic beverage company; ~200 brands (S2)",
+    "Unit case volume +5% with price/mix gains (S1)"
+   ],
+   "rationale": "Iconic brand plus bottler system create durable moat."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "EBIT margin ~36% on PitchBook TTM 3Q2026 (S7)"
+   ],
+   "rationale": "Asset-light concentrate model yields superior margins (EBIT ~36% vs staples peers 10-24%)."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "EM per-capita runway (India, China, Brazil) (S1)",
+    "North America volume flat (S1)"
+   ],
+   "rationale": "Moderate volume runway in EM; mature in developed markets."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "~60% revenue outside US (S2)"
+   ],
+   "rationale": "Broad global spread; EM/FX exposure."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Orderly CEO succession 2026 (S3)",
+    "Guidance raised (S1)"
+   ],
+   "rationale": "Experienced, stable management."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "BodyArmor impairment; Costa sale attempts failed (S5)"
+   ],
+   "rationale": "Mixed M&A record; strong dividends."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Widely held; independent board"
+   ],
+   "rationale": "Standard-to-strong governance."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical beverages"
+   ],
+   "rationale": "Very low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Marketing/SG&A base (INFERENCE)"
+   ],
+   "rationale": "Some scope."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Pricing power and concentrate model (S2)"
+   ],
+   "rationale": "Likely to retain savings."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Concentrate model limits commodity exposure (S2)"
+   ],
+   "rationale": "High resilience; FX the main swing factor."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Large IRS dispute; fairlife contingent consideration remeasurements (S4)"
+   ],
+   "rationale": "Non-GAAP adjustments and tax contingency."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "2021": 6.0,
+   "2022": 11.0,
+   "2023": 10.0,
+   "2024": 11.0,
+   "Q3-2026": 1.0
+  },
+  "volume_pct": {
+   "2021": 10.0,
+   "2022": 5.0,
+   "2023": 2.0,
+   "2024": 1.0,
+   "Q3-2026": 7.0
+  },
+  "price_volume_note": "volume = concentrate sales; 2021-2024 recalled (confidence M); price/mix includes hyperinflation (Argentina) effects",
+  "private_label_risk": "Low: brand-led category; private-label colas small share (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "bottlers are main customers; % not disclosed this session",
+  "glp1_risk": "Moderate for sugared sparkling volumes; zero-sugar mix mitigates (INFERENCE)",
+  "note_margin": "PitchBook TTM EBIT/revenue 36.3% (ESTIMATE)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "B",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G2 B: unresolved IRS transfer-pricing case (USD6bn paid; up to ~USD14bn additional) - open question (not an accounting restatement). G7: Costa UK small."
+ },
+ "bull_points": [
+  "World's leading beverage brand; unit case volume +5% in Q3-26 (S1)",
+  "Asset-light high-margin concentrate model",
+  "Orderly succession and raised 2026 guidance"
+ ],
+ "bear_points": [
+  "Historic organic growth heavily price/mix incl. hyperinflation; developed-market volume flat (S1)",
+  "IRS tax case could cost up to ~USD14bn more (S4)",
+  "GLP-1 and health trends vs sugared drinks; Costa drag"
+ ],
+ "thesis_breakers": [
+  "Unit case volume growth below 1% for FY2027",
+  "Adverse IRS appeal decision > USD10bn",
+  "Comparable operating margin falls below 28%"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Coca-Cola Reports Third Quarter 2026 Results and Raises Full Year Guidance",
+   "publisher": "The Coca-Cola Company",
+   "url": "https://investors.coca-colacompany.com/news-events/press-releases/detail/1176/coca-cola-reports-third-quarter-2026-results-and-raises-full-year-guidance",
+   "doc_date": "2026-10",
+   "page_ref": "Headline, revenue drivers, guidance (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "PitchBook company profile and financials: Coca-Cola (12021-31)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/12021-31/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/KO.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "The Coca-Cola Company announces CEO succession plan",
+   "publisher": "The Coca-Cola Company",
+   "url": "https://investors.coca-colacompany.com/news-events/press-releases/detail/1147/the-coca-cola-company-announces-ceo-succession-plan-chief-operating-officer-henrique-braun-to-succeed-james-quincey-as-ceo-in-2026",
+   "doc_date": "2025-12",
+   "page_ref": "Announcement"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "Why Coca-Cola and the US taxman are at war over a $20bn tax bill",
+   "publisher": "Al Jazeera",
+   "url": "https://www.aljazeera.com/economy/2026/6/22/why-coca-cola-and-the-us-taxman-are-at-war-over-a-20bn-tax-bill",
+   "doc_date": "2026-06-22",
+   "page_ref": "Case status"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "Coca-Cola looks to sell Costa Coffee (and Jan-2026 abandonment reports)",
+   "publisher": "Semafor / FoodNavigator",
+   "url": "https://www.semafor.com/article/10/08/2026/coca-cola-looks-to-sell-costa-coffee",
+   "doc_date": "2026-10-08",
+   "page_ref": "Headline"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "Coca-Cola full-year results 2021-2024",
+   "publisher": "The Coca-Cola Company",
+   "url": "https://investors.coca-colacompany.com/",
+   "doc_date": "2022-02 to 2025-02",
+   "page_ref": "Organic revenue, price/mix, concentrate sales; recalled, not re-fetched (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S7",
+   "title": "PitchBook TTM EBIT/revenue (calculation)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/12021-31/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/KO.json; ESTIMATE"
+  }
+ ]
+}

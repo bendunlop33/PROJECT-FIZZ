@@ -1,0 +1,513 @@
+{
+ "id": "NESN",
+ "name": "Nestle S.A.",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "SIX Swiss Exchange",
+  "ticker": "NESN",
+  "isin": "CH0038863350",
+  "hq": "Vevey, Switzerland",
+  "domicile": "Switzerland",
+  "corporate_actions": [
+   {
+    "date": "2024-08-22",
+    "event": "CEO Mark Schneider replaced by Laurent Freixe",
+    "source": "S5"
+   },
+   {
+    "date": "2025-09-01",
+    "event": "CEO Laurent Freixe dismissed (undisclosed relationship with subordinate); Philipp Navratil appointed CEO; Chair Paul Bulcke stepped down early, Pablo Isla Chair",
+    "source": "S5"
+   },
+   {
+    "date": "2026-02-19",
+    "event": "Strategic update: focus on Coffee, Petcare, Nutrition (~70% of sales) + regional Food & Snacks; ice cream remainder to Froneri (advanced negotiations); mainstream VMS for sale",
+    "source": "S1"
+   },
+   {
+    "date": "2026-07-23",
+    "event": "Waters & premium beverages into 50:50 JV 'Peranel' with Platinum Equity (EV EUR4.9bn, ~CHF2.8bn net cash H1-2027); VMS & ice cream classified held for sale; CHF1.3bn non-cash write-down",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "11591-65",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "CHF reporter; FX -5.7% on 2025 reported sales, -6.2% in H1-2026. Zone split not retrieved this session (zones reorganised into Americas/Europe/AOA in 2025). US is largest market; Greater China small single-digit % and 'now stable' (S2). Exact % not verified -> null.",
+  "source_ids": [
+   "S1",
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": 7.5,
+   "price_pct": 1.5,
+   "volume_mix_pct": 6.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S6"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 8.3,
+   "price_pct": 8.2,
+   "volume_mix_pct": 0.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S6"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 7.2,
+   "price_pct": 7.5,
+   "volume_mix_pct": -0.3,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S6"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 2.2,
+   "price_pct": 1.5,
+   "volume_mix_pct": 0.8,
+   "acq_pct": -0.3,
+   "fx_pct": -3.7,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 3.5,
+   "price_pct": 2.8,
+   "volume_mix_pct": 0.8,
+   "acq_pct": 0.1,
+   "fx_pct": -5.7,
+   "reported_pct": -2.0,
+   "source_id": "S1"
+  },
+  {
+   "fy": "9M2026",
+   "organic_pct": 3.7,
+   "price_pct": 1.8,
+   "volume_mix_pct": 1.9,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S3"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Real internal growth (RIG) Q3-2026",
+   "value": "2.8% (pricing 1.1%, OG 4.0%)",
+   "period": "Q3 2026",
+   "source_id": "S3"
+  },
+  {
+   "class": "FACT",
+   "name": "Advertising & marketing % sales",
+   "value": "8.6%",
+   "period": "FY2025",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Underlying trading operating profit margin",
+   "value": "16.1% (-110bp)",
+   "period": "FY2025",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Net debt / adjusted EBITDA",
+   "value": "2.85x (net debt CHF51.4bn)",
+   "period": "31-Dec-2025",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "H1-2026 OG developed vs emerging",
+   "value": "DM 2.3% (RIG 0.6%); EM 5.6% (RIG 2.8%)",
+   "period": "H1 2026",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "H1-2026 category OG",
+   "value": "Coffee 7.5% (pricing 4.7%); Petcare 2.7%; Nutrition -1.2%; Food & Snacks 3.7%",
+   "period": "H1 2026",
+   "source_id": "S2"
+  },
+  {
+   "class": "TARGET",
+   "name": "Fuel for Growth savings",
+   "value": "CHF1.7bn cumulative; target CHF3.0bn by end-2027",
+   "period": "H1 2026",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Planned headcount reduction",
+   "value": "~16,000 over 2 years",
+   "period": "announced Oct-2025",
+   "source_id": "S7"
+  },
+  {
+   "class": "ESTIMATE",
+   "name": "Net debt / EBITDA (PitchBook TTM 2Q2026)",
+   "value": "~3.96x (USD70.2bn / USD17.7bn)",
+   "period": "TTM 2Q2026",
+   "source_id": "S4"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2024",
+   "definition": "Company FCF (OCF - capex incl. intangibles - lease payments per Nestle definition)",
+   "value": 10666,
+   "currency": "CHF",
+   "source_id": "S1"
+  },
+  {
+   "fy": "2025",
+   "definition": "Company FCF (Nestle definition)",
+   "value": 9154,
+   "currency": "CHF",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [
+  {
+   "fy": "2026",
+   "cash_spent": null,
+   "currency": "CHF",
+   "earnouts": "not disclosed",
+   "notes": "Acquired remaining 51% of yfood; divested Blue Bottle Coffee; amounts not retrieved",
+   "source_id": "S2"
+  }
+ ],
+ "management": {
+  "ceo": "Philipp Navratil",
+  "ceo_since": "2025-09-01",
+  "cfo": "Anna Manz",
+  "cfo_since": "2023-02",
+  "senior_turnover_5y": "High: three CEOs between Aug-2024 and Sep-2025 (Schneider->Freixe->Navratil); Chair Bulcke replaced by Pablo Isla (Oct-2025)",
+  "succession_notes": "Freixe dismissal followed internal investigation; board renewal under new Chair",
+  "guidance_record": "Mixed-to-weak: medium-term targets withdrawn/cut in 2024; 2025 OG 3.5% met updated guidance; 2026 OG 3-4% reaffirmed at 9M"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None publicly disclosed as of 2026-11-12",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Majority independent (standard Swiss governance; not re-verified)",
+  "remuneration_notes": "not reviewed this session",
+  "related_party": "Holds ~20% of L'Oreal (equity-accounted); no related-party abuse identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-02-19",
+   "item": "FY2026 organic growth",
+   "value": "~3% to 4%, RIG accelerating vs 2025",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-07-23",
+   "item": "FY2026 UTOP margin",
+   "value": "Improve vs 2025 (16.1%)",
+   "source_id": "S2"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-02-19",
+   "item": "FY2026 free cash flow",
+   "value": "> CHF9bn",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "H",
+   "evidence": [
+    "Consumables across coffee, petcare, nutrition, food (S1)",
+    "No customer concentration disclosed; 185 countries (S4)"
+   ],
+   "rationale": "Highly repeat, consumable demand with diversified customers."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Pricing of 8.2%/7.5% in 2022-23 passed through (S6)",
+    "But RIG negative 2023 and share losses 2024 (S1)"
+   ],
+   "rationale": "Strong brands (Nescafe, Nespresso, Purina) with proven pricing power, though volume elasticity showed in 2023-24."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "UTOP margin 16.1% vs food peers mid-teens (S1)",
+    "30+ CHF1bn brands (S4)"
+   ],
+   "rationale": "Global procurement/R&D scale supports above-food-peer margins, but margins fell 110bp in 2025."
+  },
+  "D": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "RIG 0.8% in 2024 and 2025 (S1)",
+    "Food & Snacks and Nutrition low growth; coffee growth price-led (S2)"
+   ],
+   "rationale": "Mature categories with low volume runway; growth platforms only ~30% of sales."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Sales in 185 countries; EM grew 5.6% in H1-26 (S2)",
+    "FX -5.7% hit in 2025 (S1)"
+   ],
+   "rationale": "Broad global spread, no country >40% (US largest), with meaningful EM/FX exposure."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "H",
+   "evidence": [
+    "Three CEOs in 13 months (S5)",
+    "2024 guidance cuts (S1)"
+   ],
+   "rationale": "Disorderly leadership turnover outweighs early execution signs under Navratil."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Net debt rose to CHF56bn (2024) partly via buybacks before deleveraging (S1)",
+    "CHF1.3bn write-down on assets held for sale (S2)"
+   ],
+   "rationale": "History of value-destroying M&A/write-downs and leverage creep; now simplifying portfolio."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Widely held, no controlling holder (S4)",
+    "Board renewal 2025 (S5)"
+   ],
+   "rationale": "Standard governance; culture/oversight questions raised by 2025 CEO dismissal."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical food/beverage consumption (S4)"
+   ],
+   "rationale": "Very low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue (S4)"
+   ],
+   "rationale": "No AI capex dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "White-collar savings programme CHF1bn targeted (S1)",
+    "~16,000 job cuts (S7)"
+   ],
+   "rationale": "Large SG&A base offers some AI/automation productivity scope."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Retailer bargaining limits retention of cost savings (INFERENCE)"
+   ],
+   "rationale": "Mixed: savings likely partly reinvested/competed away."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Coffee pricing 4.7% in H1-26 reflects green coffee inflation (S2)",
+    "Infant formula recall 2025-26 (S1)"
+   ],
+   "rationale": "Partial pass-through with lags; commodity and recall exposure."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Reported net profit CHF9.0bn vs underlying CHF11.4bn-equivalent EPS gap (S1)",
+    "Recurring impairments/restructuring (S2)"
+   ],
+   "rationale": "Clean audit, but sizeable recurring non-underlying items; FCF ~ net income."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue (business description, S4); 0 here is a FACT-based inference from business mix, not a missing value."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "2021": 1.5,
+   "2022": 8.2,
+   "2023": 7.5,
+   "2024": 1.5,
+   "2025": 2.8,
+   "9M2026": 1.8
+  },
+  "volume_pct": {
+   "2021": 6.0,
+   "2022": 0.0,
+   "2023": -0.3,
+   "2024": 0.8,
+   "2025": 0.8,
+   "9M2026": 1.9
+  },
+  "private_label_risk": "Medium: European/US food and frozen face private label; coffee (Nespresso/Nescafe) and premium petcare more insulated (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "not disclosed",
+  "glp1_risk": "Moderate for confectionery, frozen and snacks; Nestle positions Health Science/Vital Pursuit as offset (INFERENCE)",
+  "china_note": "Greater China small, inventory reset done, 'now stable' (S2)"
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 B: company net debt/adj. EBITDA 2.85x at Dec-2025 (S1), but PitchBook TTM 2Q2026 net debt/EBITDA ~3.96x (EBITDA depressed by CHF1.3bn write-down; mid-year net debt seasonally high) - above 3.5x staples threshold on provider basis; credible deleveraging path via waters JV proceeds (~CHF2.8bn H1-2027) -> B, needs lease-adjusted check. G2: infant formula recall is product, not accounting. G4: FCF CHF9.2bn vs net profit CHF9.0bn (2025). G6: disposals (waters JV, ice cream, mainstream VMS) are material but not transaction-dominated. G7: UK consumer exposure small."
+ },
+ "bull_points": [
+  "Category leadership in coffee and petcare with pricing power; RIG recovering to 2.8% in Q3-2026 (S3)",
+  "Self-help: Fuel for Growth CHF3bn savings by 2027 and portfolio simplification (S2)",
+  "Deleveraging from waters JV proceeds (~CHF2.8bn) and disposals (S2)"
+ ],
+ "bear_points": [
+  "Disorderly leadership turnover (3 CEOs in 13 months) and culture/oversight questions (S5)",
+  "Growth 2022-23 was almost entirely price; volumes flat-to-negative and margins fell 110bp in 2025 (S1,S6)",
+  "Leverage elevated (2.85x) with FCF down 14% in 2025; GLP-1 and private label pressure on food/confectionery volumes"
+ ],
+ "thesis_breakers": [
+  "FY2027 RIG below 1.0%",
+  "Net debt/EBITDA above 3.5x without disposal proceeds",
+  "UTOP margin below 15.5% in FY2026 or FY2027"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Nestle: Full-year results 2025 and strategic update",
+   "publisher": "Nestle S.A. (press release via finanzen.net)",
+   "url": "https://www.finanzen.net/nachricht/aktien/press-release-nestle-full-year-results-2025-and-strategic-update-strong-momentum-accelerating-strategic-change-15502178",
+   "doc_date": "2026-02-19",
+   "page_ref": "Key figures; organic growth table; outlook"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "Nestle half-year results 2026 (ad hoc announcement)",
+   "publisher": "Nestle S.A. (reprint via Taiwan News)",
+   "url": "https://www.taiwannews.com.tw/en/news/6406589",
+   "doc_date": "2026-07-23",
+   "page_ref": "Zone and category tables; portfolio; outlook"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "Nestle third-quarter sales rise as real internal growth accelerates",
+   "publisher": "Vermoegenszentrum / AWP",
+   "url": "https://www.vermoegenszentrum.ch/en/stock-exchange-and-markets/news/nestle-third-quarter-sales-rise-real-internal-growth-accelerates",
+   "doc_date": "2026-10",
+   "page_ref": "9M and Q3 OG/RIG/pricing (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "PitchBook company profile and financials: Nestle (11591-65)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/11591-65/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/NESN.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "Nestle leadership changes 2024-2025 (CEO/Chair announcements)",
+   "publisher": "Nestle S.A. press releases",
+   "url": "https://www.nestle.com/media/pressreleases",
+   "doc_date": "2024-08-22 / 2025-09-01",
+   "page_ref": "Analyst knowledge of public announcements; not re-fetched this session"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "Nestle full-year results 2021, 2022, 2023",
+   "publisher": "Nestle S.A.",
+   "url": "https://www.nestle.com/investors/publications",
+   "doc_date": "2022-02 / 2023-02 / 2024-02",
+   "page_ref": "OG/RIG/pricing headline figures; recalled from releases, not re-fetched this session (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S7",
+   "title": "Nestle 9-month organic sales up 3.3%, planned headcount reduction of approx 16,000 over 2 years",
+   "publisher": "RTTNews",
+   "url": "https://www.rttnews.com/3582589/nestle-9-month-organic-sales-up-3-3-planned-headcount-reduction-of-approx-16000-over-2-yrs.aspx",
+   "doc_date": "2025-10-16",
+   "page_ref": "Headline"
+  }
+ ]
+}

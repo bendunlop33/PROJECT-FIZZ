@@ -1,0 +1,304 @@
+{
+ "id": "BIM",
+ "name": "bioMérieux SA",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "Euronext Paris",
+  "ticker": "BIM",
+  "isin": "FR0013280286 (not re-verified)",
+  "hq": "Marcy-l'Étoile, France",
+  "domicile": "France",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "53836-75",
+ "geography": {
+  "fy": "FY2024",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Americas ~40%, EMEA ~27%, APAC ~27% (Morningstar via PB; % sum <100 incl. industry); reports EUR; China material within APAC (not quantified)",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "9M 2026",
+   "organic_pct": 2.7,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "Q3 2026",
+   "organic_pct": 8.1,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "organic_pct": "3-5",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "BIOFIRE non-respiratory panels growth",
+   "value": "+25%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "BIOFIRE respiratory panels",
+   "value": "-8%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "SPOTFIRE installations added",
+   "value": "900+",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "CEBIT organic growth guide",
+   "value": "0-10%",
+   "period": "2026",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Pierre Boulud",
+  "ceo_since": "2023-07",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "Orderly; GO•28 plan",
+  "succession_notes": "Mérieux family succession",
+  "guidance_record": "2026 sales at low end risk (9M 2.7% vs 3-5%)"
+ },
+ "ownership": {
+  "controlling_holders": "Institut Mérieux ~59% capital, majority of votes via double voting rights (recalled, not re-verified)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Not reviewed",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "Transactions with Institut Mérieux group entities"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-03",
+   "item": "2026 organic sales growth",
+   "value": "3-5%",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-11-03",
+   "item": "2026 CEBIT organic growth",
+   "value": "0-10%",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Reagents ~85%+ of clinical sales on installed base (BIOFIRE, VITEK) (INFERENCE)"
+   ],
+   "rationale": "Razor-blade recurring."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Leader in microbiology and syndromic PCR (PB)"
+   ],
+   "rationale": "Installed base lock-in."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "#1 microbiology globally"
+   ],
+   "rationale": "Scale."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Non-respiratory panels +25%; SPOTFIRE ramp (S1)"
+   ],
+   "rationale": "Good."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Americas ~40%, EMEA ~27%, APAC ~27% (PB)"
+   ],
+   "rationale": "Balanced; China risk."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "9M below range lower bound (S1)"
+   ],
+   "rationale": "Mixed."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Bolt-ons (SpinChip etc.)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Family-controlled"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical diagnostics"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Respiratory seasonality (S1)"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Modest adjustments"
+   ],
+   "rationale": "Clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "BIOFIRE (molecular) ~40%+ of sales; respiratory panel share not disclosed",
+  "litigation": "None material",
+  "reimbursement": "US CMS lab test reimbursement (PAMA); China hospital VBP/DRG pressure"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "All C; China/respiratory seasonality monitored."
+ },
+ "bull_points": [
+  "Installed-base reagent model",
+  "Non-respiratory syndromic panels growing fast",
+  "Net cash"
+ ],
+ "bear_points": [
+  "Respiratory seasonality volatility",
+  "China pricing",
+  "Family control"
+ ],
+ "thesis_breakers": [
+  "Organic below 3% in 2027",
+  "BIOFIRE share loss to competitors"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "bioMérieux Third Quarter 2026 Business Review",
+   "publisher": "bioMérieux SA",
+   "url": "https://www.biomerieux.com/us/en/journalists/press-releases/Third-Quarter-2026-Business-Review.html",
+   "doc_date": "2026-11-03",
+   "retrieved": "2026-11-12",
+   "page_ref": "Q3/9M organic; guidance"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/53836-75/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

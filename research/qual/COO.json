@@ -1,0 +1,317 @@
+{
+ "id": "COO",
+ "name": "The Cooper Companies, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "COO",
+  "isin": "US2166485019 (not re-verified)",
+  "hq": "San Ramon, CA, USA",
+  "domicile": "Delaware, USA",
+  "corporate_actions": [
+   {
+    "date": "2025-12",
+    "event": "Formal strategic review opened under activist pressure",
+    "source": "S1"
+   },
+   {
+    "date": "2026-09",
+    "event": "Review completed: retain CooperSurgical; buyback raised $2bn->$3bn; two new directors",
+    "source": "S1"
+   },
+   {
+    "date": "2026-09-18",
+    "event": "Jana Partners demands new CEO/chair and asset sales",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "41198-05",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports USD; CooperVision ~2/3 of sales spread Americas/EMEA/APAC; exact split not collected",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3 FY2026 CooperVision",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 0,
+   "source_id": "S3"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "CooperVision Q3 FY26 sales",
+   "value": "$717.0m (~flat)",
+   "period": "Q3 FY2026",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "CooperSurgical Q3 growth",
+   "value": "+2%",
+   "period": "Q3 FY2026",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "US contact lens share",
+   "value": "~25% (Morningstar via PB)",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Albert (Al) White III",
+  "ceo_since": "2018-05",
+  "cfo": "Brian Andrews",
+  "cfo_since": "2020 (recalled)",
+  "senior_turnover_5y": "Stable top team; activists seek CEO change",
+  "succession_notes": "No succession plan announced",
+  "guidance_record": "2026 guidance lowered (S3); activists cite 'serial negative surprises' (S2)"
+ },
+ "ownership": {
+  "controlling_holders": "Widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "Jana Partners",
+    "since": "2025-10",
+    "objective": "New CEO and chair; sell fertility/medical devices; explore sale of CooperVision",
+    "company_response": "Completed review retaining CooperSurgical; raised buyback; added directors"
+   },
+   {
+    "name": "Browning West",
+    "since": "2025-11",
+    "objective": "Pure-play vision care",
+    "company_response": "Same review outcome"
+   }
+  ],
+  "board_independence": "Majority independent; 2 new directors 2026",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-09",
+   "item": "Share repurchase authorisation",
+   "value": "$3bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Contact lenses are recurring consumables; fertility consumables (PB)"
+   ],
+   "rationale": "Recurring with discretionary fertility exposure."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Daily silicone hydrogel (MyDay), myopia control (MiSight) franchise (PB)"
+   ],
+   "rationale": "Good, oligopoly market."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "#3 in contact lenses behind J&J, Alcon"
+   ],
+   "rationale": "Scale moderate."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "CooperVision growth slowed to flat in Q3 FY26 (S3)"
+   ],
+   "rationale": "Runway intact (myopia) but recent stall."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Global spread (PB)"
+   ],
+   "rationale": "Balanced."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Guidance cut; activist criticism (S2,S3)"
+   ],
+   "rationale": "Weak recent record."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Serial fertility M&A with modest returns (S2)"
+   ],
+   "rationale": "Below average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Activist engagement; board refresh (S1)"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical lenses"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Manufacturing scale; FX"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Non-GAAP adjustments for amortisation/integration"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "CooperVision ~2/3 of sales (segment); Paragard (only US hormone-free IUD) small",
+  "litigation": "Paragard IUD breakage product-liability MDL (bellwether trials 2025-26; not re-verified)",
+  "reimbursement": "Fertility largely self-pay/employer; lenses consumer-paid/vision plans"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G6 C: strategic review closed without transaction; activist campaign ongoing - could become transaction-driven (monitor)."
+ },
+ "bull_points": [
+  "Contact-lens consumables oligopoly with myopia-control runway",
+  "Activist pressure may force value-unlocking separation",
+  "$3bn buyback"
+ ],
+ "bear_points": [
+  "CooperVision growth stalled to flat in Q3 FY26",
+  "Poor fertility capital allocation",
+  "Leadership credibility questioned"
+ ],
+ "thesis_breakers": [
+  "CooperVision organic below 4% in FY2027",
+  "Large dilutive acquisition"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "CooperCompanies completes strategic review, increases share repurchase authorization",
+   "publisher": "The Cooper Companies",
+   "url": "https://thecoopercompaniesinc.gcs-web.com/node/28856",
+   "doc_date": "2026-09",
+   "retrieved": "2026-11-12",
+   "page_ref": "review outcome; $3bn buyback"
+  },
+  {
+   "id": "S2",
+   "title": "Jana Partners sends letter to Cooper board of directors",
+   "publisher": "Finviz/Business Wire",
+   "url": "https://finviz.com/news/393451/jana-partners-sends-letter-to-cooper-board-of-directors",
+   "doc_date": "2026-09-18",
+   "retrieved": "2026-11-12",
+   "page_ref": "activist demands"
+  },
+  {
+   "id": "S3",
+   "title": "Activist investor urges Cooper Companies to replace CEO, sell some assets",
+   "publisher": "MedTech Dive",
+   "url": "https://www.medtechdive.com/news/activist-investor-urges-cooper-companies-to-replace-ceo-sell-some-assets/830910/",
+   "doc_date": "2026-09",
+   "retrieved": "2026-11-12",
+   "page_ref": "Q3 CooperVision flat $717m; guidance cut"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41198-05/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

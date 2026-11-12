@@ -1,0 +1,335 @@
+{
+ "id": "TWFG",
+ "name": "TWFG, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "TWFG",
+  "isin": "",
+  "hq": "The Woodlands, TX, USA",
+  "domicile": "US (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2024-07",
+    "event": "IPO (Up-C structure); short public history",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "64861-66",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": 0,
+  "north_america_pct": 100,
+  "uk_pct": 0,
+  "other_pct": 0,
+  "largest_country": "United States",
+  "largest_country_pct": 100,
+  "china_pct": 0,
+  "em_pct": 0,
+  "fx_notes": "US-only; Texas-heavy with Florida-driven surge in 2026 (secondary). State split not extracted.",
+  "source_ids": [
+   "S1",
+   "S4"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2025",
+   "organic_pct": 11.6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 21.3,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": 16.6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 24.6,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Total written premium",
+   "value": "$554.2m, +18.5% (Q3-26); management: volume-led not rate-led",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Consolidated retention",
+   "value": "88% Q3-26 vs 93% Q2-26 and 91% Q3-25",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "MGA / commercial written premium growth",
+   "value": "+50.9% / +32.2%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S5"
+  },
+  {
+   "name": "Net cash",
+   "value": "~$71m (PitchBook TTM 3Q26)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2025-26",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "not extracted",
+   "notes": "Agency-book buy-ins and conversions of franchise branches to corporate; amounts not extracted",
+   "source_id": "S3"
+  }
+ ],
+ "management": {
+  "ceo": "Richard F. 'Gordy' Bunch III (founder)",
+  "ceo_since": "2001 (founder)",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "not reviewed",
+  "succession_notes": "Founder-led",
+  "guidance_record": "FY26 organic guide raised from 10-15% to 13-17% to 15-17% (S3,S2)"
+ },
+ "ownership": {
+  "controlling_holders": "Founder Gordy Bunch holds high-vote shares in Up-C structure (majority voting control per IPO structure; % not re-verified)",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Up-C; not reviewed"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-04",
+   "item": "FY2026 organic revenue growth",
+   "value": "15-17%",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Renewal commissions; retention 88-93% (S4)"
+   ],
+   "rationale": "Recurring agency commissions, but retention slipping."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Independent agent platform with MGA and premium finance (S1)"
+   ],
+   "rationale": "Some differentiation."
+  },
+  "C": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Revenue ~$0.3bn (S1)"
+   ],
+   "rationale": "Subscale; margin compressing (S5)."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Organic 11.6% 2025, 15-17% guide 2026 (S3,S2)"
+   ],
+   "rationale": "Strong runway via agent recruitment and MGA."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "US-only (S1)"
+   ],
+   "rationale": "Single country."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Guidance raised twice in 2026 (S2)"
+   ],
+   "rationale": "Short public record."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Net cash balance sheet (S1)"
+   ],
+   "rationale": "Conservative."
+  },
+  "H": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Founder-controlled Up-C (S1)"
+   ],
+   "rationale": "Controlling holder."
+  },
+  "I1": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Personal lines distribution (S1)"
+   ],
+   "rationale": "Personal lines exposed to digital/AI distribution."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Agent-network model (S1)"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Commission-based (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Florida-fuelled surge fading; Q4 organic to be materially lower per CEO (S4)"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Adjusted metrics; short history (S3)"
+   ],
+   "rationale": "Average."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "Company says Q3-26 premium growth 'primarily volume-led rather than rate-driven' (S2); partly one-off Florida carrier-depopulation/runoff flows that won't recur in Q4 (S4).",
+  "retention_pct": "88% (Q3-26), 93% (Q2-26), 91% (Q3-25) (S4)",
+  "contingent_consideration": "not extracted",
+  "producer_retention": "not disclosed"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Net cash. Short listed history (IPO Jul-2024) limits evidence; G4 not computed."
+ },
+ "bull_points": [
+  "High organic growth (15-17% guide) with net cash.",
+  "Volume-led growth and MGA expansion."
+ ],
+ "bear_points": [
+  "Florida-driven surge and runoff timing inflate 2026; retention fell to 88%.",
+  "Personal lines exposed to direct/AI distribution; founder control."
+ ],
+ "thesis_breakers": [
+  "Organic growth < 8% in 2027.",
+  "Retention < 85%."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: TWFG (64861-66)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/64861-66/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile; TTM 3Q26 revenue $295m, EBITDA $82m, debt $7m, cash $78m"
+  },
+  {
+   "id": "S2",
+   "title": "TWFG Announces Third Quarter 2026 Results (8-K Ex.99.1)",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0002007596/000162828026070109/a991pressreleasedatednovem.htm",
+   "doc_date": "2026-11-04",
+   "retrieved": "2026-11-12",
+   "page_ref": "Organic 16.6%; TWP $554.2m +18.5%; FY26 organic guide 15-17%"
+  },
+  {
+   "id": "S3",
+   "title": "TWFG Announces Fourth Quarter and Full Year 2025 Results (8-K Ex.99.1)",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/2007596/000162828026011644/a991pressreleasedatedfebru.htm",
+   "doc_date": "2026-02",
+   "retrieved": "2026-11-12",
+   "page_ref": "FY25 organic 11.6%; revenue $247.1m +21.3%; 2026 guide 10-15%"
+  },
+  {
+   "id": "S4",
+   "title": "TWFG Q3 2026 earnings review",
+   "publisher": "Finsee (secondary)",
+   "url": "https://finsee.ai/earnings/twfg/2026/q3/en/",
+   "doc_date": "2026-11",
+   "retrieved": "2026-11-12",
+   "page_ref": "Consolidated retention 88% (Q2 93%, prior year 91%); organic 37% in Q2"
+  },
+  {
+   "id": "S5",
+   "title": "TWFG's MGA channel reshapes platform economics as margins compress from Q2 highs",
+   "publisher": "Insurance Business",
+   "url": "https://www.insurancebusinessmag.com/us/news/breaking-news/twfgs-mga-channel-reshapes-platform-economics-as-margins-compress-from-q2-highs-596310.aspx",
+   "doc_date": "2026-11",
+   "retrieved": "2026-11-12",
+   "page_ref": "MGA written premiums +50.9%; commercial +32.2%"
+  }
+ ]
+}

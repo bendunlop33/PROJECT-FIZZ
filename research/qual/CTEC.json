@@ -1,0 +1,358 @@
+{
+ "id": "CTEC",
+ "name": "Convatec Group plc",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "London Stock Exchange (FTSE 100)",
+  "ticker": "CTEC",
+  "isin": "GB00BD3VFW73 (not re-verified)",
+  "hq": "London, UK",
+  "domicile": "England & Wales",
+  "corporate_actions": [
+   {
+    "date": "2026",
+    "event": "Jonny Mason (former CFO) is CEO per H1 26 release",
+    "source": "S1"
+   },
+   {
+    "date": "2026-08-04",
+    "event": "Further $200m buyback announced",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "12415-78",
+ "geography": {
+  "fy": "H1 2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports USD; US is largest market (split not collected). Infusion Care mostly US diabetes pump OEMs.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021-2025",
+   "organic_pct": "5-7 range each year (ex-InnovaMatrix, per company)",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "H1 2026",
+   "organic_pct": 5.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "H1 2026 incl. InnovaMatrix",
+   "organic_pct": 1.8,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "organic_pct": "5.5-6.5 ex-InnovaMatrix",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Adjusted operating margin guidance",
+   "value": "≥23.0%",
+   "period": "FY2026",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Net debt / adjusted EBITDA",
+   "value": "2.3x",
+   "period": "H1 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Share of growth from products launched in last 3 years",
+   "value": ">50%",
+   "period": "H1 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "InnovaMatrix revenue",
+   "value": "$5-10m (<0.5% of group; revenue down >90% after US reimbursement change)",
+   "period": "FY2026E",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "H1 2026",
+   "definition": "Free cash flow to equity before growth capex (redefined FY25)",
+   "value": 22,
+   "currency": "USD m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Jonny Mason",
+  "ceo_since": "2026 (verify exact date; previously CFO)",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "Karim Bitar (CEO 2019-) succeeded by CFO Jonny Mason",
+  "succession_notes": "Internal succession",
+  "guidance_record": "Five years within 5-7% organic target; InnovaMatrix reimbursement shock not foreseen"
+ },
+ "ownership": {
+  "controlling_holders": "Widely held (Novo Holdings historic ~10% holder; not re-verified)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "UK Code",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-08-04",
+   "item": "FY26 organic ex-InnovaMatrix",
+   "value": "5.5-6.5%",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-08-04",
+   "item": "Medium-term revenue growth from 2027",
+   "value": "6-8% p.a.",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-08-04",
+   "item": "Target leverage",
+   "value": "2.0x",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-08-04",
+   "item": "Adj. operating margin",
+   "value": "≥23.0%",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Chronic-care consumables (ostomy, continence, infusion sets) (S1)",
+    "Infusion sets tied to pump OEM partners"
+   ],
+   "rationale": "Highly recurring, some OEM concentration."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Hydrofiber/Aquacel franchise; NPS >80 in home services (S1)"
+   ],
+   "rationale": "Good differentiation."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Margin ~23% vs Coloplast ~25-28% (S1)"
+   ],
+   "rationale": "Subscale vs Coloplast in ostomy."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "6-8% medium-term; new launches >50% of growth (S1)"
+   ],
+   "rationale": "Improving runway."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "US largest market; Europe second"
+   ],
+   "rationale": "Two-region mix."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Five years within target range (S1)"
+   ],
+   "rationale": "Delivered ex InnovaMatrix."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Buybacks; 2.3x leverage (S1)",
+    "InnovaMatrix $69m impairment (S1)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "UK Code, no controller"
+   ],
+   "rationale": "Standard/good."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical consumables"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Home services ops"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Reimbursed"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Contractual price increases in FY26 (S1)"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Adjusted vs reported gap from amortisation/impairments (S1)"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "Advanced Wound Care ~29% of H1 26 revenue (ESTIMATE from $356m of ~$1.23bn)",
+  "litigation": "None material identified",
+  "reimbursement": "High: US skin-substitute payment reform cut InnovaMatrix >90%; CMS DMEPOS competitive bidding for ostomy/continence (company estimates 1-2% group sales hit, no earlier than 2028)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 2.3x. G3: infusion-set OEM customer concentration (Medtronic/MiniMed) not quantified - monitor. Reimbursement risk material."
+ },
+ "bull_points": [
+  "Recurring chronic-care consumables with 6-8% growth ambition from 2027",
+  "Innovation pipeline (ConvaFoam, ConvaNiox, GentleCath Air) driving share gains",
+  "Leverage 2.3x with buybacks"
+ ],
+ "bear_points": [
+  "US reimbursement shocks (skin substitutes; competitive bidding)",
+  "Infusion Care dependent on a few pump OEMs",
+  "Lower margins than Coloplast"
+ ],
+ "thesis_breakers": [
+  "FY2027 organic below 5%",
+  "CBP implemented earlier/deeper than 1-2% sales guide"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Convatec Group plc - Interim results for the first half of 2026",
+   "publisher": "Convatec Group plc",
+   "url": "https://www.convatecgroup.com/globalassets/convatec-h1-26-results--final-final.pdf",
+   "doc_date": "2026-08-04",
+   "retrieved": "2026-11-12",
+   "page_ref": "pp1-7: headline, categories, CBP update, capital allocation"
+  },
+  {
+   "id": "S2",
+   "title": "AGM trading update for the four months ended 30 April 2026",
+   "publisher": "Convatec Group plc",
+   "url": "https://www.convatecgroup.com/media/press-releases/2026/agm-trading-update-for-the-four-months-ended-30-april-2026/",
+   "doc_date": "2026-05-21",
+   "retrieved": "2026-11-12",
+   "page_ref": "YTD organic 4.8% ex-InnovaMatrix"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/12415-78/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

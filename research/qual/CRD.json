@@ -1,0 +1,313 @@
+{
+ "id": "CRD",
+ "name": "Crawford & Company (ADJACENT - specialist risk services: claims management)",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "CRD-B (voting) / CRD-A (non-voting)",
+  "isin": "",
+  "hq": "Peachtree Corners, GA, USA",
+  "domicile": "US (Georgia)",
+  "corporate_actions": [
+   {
+    "date": "2026-01",
+    "event": "New operating divisions announced; CEO change (Verma -> Swain)",
+    "source": "S3"
+   }
+  ]
+ },
+ "pitchbook_pbid": "11509-30",
+ "geography": {
+  "fy": "Q3 2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "International Operations $136.7m of $321.6m (~43%) in Q3-26 (UK, Europe, Canada, APAC, LatAm - split not extracted); remainder US (P&C, Broadspire, Platform Solutions).",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 1.8,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -2.2,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -0.2,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Revenue before reimbursements",
+   "value": "$321.6m (-0.2%)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Operating earnings",
+   "value": "$10.7m vs $7.7m",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Gross / net debt to EBITDA (provider)",
+   "value": "~3.1x / ~2.3x (PitchBook TTM 3Q26)",
+   "period": "TTM Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "W. Bruce Swain Jr.",
+  "ceo_since": "2026-01-01 (interim; permanent Mar-2026)",
+  "cfo": "Holly Boudreau",
+  "cfo_since": "2026-01-01",
+  "senior_turnover_5y": "CEO departure (Verma, CEO since May-2020) to Alight end-2025; CFO promoted to CEO",
+  "succession_notes": "Internal",
+  "guidance_record": "Management guides softer Q4-26"
+ },
+ "ownership": {
+  "controlling_holders": "Crawford family control voting Class B shares (not re-verified in this pass)",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "not reviewed"
+ },
+ "guidance": [],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Revenue flat 2023-26; weather-driven claim volumes (S1,S2)"
+   ],
+   "rationale": "Mix of contracted TPA (Broadspire) and volatile weather-event adjusting."
+  },
+  "B": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Revenue declining in US P&C and Broadspire (S2)"
+   ],
+   "rationale": "Limited pricing power vs Sedgwick and carriers' in-house adjusting."
+  },
+  "C": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "EBITDA margin ~7% (S1)"
+   ],
+   "rationale": "Low margins despite global footprint."
+  },
+  "D": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Revenue 2025 -2.2% (S1)"
+   ],
+   "rationale": "Low growth runway."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "International ~43% of revenue (S2)"
+   ],
+   "rationale": "Two-region mix."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "CEO turnover end-2025 (S3)",
+    "Flat revenue (S2)"
+   ],
+   "rationale": "Mixed record."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Debt climbing while cash flow drops (S4)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Dual class with family voting control"
+   ],
+   "rationale": "Weak minority protection."
+  },
+  "I1": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Desk/field adjusting and TPA services (S1)"
+   ],
+   "rationale": "AI photo-estimation and automated claims triage threaten desk adjusting; field cat response more resilient (INFERENCE)."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Labour-intensive adjusting (S1)"
+   ],
+   "rationale": "Large cost base."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Hourly/fee schedules pass savings to carriers (INFERENCE)"
+   ],
+   "rationale": "Low ability to retain savings."
+  },
+  "J": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Weather-dependent volumes; FX in International (S2)"
+   ],
+   "rationale": "Cyclical and weather-exposed."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Cash flow dropped as debt rose (S4)"
+   ],
+   "rationale": "Average."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "Not a broker: volumes depend on claim frequency/weather, not premium rates. Constant-currency International -3% in Q3-26.",
+  "retention_pct": "not disclosed",
+  "contingent_consideration": "not extracted",
+  "producer_retention": "n/a"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: net debt/EBITDA ~2.3x < 3.5x (services). G4 = B: cash flow falling while debt climbs (S4); NI volatile (2022 loss) - needs FCF check."
+ },
+ "bull_points": [
+  "Global loss-adjusting footprint; cat-season upside.",
+  "Internal CEO focused on cost and new divisional structure."
+ ],
+ "bear_points": [
+  "Flat-to-declining revenue for three years; low margins.",
+  "High AI substitution risk in desk adjusting; carriers in-sourcing.",
+  "Family-controlled dual class."
+ ],
+ "thesis_breakers": [
+  "Revenue decline > 3% in 2027.",
+  "Net debt/EBITDA > 3.5x."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: Crawford & Company (11509-30)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/11509-30/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile; revenue 2023 $1,317m, 2024 $1,341m, 2025 $1,311m; TTM 3Q26 EBITDA $93m, debt $293m, net debt $214m"
+  },
+  {
+   "id": "S2",
+   "title": "Crawford & Company Reports 2026 Third Quarter Results",
+   "publisher": "Company press release (via Webull/Insurance Business)",
+   "url": "https://www.webull.com/news/15856258295241728",
+   "doc_date": "2026-11",
+   "retrieved": "2026-11-12",
+   "page_ref": "Revenue before reimbursements $321.6m vs $322.2m; US P&C $76.0m -0.4%; Broadspire $109.0m -1.5%; International $136.7m +1.0% (-3% cc); operating earnings $10.7m"
+  },
+  {
+   "id": "S3",
+   "title": "Crawford & Company names W. Bruce Swain Jr. President & CEO",
+   "publisher": "Company press release (via quantisnow)",
+   "url": "https://quantisnow.com/insight/crawford-company-names-w-bruce-swain-jr-president-ceo-6465106",
+   "doc_date": "2026-03",
+   "retrieved": "2026-11-12",
+   "page_ref": "Swain permanent CEO; interim from 1-Jan-2026 after Rohit Verma left for Alight"
+  },
+  {
+   "id": "S4",
+   "title": "Crawford's profits rise but cash flow drops as debt climbs",
+   "publisher": "Insurance Business",
+   "url": "https://www.insurancebusinessmag.com/us/news/breaking-news/crawfords-profits-rise-but-cash-flow-drops-as-debt-climbs-595924.aspx",
+   "doc_date": "2026-11",
+   "retrieved": "2026-11-12",
+   "page_ref": "Cash flow and debt commentary"
+  }
+ ]
+}

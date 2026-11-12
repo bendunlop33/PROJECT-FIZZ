@@ -1,0 +1,295 @@
+{
+ "id": "SOON",
+ "name": "Sonova Holding AG",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "SIX Swiss Exchange",
+  "ticker": "SOON",
+  "isin": "CH0012549785 (not re-verified)",
+  "hq": "Stäfa, Switzerland",
+  "domicile": "Switzerland",
+  "corporate_actions": [
+   {
+    "date": "2026-03",
+    "event": "Strategy review: Consumer Hearing (ex-Sennheiser consumer, ~10% of sales) to be divested",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "52957-99",
+ "geography": {
+  "fy": "FY2025/26",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports CHF; US largest market; EMEA ~half (recalled, not re-verified). FX -1-2pp guided FY26/27",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2025/26",
+   "organic_pct": 5.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026/27 guidance (cc sales)",
+   "organic_pct": "5-8",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Core EBIT growth guide cc",
+   "value": "+7-10%",
+   "period": "FY2026/27",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Hearing aid market growth",
+   "value": "approaching ~4%",
+   "period": "latest quarter",
+   "class": "FACT",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Eric Bernard",
+  "ceo_since": "2025 (succeeded Arnd Kaldowski; not re-verified)",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO change 2025; strategy review 2026",
+  "succession_notes": "n/a",
+  "guidance_record": "FY25/26 in line with guidance (S1)"
+ },
+ "ownership": {
+  "controlling_holders": "Founding families (Beda Diethelm/Andy Rihs heirs) ~10-15% (recalled); widely held",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Majority independent",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None"
+ },
+ "guidance": [
+  {
+   "date": "2026-05",
+   "item": "FY2026/27 sales growth cc",
+   "value": "5-8%",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-05",
+   "item": "FY2026/27 core EBIT growth cc",
+   "value": "7-10%",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Hearing aids replaced every ~4-5 years; audiological care retail (PB)"
+   ],
+   "rationale": "Semi-recurring."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Top-2 global with Demant/WS Audiology; Phonak/Advanced Bionics"
+   ],
+   "rationale": "Oligopoly."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Vertical retail (AudioNova) scale"
+   ],
+   "rationale": "Scale benefits."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Ageing, low penetration; OTC channel"
+   ],
+   "rationale": "Good."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "US/EU/APAC spread"
+   ],
+   "rationale": "Balanced."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "CEO change; consumer exit"
+   ],
+   "rationale": "Mixed."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Sennheiser consumer acquisition reversed (S2)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Widely held"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Physical device + audiologist service"
+   ],
+   "rationale": "Low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "AI sound processing"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Reimbursement-driven in several EU markets"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Core EBIT adjustments"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "Uses chips in devices (input, not revenue)."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "Hearing instruments majority",
+  "litigation": "None material",
+  "reimbursement": "Material: national hearing-aid reimbursement (e.g. France, Germany, UK NHS tenders, US VA)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Consumer hearing divestment underway (~10% of sales) - not transaction-dominated."
+ },
+ "bull_points": [
+  "Demographic runway in under-penetrated hearing care",
+  "Exit of low-margin consumer audio",
+  "Oligopoly market structure"
+ ],
+ "bear_points": [
+  "Product cycle-driven share swings",
+  "Reimbursement changes",
+  "Growth slowed vs history"
+ ],
+ "thesis_breakers": [
+  "Organic below 4% for FY26/27",
+  "Share loss to Demant/WSA"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Sonova delivers strong FY 2025/26 results with continued market outperformance and increased profitability",
+   "publisher": "Sonova Holding AG (via Deutsche Börse)",
+   "url": "https://live.deutsche-boerse.com/nachrichten/Sonova-delivers-strong-FY-2025-26-results-with-continuedmarket-outperformance-and-increased-profitability-26160c9f-1c81-4b65-b250-ca5b158462f5",
+   "doc_date": "2026-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "organic 5.4%; FY26/27 guidance"
+  },
+  {
+   "id": "S2",
+   "title": "Sonova bestätigt Wachstumskurs und setzt auf Asien und USA",
+   "publisher": "cash.ch / AWP",
+   "url": "https://www.cash.ch/news/sonova-bestatigt-wachstumskurs-und-setzt-auf-asien-und-usa-938191",
+   "doc_date": "2026-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "consumer hearing divestment ~10% of sales; CEO Eric Bernard"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/52957-99/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

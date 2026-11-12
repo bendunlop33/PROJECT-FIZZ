@@ -1,0 +1,336 @@
+{
+ "id": "PRGO",
+ "name": "Perrigo Company plc",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "PRGO",
+  "isin": "IE00BGH1M568 (not re-verified)",
+  "hq": "Dublin, Ireland (operational HQ Allegan, MI)",
+  "domicile": "Ireland",
+  "corporate_actions": [
+   {
+    "date": "2026",
+    "event": "CEO Patrick Lockwood-Taylor resigned (personal conduct, unrelated to business); board member Albert Manzone interim CEO",
+    "source": "S3"
+   },
+   {
+    "date": "2026-11-04",
+    "event": "Infant formula business exit; to be reported as discontinued operations from Q4 2026",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "14171-32",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports USD. Consumer Self-Care Americas c.2/3 of sales (Morningstar description via PitchBook), International (mainly Europe) c.1/3; exact split not collected.",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -2.8,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2026 Q3 (core)",
+   "organic_pct": -1.1,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance (core)",
+   "organic_pct": "-2.5 to -3.6 (range per newswire summaries; conflicting)",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Net leverage",
+   "value": "4.0x",
+   "period": "Dec-2025",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "Core adjusted EPS guidance",
+   "value": "$2.15-2.35",
+   "period": "FY2026",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Q3 2026 net sales",
+   "value": "$989m (-5.2%)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Albert Manzone (interim)",
+  "ceo_since": "2026",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO resigned 2026 after code-of-conduct finding; previous CEO Murray Kessler left 2023; high turnover",
+  "succession_notes": "Permanent CEO search underway",
+  "guidance_record": "Repeated guidance cuts; first core guidance cut of 2026 in Nov"
+ },
+ "ownership": {
+  "controlling_holders": "Widely held; no controller",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Majority independent",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-04",
+   "item": "FY2026 core adjusted EPS",
+   "value": "$2.15-2.35",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-02-26",
+   "item": "Cost savings programme",
+   "value": "up to $100m",
+   "class": "TARGET",
+   "source_id": "S4"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Store-brand OTC repeat purchase but retailer-contracted, tender-like (PB description)"
+   ],
+   "rationale": "Recurring demand but retailer bargaining power."
+  },
+  "B": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Private-label model competes on price; organic declines 2025-26 (S1,S4)"
+   ],
+   "rationale": "Limited differentiation; manufacturing/regulatory know-how only."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Largest US store-brand OTC maker (PB)"
+   ],
+   "rationale": "Scale exists but not translating into margin/growth."
+  },
+  "D": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Core organic negative in 2026 (S1)"
+   ],
+   "rationale": "Low runway near term."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "c.2/3 Americas, 1/3 Europe (PB)"
+   ],
+   "rationale": "Two-region mix."
+  },
+  "F": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "CEO resigned for conduct; interim CEO (S3)",
+    "Serial guidance cuts (S1)"
+   ],
+   "rationale": "Unstable leadership and delivery."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Leverage 4.0x after HRA Pharma acquisition (S4)",
+    "Infant formula exit after heavy investment (S2)"
+   ],
+   "rationale": "Value-destructive M&A history."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "No controller"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Physical OTC"
+   ],
+   "rationale": "Low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Cost programme up to $100m (S4)"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Retailer customers capture savings"
+   ],
+   "rationale": "Weak retention."
+  },
+  "J": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Infant formula supply disruptions; input cost pass-through lag (S2)"
+   ],
+   "rationale": "Weak pass-through."
+  },
+  "K": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Large restructuring/impairment adjustments; core vs all-in gaps (S1)"
+   ],
+   "rationale": "Heavy adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5% (generic/store-brand model; exposure is to Rx-to-OTC switch timing not LOE)",
+  "top_product_pct": "not disclosed; largest customer Walmart historically >10% of sales (recalled, verify in 10-K)",
+  "litigation": "Historic Irish Revenue tax assessment and securities litigation (status not re-verified); talc/baby-powder not applicable",
+  "reimbursement": "Minimal (OTC); infant formula WIC contracts being exited"
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "B",
+  "G3": "B",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: net leverage 4.0x (S4) >3.5x. G2: CEO resignation for conduct + historic tax/securities disputes -> further evidence. G3: retailer concentration (Walmart) likely >15%? unverified -> B. Not transaction-dominated though infant formula exit and CEO search ongoing."
+ },
+ "bull_points": [
+  "Low valuation and cost programme could restore margins",
+  "Rx-to-OTC switches (e.g. Opill) offer optional growth"
+ ],
+ "bear_points": [
+  "Negative core organic growth and repeated guidance cuts",
+  "4.0x leverage limits flexibility",
+  "Leadership vacuum after CEO resignation"
+ ],
+ "thesis_breakers": [
+  "Core organic decline persists into FY2027",
+  "Net leverage fails to fall below 3.5x by end-2027"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Perrigo Reports Third Quarter 2026 Financial Results from Continuing Operations",
+   "publisher": "Perrigo / Finviz newswire",
+   "url": "https://finviz.com/news/415153/perrigo-reports-third-quarter-2026-financial-results-from-continuing-operations",
+   "doc_date": "2026-11-04",
+   "retrieved": "2026-11-12",
+   "page_ref": "headline; guidance"
+  },
+  {
+   "id": "S2",
+   "title": "Perrigo's tax-aided beat masks its first core guidance cut of the year as the infant formula exit reshapes the story",
+   "publisher": "Finviz",
+   "url": "https://finviz.com/news/415676/perrigos-tax-aided-beat-masks-its-first-core-guidance-cut-of-the-year-as-the-infant-formula-exit-reshapes-the-story",
+   "doc_date": "2026-11-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "infant formula to discontinued ops"
+  },
+  {
+   "id": "S3",
+   "title": "Perrigo names Albert Manzone interim CEO",
+   "publisher": "Healthcare Digital",
+   "url": "https://healthcare-digital.com/news/perrigo-albert-manzone-interim-ceo-amid-leadership-exit",
+   "doc_date": "2026",
+   "retrieved": "2026-11-12",
+   "page_ref": "CEO resignation (code of conduct)"
+  },
+  {
+   "id": "S4",
+   "title": "PRGO Q4 earnings miss, sales beat, stock down on weak 2026 view",
+   "publisher": "MetaTrader/Zacks",
+   "url": "https://www.metatrader.com/en/news/1265490-prgo-q4-earnings-miss-sales-beat-stock-down-on-weak-2026",
+   "doc_date": "2026-02-26",
+   "retrieved": "2026-11-12",
+   "page_ref": "FY25 net sales -2.8% to $4.25bn; net leverage 4.0x; 2026 guidance"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/14171-32/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

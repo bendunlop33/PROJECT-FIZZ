@@ -1,0 +1,403 @@
+{
+ "id": "SCHP",
+ "name": "Séché Environnement SA",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "Euronext Paris",
+  "ticker": "SCHP",
+  "isin": "FR0000039109",
+  "hq": "Changé (Laval), France",
+  "domicile": "France",
+  "corporate_actions": [
+   {
+    "date": "2026-01-05",
+    "event": "Announced acquisitions of Hidronor (Chile hazardous waste #1) and La Filippa (Italy)",
+    "source": "S3"
+   }
+  ]
+ },
+ "pitchbook_pbid": "57797-11",
+ "geography": {
+  "fy": "Q3 2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "France",
+  "largest_country_pct": 58.0,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "International contributive revenue EUR130.0m of EUR308.8m in Q3-26 (~42%) => France ~58% (ESTIMATE). International includes Chile/Peru (Latin America EM), South Africa, Italy, Spain, Germany, Finland, etc.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "9M-2026",
+   "organic_pct": 0.2,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 6.9,
+   "source_id": "S1"
+  },
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 4.6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 11.4,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "9M contributive revenue",
+   "value": "EUR916.6m",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "2025 outcome",
+   "value": "Missed 2025 targets; revenue ~EUR1.15bn, EBITDA ~EUR220m",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "Leverage",
+   "value": "~2.5x at end-2025 (company); target <3x IFRS leverage by 30-Jun-2027",
+   "period": "2025/26",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Provider net debt (incl. leases) / EBITDA",
+   "value": "3.53x",
+   "period": "TTM 2Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Company FCF",
+   "value": null,
+   "currency": "EUR m",
+   "source_id": "not collected"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "not collected (2025 URD)"
+ },
+ "acquisitions": [
+  {
+   "fy": "2026",
+   "cash_spent": null,
+   "currency": "EUR",
+   "earnouts": "",
+   "notes": "Hidronor (Chile) and La Filippa (Italy); Groupe Flamme promise signed 2025 - amounts not collected",
+   "source_id": "S3"
+  }
+ ],
+ "management": {
+  "ceo": "Maxime Séché (Directeur général)",
+  "ceo_since": "not verified",
+  "cfo": "not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "Founder Joël Séché Chairman; son CEO - family succession",
+  "succession_notes": "Family succession",
+  "guidance_record": "Missed 2025 objectives; 2026 revenue/EBITDA targets confirmed at 9M but organic run-rate (0.2%) below the ~2-3% H1 indication"
+ },
+ "ownership": {
+  "controlling_holders": "Séché family group: 69.58% of capital, 81.15% of voting rights (2-Jun-2026)",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "Controlled company; independence limited (not quantified)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Not reviewed; family-controlled"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-27",
+   "item": "FY2026 contributive revenue",
+   "value": "EUR1,230-1,260m",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-27",
+   "item": "FY2026 EBITDA",
+   "value": "EUR260-270m",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Industrial hazardous-waste volumes cyclical; organic 0.2% 9M (S1)"
+   ],
+   "rationale": "Mixed recurring/industrial-cyclical."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Hazardous waste storage/incineration permits in France; Chile #1 (S3)"
+   ],
+   "rationale": "Permitted haz assets give barriers."
+  },
+  "C": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Small scale, EBITDA margin ~18-21%"
+   ],
+   "rationale": "Subscale vs CLH/Veolia."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "International acquisitions (S3)"
+   ],
+   "rationale": "Moderate; M&A-led."
+  },
+  "E": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "France ~58% (S1)"
+   ],
+   "rationale": "One-country heavy but <70%."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Missed 2025 targets (S4)"
+   ],
+   "rationale": "Recent misses."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Debt-funded EM acquisitions; leverage target <3x (S2)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Family 81% voting control (S2)"
+   ],
+   "rationale": "Controlled company; limited minority protection."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical treatment"
+   ],
+   "rationale": "Not substitutable."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "L",
+   "evidence": [
+    "No DC exposure"
+   ],
+   "rationale": "<2%."
+  },
+  "I3": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Small cost base"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Industrial volumes and energy sales"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Low net income (TTM ~$21m) vs EBITDA (PB)"
+   ],
+   "rationale": "Some adjustments; low profit conversion."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None identified."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Storage-site long-term monitoring provisions (France); not quantified.",
+  "commodity_sensitivity": "Energy sales from incineration; industrial production volumes."
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 B: company leverage ~2.5x (end-2025) but provider ND incl. leases/EBITDA 3.5x after acquisitions, and EBIT (~$87m TTM) / interest likely <4x. G4 B: TTM NI ~$21m - FCF/NI not reliable; 3y FCF not collected. Family control noted neutrally (H)."
+ },
+ "bull_points": [
+  "Scarce French hazardous-waste permits; Q3 organic recovery +4.6%.",
+  "International platform (Chile, Italy) adds growth."
+ ],
+ "bear_points": [
+  "Missed 2025 targets; 9M organic only +0.2%.",
+  "Thin net income and rising leverage from EM acquisitions.",
+  "Family controls 81% of votes."
+ ],
+ "thesis_breakers": [
+  "FY2026 EBITDA below EUR260m.",
+  "IFRS leverage >3x at 30-Jun-2027.",
+  "Organic growth <2% in FY2027."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Séché Environnement : croissance solide au 3e trimestre et objectifs 2026 confirmés",
+   "publisher": "Option Finance (company release relay)",
+   "url": "https://www.optionfinance.fr/info-financiere-en-continu/d/2026-10-27-seche-environnement-croissance-solide-au-3e-trimestre-et-objectifs-2026-confirmes.html",
+   "doc_date": "2026-10-27",
+   "retrieved": "2026-11-12",
+   "page_ref": "9M/Q3 revenue, guidance"
+  },
+  {
+   "id": "S2",
+   "title": "AMF threshold/voting rights declaration and March 2026 results release (Séché)",
+   "publisher": "AMF / Business Wire",
+   "url": "https://www.businesswire.com/news/home/20260309559377/fr",
+   "doc_date": "2026-03-09",
+   "retrieved": "2026-11-12",
+   "page_ref": "Leverage target; family 69.58%/81.15% per 2-Jun-2026 declaration"
+  },
+  {
+   "id": "S3",
+   "title": "Séché Environnement announces two major external growth operations",
+   "publisher": "Euronext company news",
+   "url": "https://live.euronext.com/en/products/equities/company-news/2026-01-05-seche-environnement-announces-two-major-external-growth",
+   "doc_date": "2026-01-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "Hidronor, La Filippa"
+  },
+  {
+   "id": "S4",
+   "title": "Séché Environnement : un CA 2025 attendu de l'ordre de 1 150 ME avec un EBE 2025 de l'ordre de 220 ME",
+   "publisher": "Boursier via Bourse Direct",
+   "url": "https://www.boursedirect.fr/fr/actualites/categorie/resultats/seche-environnement-un-ca-2025-attendu-de-l-ordre-de-1-150-me-avec-un-ebe-2025-de-l-ordre-de-220-me-boursier-a934c6783713b68113d1c2510d4c9a741c5f7cff",
+   "doc_date": "2026-01",
+   "retrieved": "2026-11-12",
+   "page_ref": "2025 outcome vs targets"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 57797-11",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/57797-11/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/SCHP.json"
+  }
+ ]
+}

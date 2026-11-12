@@ -1,0 +1,360 @@
+{
+ "id": "TTEK",
+ "name": "Tetra Tech, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "TTEK",
+  "isin": "US88162G1031",
+  "hq": "Pasadena, California, USA",
+  "domicile": "USA (Delaware)",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "41098-60",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "US majority; Canada, Australia, UK and international development. Split not collected - INFERENCE US ~60-65%.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Backlog",
+   "value": "$4.49bn (+5% q/q) at end Q3 FY26; $4.14bn end FY25 (-23% y/y after USAID)",
+   "period": "Q3 FY2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "USAID shutdown impact",
+   "value": "~$1.1bn of backlog awards cancelled (CEO, May-2025); USAID previously ~10.6% of revenue (secondary)",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "Ukraine-related aid revenue",
+   "value": "~$66m in Q3 FY26; similar Q4",
+   "period": "Q3 FY2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "1.16x",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "FY2025",
+   "definition": "not collected",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "FY2026",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "Contingent earn-outs typical",
+   "notes": "not collected",
+   "source_id": ""
+  }
+ ],
+ "management": {
+  "ceo": "Dan Batrack (Chairman & CEO)",
+  "ceo_since": "2005 (prior knowledge)",
+  "cfo": "Steve Burdick (prior knowledge, not re-verified)",
+  "cfo_since": "",
+  "senior_turnover_5y": "Stable",
+  "succession_notes": "Long-tenured CEO; succession not disclosed",
+  "guidance_record": "FY26 adj. EPS guidance raised at Q3 ($1.56-1.59); net revenue $4.315-4.365bn"
+ },
+ "ownership": {
+  "controlling_holders": "None",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-07-29",
+   "item": "FY2026 net revenue",
+   "value": "$4.315-4.365bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-07-29",
+   "item": "FY2026 adj. EPS",
+   "value": "$1.56-1.59",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Backlog $4.5bn ~1 year of revenue (S1)",
+    "USAID loss showed client-concentration risk (S3)"
+   ],
+   "rationale": "Contract consulting with multi-year frameworks but project-based."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Water engineering niche leadership (S2)"
+   ],
+   "rationale": "Reputation/know-how; low switching costs."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Margins ~13-16% (secondary)"
+   ],
+   "rationale": "Scale but unclear economics."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Water infrastructure, PFAS, Navy/DoD, utilities (S3)"
+   ],
+   "rationale": "Good runway."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "US majority with Canada/Australia/UK (INFERENCE)"
+   ],
+   "rationale": "Multi-region."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Absorbed USAID loss while raising EPS guidance (S1, S3)"
+   ],
+   "rationale": "Strong crisis execution."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Low leverage 1.2x; bolt-on M&A (PB)"
+   ],
+   "rationale": "Disciplined."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Engineering design/reports, data analytics exposed to generative AI (INFERENCE)"
+   ],
+   "rationale": "Knowledge-work consulting has meaningful AI substitution risk."
+  },
+  "I2": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Some data-centre/energy design work (INFERENCE)"
+   ],
+   "rationale": "Low single-digit."
+  },
+  "I3": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Labour-intensive cost base"
+   ],
+   "rationale": "Large AI productivity opportunity."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Much federal work cost-plus/T&M (INFERENCE)"
+   ],
+   "rationale": "Cost-plus passes savings to clients."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Government budget/policy exposure (S3)"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "$115m legal charge, $92m goodwill impairment FY25 (S3 secondary)"
+   ],
+   "rationale": "Some exceptional items."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not a capex beneficiary; AI is a delivery-model risk/opportunity for engineering consulting."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Minimal own liabilities; legal charge FY25 (secondary source).",
+  "commodity_sensitivity": "Low; policy/budget sensitivity (US federal, foreign aid)."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "B",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G3 B: US federal government agencies collectively the largest client (USAID alone ~10.6% pre-2025; federal share after USAID not verified) - treat as single-customer concentration flag pending FY26 10-K. G1: 1.16x. FY2026 Q4/10-K due mid-Nov-2026 - not yet available at valuation date."
+ },
+ "bull_points": [
+  "Water/environment engineering leader with low leverage.",
+  "Navy/DoD and state & local growth offset USAID loss.",
+  "Backlog rebuilding (+5% q/q)."
+ ],
+ "bear_points": [
+  "Federal policy risk demonstrated by USAID shutdown ($1.1bn backlog lost).",
+  "Generative-AI risk to engineering hours/pricing.",
+  "Ukraine aid revenue is politically contingent."
+ ],
+ "thesis_breakers": [
+  "Backlog declines y/y in FY2027.",
+  "Further federal programme terminations >5% of revenue.",
+  "Net revenue organic decline in FY2027."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Tetra Tech Reports Strong Third Quarter 2026 Results",
+   "publisher": "Barchart (company release relay)",
+   "url": "https://www.barchart.com/story/news/3533513/tetra-tech-reports-strong-third-quarter-2026-results",
+   "doc_date": "2026-07-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "Backlog, guidance"
+  },
+  {
+   "id": "S2",
+   "title": "PitchBook company profile: Tetra Tech",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41098-60/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Segments GSG/CIG"
+  },
+  {
+   "id": "S3",
+   "title": "Rubio's X Post Dims Prospects for Tetra Tech's USAID Revenue",
+   "publisher": "ENR",
+   "url": "https://www.enr.com/articles/60417-rubios-x-post-dims-prospects-for-tetra-techs-usaid-revenue",
+   "doc_date": "2025-03",
+   "retrieved": "2026-11-12",
+   "page_ref": "USAID termination context; $1.1bn backlog (CEO, May-2025 call)"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 41098-60",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41098-60/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/TTEK.json"
+  }
+ ]
+}

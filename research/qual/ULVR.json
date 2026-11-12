@@ -1,0 +1,469 @@
+{
+ "id": "ULVR",
+ "name": "Unilever PLC",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "London Stock Exchange (also Euronext Amsterdam; NYSE ADR)",
+  "ticker": "ULVR",
+  "isin": "GB00BVZK7T90",
+  "hq": "London, United Kingdom",
+  "domicile": "United Kingdom",
+  "corporate_actions": [
+   {
+    "date": "2025-12",
+    "event": "Ice cream demerged as The Magnum Ice Cream Company (separately listed); prior-year figures restated for continuing operations; Unilever retained a minority stake (size not re-verified)",
+    "source": "S6"
+   },
+   {
+    "date": "2026-03-31",
+    "event": "Agreement to combine Unilever Foods (Knorr, Hellmann's; ex India/Nepal/Portugal) with McCormick: Unilever + shareholders to own 65% of combined company plus USD15.7bn cash; close expected by mid-2027 subject to shareholder/regulatory approval",
+    "source": "S3"
+   }
+  ]
+ },
+ "pitchbook_pbid": "12626-38",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": 20,
+  "china_pct": null,
+  "em_pct": 58,
+  "fx_notes": "EUR reporter; currency -5.9% on 2025 turnover. Emerging markets 58% / developed 42%; US ~20%, India ~11% (PitchBook/Morningstar description, S4). UK % not retrieved (UK-listed but UK consumer exposure is small single-digit %, not verified).",
+  "source_ids": [
+   "S1",
+   "S4"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": 4.5,
+   "price_pct": 2.8,
+   "volume_mix_pct": 1.7,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2022",
+   "organic_pct": 9.0,
+   "price_pct": 11.3,
+   "volume_mix_pct": -2.1,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 7.0,
+   "price_pct": 6.6,
+   "volume_mix_pct": 0.4,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 4.2,
+   "price_pct": 1.3,
+   "volume_mix_pct": 2.9,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 3.5,
+   "price_pct": 2.0,
+   "volume_mix_pct": 1.5,
+   "acq_pct": null,
+   "fx_pct": -5.9,
+   "reported_pct": -3.8,
+   "source_id": "S1"
+  },
+  {
+   "fy": "9M2026",
+   "organic_pct": 4.9,
+   "price_pct": 1.1,
+   "volume_mix_pct": 3.8,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Q3-2026 USG / UVG / UPG",
+   "value": "5.2% / 2.9% / 2.3%",
+   "period": "Q3 2026",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Q3-2026 Home Care USG (UVG)",
+   "value": "9.1% (5.4%)",
+   "period": "Q3 2026",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Q3-2026 Foods USG (UVG)",
+   "value": "0.1% (-1.1%)",
+   "period": "Q3 2026",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Underlying operating margin",
+   "value": "20.0% (+60bp)",
+   "period": "FY2025",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Gross margin",
+   "value": "46.9% (+20bp)",
+   "period": "FY2025",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Turnover",
+   "value": "EUR50.5bn",
+   "period": "FY2025",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Portfolio mix by value",
+   "value": "Beauty, wellbeing & personal care 51%, Home care 23%, Foods 26%",
+   "period": "FY2025",
+   "source_id": "S4"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Unilever FCF (net cash from operating activities - net capex; after lease payments per company definition)",
+   "value": 5900,
+   "currency": "EUR",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [
+  {
+   "fy": "2025",
+   "cash_spent": null,
+   "currency": "EUR",
+   "earnouts": "not disclosed",
+   "notes": "Ten portfolio transactions completed/announced since start-2025 (e.g. Wild, Dr.Squatch per press); amounts not retrieved",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Fernando Fernandez",
+  "ceo_since": "2025-03-01",
+  "cfo": "Srinivas Phatak",
+  "cfo_since": "2025",
+  "senior_turnover_5y": "High: CEOs Jope (to 2023) -> Schumacher (Jul-2023 to Feb-2025) -> Fernandez; CFO changed 2025",
+  "succession_notes": "Board replaced Schumacher after ~18 months citing pace of change; internal successor (former CFO)",
+  "guidance_record": "2024-2025 USG within/near 3-5% guidance; FY2026 USG 4-6% guided, UVG upgraded to >=3% at Q3"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "Trian Fund Management (Nelson Peltz)",
+    "since": "2022",
+    "objective": "Performance/operational improvement; board seat",
+    "company_response": "Peltz joined board 2022; current status not re-verified this session"
+   }
+  ],
+  "board_independence": "Majority independent (UK Code; not re-verified)",
+  "remuneration_notes": "not reviewed this session",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-02-12",
+   "item": "FY2026 USG",
+   "value": "4-6% (bottom end initially), UVG >=2%",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-10-28",
+   "item": "FY2026 UVG",
+   "value": "at least 3%; modest UOM improvement",
+   "source_id": "S2"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-03-31",
+   "item": "Foods/McCormick close",
+   "value": "by mid-2027",
+   "source_id": "S3"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "H",
+   "evidence": [
+    "Consumable HPC/food staples in 190 countries (S4)",
+    "No customer concentration disclosed"
+   ],
+   "rationale": "Recurring consumable demand, diversified customers."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "UPG 11.3% in 2022 with UVG only -2.1% (S5)",
+    "Power Brands USG 5.8% Q3-26 (S2)"
+   ],
+   "rationale": "Strong brands with demonstrated pricing power; mid-tier brands weaker."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "UOM 20.0% vs P&G ~24% op margin (S1)"
+   ],
+   "rationale": "Scale present but margin below best-in-class HPC peers."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "9M-26 UVG 3.8% led by EM/Home Care (S2)",
+    "Foods volume -1.1% Q3-26, being exited (S2)"
+   ],
+   "rationale": "Moderate runway via EM penetration and premium beauty."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "EM 58% of sales; India ~11%, US ~20% (S4)",
+    "FX -5.9% 2025 (S1)"
+   ],
+   "rationale": "Global spread but heavy EM/FX exposure."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Three CEOs since 2023 (S5)",
+    "Delivered 2025 USG/margin targets (S1)"
+   ],
+   "rationale": "Execution improving but leadership churn."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "EUR1.5bn buyback 2026 (S1)",
+    "Foods sale for 65% stock + USD15.7bn cash (S3)"
+   ],
+   "rationale": "Active portfolio reshaping; returns of disposals/acquisitions unproven."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Widely held, UK Code board (S4)"
+   ],
+   "rationale": "Standard governance."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical consumer goods (S4)"
+   ],
+   "rationale": "Very low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue (S4)"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Large marketing/SG&A base (INFERENCE)"
+   ],
+   "rationale": "Some productivity scope in marketing content and supply chain."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Retailer bargaining (INFERENCE)"
+   ],
+   "rationale": "Mixed retention."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Price stepped up Q3-26 to offset commodity costs (S2)"
+   ],
+   "rationale": "Partial, lagged pass-through; commodity-sensitive Home Care."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Diluted EPS EUR2.59 vs underlying EUR3.08 (S1)",
+    "Demerger costs in FCF (S1)"
+   ],
+   "rationale": "Material recurring restructuring/non-underlying items; cash conversion ~100%."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue (business mix, S4)."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "2021": 2.8,
+   "2022": 11.3,
+   "2023": 6.6,
+   "2024": 1.3,
+   "2025": 2.0,
+   "9M2026": 1.1
+  },
+  "volume_pct": {
+   "2021": 1.7,
+   "2022": -2.1,
+   "2023": 0.4,
+   "2024": 2.9,
+   "2025": 1.5,
+   "9M2026": 3.8
+  },
+  "private_label_risk": "Medium in Home Care/Foods in Europe; low-medium in premium beauty/personal care (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "not disclosed",
+  "comparability": "2025 restated for ice cream demerger; Foods (~26%) to leave by mid-2027 -> pre-2025 series not like-for-like",
+  "china_note": "China a small share; not quantified this session"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "B",
+  "G7": "C",
+  "notes": "G6 B: material pending transaction (Foods ~26% of sales to McCormick, close mid-2027) changes earnings base and comparability; not an agreed takeover of Unilever. G7: UK-domiciled but UK consumer revenue small (not quantified) - C. G4: FCF EUR5.9bn ~100% cash conversion (S1)."
+ },
+ "bull_points": [
+  "Volume-led recovery: 9M-26 UVG 3.8%, upgraded FY26 UVG >=3% (S2)",
+  "Portfolio pivot to higher-growth HPC/beauty after ice cream and foods exits; USD15.7bn cash proceeds (S3)",
+  "Strong EM franchises (India, LatAm, SE Asia)"
+ ],
+ "bear_points": [
+  "2022-23 growth was price-led (UPG 11.3%/6.6% with volume -2.1%/0.4%) (S5)",
+  "EM 58% of sales brings FX volatility (-5.9% in 2025) and macro risk (S1,S4)",
+  "Execution/dis-synergy risk across two large separations and three CEOs since 2023"
+ ],
+ "thesis_breakers": [
+  "FY2027 UVG below 1.5% for remaining HPC business",
+  "Underlying operating margin below 19%",
+  "Foods transaction collapses or proceeds diverted to large low-return M&A"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Unilever 2025 Full Year Results",
+   "publisher": "Unilever PLC (RNS via Investegate)",
+   "url": "https://www.investegate.co.uk/announcement/rns/unilever--ulvr/2025-full-year-results/9426818",
+   "doc_date": "2026-02-12",
+   "page_ref": "Headline summary; also search summary of full announcement"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "Unilever Q3 2026 Trading Statement",
+   "publisher": "Unilever PLC (RNS via Investegate)",
+   "url": "https://www.investegate.co.uk/announcement/rns/unilever--ulvr/q3-2026-trading-statement/9844580",
+   "doc_date": "2026-10-28",
+   "page_ref": "Headline and business group summary"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "McCormick combines with Unilever's food division",
+   "publisher": "Fortune",
+   "url": "https://fortune.com/2026/03/31/mccormick-combines-unilevers-food-division/",
+   "doc_date": "2026-03-31",
+   "page_ref": "Deal terms"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "PitchBook company profile and financials: Unilever (12626-38)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/12626-38/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/ULVR.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "Unilever full-year results 2021-2024",
+   "publisher": "Unilever PLC",
+   "url": "https://www.unilever.com/investors/results-events/",
+   "doc_date": "2022-02 to 2025-02",
+   "page_ref": "USG/UVG/UPG headline; recalled from releases, not re-fetched this session (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "The Magnum Ice Cream Company demerger",
+   "publisher": "Unilever PLC",
+   "url": "https://www.unilever.com/investors/",
+   "doc_date": "2025-12",
+   "page_ref": "Demerger completion; recalled, not re-fetched"
+  }
+ ]
+}

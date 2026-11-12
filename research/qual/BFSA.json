@@ -1,0 +1,339 @@
+{
+ "id": "BFSA",
+ "name": "Befesa S.A. [SCREEN-DEPTH - commodity-sensitive recycler]",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "Frankfurt (Xetra, Prime Standard)",
+  "ticker": "BFSA",
+  "isin": "LU1704650164",
+  "hq": "Luxembourg (operational HQ Erandio/Bilbao, Spain)",
+  "domicile": "Luxembourg",
+  "corporate_actions": [
+   {
+    "date": "2026-10",
+    "event": "US Section 45X critical-minerals grant to add ~EUR26m EBITDA in Q4-26",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "58208-41",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "not verified",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Plants in Europe (DE, ES, FR, SE, BE), US (AZR, Palmerton), Turkey, South Korea and China (Jiangsu/Henan steel-dust plants). China % not collected - flag; domicile is Luxembourg (not Chinese).",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "9M-26 revenue / adj. EBITDA",
+   "value": "EUR901m (+1%) / EUR192m (+10%)",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "FY26 adj. EBITDA guidance",
+   "value": "EUR260-270m ex grant; EUR286-296m incl. 45X grant",
+   "period": "FY2026",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Net leverage",
+   "value": "2.25x (Q1-26); 2.59x (Sep-25)",
+   "period": "2025-26",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "2.33x",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Asier Zarraonandia (prior knowledge, not verified)",
+  "ceo_since": "",
+  "cfo": "",
+  "cfo_since": "",
+  "senior_turnover_5y": "not reviewed",
+  "succession_notes": "",
+  "guidance_record": "Guidance narrowed upward in 2026"
+ },
+ "ownership": {
+  "controlling_holders": "None (free float; prior knowledge)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "",
+  "remuneration_notes": "",
+  "related_party": ""
+ },
+ "guidance": [
+  {
+   "date": "2026-10",
+   "item": "FY2026 adj. EBITDA",
+   "value": "EUR286-296m incl. 45X grant",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Steel-dust recycling service fees but zinc-linked revenue (S1)"
+   ],
+   "rationale": "Service contracts with commodity-linked economics."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Near-monopoly EAF dust recycling in Europe (prior knowledge)"
+   ],
+   "rationale": "Permits and scale in a niche."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Unclear economics outside Europe."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "EAF steel growth; US/China expansion"
+   ],
+   "rationale": "Moderate."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Europe/US/Asia incl. China plants"
+   ],
+   "rationale": "Mixed with China exposure."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed (2022-24 earnings volatility)."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "US AZR acquisition, China capex (prior knowledge)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Physical recycling"
+   ],
+   "rationale": "Not substitutable."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "<2%."
+  },
+  "I3": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Limited."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Zinc price and treatment charges drive EBITDA; hedged partially (S1)"
+   ],
+   "rationale": "Commodity exposure."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "45X grant boosts EBITDA (S1)"
+   ],
+   "rationale": "Grant-flattered 2026."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Hazardous residue handling; site provisions not collected.",
+  "commodity_sensitivity": "HIGH: zinc LME price, zinc treatment charges, aluminium; hedging programme rolls 2-3 years (prior knowledge)."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Screen-depth only. G1 2.3x C. G6 C (Luxembourg domicile; China operations are plants, not domicile). Commodity sensitivity excludes it from core services peer group."
+ },
+ "bull_points": [
+  "Niche leader in EAF dust recycling; EBITDA +10% 9M.",
+  "US 45X grant support."
+ ],
+ "bear_points": [
+  "Zinc price/treatment charge volatility.",
+  "China and Turkey operations.",
+  "Grant-dependent 2026 uplift."
+ ],
+ "thesis_breakers": [
+  "Zinc hedges roll off at materially lower prices.",
+  "Net leverage >3x."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Befesa: FY 2026 Adj. EBITDA guidance narrowed and Critical Minerals US grant (EQS News)",
+   "publisher": "Befesa via Deutsche Börse/EQS",
+   "url": "https://live.deutsche-boerse.com/news/EQS-News-FY-2026-Adj-EBITDA-guidance-narrowed-to-260m---270m-and-Critical-Minerals-US-grant-to-add-26m-in-EBITDA-in-Q4-2026-resulting-in-a-new-guidance-of-286m---296m-761b02f1-dc96-4e18-a579-55abc2bda2a0",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "9M results, guidance"
+  },
+  {
+   "id": "S2",
+   "title": "PitchBook company profile: Befesa",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/58208-41/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  },
+  {
+   "id": "S3",
+   "title": "Befesa Q1 2026 results",
+   "publisher": "Befesa (EQS)",
+   "url": "https://ir-api.eqs.com/storage/ir/90e4dd/documents/3a678a19-d2ef-41c5-bcc7-e1d0e4fbaee8/LU1704650164-Q1-2026-EQ-E-00.pdf",
+   "doc_date": "2026-04",
+   "retrieved": "2026-11-12",
+   "page_ref": "Leverage 2.25x"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 58208-41",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/58208-41/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/BFSA.json"
+  }
+ ]
+}

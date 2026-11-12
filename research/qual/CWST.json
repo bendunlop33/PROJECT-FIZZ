@@ -1,0 +1,386 @@
+{
+ "id": "CWST",
+ "name": "Casella Waste Systems, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "CWST",
+  "isin": "US1474481041",
+  "hq": "Rutland, Vermont, USA",
+  "domicile": "USA (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2026-Q3",
+    "event": "Granite State (NH) greenfield landfill project abandoned; $13.6m impairment",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "12006-37",
+ "geography": {
+  "fy": "2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 100.0,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": 100.0,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "US Northeast / Mid-Atlantic only.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": null,
+   "price_pct": 5.5,
+   "volume_mix_pct": -1.0,
+   "acq_pct": 9.6,
+   "fx_pct": 0.0,
+   "reported_pct": 15.2,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Solid waste price (collection / disposal)",
+   "value": "5.5% (5.9% / 4.8%)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Landfill volume / collection volume",
+   "value": "+12.8% / -2.1%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adj. EBITDA margin",
+   "value": "23.9%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Replacement vs growth capex",
+   "value": "$126.8m replacement / $73.6m growth (9M)",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adj. FCF / adj. EBITDA 2026E",
+   "value": "~43% ($205m / $478m)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "3.75x",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "9M 2026",
+   "definition": "Adj. FCF: OCF less capex adj. for asset sales, acquisition capex/expenses, McKean rail capex, Lehigh Valley MRF, organics closure outlays",
+   "value": 111.1,
+   "currency": "USD m",
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "definition": "as above",
+   "value": 205,
+   "currency": "USD m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "9M 2026",
+   "cash_spent": 440.1,
+   "currency": "USD m",
+   "earnouts": "",
+   "notes": "Six businesses, >$170m annualised revenue",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Ned Coletta (President & CEO)",
+  "ceo_since": "not verified (2025/26; previously President & CFO)",
+  "cfo": "not named in Q3 release",
+  "cfo_since": "",
+  "senior_turnover_5y": "Founder John Casella moved from CEO (to Exec. Chair - INFERENCE, not verified); CFO role vacated by Coletta",
+  "succession_notes": "Internal succession",
+  "guidance_record": "2026 net income guidance cut to a loss; adj. EBITDA narrowed; FCF reaffirmed"
+ },
+ "ownership": {
+  "controlling_holders": "Casella family holds Class B high-vote shares (10 votes/share) - prior knowledge, verify",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Historic related-party leases with Casella family entities - prior knowledge, verify"
+ },
+ "guidance": [
+  {
+   "date": "2026-10",
+   "item": "FY2026 revenue",
+   "value": "$2.100-2.110bn",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10",
+   "item": "FY2026 adj. EBITDA",
+   "value": "$475-481m",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10",
+   "item": "FY2026 adj. FCF",
+   "value": "$200-210m",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Collection/disposal recurring; Resource Solutions (recycling/brokerage) more volatile (S1)"
+   ],
+   "rationale": "Mostly recurring."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Scarce Northeast disposal capacity; landfill price +4.8%, volume +12.8% (S1)",
+    "Greenfield landfill failed (S1) - shows permit scarcity"
+   ],
+   "rationale": "Disposal scarcity in Northeast is real moat."
+  },
+  "C": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Adj. EBITDA margin ~24% vs peers 31-34% (S1)"
+   ],
+   "rationale": "Subscale vs national peers."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "$440m M&A 9M; Mid-Atlantic expansion (S1)"
+   ],
+   "rationale": "Long roll-up runway; returns unproven."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "US-only (S1)"
+   ],
+   "rationale": "Single country."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Net income guidance cut to loss (S1)"
+   ],
+   "rationale": "Mixed recent record."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Equity- and debt-funded acquisitions; FCF down 7% YTD (S1)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Dual-class family control (prior knowledge)"
+   ],
+   "rationale": "Dual-class weakens minority protection."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical service"
+   ],
+   "rationale": "Not AI-substitutable."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No DC exposure (INFERENCE)"
+   ],
+   "rationale": "<2%."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Routing/automation"
+   ],
+   "rationale": "Moderate."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Price-led contracts"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Floating fuel fees partially implemented (S1)"
+   ],
+   "rationale": "Partial pass-through."
+  },
+  "K": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Adj. FCF excludes several capex projects (S1)",
+    "Reported net loss vs adj. NI $22m Q3 (S1)"
+   ],
+   "rationale": "Many adjustments; definition generous."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not disclosed; INFERENCE <2%."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Landfill closure/post-closure obligations; Granite State project write-off $13.6m; PFAS leachate regulation acute in Northeast (VT/ME/NH) - quantum not disclosed in release.",
+  "commodity_sensitivity": "Resource Solutions recycling commodities (small: +$0.3m Q3); fuel."
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 B: provider ND/EBITDA 3.75x (<4.0x) but TTM EBIT ~$55m vs interest - cover <4x. G4 B: FY2026 net loss guided; FCF/NI not meaningful. G2: dual class / related-party leases are governance points not abuses - C."
+ },
+ "bull_points": [
+  "Northeast disposal scarcity: landfill price +4.8% and volume +12.8%.",
+  "Mid-Atlantic roll-up runway with integration upside to peer margins."
+ ],
+ "bear_points": [
+  "Subscale margins (~24%) and reported losses.",
+  "Generous adj. FCF definition; FCF down y/y.",
+  "Dual-class/family control."
+ ],
+ "thesis_breakers": [
+  "Adj. EBITDA margin fails to reach 25% by FY2027.",
+  "Net leverage >4.0x after further M&A.",
+  "Loss of a major landfill permit renewal."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Casella Q3 2026 results (Form 8-K Ex.99.1)",
+   "publisher": "Casella / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0000911177/000091117726000057/cwst-ex991093026.htm",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Revenue bridge, adj. FCF, guidance"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 12006-37",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/12006-37/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/CWST.json"
+  }
+ ]
+}

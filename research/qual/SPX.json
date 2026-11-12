@@ -1,0 +1,52 @@
+{
+ "id": "SPX", "name": "Spirax Group plc", "as_of": "2026-11-12", "agent": "S4",
+ "listing": {"status": "listed", "exchange": "London Stock Exchange (FTSE 100)", "ticker": "SPX", "isin": "GB00BWFGQN14", "hq": "Cheltenham, United Kingdom", "domicile": "United Kingdom (England & Wales plc)",
+  "corporate_actions": [
+   {"date": "2024-05", "event": "Renamed from Spirax-Sarco Engineering plc to Spirax Group plc (not re-verified to month)", "source": "S2"},
+   {"date": "2025", "event": "Restructuring programme (benefits reinvested in 2026)", "source": "S1"},
+   {"date": "2026-08", "event": "H1 2026 results: organic +5%, adj. op margin 19.8%; ETS +11% organic with margin 17.2%", "source": "S1"}]},
+ "pitchbook_pbid": "62257-87",
+ "geography": {"fy": "2025", "basis": "revenue", "europe_pct": null, "north_america_pct": null, "uk_pct": null, "other_pct": null, "largest_country": "United States", "largest_country_pct": null, "china_pct": null, "em_pct": null,
+  "fx_notes": "Global: ~110,000 direct customers in 130 countries (PitchBook). Americas, EMEA, APAC roughly balanced; China is a meaningful STS market (INFERENCE ~10% of group; not extracted). EM exposure material (China, India, LatAm) but not quantified this run.", "source_ids": ["S2", "S1"]},
+ "organic_growth": [
+  {"fy": "H1 2026", "organic_pct": 5, "price_pct": null, "volume_mix_pct": null, "acq_pct": 0, "fx_pct": 0, "reported_pct": null, "source_id": "S1"}],
+ "kpis": [
+  {"name": "Adjusted operating margin", "value": "19.8% group (+10bp); STS 22.0% (-170bp); ETS 17.2% (+220bp); Watson-Marlow 27.5% (+80bp)", "period": "H1 2026", "class": "FACT", "source_id": "S1"},
+  {"name": "Organic sales growth by business", "value": "STS +1%; ETS +11% (double-digit Semicon); WM +7%", "period": "H1 2026", "class": "FACT", "source_id": "S1"},
+  {"name": "Recurring revenue", "value": "~85% of sales from recurring maintenance and small improvements to existing systems (company/Morningstar description)", "period": "profile", "class": "FACT", "source_id": "S2"},
+  {"name": "Net debt/EBITDA", "value": "1.6x (target 1.0-1.5x); net debt GBP618m", "period": "30-Jun-2026", "class": "FACT", "source_id": "S1"},
+  {"name": "Cash conversion", "value": "54% H1 (seasonal + inventory build); ~90% expected FY", "period": "H1 2026", "class": "FACT", "source_id": "S1"}],
+ "company_fcf": [{"fy": "H1 2026", "definition": "Adjusted cash from operations", "value": 92, "currency": "GBP", "source_id": "S1"}],
+ "lease": {"lease_principal_paid": [{"fy": "2025", "value": null}], "lease_interest_paid": [{"fy": "2025", "value": null}], "source_id": "IFRS filer; not extracted this run"},
+ "acquisitions": [{"fy": "2024-2026", "cash_spent": null, "currency": "GBP", "earnouts": "", "notes": "Focus on deleveraging after Chromalox (2022, ~GBP0.4bn+) built ETS; no material acquisitions in H1 2026 (acq contribution 0)", "source_id": "S1"}],
+ "management": {"ceo": "Nimesh Patel", "ceo_since": "2023-03 (not re-verified)", "cfo": "not verified this run", "cfo_since": "", "senior_turnover_5y": "CEO change 2023; CFO change(s) since (not verified)", "succession_notes": "", "guidance_record": "Mixed: 2023-2024 downgrades on ETS/semicon and biopharm destocking; 2025-26 restructuring and recovery, FY26 guidance reiterated"},
+ "ownership": {"controlling_holders": "None; widely held", "dual_class": false, "activists": [], "board_independence": "UK Code (not re-verified)", "remuneration_notes": "not reviewed", "related_party": "None identified"},
+ "guidance": [
+  {"date": "2026-08", "item": "FY2026", "value": "Higher H2 volumes; STS margin up in H2; ETS high-single-digit H2 growth, margin slightly ahead of H1; WM high-single-digit H2 growth; FY cash conversion ~90%; capex lower end of 4-5% of sales", "class": "TARGET", "source_id": "S1"},
+  {"date": "2026-08", "item": "Medium-term group margin", "value": "22-23%; ETS 20% target", "class": "TARGET", "source_id": "S1"},
+  {"date": "2026-08", "item": "Leverage", "value": "1.0-1.5x net debt/EBITDA by year end", "class": "TARGET", "source_id": "S1"}],
+ "scores": {
+  "A": {"score": 5, "confidence": "M", "evidence": ["~85% of sales from maintenance/small improvements to installed steam systems [S2]", "110,000 direct customers in 130 countries [S2]", "Watson-Marlow consumables strong [S1]"], "rationale": "Highly recurring installed-base revenue with no concentration."},
+  "B": {"score": 5, "confidence": "M", "evidence": ["Direct sales/service engineers ~25% of employees [S2]", "STS margin ~22-24% through cycle [S1]", "Specification-led steam system expertise"], "rationale": "Engineering service intensity and installed base create strong switching costs."},
+  "C": {"score": 4, "confidence": "M", "evidence": ["Global steam leader", "Group margin ~20% [S1]", "ETS still sub-scale on margin (17%) [S1]"], "rationale": "Scale benefits in STS/WM; ETS integration ongoing."},
+  "D": {"score": 3, "confidence": "M", "evidence": ["Growth tied to industrial production + decarbonisation (electrification) [S1]", "Biopharm capacity recovery [S1]", "Low M&A while deleveraging"], "rationale": "Moderate runway; electrification optional upside."},
+  "E": {"score": 4, "confidence": "L", "evidence": ["130 countries [S2]", "No country >40% (INFERENCE)", "China/EM material"], "rationale": "Broad spread, some EM/China risk."},
+  "F": {"score": 3, "confidence": "M", "evidence": ["2023-24 downgrades (ETS/semis, biopharm)", "Restructuring 2025 and delivery in 2026 [S1]", "Leverage above target [S1]"], "rationale": "Mixed, improving."},
+  "G": {"score": 3, "confidence": "M", "evidence": ["Chromalox (ETS) acquisition underdelivered initially", "Deleveraging priority [S1]", "Capex 4-5% of sales [S1]"], "rationale": "Average; ETS returns still below group."},
+  "H": {"score": 4, "confidence": "L", "evidence": ["Widely held", "-", "-"], "rationale": "Good."},
+  "I1": {"score": 5, "confidence": "M", "evidence": ["On-site engineering service", "-", "-"], "rationale": "Very low."},
+  "I2": {"score": 4, "confidence": "L", "evidence": ["ETS Semicon double-digit growth [S1]", "Semicon is a subset of ETS (~quarter of group) - INFERENCE ~5-8% of group", "No data-centre end market cited"], "rationale": "Semis exposure moderate; AI/DC indirect."},
+  "I3": {"score": 3, "confidence": "L", "evidence": ["Digital capabilities investment [S1]", "-", "-"], "rationale": "Some."},
+  "I4": {"score": 4, "confidence": "L", "evidence": ["Value pricing", "-", "-"], "rationale": "Good."},
+  "J": {"score": 4, "confidence": "M", "evidence": ["Pricing passes inflation", "Inventory build vs supply disruption [S1]", "IP-linked volume"], "rationale": "Good."},
+  "K": {"score": 4, "confidence": "M", "evidence": ["Cash conversion ~90% FY [S1]", "Restructuring costs adjusted out (2025)", "-"], "rationale": "Generally clean."}},
+ "ai": {"ai_dc_capex_revenue_pct": null, "semis_revenue_pct": null, "notes": "Semiconductor exposure sits in ETS (Semicon) - double-digit growth in H1 2026; not quantified. INFERENCE: semis ~5-8% of group revenue; AI/DC direct exposure minimal."},
+ "sector_specific": {"ai_dc_pct": null, "semis_pct": null, "construction_pct": null, "acquisition_growth_pct": 0, "notes": "ETS 2024-25: weak semicon and low-margin legacy orders depressed ETS growth/margins; 2026 shows recovery (organic +11%, margin 17.2% toward 20% target) - verified via H1 2026 call. Installed-base/aftermarket ~85% of sales. Acquisition contribution nil in H1 2026."},
+ "gates": {"G1": "C", "G2": "C", "G3": "C", "G4": "C", "G5": "C", "G6": "C", "G7": "C", "notes": "Leverage 1.6x (target 1-1.5x); semis inferred <15%; FY cash conversion ~90% expected (H1 54% seasonal)."},
+ "bull_points": ["~85% recurring installed-base revenue with strong switching costs (S2)", "ETS recovery: +11% organic and margin +220bp toward 20% target (S1)", "Medium-term margin target 22-23% with operating leverage on higher H2 volumes (S1)"],
+ "bear_points": ["STS organic only +1% in H1 2026 and margin down 170bp (S1)", "Chromalox/ETS semicon cyclicality hurt 2023-25 results (S1)", "China/EM and industrial-production sensitivity (S1)"],
+ "thesis_breakers": ["Group adjusted operating margin below 18% for a full year", "ETS margin failing to reach 18% by 2027", "STS organic growth below industrial production for two consecutive years"],
+ "sources": [
+  {"id": "S1", "title": "Spirax Group (SPX) H1 2026 results call transcript (Q2 2026)", "publisher": "PitchBook Transcripts", "url": "https://my.pitchbook.com/research-center/report/23a79ece-c256-3978-8674-7f086ec0ec15", "doc_date": "2026-08", "retrieved": "2026-11-12", "page_ref": "CEO/CFO remarks"},
+  {"id": "S2", "title": "PitchBook company profile Spirax Group", "publisher": "PitchBook", "url": "https://my.pitchbook.com/profile/62257-87/company/profile", "doc_date": "2026-11-12", "retrieved": "2026-11-12", "page_ref": "Description"}]
+}

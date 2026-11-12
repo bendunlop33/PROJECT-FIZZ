@@ -1,0 +1,383 @@
+{
+ "id": "XYL",
+ "name": "Xylem Inc. [ADJACENT - water equipment/instrumentation]",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "XYL",
+  "isin": "US98419M1009",
+  "hq": "Washington, DC, USA (PitchBook); historically Rye Brook, NY",
+  "domicile": "USA (Indiana)",
+  "corporate_actions": [
+   {
+    "date": "2026-10",
+    "event": "Intent to divest Applied Water International and Specialty Flow Control; move to three segments from 2027",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "54002-71",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Global (>150 countries); US roughly half (INFERENCE); Europe ~25-30%; China and EM present (Evoqua added US weight). Not verified.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": -0.3,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -3.0,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "organic_pct": 0.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -1.0,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Organic orders / backlog",
+   "value": "+9.9% organic orders; record backlog $5.5bn (+13%)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "MCS (metering) organic orders / revenue",
+   "value": "+30% / -5%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Applied Water organic revenue / orders; data-centre orders",
+   "value": "+9% / +15%; data-centre orders >+200% (small base)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "1.21x",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  },
+  {
+   "name": "Provider EV derating",
+   "value": "PitchBook EV $25.7bn TTM 3Q26 vs $37.1bn TTM 3Q25",
+   "period": "2025-26",
+   "class": "FACT",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2026",
+   "definition": "not collected",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2023",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "",
+   "notes": "Evoqua all-stock (~$7.5bn EV, 2023, prior knowledge)",
+   "source_id": ""
+  }
+ ],
+ "management": {
+  "ceo": "Matthew Pine",
+  "ceo_since": "2024-01 (prior knowledge)",
+  "cfo": "not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO change 2024 (Decker -> Pine)",
+  "succession_notes": "",
+  "guidance_record": "FY2026 guidance cut at Q3 (organic to flat from +2-3%; adj. EPS to $5.40-5.45 from $5.55-5.70)"
+ },
+ "ownership": {
+  "controlling_holders": "None",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None"
+ },
+ "guidance": [
+  {
+   "date": "2026-10",
+   "item": "FY2026 revenue",
+   "value": "~$8.95bn; organic flat",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10",
+   "item": "FY2026 adj. EPS",
+   "value": "$5.40-5.45",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Utility capex and metering projects lumpy; aftermarket/service share material (S1)"
+   ],
+   "rationale": "Mixed: project equipment plus aftermarket."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Installed base of pumps/treatment; Sensus AMI platforms (S2)"
+   ],
+   "rationale": "Brands, installed base, utility specifications."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Adj. EBITDA margin ~22-24% (S1)"
+   ],
+   "rationale": "Scale without clear superiority."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Record backlog; water scarcity/PFAS/digital water (S1)"
+   ],
+   "rationale": "Structural runway; recent execution weak."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "US ~half; Europe/RoW rest (INFERENCE)"
+   ],
+   "rationale": "Two-region mix with some China/EM."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "2026 guidance cut; restructuring (S1)"
+   ],
+   "rationale": "Recent miss."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Evoqua all-stock deal; buybacks (paid-in capital falling, PB); divestitures planned (S1)"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Physical equipment; software analytics partly exposed"
+   ],
+   "rationale": "Low."
+  },
+  "I2": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "DC orders growing fast but small (S1)"
+   ],
+   "rationale": "INFERENCE 2-5% tied to DC/AI capex."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Tariffs/inflation compressed Applied Water margin 40bp (S1)"
+   ],
+   "rationale": "Partial pass-through."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Restructuring and acquisition amortisation adjustments"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Data-centre orders in Applied Water +200%+ in Q3-26; revenue share not disclosed - INFERENCE 2-5%."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Not material (equipment maker); legacy ITT asbestos excluded? not verified.",
+  "commodity_sensitivity": "Metals (steel, copper), electronics components; tariffs."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "ADJACENT subgroup (not core services; does not count toward core 10). G1 1.21x. G5: DC exposure well below 15%. Guidance cut is a quality signal, not a gate."
+ },
+ "bull_points": [
+  "Record backlog and +10% organic orders imply 2027-28 recovery.",
+  "Portfolio simplification (divest low-margin units).",
+  "Shares derated (provider EV -31% y/y)."
+ ],
+ "bear_points": [
+  "Guidance cut; organic flat in 2026.",
+  "Metering demand discretionary/timing-dependent.",
+  "Tariff and inflation margin pressure."
+ ],
+ "thesis_breakers": [
+  "FY2027 organic growth <3% despite backlog.",
+  "Adj. EBITDA margin <21%.",
+  "Large debt-funded acquisition."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Xylem Q3 2026 results and strategic actions (summaries of company release)",
+   "publisher": "Quartr / 24/7 Wall St (secondary)",
+   "url": "https://quartr.com/events/xylem-inc-xyl-q3-2026_3PU765Td",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Orders, backlog, guidance, segments"
+  },
+  {
+   "id": "S2",
+   "title": "PitchBook company profile: Xylem",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/54002-71/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 54002-71",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/54002-71/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/XYL.json"
+  }
+ ]
+}

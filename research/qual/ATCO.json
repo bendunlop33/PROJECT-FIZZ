@@ -1,0 +1,340 @@
+{
+ "id": "ATCO",
+ "name": "Atlas Copco AB",
+ "as_of": "2026-11-12",
+ "agent": "S4",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq Stockholm (Large Cap)",
+  "ticker": "ATCO A (also ATCO B)",
+  "isin": "SE0017486889",
+  "hq": "Nacka (Stockholm), Sweden",
+  "domicile": "Sweden",
+  "corporate_actions": [
+   {
+    "date": "2026-10-22",
+    "event": "Q3 2026: orders SEK52.3bn (+25% organic), revenue SEK47.9bn (+11% organic); Vacuum Technique orders +82% organic (semiconductor); four acquisitions closed",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "57594-25",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "not extracted (USA and China are largest single markets - INFERENCE)",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Presence in 180 countries; regions Asia/Oceania, Europe, North America, South America, Africa/Middle East. Asia orders +39% and North America +39% in Q3 2026. China exposure material (INFERENCE ~10-15%), not quantified at screen depth.",
+  "source_ids": [
+   "S1",
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3 2026",
+   "organic_pct": 11,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Operating margin",
+   "value": "20.8% reported; 21.3% underlying; Compressor Technique 23.6%; Vacuum Technique 22.2%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Orders organic growth by BA",
+   "value": "CT +6%, VT +82%, PT +13%, IT +12%; structural (acquisitions) +3%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Revenue model",
+   "value": "Equipment, spare parts and maintenance service (service growing)",
+   "period": "profile",
+   "class": "FACT",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted",
+   "value": null,
+   "currency": "SEK",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "latest",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "latest",
+    "value": null
+   }
+  ],
+  "source_id": "screen-depth: not extracted"
+ },
+ "acquisitions": [
+  {
+   "fy": "Q3 2026",
+   "cash_spent": null,
+   "currency": "SEK",
+   "earnouts": "",
+   "notes": "Four acquisitions closed incl. Euroklimat (cooling/heat pumps); acquisitions +3% to orders",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Vagner Rego",
+  "ceo_since": "2024-03 (not re-verified)",
+  "cfo": "Peter Kinnart",
+  "cfo_since": "not verified",
+  "senior_turnover_5y": "Orderly internal CEO succession (Mats Rahmstrom -> Vagner Rego)",
+  "succession_notes": "Internal",
+  "guidance_record": "Near-term demand outlook only"
+ },
+ "ownership": {
+  "controlling_holders": "Investor AB (Wallenberg sphere) largest shareholder with significant voting power via A shares (exact % not re-verified)",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "Swedish Code; anchor owner",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-22",
+   "item": "Outlook",
+   "value": "Qualitative near-term demand outlook (not captured)",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Large installed base with parts and service [S2]",
+    "Equipment orders cyclical (VT +82%) [S1]",
+    "Diversified customers"
+   ],
+   "rationale": "Aftermarket-heavy but equipment cyclicality, especially vacuum/semis."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Global leader in compressors and vacuum [S2]",
+    "CT margin 23.6% [S1]",
+    "Technology innovation [S1]"
+   ],
+   "rationale": "Strong technology and service moat."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Group margin ~21% [S1]",
+    "Scale in R&D and service network",
+    "-"
+   ],
+   "rationale": "Scale produces superior margins."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Bolt-on acquisitions (4 in Q3) [S1]",
+    "Energy-efficiency, electrification, semis",
+    "-"
+   ],
+   "rationale": "Good runway."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "180 countries [S2]",
+    "Asia/NA/Europe balanced (INFERENCE)",
+    "China material"
+   ],
+   "rationale": "Balanced but with China/EM exposure."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Orderly succession",
+    "Consistent execution",
+    "-"
+   ],
+   "rationale": "Solid."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Steady bolt-ons",
+    "Low leverage (PitchBook ND/EBITDA ~0.25x) [S3]",
+    "-"
+   ],
+   "rationale": "Disciplined."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Dual-class; Investor AB anchor",
+    "-",
+    "-"
+   ],
+   "rationale": "Anchor-controlled, noted neutrally."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Physical equipment and field service",
+    "-",
+    "-"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Vacuum Technique orders +82% on semiconductor [S1]",
+    "Semis share of group not quantified (INFERENCE ~12-18%)",
+    "Power Technique gensets may include DC demand"
+   ],
+   "rationale": "Semiconductor capex (largely AI-driven currently) is a material, cyclical exposure."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "-",
+    "-",
+    "-"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Pricing power",
+    "-",
+    "-"
+   ],
+   "rationale": "Good."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Supply-chain cost and FX headwinds [S1]",
+    "Industrial/semis cyclicality",
+    "-"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Restructuring items disclosed separately [S1]",
+    "-",
+    "-"
+   ],
+   "rationale": "Clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Semiconductor exposure via Vacuum Technique (orders +82% organic in Q3 2026, driven mainly by semis). INFERENCE: semis ~12-18% of group revenue and rising; AI-chip capex is a key driver. Not quantified by company in source."
+ },
+ "sector_specific": {
+  "ai_dc_pct": null,
+  "semis_pct": null,
+  "construction_pct": null,
+  "acquisition_growth_pct": 3,
+  "notes": "acquisition_growth_pct = Q3 2026 structural contribution to orders (FACT). Power Technique serves construction/rental (not quantified). Screen depth."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "B",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G5 -> B (provisional): semiconductor-driven Vacuum Technique surge (+82% orders) suggests AI-linked semis capex may approach/exceed 15% of revenue; requires quantification from annual report. Dual-class anchor ownership noted neutrally."
+ },
+ "bull_points": [
+  "Aftermarket-heavy global leader with ~21% margins (S1)",
+  "Broad organic order growth across all business areas in Q3 2026 (S1)"
+ ],
+ "bear_points": [
+  "Semiconductor/AI capex cyclicality in Vacuum Technique (S1)",
+  "China/Asia exposure (S1)",
+  "Industrial Technique restructuring in Germany (S1)"
+ ],
+ "thesis_breakers": [
+  "Vacuum Technique orders falling >30% y/y for two quarters",
+  "Group operating margin below 18%"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Atlas Copco (ATCO A) Q3 2026 earnings call transcript",
+   "publisher": "PitchBook Transcripts",
+   "url": "https://my.pitchbook.com/research-center/report/4217b1e9-50c4-3749-9e66-8885cee934d4",
+   "doc_date": "2026-10-22",
+   "retrieved": "2026-11-12",
+   "page_ref": "CEO remarks"
+  },
+  {
+   "id": "S2",
+   "title": "PitchBook company profile Atlas Copco",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/57594-25/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  },
+  {
+   "id": "S3",
+   "title": "PitchBook financials Atlas Copco (57594-25)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/57594-25/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/ATCO.json"
+  }
+ ]
+}

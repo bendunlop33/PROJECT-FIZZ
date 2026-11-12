@@ -1,0 +1,276 @@
+{
+ "id": "MLP",
+ "name": "MLP SE (screen depth; ADJACENT European advisory/broking comparator)",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "Xetra (Frankfurt)",
+  "ticker": "MLP",
+  "isin": "DE0006569908",
+  "hq": "Wiesloch, Germany",
+  "domicile": "Germany",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "98484-22",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": 100,
+  "north_america_pct": 0,
+  "uk_pct": 0,
+  "other_pct": 0,
+  "largest_country": "Germany",
+  "largest_country_pct": null,
+  "china_pct": 0,
+  "em_pct": 0,
+  "fx_notes": "Essentially Germany-only (INFERENCE from segment description; country split not extracted). EUR reporter; PitchBook figures are USD-converted.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2026 H1",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 10.3,
+   "source_id": "S3"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "FY2026 EBIT guidance",
+   "value": "EUR 110-120m (raised from 100-110m)",
+   "period": "FY2026",
+   "class": "TARGET",
+   "source_id": "S2"
+  },
+  {
+   "name": "H1-26 revenue / EBIT",
+   "value": "EUR 583.4m (+10.3%) / EUR 64m (+41.4%)",
+   "period": "H1 2026",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "2028 mid-term target",
+   "value": "EBIT EUR 140-155m; revenue EUR 1.3-1.4bn",
+   "period": "2028",
+   "class": "TARGET",
+   "source_id": "S3"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Uwe Schroeder-Wildberg",
+  "ceo_since": "2002 (not re-verified)",
+  "cfo": "Reinhard Loose (not re-verified)",
+  "cfo_since": "",
+  "senior_turnover_5y": "not reviewed (screen depth)",
+  "succession_notes": "",
+  "guidance_record": "EBIT guidance raised in 2026 (S2)"
+ },
+ "ownership": {
+  "controlling_holders": "Founder Manfred Lautenschlaeger family historically largest holder - % not verified",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "German two-tier board",
+  "remuneration_notes": "",
+  "related_party": ""
+ },
+ "guidance": [
+  {
+   "date": "2026-10-02",
+   "item": "FY2026 EBIT",
+   "value": "EUR 110-120m",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Mix of recurring wealth/insurance trail fees and transactional/performance fees (S1,S2)"
+   ],
+   "rationale": "Mixed recurring."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Academic/professional client niche; banking licence (S1)"
+   ],
+   "rationale": "Some differentiation."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "EBIT margin ~10% (S3)"
+   ],
+   "rationale": "Unclear scale economics."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "2028 plan implies mid-single-digit revenue growth (S3)"
+   ],
+   "rationale": "Moderate."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "Germany-focused (S1)"
+   ],
+   "rationale": "Single country."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Guidance raised 2026 (S2)"
+   ],
+   "rationale": "Long-tenured, delivering."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Not reviewed"
+   ],
+   "rationale": "Average (screen)."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Founder-family holder (S1)"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 2,
+   "confidence": "L",
+   "evidence": [
+    "Retail financial and insurance advice (S1)"
+   ],
+   "rationale": "Consumer advice exposed to robo/AI advice and direct channels."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Adviser network"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Commission-based"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Performance fees (FERI) and interest income drive 2026 EBIT (S2)"
+   ],
+   "rationale": "Market-sensitive."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Bank-consolidated balance sheet complicates leverage (S1)"
+   ],
+   "rationale": "Average."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "Not a pure insurance broker: insurance brokerage (DOMCURA, Industrial Broker) is a minority of revenue; growth driven by wealth management, performance fees and interest income. Labelled ADJACENT comparator only.",
+  "retention_pct": "not disclosed",
+  "contingent_consideration": "not extracted",
+  "producer_retention": "Adviser (consultant) count not extracted"
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Screen depth. G1 = B: PitchBook total debt ($3.6bn) includes MLP Banking AG client deposits, so provider leverage (~24x) is not meaningful; corporate leverage needs company-level evidence. G4 = B: bank consolidation distorts FCF. Not a UK consumer exposure (G7 C)."
+ },
+ "bull_points": [
+  "Only listed European advisory/broking platform of scale in the universe; EBIT guidance raised 2026.",
+  "2028 targets imply continued EBIT growth."
+ ],
+ "bear_points": [
+  "Germany-only consumer advice; AI/robo substitution risk; performance-fee volatility.",
+  "Banking subsidiary complicates leverage and cash analysis; not a pure insurance broker."
+ ],
+ "thesis_breakers": [
+  "FY2026 EBIT below EUR 110m.",
+  "2028 EBIT target withdrawn."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: MLP SE (98484-22)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/98484-22/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile (segments: Financial Consulting, Banking, FERI, DOMCURA, Industrial Broker); TTM 2Q26 (USD) revenue $1.32bn, EBITDA $152m; debt $3.6bn includes banking-segment deposits"
+  },
+  {
+   "id": "S2",
+   "title": "MLP Group expects significantly higher EBIT for Q3 2026 and raises EBIT forecast for full year 2026 to EUR 110-120 million (EQS ad hoc)",
+   "publisher": "EQS / Deutsche Boerse",
+   "url": "https://live.deutsche-boerse.com/news/EQS-Adhoc-MLP-SE-MLP-Group-expects-significantly-higher-EBIT-for-Q3-2026-than-in-the-previous-year-and-raises-EBIT-forecast-for-full-year-2026-to-EUR-110-to-120-million-5c241915-4493-4971-9748-acba5a42f210",
+   "doc_date": "2026-10-02",
+   "retrieved": "2026-11-12",
+   "page_ref": "Ad hoc release"
+  },
+  {
+   "id": "S3",
+   "title": "MLP H1 2026 results (summary)",
+   "publisher": "Quartr / company",
+   "url": "https://quartr.com/events/mlp-se-mlp-q2-2026_Fstkd8da",
+   "doc_date": "2026-08",
+   "retrieved": "2026-11-12",
+   "page_ref": "H1-26 total revenue EUR 583.4m (+10.3%), EBIT EUR 64m (+41.4%); mid-term plan 2028 EBIT EUR 140-155m, revenue EUR 1.3-1.4bn"
+  }
+ ]
+}

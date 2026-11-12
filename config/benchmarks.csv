@@ -1,0 +1,19 @@
+key,yahoo,name,currency,type,use_adjclose,notes
+SP500TR,^SP500TR,S&P 500 Total Return index,USD,index_tr,0,Official TR index level (dividends reinvested gross)
+FTSE250TR,VMID.L,Vanguard FTSE 250 UCITS ETF (dist) - TR proxy,GBP,etf_proxy,1,FTSE 250 TR index not available; ETF adjclose reinvests distributions; OCF 0.10%; inception Sep-2014
+UK_LARGE,CUKX.L,iShares Core FTSE 100 (Acc) - UK large-cap TR proxy,GBp,etf_proxy,1,FTSE All-Share TR unavailable; FTSE 100 acc ETF used; OCF 0.07%
+US_BROAD,^SP500TR,S&P 500 Total Return index,USD,index_tr,0,Broad US large-cap
+US_MID,IJH,iShares Core S&P Mid-Cap ETF - TR proxy,USD,etf_proxy,1,Size-matched comparison for mid caps; OCF 0.05%
+EUROPE,EXSA.DE,iShares STOXX Europe 600 (DE) - TR proxy,EUR,etf_proxy,1,Broad Europe incl UK; adjclose reinvests distributions; German fund withholding differences
+CANADA,XIC.TO,iShares Core S&P/TSX Capped Composite - TR proxy,CAD,etf_proxy,1,
+US_INDUSTRIALS,XLI,Industrial Select Sector SPDR,USD,etf_proxy,1,
+US_STAPLES,XLP,Consumer Staples Select Sector SPDR,USD,etf_proxy,1,
+US_HEALTH,XLV,Health Care Select Sector SPDR,USD,etf_proxy,1,
+US_UTILITIES,XLU,Utilities Select Sector SPDR,USD,etf_proxy,1,
+US_INSURANCE,KIE,SPDR S&P Insurance ETF,USD,etf_proxy,1,Includes carriers - imperfect for brokers
+EU_INDUSTRIALS,EXH4.DE,iShares STOXX Europe 600 Industrial Goods & Services,EUR,etf_proxy,1,
+EU_FOODBEV,EXH3.DE,iShares STOXX Europe 600 Food & Beverage,EUR,etf_proxy,1,
+EU_HPC,EXH7.DE,iShares STOXX Europe 600 Personal & Household Goods,EUR,etf_proxy,1,
+EU_HEALTH,EXV4.DE,iShares STOXX Europe 600 Health Care,EUR,etf_proxy,1,
+EU_INSURANCE,EXH5.DE,iShares STOXX Europe 600 Insurance,EUR,etf_proxy,1,Carriers dominate - imperfect for brokers
+EU_UTILITIES,EXH9.DE,iShares STOXX Europe 600 Utilities,EUR,etf_proxy,1,

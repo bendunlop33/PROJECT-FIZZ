@@ -1,0 +1,310 @@
+{
+ "id": "DEMANT",
+ "name": "Demant A/S",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq Copenhagen",
+  "ticker": "DEMANT",
+  "isin": "DK0060738599 (not re-verified)",
+  "hq": "Smørum, Denmark",
+  "domicile": "Denmark",
+  "corporate_actions": [
+   {
+    "date": "2025",
+    "event": "Acquisition of KIND Group (German hearing-care retailer) - main driver of 22% acquisitive growth in Q3 2026",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "59378-68",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports DKK; >80% North America + Europe (PitchBook profile)",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3 2026",
+   "organic_pct": 11,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": 22,
+   "fx_pct": null,
+   "reported_pct": 21,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "organic_pct": "7-8",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Hearing aids organic growth",
+   "value": "17%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Diagnostics organic",
+   "value": "4%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "EBIT before special items guide",
+   "value": "DKK 4.7-5.0bn",
+   "period": "2026",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Buybacks",
+   "value": "≥DKK 3bn Q4-26 to end-27",
+   "period": "2026-27",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Søren Nielsen",
+  "ceo_since": "2015",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "Stable",
+  "succession_notes": "n/a",
+  "guidance_record": "Outlook raised Oct-2026"
+ },
+ "ownership": {
+  "controlling_holders": "William Demant Foundation (via William Demant Invest) controlling (~55-60%, recalled, not re-verified)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Not reviewed",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "Foundation control"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-03",
+   "item": "2026 organic growth",
+   "value": "7-8%",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-11-03",
+   "item": "2026 EBIT before special items",
+   "value": "DKK 4,700-5,000m",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Replacement-cycle devices plus retail clinics (PB)"
+   ],
+   "rationale": "Semi-recurring."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Oticon; vertically integrated retail"
+   ],
+   "rationale": "Oligopoly."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Large retail network"
+   ],
+   "rationale": "Scale."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Q3 organic 11% (S1)"
+   ],
+   "rationale": "Good."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    ">80% NA+Europe (PB)"
+   ],
+   "rationale": "Balanced developed."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Long-tenured CEO; raised guidance (S2)"
+   ],
+   "rationale": "Good."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Retail roll-up; buybacks resumed (S2)",
+    "Exited Communications (EPOS) and Hearing Implants"
+   ],
+   "rationale": "Average-good."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Foundation controlled"
+   ],
+   "rationale": "Standard, controlling holder noted neutrally."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Physical device + service"
+   ],
+   "rationale": "Low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Reimbursement-driven"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Special items around divestments"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "Hearing aids (incl. retail) majority",
+  "litigation": "None material",
+  "reimbursement": "Material (national hearing-aid schemes)"
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 B (provisional): PitchBook net debt $3.09bn (4Q2025) / TTM EBITDA $0.77bn ≈ 4.0x incl. leases (ESTIMATE); needs pre-lease EBITDAaL check after KIND acquisition."
+ },
+ "bull_points": [
+  "Strong 2026 momentum (Q3 organic 11%)",
+  "Vertical retail integration",
+  "Buybacks resumed"
+ ],
+ "bear_points": [
+  "Leverage elevated after KIND",
+  "Product-cycle share volatility",
+  "Reimbursement risk"
+ ],
+ "thesis_breakers": [
+  "Organic below 4% in 2027",
+  "Leverage above 3.5x net debt/EBITDA"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Demant A/S - Interim management statement for Q3 2026",
+   "publisher": "Demant A/S (via Inderes)",
+   "url": "https://www.inderes.dk/en/releases/demant-as-interim-management-statement-for-q3-2026",
+   "doc_date": "2026-11-03",
+   "retrieved": "2026-11-12",
+   "page_ref": "organic growth; outlook"
+  },
+  {
+   "id": "S2",
+   "title": "Demant A/S - Upgraded financial outlook for 2026 and resumption of share buy-backs",
+   "publisher": "Demant A/S (via Inderes)",
+   "url": "https://www.inderes.dk/en/releases/demant-as-upgraded-financial-outlook-for-2026-and-resumption-of-share-buy-backs",
+   "doc_date": "2026-10-09",
+   "retrieved": "2026-11-12",
+   "page_ref": "outlook raise"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/59378-68/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

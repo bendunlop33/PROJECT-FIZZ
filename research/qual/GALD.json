@@ -1,0 +1,346 @@
+{
+ "id": "GALD",
+ "name": "Galderma Group AG",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "SIX Swiss Exchange",
+  "ticker": "GALD",
+  "isin": "CH1335392721 (not re-verified)",
+  "hq": "Zug, Switzerland",
+  "domicile": "Switzerland",
+  "corporate_actions": [
+   {
+    "date": "2024-03-22",
+    "event": "IPO on SIX (EQT-led consortium sellers)",
+    "source": "PB"
+   },
+   {
+    "date": "2025",
+    "event": "L'Oréal acquired 10% stake; increased in Dec-2025 (percentage not verified)",
+    "source": "PB"
+   },
+   {
+    "date": "2026-09-29",
+    "event": "Galderma filed arbitration against Ipsen over certain rights/obligations (Dysport licence parties)",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "51279-22",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 40,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": 40,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports USD; ~40% US per PitchBook/Morningstar profile; full regional split not collected",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2025 (9M, cc)",
+   "organic_pct": 15.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2026 (9M, cc)",
+   "organic_pct": 25.1,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance (cc)",
+   "organic_pct": "22.5-23.5",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Nemluvio net sales",
+   "value": "$735m (9M 2026)",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Injectable Aesthetics growth (cc)",
+   "value": "+13.2%",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Dermatological Skincare growth (cc)",
+   "value": "+16.2%",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Therapeutic Dermatology growth (cc)",
+   "value": "+64.4%",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Core EBITDA margin guidance",
+   "value": "~26% cc",
+   "period": "FY2026",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Flemming Ørnskov",
+  "ceo_since": "2019",
+  "cfo": "Thomas Dittrich",
+  "cfo_since": "2023 (recalled, not re-verified)",
+  "senior_turnover_5y": "Stable since 2019 carve-out",
+  "succession_notes": "n/a",
+  "guidance_record": "Raised guidance repeatedly in 2025-26 (S1,S2)"
+ },
+ "ownership": {
+  "controlling_holders": "Former EQT consortium sold down; L'Oréal strategic minority holder (stake % not verified)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Not reviewed",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "L'Oréal is both shareholder and historical partner; Ipsen licensor dispute"
+ },
+ "guidance": [
+  {
+   "date": "2026-10",
+   "item": "FY2026 net sales growth cc",
+   "value": "22.5-23.5%",
+   "class": "TARGET",
+   "source_id": "S2"
+  },
+  {
+   "date": "2026-10",
+   "item": "Core EBITDA margin cc",
+   "value": "~26%",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Aesthetics is discretionary, skincare repeat, Rx (Nemluvio) chronic (S1)"
+   ],
+   "rationale": "Mixed: discretionary aesthetics plus chronic biologic."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Leader in neuromodulators/fillers ex-US; Cetaphil brand (PB)"
+   ],
+   "rationale": "Strong brands and regulatory barriers."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Core EBITDA ~26% vs peers"
+   ],
+   "rationale": "Scale in dermatology channel."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "9M 2026 +25.1% cc volume-led (S1)"
+   ],
+   "rationale": "Strong runway, increasingly Rx-led."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "US ~40% (PB)"
+   ],
+   "rationale": "Balanced but US-heavy."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Guidance raised twice in 2026 (S2)"
+   ],
+   "rationale": "Delivering."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Deleveraging post-IPO: net debt $1.9bn (PB)"
+   ],
+   "rationale": "Average; limited track record as listed company."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Recent PE exit; L'Oréal stake"
+   ],
+   "rationale": "Standard, evolving."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical injectables/prescription"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Commercial ops"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Premium pricing"
+   ],
+   "rationale": "Good."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Aesthetics cyclical with consumer spend"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Net income only turned positive 2024 after IPO deleveraging (PB)"
+   ],
+   "rationale": "Some adjustments (core EBITDA)."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5% within 5y (INFERENCE: Nemluvio is a 2024-launched biologic with US 12-yr data exclusivity to ~2036; neuromodulators are biologics with low biosimilar threat; Restylane fillers device-regulated)",
+  "top_product_pct": "Nemluvio ~15% of 9M 2026 sales ($735m / $4,765m, ESTIMATE); Dysport family likely >15% but not disclosed",
+  "litigation": "Arbitration vs Ipsen filed 29-Sep-2026 regarding licence rights (Dysport/Azzalure reported unaffected per press); outcome uncertain",
+  "reimbursement": "Nemluvio subject to US payer coverage/PBM rebates; aesthetics self-pay"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G3 C: Nemluvio ~15% but exclusivity beyond 5y; flag growing Rx concentration (sector brief: exclude research-led pharma dependent on few drugs) - borderline consumer-health/pharma hybrid. Ipsen arbitration monitored."
+ },
+ "bull_points": [
+  "Fastest-growing name in sector (+25% cc 2026) with volume-led growth",
+  "Nemluvio expands Therapeutic Dermatology with long exclusivity",
+  "Raised guidance twice in 2026"
+ ],
+ "bear_points": [
+  "Increasing dependence on a single biologic (Nemluvio) - pharma-like risk profile",
+  "Aesthetics demand is discretionary and cyclical",
+  "Ipsen arbitration over licensed neuromodulator rights"
+ ],
+ "thesis_breakers": [
+  "Nemluvio sales growth stalls / safety issue",
+  "Adverse Ipsen arbitration affecting Dysport/Azzalure rights",
+  "Aesthetics organic decline for two consecutive quarters"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Galderma delivers net sales of 4.765 B USD in the first nine months, up 25.1% at constant currency, and raises full year net sales guidance",
+   "publisher": "Galderma Group AG (via STT Info)",
+   "url": "https://www.sttinfo.fi/tiedote/72433324/galderma-delivers-net-sales-of-4765-b-usd-in-the-first-nine-months-up-251percent-at-constant-currency-year-on-year-and-raises-full-year-net-sales-guidance?publisherId=58763726",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "headline; category growth; Nemluvio"
+  },
+  {
+   "id": "S2",
+   "title": "Galderma raises 2026 net sales growth forecast to 22.5%-23.5% at constant currency",
+   "publisher": "AWP/Vermögenszentrum",
+   "url": "https://www.vermoegenszentrum.ch/en/stock-exchange-and-markets/news/galderma-raises-2026-net-sales-growth-forecast-225-235-constant",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "guidance"
+  },
+  {
+   "id": "S3",
+   "title": "Galderma: 9M 2025 results release",
+   "publisher": "Galderma / Business Wire",
+   "url": "https://www.businesswire.com/news/home/20251022731015/en/",
+   "doc_date": "2025-10-22",
+   "retrieved": "2026-11-12",
+   "page_ref": "prior-year growth 15.0% cc"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/51279-22/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

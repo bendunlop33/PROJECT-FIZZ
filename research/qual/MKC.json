@@ -1,0 +1,356 @@
+{
+ "id": "MKC",
+ "name": "McCormick & Company, Incorporated",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "MKC",
+  "isin": "US5797802064",
+  "hq": "Hunt Valley, Maryland, USA",
+  "domicile": "United States (Maryland)",
+  "corporate_actions": [
+   {
+    "date": "2026-03-31",
+    "event": "Agreed to combine with Unilever Foods (Knorr, Hellmann's; ex India/Nepal/Portugal) - transaction value ~USD44.8bn; Unilever + its shareholders to own 65% of combined equity (MKC holders 35%), Unilever receives USD15.7bn cash; Brendan Foley to lead; close expected by mid-2027 subject to MKC shareholder vote and regulatory approvals",
+    "source": "S2"
+   },
+   {
+    "date": "2026-01",
+    "event": "Increased stake in McCormick de Mexico to controlling interest (consolidated) - recalled",
+    "source": "S5"
+   }
+  ]
+ },
+ "pitchbook_pbid": "41201-38",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Standalone MKC is Americas-heavy (majority US); EMEA and APAC (incl. China) smaller - exact % not retrieved. Post-deal combined company: ~40% EM, ~25% Europe, ~33% North America (Morningstar, S3).",
+  "source_ids": [
+   "S3"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-FY2026",
+   "organic_pct": 1.9,
+   "price_pct": 2.2,
+   "volume_mix_pct": -0.3,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Q3-FY2026 Consumer organic (price / vol-mix)",
+   "value": "+1% (+2% / -1%); Consumer Americas volume -2.5%",
+   "period": "Q3 FY2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Q3-FY2026 Flavor Solutions organic (price / vol-mix)",
+   "value": "+3% (+2% / +1%)",
+   "period": "Q3 FY2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "name": "Combined company synergy target",
+   "value": "USD600m annual cost savings",
+   "period": "post-close",
+   "source_id": "S2"
+  },
+  {
+   "class": "TARGET",
+   "name": "Pro-forma net leverage at close",
+   "value": "<=4.0x, to ~3.0x within two years",
+   "period": "post-close",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "FY2025",
+   "definition": "Free cash flow (OCF - capex)",
+   "value": null,
+   "currency": "USD",
+   "source_id": "",
+   "note": "not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "FY2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "FY2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "US GAAP"
+ },
+ "acquisitions": [
+  {
+   "fy": "FY2026",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "not disclosed",
+   "notes": "McCormick de Mexico control step-up; Unilever Foods combination pending (USD15.7bn cash component funded by new debt)",
+   "source_id": "S2"
+  }
+ ],
+ "management": {
+  "ceo": "Brendan M. Foley",
+  "ceo_since": "2023-09",
+  "cfo": "Marcos Gabriel",
+  "cfo_since": "2024",
+  "senior_turnover_5y": "Moderate: CEO Kurzius -> Foley (2023); CFO change 2024",
+  "succession_notes": "Foley to be Chair/President/CEO of combined company",
+  "guidance_record": "FY2026 outlook (organic +1-3%) reaffirmed at Q3"
+ },
+ "ownership": {
+  "controlling_holders": "None today (historically non-voting/voting share classes MKC.V/MKC); post-close Unilever ~9.9%, Unilever shareholders ~55.1%",
+  "dual_class": true,
+  "activists": [
+   {
+    "name": "None identified",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Unilever to appoint 4 of 12 directors post-close (S2)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Post-close Unilever 9.9% holder and supply/TSA relationships expected"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-10",
+   "item": "FY2026 organic sales",
+   "value": "+1% to +3%",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-03-31",
+   "item": "Transaction close",
+   "value": "by mid-2027",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Spices/condiments consumables + B2B flavours (S3)"
+   ],
+   "rationale": "Recurring demand; Flavor Solutions has customer concentration."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Category leader in US spices; brands Frank's, French's, Cholula (S3)"
+   ],
+   "rationale": "Strong brand position but volumes soft."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Scale leader in spices; margin pressure from tariffs/commodities (INFERENCE)"
+   ],
+   "rationale": "Scale benefits not clearly evidenced vs peers recently."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Q3 organic +1.9%, all price (S1)"
+   ],
+   "rationale": "Moderate runway; flavour trends supportive."
+  },
+  "E": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Majority US (S3)"
+   ],
+   "rationale": "US-concentrated standalone; deal changes mix entirely."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Reaffirmed guidance (S1)"
+   ],
+   "rationale": "Mixed; large transformational bet."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Transformational deal with 65% dilution to Unilever side and leverage to 4.0x (S2)",
+    "Cholula/FONA at full prices (S5)"
+   ],
+   "rationale": "High-risk capital allocation; pro-forma leverage elevated."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Historic dual share classes (S5)",
+    "Unilever board seats post-close (S2)"
+   ],
+   "rationale": "Standard; governance to change materially."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical food"
+   ],
+   "rationale": "Very low AI risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Synergy programme (S2)"
+   ],
+   "rationale": "Some scope."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Retailer pressure"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Tariffs on imported spices; commodity exposure (INFERENCE)"
+   ],
+   "rationale": "Partial pass-through."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Deal-related costs ahead (S2)"
+   ],
+   "rationale": "Standard; large transaction adjustments ahead."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "Q3-FY2026": 2.2
+  },
+  "volume_pct": {
+   "Q3-FY2026": -0.3
+  },
+  "price_volume_note": "FY2021-FY2025 split not retrieved (data gap); post-deal history non-comparable",
+  "private_label_risk": "Medium-high: store-brand spices common in US grocery (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "Walmart is largest customer (~10%+ historically, not re-verified)"
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "A",
+  "G7": "C",
+  "notes": "G6 A: transaction-dominated - pending combination with Unilever Foods (roughly twice MKC's size) leaves MKC holders with 35% of the combined company; standalone MKC fundamentals will not represent the investment over the 5-year horizon. G1 B: pro-forma net leverage up to 4.0x at close (>3.5x staples threshold) with stated path to ~3.0x in two years."
+ },
+ "bull_points": [
+  "Combined company would be a global flavour/condiments leader with USD600m synergies (S2)",
+  "Flavor Solutions volume growth (+1% vol/mix Q3) (S1)"
+ ],
+ "bear_points": [
+  "Transaction-dominated: MKC holders diluted to 35%; integration of a business ~2x its size (S2)",
+  "Pro-forma leverage ~4.0x",
+  "Consumer volumes declining (Americas -2.5%) with growth all price (S1)"
+ ],
+ "thesis_breakers": [
+  "Deal closes with leverage >4.0x or synergy target cut",
+  "Combined organic growth below 2% in first full year",
+  "Deal break with material break costs"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "McCormick reports solid third quarter performance and reaffirms 2026 outlook",
+   "publisher": "McCormick (via Finviz/Business Wire)",
+   "url": "https://finviz.com/news/397494/mccormick-reports-solid-third-quarter-performance-and-reaffirms-2026-outlook",
+   "doc_date": "2026-10",
+   "page_ref": "Organic table (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "McCormick combines with Unilever food units in $44.8bn deal",
+   "publisher": "Financier Worldwide / Fortune",
+   "url": "https://www.financierworldwide.com/fw-news/2026/4/2/mccormick-combines-with-unilever-food-units-in-448bn-deal",
+   "doc_date": "2026-04-02",
+   "page_ref": "Deal terms, leverage, governance"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "PitchBook company profile and financials: McCormick (41201-38)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/41201-38/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/MKC.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "Mexico acquisition benefits McCormick & Co.; prior acquisitions",
+   "publisher": "Baking Business / McCormick filings",
+   "url": "https://www.bakingbusiness.com/articles/66991-mexico-acquisition-benefits-mccormick-and-co",
+   "doc_date": "2026",
+   "page_ref": "Headline; other items recalled (confidence M)"
+  }
+ ]
+}

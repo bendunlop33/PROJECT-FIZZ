@@ -1,0 +1,346 @@
+{
+ "id": "L",
+ "name": "Loblaw Companies Limited",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "Toronto Stock Exchange",
+  "ticker": "L",
+  "isin": "CA5394811015",
+  "hq": "Brampton, Ontario, Canada",
+  "domicile": "Canada",
+  "corporate_actions": [
+   {
+    "date": "2026-11 (expected)",
+    "event": "Q3-2026 results not yet published at valuation date (search found Q2-2026 as latest)",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "58004-20",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": 0,
+  "north_america_pct": 100,
+  "uk_pct": 0,
+  "other_pct": 0,
+  "largest_country": "Canada",
+  "largest_country_pct": 100,
+  "china_pct": 0,
+  "em_pct": 0,
+  "fx_notes": "Canada-only grocery and pharmacy retailer (S2); CAD reporter. Zeros here are FACT (no operations outside Canada), not missing data.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2025",
+   "organic_pct": 2.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S3",
+   "note": "Food retail same-store sales; Drug retail SSS +4.0% (pharmacy +5.9%, front store +1.9%)"
+  },
+  {
+   "fy": "Q2-2026",
+   "organic_pct": 1.6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1",
+   "note": "Food retail same-store sales; Drug retail SSS +4.6% (pharmacy & healthcare +7.5%, front store +1.3%)"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Food retail same-store sales",
+   "value": "+1.6% (sales +3.3% incl. new stores)",
+   "period": "Q2 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Drug retail same-store sales",
+   "value": "+4.6%; pharmacy & healthcare services +7.5%; front store +1.3%",
+   "period": "Q2 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Private label share",
+   "value": "~30% of sales (President's Choice, No Name, Joe Fresh)",
+   "period": "FY2025",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Store count / sales",
+   "value": "~2,500 stores; >CAD64bn sales",
+   "period": "FY2025",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Free cash flow (company: CFO - capex - interest paid - lease payments)",
+   "value": null,
+   "currency": "CAD",
+   "source_id": "",
+   "note": "not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "IFRS filer with large store lease book - lease cash costs material; not retrieved this session (use methodology proxy)"
+ },
+ "acquisitions": [
+  {
+   "fy": "2025",
+   "cash_spent": null,
+   "currency": "CAD",
+   "earnouts": "not disclosed",
+   "notes": "No material acquisitions identified; capex-led store growth",
+   "source_id": ""
+  }
+ ],
+ "management": {
+  "ceo": "Per Bank",
+  "ceo_since": "2024-01",
+  "cfo": "Richard Dufresne",
+  "cfo_since": "2015",
+  "senior_turnover_5y": "Moderate: Galen Weston stepped back as President (2024) - Chair remains",
+  "succession_notes": "Per Bank (ex-Salling Group CEO) appointed from outside",
+  "guidance_record": "Consistent delivery of annual outlook (EPS growth, buybacks) - not re-verified"
+ },
+ "ownership": {
+  "controlling_holders": "George Weston Limited (~52%, controlled by the Weston family) - recalled, not re-verified",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Controlled company; Galen G. Weston Chair (not re-verified)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Material related-party dealings with George Weston and Choice Properties REIT (landlord) - disclosed, noted neutrally"
+ },
+ "guidance": [],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Grocery + pharmacy consumables; ~2,500 stores (S2)",
+    "Pharmacy SSS +7.5% Q2-26 (S1)"
+   ],
+   "rationale": "Non-discretionary, recurring demand with no customer concentration."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Market leadership in Canadian grocery/pharmacy; PC Optimum loyalty; private label ~30% (S2)"
+   ],
+   "rationale": "Scale, loyalty data and pharmacy licences in a consolidated 3-player market."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "#1 Canadian grocer and pharmacy; discount banners gaining (S4)"
+   ],
+   "rationale": "Scale yields purchasing and data advantages; margins above many grocers (INFERENCE)."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "New discount stores; pharmacy services growth (S1)"
+   ],
+   "rationale": "Moderate runway in a mature domestic market."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "100% Canada (S2)"
+   ],
+   "rationale": "Single-country exposure."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Steady execution through grocery-inflation scrutiny (INFERENCE)"
+   ],
+   "rationale": "Competent, stable management."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Sustained buybacks; no large M&A (INFERENCE)"
+   ],
+   "rationale": "Disciplined capital returns."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Weston family control via George Weston (~52%)",
+    "Related-party landlord Choice Properties"
+   ],
+   "rationale": "Controlled company with related-party structure (noted neutrally)."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical grocery/pharmacy"
+   ],
+   "rationale": "Very low AI risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Large store labour/SG&A base (INFERENCE)"
+   ],
+   "rationale": "Some productivity scope."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Political pressure on grocery margins in Canada (INFERENCE)"
+   ],
+   "rationale": "Mixed retention."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Non-discretionary demand; discount trade-down benefits (S4)"
+   ],
+   "rationale": "Resilient; regulatory/political scrutiny of grocery pricing."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Adjusted vs reported differences modest (INFERENCE)"
+   ],
+   "rationale": "Generally clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre revenue."
+ },
+ "sector_specific": {
+  "price_pct": null,
+  "volume_pct": null,
+  "price_volume_note": "Retailer: internal food inflation vs volume not retrieved (data gap)",
+  "private_label_risk": "Beneficiary: ~30% private label (S2)",
+  "top_customer_pct": null,
+  "top_customer_note": "retail - not applicable",
+  "regulatory": "Canadian grocery code of conduct / Competition Bureau scrutiny; bread price-fixing settlement (2024, recalled)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: leverage moderate pre-lease (PitchBook; ESTIMATE pending lease-adjusted calc). G7 C: no UK exposure (Canadian consumer instead). Controlled company noted in H. Bread price-fixing matter settled - not an accounting issue."
+ },
+ "bull_points": [
+  "Defensive Canadian grocery/pharmacy leader; pharmacy & healthcare services SSS +7.5% (S1)",
+  "Discount banners and ~30% private label benefit from trade-down (S2)",
+  "Consistent buybacks and EPS growth"
+ ],
+ "bear_points": [
+  "100% Canada: single-country, single-currency exposure",
+  "Political/regulatory scrutiny of grocery margins",
+  "Food retail SSS slowing to +1.6% (S1); controlled-company and related-party structure"
+ ],
+ "thesis_breakers": [
+  "Food retail SSS negative for two consecutive quarters",
+  "Regulatory intervention capping grocery margins",
+  "Pharmacy reimbursement cuts reducing drug retail margin >100bp"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Loblaw Q2 2026 results (as summarised)",
+   "publisher": "Loblaw / MarketBeat",
+   "url": "https://www.marketbeat.com/earnings/reports/2026-7-30-loblaw-companies-limited-lto-stock/",
+   "doc_date": "2026-07-30",
+   "page_ref": "SSS by segment (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "PitchBook company profile and financials: Loblaw (58004-20)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/58004-20/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/L.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "Loblaw reports revenue growth of 4.6% in the third quarter (2025)",
+   "publisher": "Loblaw Companies Limited",
+   "url": "https://www.loblaw.ca/en/loblaw-reports-revenue-growth-of-4-6-in-the-third-quarter/",
+   "doc_date": "2025-11-12",
+   "page_ref": "Segment SSS"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "Discount shopping shift drives Loblaw profit bump",
+   "publisher": "The Logic",
+   "url": "https://thelogic.co/briefing/discount-shopping-shift-drives-loblaw-profit-bump/",
+   "doc_date": "2025-11",
+   "page_ref": "Headline"
+  }
+ ]
+}

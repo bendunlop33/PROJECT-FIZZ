@@ -1,0 +1,335 @@
+{
+ "id": "BDX",
+ "name": "Becton, Dickinson and Company",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "BDX",
+  "isin": "US0758871091 (not re-verified)",
+  "hq": "Franklin Lakes, NJ, USA",
+  "domicile": "New Jersey, USA",
+  "corporate_actions": [
+   {
+    "date": "2026-02-09",
+    "event": "Biosciences & Diagnostic Solutions spun and merged with Waters via Reverse Morris Trust; BD holders own ~39.2% of Waters; BD received $4bn cash ($2bn buybacks, $2bn debt paydown); business valued $18.8bn",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "25348-33",
+ "geography": {
+  "fy": "FY2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 62,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": 62,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "US $12,061m of $19,457m = 62% (ESTIMATE from S1); International $7,397m (+1.4% FXN). China subject to VBP; size not disclosed.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "FY2026 (FXN, continuing ops)",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 4.9,
+   "source_id": "S1"
+  },
+  {
+   "fy": "FY2027 guidance",
+   "organic_pct": "low single digit (reported & FXN)",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "FXN revenue growth",
+   "value": "3.9%",
+   "period": "FY2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Segment revenue: Medical Essentials / Connected Care / BioPharma Systems / Interventional",
+   "value": "$6,703m / $4,745m / $2,437m / $5,573m",
+   "period": "FY2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Net debt (calc.)",
+   "value": "~$15.6bn",
+   "period": "Sep-2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Share repurchases",
+   "value": "$2,433m",
+   "period": "FY2026",
+   "class": "FACT",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "FY2026",
+   "definition": "Company FCF = OCF (continuing) $3,605m less capex $672m",
+   "value": 2933,
+   "currency": "USD m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Tom Polen (Chairman, CEO & President)",
+  "ceo_since": "2020-01",
+  "cfo": "not named in release; not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "Several CFO changes 2020-2025 (not re-verified)",
+  "succession_notes": "n/a",
+  "guidance_record": "FY27 guide modest; Alaris remediation history"
+ },
+ "ownership": {
+  "controlling_holders": "Widely held",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Majority independent",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-05",
+   "item": "FY2027 revenue growth",
+   "value": "low single digit",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-11-05",
+   "item": "FY2027 adjusted EPS",
+   "value": "$13.10-13.30",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-11-05",
+   "item": "FY2028",
+   "value": "mid-single-digit growth and margin expansion (Investor Day 10-Dec-2026)",
+   "class": "TARGET",
+   "source_id": "S3"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Syringes, catheters, prefillables, Pyxis/Alaris consumables recurring (S1)"
+   ],
+   "rationale": "Mostly recurring consumables."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "#1 in syringes/needles, prefillable syringes; Pyxis installed base"
+   ],
+   "rationale": "Strong positions."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Scale but margins mid-pack"
+   ],
+   "rationale": "Scale with unclear excess returns."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "FY27 low single digit (S1)"
+   ],
+   "rationale": "Moderate."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "H",
+   "evidence": [
+    "US 62% (S1)"
+   ],
+   "rationale": "US-heavy two-region."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Alaris recall/remediation; modest guide (S3)"
+   ],
+   "rationale": "Mixed."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "RMT unlocked value; $2.4bn buybacks (S1,S2)",
+    "CR Bard large deal 2017 with litigation tail"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Combined chair/CEO"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical devices"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Large SG&A base"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "GPO pricing"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Tariffs; resin/oil inputs; GPO contracts"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Large gap GAAP vs adjusted EPS ($2.52 vs $4.15 in Q4) (S1)",
+    "$120m product liability charges FY26 (S1)"
+   ],
+   "rationale": "Heavy adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "Medical Essentials 34% of FY26 revenue (segment)",
+  "litigation": "Hernia mesh (Bard) product liability - global settlement agreed 2024 (not re-verified); FY26 $120m product liability charges; ethylene oxide risk factor; Alaris FDA consent decree history",
+  "reimbursement": "Indirect via hospital/GPO pricing; China VBP risk"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: net debt ~$15.6bn vs EBITDA (PB) - compute in model; likely ~3x (<3.5x). G6 C: Waters RMT completed Feb-2026; remaining BD is 'new BD' (MedTech) - historical financials need restating."
+ },
+ "bull_points": [
+  "Post-RMT pure medtech with high consumables mix",
+  "$2bn+ buybacks funded by RMT cash",
+  "FY28 mid-single-digit target"
+ ],
+ "bear_points": [
+  "Low-single-digit FY27 growth",
+  "Large GAAP/adjusted gap and litigation charges",
+  "China VBP and tariff pressure"
+ ],
+ "thesis_breakers": [
+  "FY28 growth below 4%",
+  "New major product recall/consent decree"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "BD Reports Fourth Quarter and Full Year Fiscal 2026 Financial Results (8-K Ex.99.1)",
+   "publisher": "Becton, Dickinson and Company / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0000010795/000162828026070511/ex9919302026.htm",
+   "doc_date": "2026-11-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "segment table; cash flow; guidance"
+  },
+  {
+   "id": "S2",
+   "title": "BD Completes Combination of Biosciences & Diagnostic Solutions Business with Waters Corporation",
+   "publisher": "BD newsroom",
+   "url": "https://news.bd.com/2026-02-09-BD-Completes-Combination-of-Biosciences-Diagnostic-Solutions-Business-with-Waters-Corporation?asPDF=1",
+   "doc_date": "2026-02-09",
+   "retrieved": "2026-11-12",
+   "page_ref": "RMT terms"
+  },
+  {
+   "id": "S3",
+   "title": "BD ends its transformation year with its strongest quarter but a modest FY27 guide",
+   "publisher": "Finviz",
+   "url": "https://finviz.com/news/417228/bd-ends-its-transformation-year-with-its-strongest-quarter-but-a-modest-fy27-guide-tests-a-stock-priced-for-momentum",
+   "doc_date": "2026-11-06",
+   "retrieved": "2026-11-12",
+   "page_ref": "Alaris comparison headwind ~200bp"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/25348-33/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

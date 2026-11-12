@@ -1,0 +1,304 @@
+{
+ "id": "ATD",
+ "name": "Alimentation Couche-Tard Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "Toronto Stock Exchange",
+  "ticker": "ATD",
+  "isin": "CA01626P1484",
+  "hq": "Laval, Quebec, Canada",
+  "domicile": "Canada",
+  "corporate_actions": [
+   {
+    "date": "2026-07-31",
+    "event": "Agreed to acquire controlling stake in Zabka Group (Poland) via tender offer at PLN32.00/sh; equity value ~PLN32.6bn (~USD8.6bn); 57% irrevocables; debt-financed, pro-forma leverage ~3.0x; close expected by Dec-2026",
+    "source": "S1"
+   },
+   {
+    "date": "2025-07",
+    "event": "Withdrew proposal to acquire Seven & i Holdings (recalled)",
+    "source": "S3"
+   }
+  ]
+ },
+ "pitchbook_pbid": "51079-15",
+ "geography": {
+  "fy": "FY2026 (Apr)",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "US is largest market (>7,300 of ~17,200 stores); Europe/other international and Canada the rest; fuel ~74% of revenue (S2). Zabka adds ~13,000 Polish stores.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "FY2026",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "",
+   "note": "Same-store merchandise revenue by region not retrieved (screen depth)"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Revenue mix",
+   "value": "Fuel ~74%, merchandise & food ~25%",
+   "period": "FY2026",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Stores",
+   "value": ">17,200 in 27 countries",
+   "period": "FY2026",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [
+  {
+   "fy": "FY2027",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "none disclosed",
+   "notes": "Zabka ~USD8.6bn equity value pending (S1)",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Alex Miller",
+  "ceo_since": "2024-09",
+  "cfo": "Filipe Da Silva",
+  "cfo_since": "2024",
+  "senior_turnover_5y": "CEO Brian Hannasch -> Alex Miller (2024)",
+  "succession_notes": "Founder Alain Bouchard Executive Chair (recalled)",
+  "guidance_record": "not reviewed (screen depth)"
+ },
+ "ownership": {
+  "controlling_holders": "Founders (Bouchard, Plourde, D'Amours, Fortin) hold significant stake; multiple-voting shares sunset 2016 (recalled)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "not reviewed"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-07-31",
+   "item": "Pro-forma leverage at Zabka close",
+   "value": "~3.0x net debt/adjusted EBITDA",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Fuel ~74% of revenue, transactional (S2)"
+   ],
+   "rationale": "Frequent but transactional, commodity-linked revenue."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Density in convenience/fuel (INFERENCE)"
+   ],
+   "rationale": "Some local density advantages."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "#2 global convenience operator; synergy-led roll-up (S2)"
+   ],
+   "rationale": "Scale in procurement/fuel supply."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Zabka adds growth platform (S1)"
+   ],
+   "rationale": "Acquisition-led runway; EV transition threatens fuel."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "US largest; Canada, Europe (S2)"
+   ],
+   "rationale": "Two-to-three region mix."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Long acquisition integration record (INFERENCE)"
+   ],
+   "rationale": "Experienced management."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Large serial M&A; 7&i pursuit abandoned (S3)"
+   ],
+   "rationale": "Acquisitive; generally disciplined."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Founder influence"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical retail"
+   ],
+   "rationale": "Very low AI risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "None."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Store labour"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Fuel pricing"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Fuel margin volatility (INFERENCE)"
+   ],
+   "rationale": "Fuel margins volatile but historically resilient."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Acquisition accounting"
+   ],
+   "rationale": "Standard."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "price_pct": null,
+  "volume_pct": null,
+  "private_label_risk": "n/a (retailer)",
+  "top_customer_pct": null,
+  "top_customer_note": "retail - not applicable",
+  "energy_transition": "Long-term EV adoption risk to fuel volumes (~74% of revenue)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "B",
+  "G7": "C",
+  "notes": "Screen depth. G6 B: pending ~USD8.6bn Zabka acquisition (closing expected by Dec-2026) is material but not transaction-dominated. G1: ~3.0x pro forma (below 3.5x) - C, monitor. Overlaps 'travel' theme only marginally (fuel/convenience)."
+ },
+ "bull_points": [
+  "Proven consolidator; Zabka adds high-growth Polish convenience platform (S1)",
+  "Scale in US convenience/fuel"
+ ],
+ "bear_points": [
+  "Fuel ~74% of revenue - EV/energy-transition risk",
+  "Leverage to ~3.0x post Zabka",
+  "Serial M&A dependence"
+ ],
+ "thesis_breakers": [
+  "Leverage above 3.5x 12 months after Zabka close",
+  "US same-store merchandise revenue negative for FY2028"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Alimentation Couche-Tard announces agreement to acquire controlling stake in Zabka Group and launches voluntary tender offer",
+   "publisher": "Couche-Tard (Newswire.ca)",
+   "url": "https://newswire.ca/news-releases/alimentation-couche-tard-announces-agreement-to-acquire-controlling-stake-in-zabka-group-and-launches-voluntary-tender-offer-883139202.html",
+   "doc_date": "2026-07-31",
+   "page_ref": "Terms, financing, timing (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "PitchBook company profile and financials: Alimentation Couche-Tard (51079-15)",
+   "publisher": "PitchBook / Morningstar",
+   "url": "https://my.pitchbook.com/profile/51079-15/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/ATD.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "Couche-Tard withdraws Seven & i proposal",
+   "publisher": "Couche-Tard",
+   "url": "https://corpo.couche-tard.com/",
+   "doc_date": "2025-07",
+   "page_ref": "Recalled, not re-fetched"
+  }
+ ]
+}

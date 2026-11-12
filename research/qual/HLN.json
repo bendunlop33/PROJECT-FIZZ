@@ -1,0 +1,437 @@
+{
+ "id": "HLN",
+ "name": "Haleon plc",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "London Stock Exchange (premium/ESCC); ADRs on NYSE",
+  "ticker": "HLN",
+  "isin": "GB00BMX86B70 (not re-verified)",
+  "hq": "Weybridge, UK",
+  "domicile": "England & Wales",
+  "corporate_actions": [
+   {
+    "date": "2022-07-18",
+    "event": "Demerged from GSK and listed",
+    "source": "S4"
+   },
+   {
+    "date": "2026-02-25",
+    "event": "£500m allocated to 2026 buybacks",
+    "source": "S1"
+   },
+   {
+    "date": "2026-10-29",
+    "event": "FY26 organic guidance cut to ~2.5% from 3-5%; further £500m buyback",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "264914-38",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 35,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports GBP; FY25 reported revenue -1.8% vs +3.0% organic (FX/divestments). Segments: North America 35%, EMEA & LatAm 42%, APAC 23%. Europe-only and UK splits not given in release. China grew mid-single digit (size not disclosed).",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2022",
+   "organic_pct": 9.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 7.9,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 5.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 3.0,
+   "price_pct": 2.3,
+   "volume_mix_pct": 0.7,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -1.8,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "organic_pct": 2.5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": 2.6,
+   "price_pct": 2.1,
+   "volume_mix_pct": 0.5,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Adjusted operating margin",
+   "value": "22.9%",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adjusted gross margin",
+   "value": "65.2%",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Oral Health share of revenue / organic growth",
+   "value": "32% / +7.9%",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Share of business gaining/maintaining share",
+   "value": "60%",
+   "period": "FY2025",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Net debt / adjusted EBITDA",
+   "value": "2.6x",
+   "period": "Dec-2025",
+   "class": "FACT",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Company FCF (net cash from operating activities less capex, plus disposals proceeds as defined by Haleon)",
+   "value": 1913,
+   "currency": "GBP m",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": 60
+   },
+   {
+    "fy": "2024",
+    "value": 60
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "S1",
+  "note": "GBP m, 'Payment of lease liabilities' line; lease interest not separately extracted"
+ },
+ "acquisitions": [
+  {
+   "fy": "2024-2025",
+   "cash_spent": null,
+   "currency": "GBP",
+   "earnouts": "none known",
+   "notes": "Net divestor (ChapStick 2024, non-US Smokers Health 2025)",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Brian McNamara",
+  "ceo_since": "2022-07 (led GSK Consumer Healthcare from 2018)",
+  "cfo": "Dawn Allen",
+  "cfo_since": "2023",
+  "senior_turnover_5y": "Tobias Hestler (CFO) replaced by Dawn Allen 2023; new Chief Growth Officer role created 2026",
+  "succession_notes": "CEO succession not announced as of Nov-2026 (not verified)",
+  "guidance_record": "FY25 organic 3.0% below 4-6% medium-term; FY26 3-5% guidance cut to ~2.5% in Oct-2026; profit guidance kept"
+ },
+ "ownership": {
+  "controlling_holders": "No controlling holder; GSK and Pfizer fully exited stakes by 2024-25 (recalled, not re-verified)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Majority independent board (UK Code)",
+  "remuneration_notes": "Not reviewed in this pass",
+  "related_party": "None material identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-02-25",
+   "item": "Medium-term organic revenue growth",
+   "value": "4-6% p.a.",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-29",
+   "item": "FY2026 organic revenue growth",
+   "value": "~2.5%",
+   "class": "TARGET",
+   "source_id": "S2"
+  },
+  {
+   "date": "2026-10-29",
+   "item": "FY2026 adjusted operating profit growth (cc)",
+   "value": "high single digit",
+   "class": "TARGET",
+   "source_id": "S2"
+  },
+  {
+   "date": "2026-02-25",
+   "item": "Optimal leverage",
+   "value": "~2.5x net debt/adj. EBITDA",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "OTC/oral-care repeat consumer purchases; 6 categories, no single brand >~15% (S1)",
+    "Respiratory/cold & flu seasonal swings (S1,S2)"
+   ],
+   "rationale": "Repeat consumer staples-like demand but seasonal and retail-channel exposed."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Sensodyne/parodontax +7.9% Oral Health growth, gross margin 65% (S1)",
+    "60% of business gaining/holding share (S1)"
+   ],
+   "rationale": "Leading brands with clinical claims support pricing; private label pressure in analgesics/VMS."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Adj. op margin 22.9% vs Kenvue ~20s (PB)"
+   ],
+   "rationale": "Scale in marketing/distribution but margin advantage vs peers modest."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Medium-term 4-6% but delivered 3.0% FY25 and ~2.5% FY26 (S1,S2)",
+    "EM/China and oral health penetration runway (S1)"
+   ],
+   "rationale": "Moderate runway; recent delivery below target."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "H",
+   "evidence": [
+    "NA 35%, EMEA&LatAm 42%, APAC 23% (S1)"
+   ],
+   "rationale": "Well spread; no country >40% (US is largest, below 35%)."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Two guidance shortfalls 2025-26 (S1,S2)",
+    "Stable CEO since separation"
+   ],
+   "rationale": "Stable team but recent misses."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Deleveraged to 2.6x while returning £1.1bn (S1)",
+    "Portfolio pruning divestitures (S1)"
+   ],
+   "rationale": "Sensible, buyback-led; no large M&A."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Widely held, UK Code board (S4)"
+   ],
+   "rationale": "Standard UK governance, no controller."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Physical OTC products; AI search could alter brand discovery"
+   ],
+   "rationale": "Low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "AI cameras in Suzhou plant cited (S1)"
+   ],
+   "rationale": "Some opportunity in marketing/supply chain."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Branded pricing power"
+   ],
+   "rationale": "Should retain much of savings."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Price +2.3% in FY25 offset inflation (S1)",
+    "Cold/flu season and US consumer drove misses (S2)"
+   ],
+   "rationale": "Partial pass-through, weather/seasonal exposure."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adjusted vs reported op profit gap small (£2,526m vs £2,412m) (S1)",
+    "FCF £1.9bn vs NI ~£1.4bn (S1)"
+   ],
+   "rationale": "Clean, cash-generative."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "Consumer health; no AI/DC exposure (INFERENCE)."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5% (INFERENCE: OTC brands rely on trademarks/claims; Rx-to-OTC exclusivities not material)",
+  "top_product_pct": "Oral Health category 32%; largest brand (Sensodyne) share not disclosed in release",
+  "litigation": "Legacy Zantac (ranitidine) claims: Haleon stated in 2022 it would not indemnify GSK/Pfizer and is not party to material claims (recalled, not re-verified); no provision noted in FY25 release",
+  "reimbursement": "Minimal - consumer paid OTC"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 2.6x <3.5x. G3 no patent cliff. G6 none. Zantac legacy tracked as tail risk."
+ },
+ "bull_points": [
+  "Oral Health (32% of sales) compounding high-single-digit with clinical brands",
+  "Strong FCF (£1.9bn) funds steady buybacks at ~2.5x leverage",
+  "Geographically balanced developed+EM footprint"
+ ],
+ "bear_points": [
+  "Organic growth has decelerated from 9% (2022) to ~2.5% (2026 guide), below 4-6% target",
+  "US consumer/retailer destocking and private-label substitution in pain/VMS/respiratory",
+  "Dependence on price (+2.3%) with weak volume (+0.7%)"
+ ],
+ "thesis_breakers": [
+  "FY2027 organic growth below 3% again",
+  "Net debt/EBITDA rises above 3.0x without M&A rationale",
+  "Oral Health organic growth falls below 4% for two consecutive halves"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Haleon 2025 Full year results (6-K exhibit)",
+   "publisher": "Haleon plc / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1900304/000165495426001516/fy25releasevf.pdf",
+   "doc_date": "2026-02-25",
+   "retrieved": "2026-11-12",
+   "page_ref": "p1 headline table; regional and category tables; cash flow statement"
+  },
+  {
+   "id": "S2",
+   "title": "Haleon Q3 2026 trading statement (6-K)",
+   "publisher": "Haleon plc / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001900304/000165495426009194/q32026pressreleasevf.pdf",
+   "doc_date": "2026-10-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "headline"
+  },
+  {
+   "id": "S3",
+   "title": "ii view: Haleon shares crash in response to Q3 update",
+   "publisher": "interactive investor",
+   "url": "https://www.ii.co.uk/analysis-commentary/ii-view-haleon-shares-crash-response-q3-update-ii540722",
+   "doc_date": "2026-10-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "share reaction, guidance cut"
+  },
+  {
+   "id": "S4",
+   "title": "Haleon results archive (FY2022-FY2024 full-year results)",
+   "publisher": "Haleon plc",
+   "url": "https://www.haleon.com/investors/results-reports-and-presentations",
+   "doc_date": "various",
+   "retrieved": "2026-11-12",
+   "page_ref": "headline organic growth (recalled; not re-read in this pass)"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/264914-38/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

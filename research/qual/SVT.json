@@ -1,0 +1,394 @@
+{
+ "id": "SVT",
+ "name": "Severn Trent Plc [ADJACENT - regulated water utility]",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "London Stock Exchange",
+  "ticker": "SVT",
+  "isin": "GB00B1FH8J72",
+  "hq": "Coventry, England, UK",
+  "domicile": "United Kingdom",
+  "corporate_actions": [
+   {
+    "date": "2026-01-01",
+    "event": "James Jesic succeeded Liv Garfield as CEO",
+    "source": "S2"
+   },
+   {
+    "date": "2026-11-18",
+    "event": "H1 FY27 interim results scheduled (after valuation date)",
+    "source": "S3"
+   }
+  ]
+ },
+ "pitchbook_pbid": "11910-43",
+ "geography": {
+  "fy": "FY2026 (Mar-26)",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": 100.0,
+  "other_pct": null,
+  "largest_country": "United Kingdom",
+  "largest_country_pct": 100.0,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Essentially all UK (Severn Trent Water, Hafren Dyfrdwy; Business Services incl. Green Power). INFERENCE ~99%+ UK.",
+  "source_ids": [
+   "S4"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "FY2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "FY2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "FY2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "FY2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "FY2026",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "AMP8 (2025-30) programme",
+   "value": "~GBP15bn price review period",
+   "period": "AMP8",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "AMP8 RCV growth target",
+   "value": "9.9% (per Morningstar comparison)",
+   "period": "AMP8",
+   "class": "TARGET",
+   "source_id": "S5"
+  },
+  {
+   "name": "Expected real RoRE AMP8",
+   "value": "9-10% (Morningstar)",
+   "period": "AMP8",
+   "class": "ESTIMATE",
+   "source_id": "S5"
+  },
+  {
+   "name": "EV/RCV (forward)",
+   "value": "1.17x vs UU 1.05x, Pennon 0.97x (Morningstar)",
+   "period": "2026",
+   "class": "ESTIMATE",
+   "source_id": "S5"
+  },
+  {
+   "name": "H1 FY26 net debt / investment",
+   "value": "Net debt GBP9.15bn; H1 investment GBP769m; interim dividend 50.4p",
+   "period": "H1 FY2026 (Sep-25)",
+   "class": "FACT",
+   "source_id": "S3"
+  },
+  {
+   "name": "FY27 capex",
+   "value": "GBP2.2-2.5bn on track (Jul-2026 trading update)",
+   "period": "FY2027",
+   "class": "TARGET",
+   "source_id": "S3"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "7.5x (PitchBook TTM to Mar-26)",
+   "period": "FY2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "FY2026",
+   "definition": "Negative FCF by design during AMP8 capex (INFERENCE); not collected",
+   "value": null,
+   "currency": "GBP m",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "FY2026",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "FY2026",
+    "value": null
+   }
+  ],
+  "source_id": "not collected"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "James Jesic",
+  "ceo_since": "2026-01-01",
+  "cfo": "not verified (prior CFO left for Vistry - per AJ Bell headline)",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO change 2026 after 11 years; CFO departure",
+  "succession_notes": "Internal CEO (joined 2003; ran capital delivery)",
+  "guidance_record": "ODI outperformance guidance raised in FY26 (figures conflict in secondary sources)"
+ },
+ "ownership": {
+  "controlling_holders": "None",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "UK Corporate Governance Code",
+  "remuneration_notes": "Water-sector bonus restrictions (Water (Special Measures) Act 2025, prior knowledge)",
+  "related_party": "None"
+ },
+ "guidance": [
+  {
+   "date": "2026-07",
+   "item": "FY27 capex",
+   "value": "GBP2.2-2.5bn",
+   "class": "TARGET",
+   "source_id": "S3"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Regulated monopoly water/wastewater (S4)"
+   ],
+   "rationale": "Fully regulated, essential."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Regional monopoly; but returns set by Ofwat (S5)"
+   ],
+   "rationale": "Legal monopoly; regulated returns cap moat."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Top-tier operational performance/ODI rewards (S3, S5)"
+   ],
+   "rationale": "Best-in-class operator among UK WASCs."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "RCV growth ~9.9% p.a. AMP8 (S5)"
+   ],
+   "rationale": "Large regulated asset growth; equity-funded partly."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "~100% UK (S4)"
+   ],
+   "rationale": "Single country."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Orderly CEO succession (S2)"
+   ],
+   "rationale": "Strong record."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Rising gearing to fund AMP8; prior equity raise (prior knowledge)"
+   ],
+   "rationale": "Constrained by regulation."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "UK governance code"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical utility"
+   ],
+   "rationale": "Not substitutable."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No AI capex dependence"
+   ],
+   "rationale": "<2%."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Totex sharing mechanisms pass savings to customers over time"
+   ],
+   "rationale": "Regulatory sharing limits retention."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "CPIH-indexed RCV and revenues (regulatory model)"
+   ],
+   "rationale": "Inflation pass-through; lags."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Underlying vs statutory profit adjustments"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Storm overflow/sewage discharge enforcement, Environment Agency investigations and fines industry-wide; PFAS in drinking water treatment standards - amounts not quantified.",
+  "commodity_sensitivity": "Energy costs (power for pumping/treatment); renewable generation partly hedges."
+ },
+ "gates": {
+  "G1": "A",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "B",
+  "notes": "ADJACENT subgroup (not core services; does not count toward core 10). G1 A (MECHANICAL): provider ND/EBITDA ~7.5x > 5.0x and no deleveraging path (gearing rises in AMP8). Regulated utilities are structurally levered vs RCV (~60% gearing typical) - lead may prefer an RCV-gearing basis; flagged for decision. G7 B: >40% revenue from UK household bills (UK consumer exposure) and acute UK political risk (Morningstar cites PM Andy Burnham calling for more public control / lower bills, Aug-2026). G6: none."
+ },
+ "bull_points": [
+  "~10% p.a. RCV growth with inflation-linked returns.",
+  "Best-in-class ODI performance.",
+  "Trades at modest premium to RCV (1.17x)."
+ ],
+ "bear_points": [
+  "UK political/regulatory risk: calls for public control and lower bills.",
+  "Heavy capex, negative FCF, rising gearing.",
+  "Environmental enforcement (sewage) and reputational risk."
+ ],
+ "thesis_breakers": [
+  "Government action to nationalise or cap returns below allowed AMP8 WACC.",
+  "Gearing >65% of RCV.",
+  "Material ODI penalties (net negative) in FY27-28."
+ ],
+ "sources": [
+  {
+   "id": "S2",
+   "title": "Severn Trent Plc announces James Jesic as next CEO, as Liv Garfield steps down (RNS)",
+   "publisher": "Severn Trent via Investegate",
+   "url": "https://www.investegate.co.uk/announcement/rns/severn-trent--svt/ceo-succession/9242870",
+   "doc_date": "2025-11-19",
+   "retrieved": "2026-11-12",
+   "page_ref": "Full RNS"
+  },
+  {
+   "id": "S3",
+   "title": "Severn Trent interim results HY26 (RNS) and Jul-2026 trading update summaries",
+   "publisher": "Severn Trent",
+   "url": "https://www.severntrent.com/content/dam/stw-plc/investors-02/rns-severn-trent-plc-hy26-interim-results.pdf",
+   "doc_date": "2025-11-19",
+   "retrieved": "2026-11-12",
+   "page_ref": "Net debt, investment, dividend"
+  },
+  {
+   "id": "S4",
+   "title": "PitchBook company profile: Severn Trent",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/11910-43/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  },
+  {
+   "id": "S5",
+   "title": "United Utilities: Ofwat Approves 86% of First AMP8 Re-Opener Request (Morningstar, SVT peer comparisons)",
+   "publisher": "Morningstar via PitchBook",
+   "url": "https://my.pitchbook.com/research-center/report/63c55e9c-7fbf-36f0-8116-0912acc0a3fa",
+   "doc_date": "2026-08-14",
+   "retrieved": "2026-11-12",
+   "page_ref": "EV/RCV, RCV growth, RoRE, political risk"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 11910-43",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/11910-43/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/SVT.json"
+  }
+ ]
+}

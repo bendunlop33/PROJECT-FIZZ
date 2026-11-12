@@ -1,0 +1,427 @@
+{
+ "id": "GFL",
+ "name": "GFL Environmental Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE / TSX",
+  "ticker": "GFL",
+  "isin": "CA36168Q1046",
+  "hq": "Vaughan, Ontario, Canada",
+  "domicile": "Canada (Ontario) - no re-domicile found in Q3-26 release",
+  "corporate_actions": [
+   {
+    "date": "2025-03",
+    "event": "Sale of Environmental Services business (valued $8.0bn) to Apollo/BC Partners; GFL retained equity-method stake (balance $1.85bn at 30-Sep-26)",
+    "source": "S1"
+   },
+   {
+    "date": "2026-10-01 (approx.)",
+    "event": "Acquisition of SECURE Waste Infrastructure Corp. included in guidance; SECURE nominee joins board",
+    "source": "S1"
+   },
+   {
+    "date": "2026-11-10",
+    "event": "Special Committee concluded review of unsolicited take-private proposals; board unanimously decided to remain public; sponsor shareholders' stakes may be sold",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "51326-02",
+ "geography": {
+  "fy": "Q3 2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 100.0,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Canada and 19 US states; SECURE acquisition raises Canadian weight (Canada revenue +38% in Q3). INFERENCE US ~60%, Canada ~40% - not >70% single country.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": 7.4,
+   "price_pct": 5.7,
+   "volume_mix_pct": -0.1,
+   "acq_pct": 18.7,
+   "fx_pct": 1.1,
+   "reported_pct": 27.2,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Organic growth components",
+   "value": "price 5.7%, surcharges 1.5%, volume -0.1%, commodity 0.3%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adj. EBITDA margin",
+   "value": "31.5% (31.6% prior); underlying +115bp ex M&A/diesel",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Net leverage (company)",
+   "value": "3.8x at 30-Sep-26 (3.4x Dec-25); target mid-3s by YE26",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Capex intensity 2026E",
+   "value": "~11.3% (net capex ~$910m / revenue ~$8.065bn)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adj. FCF / adj. EBITDA 2026E",
+   "value": "~41% ($1.02bn / $2.49bn)",
+   "period": "FY2026 guidance",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider (reported IFRS) EBITDA vs adj. EBITDA",
+   "value": "PitchBook TTM EBITDA $1.21bn vs company adj. ~ $2.3-2.5bn - large adjustment gap",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "9M 2026",
+   "definition": "Adjusted free cash flow (company non-IFRS)",
+   "value": 484.9,
+   "currency": "USD m (GFL reports in CAD - currency label per release summary, verify)",
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance",
+   "definition": "Adjusted free cash flow",
+   "value": 1020,
+   "currency": "see above",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "not collected - IFRS filer, cash-flow statement lease lines needed"
+ },
+ "acquisitions": [
+  {
+   "fy": "2026",
+   "cash_spent": null,
+   "currency": "",
+   "earnouts": "",
+   "notes": "SECURE Waste Infrastructure (price/consideration not in Q3 release; contributed ~C$150m revenue and ~C$50m EBITDA in first month per CFO); acquisitions added 18.7pt to Q3 growth",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Patrick Dovigi (founder)",
+  "ceo_since": "2007 (founded)",
+  "cfo": "Luke Pelosi",
+  "cfo_since": "not verified",
+  "senior_turnover_5y": "not catalogued",
+  "succession_notes": "Founder-led; key-person dependence",
+  "guidance_record": "FY2026 guidance raised three times in 2026"
+ },
+ "ownership": {
+  "controlling_holders": "Founder Dovigi plus financial sponsor shareholders (BC Partners/others historically) - exact % not verified",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Special Committee of independent directors ran sale review (S2)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Retained equity stake in divested GFL Environmental Services and in Green Infrastructure Partners (prior spin) create related-party-like links; not quantified"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-28",
+   "item": "FY2026 revenue",
+   "value": "~$8,055-8,075m",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-28",
+   "item": "FY2026 adj. EBITDA",
+   "value": "~$2,490-2,495m",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-28",
+   "item": "FY2026 adj. FCF",
+   "value": "~$1,020m",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Solid waste collection/disposal; price 5.7% vs volume -0.1% (S1)"
+   ],
+   "rationale": "Recurring solid waste, with SECURE adding energy-linked infrastructure."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Integrated landfill/transfer network across Canada & 19 states (S1)"
+   ],
+   "rationale": "Disposal assets give pricing power; density lower than top-3."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Adj. EBITDA margin 31.5% ~ RSG/WM (S1)"
+   ],
+   "rationale": "Scale reached but economics similar to peers."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Acquisitive roll-up (18.7pt of growth) (S1)"
+   ],
+   "rationale": "Large M&A runway; returns on acquisitions not evidenced."
+  },
+  "E": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Canada ~40%, US ~60% (INFERENCE)"
+   ],
+   "rationale": "Two-country mix."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Guidance raised thrice (S1)",
+    "Founder-led; strategic flip-flops (divestitures, take-private process) (S2)"
+   ],
+   "rationale": "Mixed: delivery good, strategy transaction-heavy."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Leverage rose to 3.8x on SECURE (S1)",
+    "History of large debt-funded M&A and asset sales (S1)"
+   ],
+   "rationale": "Transaction-dominated allocation; value creation unproven."
+  },
+  "H": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Sponsor shareholders seeking exits (S2)",
+    "Retained stakes in divested businesses (S1)"
+   ],
+   "rationale": "Sponsor overhang and complex related structures."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical service"
+   ],
+   "rationale": "Not AI-substitutable."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "No DC dependence (INFERENCE)"
+   ],
+   "rationale": "<2%."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Routing/automation (INFERENCE)"
+   ],
+   "rationale": "Moderate."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Price-led contracts (S1)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Diesel impact on margin; SECURE adds oil & gas sensitivity (S1)"
+   ],
+   "rationale": "Partial pass-through, rising energy exposure."
+  },
+  "K": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Reported net loss from continuing ops ($28m Q3) vs adj. EBITDA $679m (S1)",
+    "PitchBook EBITDA ~half company adj. EBITDA (PB)"
+   ],
+   "rationale": "Large recurring adjustments; cash/profit gap."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not disclosed; INFERENCE <2%."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Landfill closure/post-closure provisions (IFRS) not re-read; SECURE adds energy-infrastructure decommissioning/remediation liabilities - not quantified. PFAS risk at landfills.",
+  "commodity_sensitivity": "Commodity +0.3% Q3; diesel; SECURE (energy waste infrastructure) adds oil & gas activity sensitivity."
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "B",
+  "G7": "C",
+  "notes": "G1 B: company net leverage 3.8x (just under 4.0x waste threshold) but provider ND/EBITDA ~7x and TTM EBIT ($105m) << cash interest (~$455m 2026E) -> interest cover <4x. G4 B: net income negative/volatile (discontinued-ops gains in 2025), FCF/NI not meaningful. G6 B: take-private proposals rejected 10-Nov-2026 but sponsor-stake sale process continuing; not an agreed takeover so not A. No re-domicile or US listing change found."
+ },
+ "bull_points": [
+  "Price-led organic growth 7.4% with underlying margin expansion.",
+  "Board rejected premium take-private bids as undervaluing standalone value - signals confidence.",
+  "SECURE adds scarce Western Canada disposal infrastructure."
+ ],
+ "bear_points": [
+  "Leverage back up to 3.8x with weak interest cover on reported EBIT.",
+  "Reported losses and large adjustments - accounting quality below peers.",
+  "Transaction-driven strategy and sponsor overhang (stake sales)."
+ ],
+ "thesis_breakers": [
+  "Company net leverage >4.0x at FY2027.",
+  "Organic price <4% or adj. FCF < C$/US$1.0bn in 2027.",
+  "Another large debt-funded acquisition before leverage <3.5x."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "GFL Environmental Q3 2026 results (Form 6-K Ex.99.1)",
+   "publisher": "GFL / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001780232/000110465926119630/tm2626649d2_ex99-1.htm",
+   "doc_date": "2026-10-28",
+   "retrieved": "2026-11-12",
+   "page_ref": "Revenue bridge, leverage, guidance, discontinued ops"
+  },
+  {
+   "id": "S2",
+   "title": "GFL Environmental announces conclusion of Special Committee review (Form 6-K Ex.99.1)",
+   "publisher": "GFL / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001780232/000110465926124759/tm2629428d1_ex99-1.htm",
+   "doc_date": "2026-11-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Full release"
+  },
+  {
+   "id": "S3",
+   "title": "GFL sets Nov. 9 deadline for take-private offers",
+   "publisher": "Waste Dive",
+   "url": "https://www.wastedive.com/news/gfl-sets-nov-9-deadline-for-take-private-offers-touts-strong-q3/873194/",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Context only"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 51326-02",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/51326-02/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/GFL.json"
+  }
+ ]
+}

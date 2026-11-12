@@ -1,0 +1,428 @@
+{
+ "id": "MMC",
+ "name": "Marsh & McLennan Companies, Inc. (brand: Marsh; NYSE: MRSH; ex-MMC)",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "MRSH",
+  "isin": "US5717481023",
+  "hq": "New York, NY, USA",
+  "domicile": "US (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2025-10-14",
+    "event": "Announced brand change from Marsh McLennan to 'Marsh' effective January 2026; Business and Client Services (BCS) unit created",
+    "source": "S6"
+   },
+   {
+    "date": "2026-01-14",
+    "event": "NYSE ticker changed from MMC to MRSH (announced 29-Dec-2025). Legal name (Marsh & McLennan Companies, Inc.) and CUSIP unchanged; ISIN therefore unchanged (US5717481023 is derived from CUSIP 571748102 - ISIN not separately re-confirmed in this pass). Project file id kept as MMC.",
+    "source": "S3"
+   },
+   {
+    "date": "2026-11-10",
+    "event": "Agreed to acquire Wilshire (investment consulting); terms not disclosed; bolt-on, not transformational",
+    "source": "S5"
+   }
+  ]
+ },
+ "pitchbook_pbid": "10633-06",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "PitchBook/Morningstar profile: 'about half of its revenue is generated outside the US'. Exact 10-K split not extracted in this pass (not disclosed here, not zero). Q3-26: Risk US&Canada +4% underlying, International +6% (EMEA +7%, APAC +4%, LatAm flat).",
+  "source_ids": [
+   "S1",
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2024",
+   "organic_pct": 7,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 10,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2026 9M",
+   "organic_pct": 5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3-26 underlying growth: Risk / Reinsurance / People&Investments / Mgmt Consulting",
+   "value": "+5% / -6% / +5% / +14%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Reinsurance client retention",
+   "value": "high 90s %",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Marsh Global Insurance Market Index: primary commercial rates",
+   "value": "-5% (Q3-26) after -6% (Q2-26); global property -10%; US excess casualty +13%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Fiduciary interest income",
+   "value": "$100m in Q3-26 (-$9m y/y); Q4-26 guide ~$94m",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Adjusted operating margin",
+   "value": "28.1% (9M-26); RIS 33.2%; Consulting 21.4%",
+   "period": "9M 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Total debt / cash",
+   "value": "$20.5bn / $1.8bn at 30-Sep-2026",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Gross debt / EBITDA (provider)",
+   "value": "~3.1x (PitchBook TTM 3Q2026 total debt $22.3bn incl. leases / EBITDA $7.2bn); ~2.8x using company total debt $20.5bn",
+   "period": "TTM Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Thrive cost programme",
+   "value": "Savings target raised $400m -> $600m; ~$750m cost to achieve; actions largely by end-2028",
+   "period": "2026",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted in this pass",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2026 9M",
+   "cash_spent": 607,
+   "currency": "USD m",
+   "earnouts": "not disclosed in source",
+   "notes": "Bolt-ons; Q3 $288m. Wilshire agreed 10-Nov-2026 (terms undisclosed).",
+   "source_id": "S2"
+  },
+  {
+   "fy": "2024",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "not disclosed",
+   "notes": "McGriff Insurance Services acquired Nov-2024 (widely reported ~$7.75bn; NOT re-verified in this pass - lead agent to confirm from 10-K). Gap between FY25 reported (+10%) and underlying (+4%) growth largely McGriff.",
+   "source_id": "S4"
+  }
+ ],
+ "management": {
+  "ceo": "John Q. Doyle",
+  "ceo_since": "2023-01",
+  "cfo": "Mark McGivney (EVP, COO and CFO)",
+  "cfo_since": "2016 (CFO); COO role added later - dates not re-verified",
+  "senior_turnover_5y": "Orderly: Dan Glaser -> John Doyle (internal) Jan-2023; business CEOs reshuffled under rebrand (Nick Studer Risk, Dean Klisura Reinsurance, Pat Tomlinson People&Investments, Ted Moynihan Mgmt Consulting)",
+  "succession_notes": "Internal succession track record",
+  "guidance_record": "FY26 guide 'underlying growth similar to 2025, margin expansion, solid adj EPS growth' maintained through Q3-26; 18 consecutive years of margin expansion claimed in press coverage"
+ },
+ "ownership": {
+  "controlling_holders": "None (widely held)",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Standard NYSE large-cap; not re-verified",
+  "remuneration_notes": "not reviewed in this pass",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-15",
+   "item": "FY2026 underlying revenue growth",
+   "value": "similar to 2025 (FY25: 4%), margin expansion, solid adj EPS growth",
+   "class": "TARGET",
+   "source_id": "S2"
+  },
+  {
+   "date": "2026-10-15",
+   "item": "2026 capital deployment",
+   "value": "~$5.5bn across dividends, M&A and buybacks ($2bn buybacks 9M)",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Reinsurance client retention 'high 90s' (S2)",
+    "Mix: RIS ~2/3 of revenue (recurring broking), Consulting ~1/3 incl. more discretionary Oliver Wyman (S2)"
+   ],
+   "rationale": "Broking/benefits revenue is renewal-based but Oliver Wyman (~$3.9bn run-rate) is project/success-fee driven."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Largest global broker; 93% of London wholesale trading digital via own platforms (S2)",
+    "Retained clients through soft cycles (reinsurance retention high 90s) (S2)"
+   ],
+   "rationale": "Global placement scale, data and specialist teams create real switching costs for large risks."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adj operating margin 28.1% 9M-26 with RIS 33.2% (S2)",
+    "Margin expansion reported for many consecutive years (S4)"
+   ],
+   "rationale": "Scale shows up in sustained margin expansion and capacity facilities (Nimbus/Stratus), though peers have similar margins."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Underlying growth 7% (2024) -> 4% (2025) -> 5% (9M-26) (S4,S2)",
+    "Primary commercial rates -5% in Q3-26 (S2)"
+   ],
+   "rationale": "Mid-single-digit runway; pricing cycle now a headwind, new business must carry growth."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "About half of revenue generated outside the US (S1)",
+    "International Risk +6% vs US/Canada +4% in Q3-26 (S2)"
+   ],
+   "rationale": "Balanced developed-market spread; US the largest single country (~half)."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Internal CEO succession 2023; FY guidance reiterated through 2026 (S2)",
+    "Greensill litigation settled with $144m charge in Q3-26 (S2)"
+   ],
+   "rationale": "Delivers guidance with orderly succession; legacy litigation now closed."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "$2bn buybacks + $607m M&A 9M-26; $5.5bn deployment plan (S2)",
+    "McGriff (2024) integrated; leverage ~2.8-3.1x (S1,S2)"
+   ],
+   "rationale": "Balanced deployment with moderate leverage; McGriff returns not yet separately evidenced."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Widely held, no controlling holder (S1)"
+   ],
+   "rationale": "Standard large-cap governance; pay/board not reviewed in this pass (low confidence)."
+  },
+  "I1": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Broker WorkBench cut London placement time from 2-4 weeks to hours (S2)",
+    "Consulting AI work is a growth driver but also exposed to AI substitution (S2)"
+   ],
+   "rationale": "Large-risk advice and placement are judgement/relationship-heavy, but consulting and benefits admin are more automatable - moderate overall (INFERENCE)."
+  },
+  "I2": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Digital infrastructure cited as a growth driver; Stratus $10bn property facility for data centres (S2)"
+   ],
+   "rationale": "Some revenue linked to data-centre build-out placements; not quantified, judged <5% (INFERENCE)."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Thrive savings raised to $600m citing BCS and technology (S2)"
+   ],
+   "rationale": "Large people cost base addressable by AI/automation."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Commission/fee mix; fiduciary and fee pricing negotiated by large clients (INFERENCE)"
+   ],
+   "rationale": "Commission-based pay is not cost-plus, but large clients will push to share productivity gains."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Rates -5% yet Risk still grew 5% underlying in Q3-26 (S2)",
+    "Fiduciary income falling with rates ($100m Q3, -$9m y/y) (S2)"
+   ],
+   "rationale": "Diversified across broking/consulting; modest sensitivity to pricing cycle and interest rates."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Q3-26 'noteworthy items' $170m incl. Thrive $71m and Greensill $144m (S2)"
+   ],
+   "rationale": "Recurring restructuring add-backs (Thrive) mean adjusted > GAAP each year; otherwise clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Digital-infrastructure placements (Stratus/Nimbus) and Oliver Wyman AI work are growth drivers; revenue share not disclosed. Judged well below G5 threshold (INFERENCE)."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "INFERENCE: Q3-26 Risk +5% underlying with Marsh index rates -5% (index skews to large accounts; US -1%). Management attributes growth to new business (very high single-digit new business growth in UK/International) and retention; rate contribution likely ~0 to slightly negative in 2026 vs +2-4pts in 2022-24. Reinsurance -1% 9M-26 is the clearest rate drag (property cat).",
+  "retention_pct": "Reinsurance 'high 90s' (2026); Risk retention not quantified in source",
+  "contingent_consideration": "not disclosed in sources used (10-K note not extracted)",
+  "producer_retention": "Not quantified; management says it is 'hiring producers at a higher rate' funded by Thrive (S2)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: gross debt/EBITDA ~2.8x (company debt) to 3.1x (PitchBook incl. leases) < 4.0x. G2: Greensill litigation settled Q3-26; no restatement. G4 not computed here (lead agent FCF); broker cash conversion historically high. G6: Wilshire is a small bolt-on; MRSH is acquirer, not target. Ticker change MMC->MRSH effective 14-Jan-2026 is cosmetic."
+ },
+ "bull_points": [
+  "Most diversified global broker/consultant; underlying growth held at 4-5% even with commercial rates falling 5-6%.",
+  "Thrive ($600m savings) plus BCS shared services supports continued margin expansion and producer hiring.",
+  "Consistent capital return ($5.5bn deployment 2026) with moderate leverage."
+ ],
+ "bear_points": [
+  "Soft market: property rates -10% and reinsurance revenue -1% 9M-26; a deeper cycle could take underlying growth to low single digits.",
+  "Oliver Wyman (management consulting) is discretionary and success-fee driven; AI could compress consulting and benefits-admin fees.",
+  "Falling interest rates cut fiduciary income (~$400m/yr) which drops almost fully to profit."
+ ],
+ "thesis_breakers": [
+  "Underlying revenue growth < 3% for two consecutive years.",
+  "Adjusted operating margin declines y/y (ending the multi-year expansion record).",
+  "Gross debt/EBITDA > 3.5x from a large debt-funded deal."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: Marsh (10633-06)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/10633-06/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile description; TTM 3Q2026 Total Debt, EBITDA (data/raw/pitchbook/MMC.json)"
+  },
+  {
+   "id": "S2",
+   "title": "Marsh (MRSH) Q3 2026 earnings call transcript",
+   "publisher": "PitchBook (transcript)",
+   "url": "https://my.pitchbook.com/research-center/report/27f362b3-298e-30a7-982a-05d0532bc4c0",
+   "doc_date": "2026-10-15",
+   "retrieved": "2026-11-12",
+   "page_ref": "CEO/CFO prepared remarks; Q&A (reinsurance)"
+  },
+  {
+   "id": "S3",
+   "title": "Marsh McLennan to Change Its NYSE Symbol to MRSH on January 14",
+   "publisher": "Business Wire (company press release)",
+   "url": "https://www.businesswire.com/news/home/20251229129065/en/Marsh-McLennan-to-Change-Its-NYSE-Symbol-to-MRSH-on-January-14-Hosts-Fourth-Quarter-Earnings-Investor-Call-on-January-29",
+   "doc_date": "2025-12-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "Full release: symbol change effective 14-Jan-2026; legal name and CUSIP unchanged; no shareholder action"
+  },
+  {
+   "id": "S4",
+   "title": "Marsh reports fourth quarter and full year 2025 results",
+   "publisher": "Marsh (company press release) / Insurance Journal",
+   "url": "https://www.marsh.com/en/corp/about/news/marsh-reports-fourth-quarter-and-full-year-2025-results.html",
+   "doc_date": "2026-01-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "Headline: FY2025 revenue +10%, underlying +4%; FY2024 underlying 7% (Insurance Journal 29-Jan-2026)"
+  },
+  {
+   "id": "S5",
+   "title": "Marsh to acquire Wilshire to strengthen wealth advisory business",
+   "publisher": "Seeking Alpha News",
+   "url": "https://seekingalpha.com/news/4670152-marsh-to-acquire-wilshire-to-strengthen-wealth-advisory-business",
+   "doc_date": "2026-11-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Terms not disclosed"
+  },
+  {
+   "id": "S6",
+   "title": "Marsh McLennan and its businesses will brand as Marsh (press release 14-Oct-2025)",
+   "publisher": "Company press release (via pwnglobal)",
+   "url": "https://www.pwnglobal.net/articles/3d176aaa-4800-f111-832e-000d3a43e2d8/marsh-mclennan-and-its-businesses-will-brand-as-marsh",
+   "doc_date": "2025-10-14",
+   "retrieved": "2026-11-12",
+   "page_ref": "Brand change effective Jan-2026; BCS unit created"
+  },
+  {
+   "id": "S7",
+   "title": "Marsh NYSE ticker switch from MMC to MRSH goes live",
+   "publisher": "The Insurer",
+   "url": "https://www.theinsurer.com/ti/news/marsh-nyse-ticker-switch-from-mmc-to-mrsh-goes-live-2026-01-14/",
+   "doc_date": "2026-01-14",
+   "retrieved": "2026-11-12",
+   "page_ref": "Article body"
+  }
+ ]
+}

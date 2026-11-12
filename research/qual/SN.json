@@ -1,0 +1,267 @@
+{
+ "id": "SN",
+ "name": "Smith & Nephew plc",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "London Stock Exchange; ADRs NYSE (SNN)",
+  "ticker": "SN.",
+  "isin": "GB0009223206 (not re-verified)",
+  "hq": "Watford, UK",
+  "domicile": "England & Wales",
+  "corporate_actions": [
+   {
+    "date": "2026",
+    "event": "Approach to J&J re combining with J&J orthopaedics ended without deal; 'full range of strategic options' for Orthopaedics under consideration",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "12085-39",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports USD; >50% US, ~30% other established, remainder EM (Morningstar via PB)",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3 2026 (underlying)",
+   "organic_pct": 3.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance (underlying)",
+   "organic_pct": 3,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Trading profit growth guide",
+   "value": "~4% (from 8%)",
+   "period": "2026",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "FCF guide",
+   "value": "~$750m",
+   "period": "2026",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Adjusted ROIC guide",
+   "value": "~9%",
+   "period": "2026",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "Deepak Nath",
+  "ceo_since": "2022-04",
+  "cfo": "not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO since 2022",
+  "succession_notes": "n/a",
+  "guidance_record": "2026 guidance cut (S1)"
+ },
+ "ownership": {
+  "controlling_holders": "Widely held; Cevian Capital activist stake reported 2024 (not re-verified)",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "Cevian Capital",
+    "since": "2024 (reported)",
+    "objective": "Operational improvement / portfolio (not verified)",
+    "company_response": "not verified"
+   }
+  ],
+  "board_independence": "UK Code",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None"
+ },
+ "guidance": [],
+ "scores": {
+  "A": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "B": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "C": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "D": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "E": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "F": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "G": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "H": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "I1": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "I2": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "I3": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "I4": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "J": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  },
+  "K": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Screen depth - not scored"
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5%",
+  "top_product_pct": "Orthopaedics ~40% (segment)",
+  "litigation": "Historic metal-on-metal hip claims (largely resolved)",
+  "reimbursement": "High: hospital procedure reimbursement; China VBP for orthopaedics/sports medicine"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "B",
+  "G7": "C",
+  "notes": "Screen: G6 B - portfolio/strategic options for Orthopaedics under consideration (possible transaction). ROIC ~9% low for quality screen; orthopaedics is medtech (separate peer group)."
+ },
+ "bull_points": [
+  "Sports medicine and wound franchises good",
+  "Restructuring/portfolio action optionality"
+ ],
+ "bear_points": [
+  "Persistent US orthopaedics underperformance",
+  "Low ROIC (~9%)",
+  "Guidance cuts"
+ ],
+ "thesis_breakers": [
+  "Underlying growth <3% in 2027"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Smith+Nephew Third Quarter 2026 Trading Update",
+   "publisher": "Smith & Nephew plc (RNS via Investegate)",
+   "url": "https://www.investegate.co.uk/announcement/rns/smith-nephew--sn./smith-nephew-third-quarter-2026-trading-update/9856829",
+   "doc_date": "2026-11-04",
+   "retrieved": "2026-11-12",
+   "page_ref": "headline; guidance"
+  },
+  {
+   "id": "S2",
+   "title": "ii view: Smith & Nephew still seeks deal after guidance cut",
+   "publisher": "interactive investor",
+   "url": "https://www.ii.co.uk/analysis-commentary/ii-view-smith-nephew-still-seeks-deal-guidance-cut-ii540796",
+   "doc_date": "2026-11-04",
+   "retrieved": "2026-11-12",
+   "page_ref": "J&J orthopaedics talks ended; strategic options"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/12085-39/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ],
+ "extra": {
+  "depth": "screen"
+ }
+}

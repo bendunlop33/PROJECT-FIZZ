@@ -1,0 +1,333 @@
+{
+ "id": "COLO",
+ "name": "Coloplast A/S",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq Copenhagen",
+  "ticker": "COLO B",
+  "isin": "DK0060448595 (not re-verified)",
+  "hq": "Humlebaek, Denmark",
+  "domicile": "Denmark",
+  "corporate_actions": [
+   {
+    "date": "2022-01",
+    "event": "Atos Medical acquisition (voice & respiratory) closed",
+    "source": "PB"
+   },
+   {
+    "date": "2023-08",
+    "event": "Kerecis (biologic wound care) acquisition closed",
+    "source": "PB"
+   },
+   {
+    "date": "2026 (H1)",
+    "event": "Gavin Wood appointed President & CEO (c. 6 months in role by Nov-2026)",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "60726-97",
+ "geography": {
+  "fy": "FY2024/25",
+  "basis": "revenue",
+  "europe_pct": 60,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": 40,
+  "largest_country": "not disclosed",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports DKK; Morningstar/PitchBook profile: >60% Europe, ~24% other developed markets, ~17% RoW; country split not collected. FY25/26 FX -2pp on reported growth.",
+  "source_ids": [
+   "PB",
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2025/26",
+   "organic_pct": 6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": -2,
+   "reported_pct": 4,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026/27 guidance",
+   "organic_pct": "5-7",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "EBIT margin before special items",
+   "value": "25-26% (sources conflict) vs 28% prior year",
+   "period": "FY2025/26",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Q4 organic growth",
+   "value": "5%",
+   "period": "Q4 2025/26",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Cost programme 'Funding the journey'",
+   "value": "~DKK 500m",
+   "period": "FY27/28 full run-rate",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [
+  {
+   "fy": "2022-2023",
+   "cash_spent": null,
+   "currency": "DKK",
+   "earnouts": "Kerecis included contingent consideration (amount not collected)",
+   "notes": "Atos Medical (~DKK 16bn) and Kerecis (~USD 1.3bn) - recalled, not re-verified",
+   "source_id": "PB"
+  }
+ ],
+ "management": {
+  "ceo": "Gavin Wood",
+  "ceo_since": "2026 (H1)",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO Kristian Villumsen departed 2025; new CEO 2026; margin reset",
+  "succession_notes": "External CEO appointment; 2030 ambition revised",
+  "guidance_record": "FY24/25 and FY25/26 below original long-term ambition; margin reset to ~25%"
+ },
+ "ownership": {
+  "controlling_holders": "Louis-Hansen family/Aage and Johanne Louis-Hansen Foundation control majority of votes via A shares (recalled)",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "Not reviewed",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-03",
+   "item": "FY2026/27 organic growth",
+   "value": "5-7%",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-11-03",
+   "item": "FY2026/27 EBIT margin",
+   "value": "~25%",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-11-03",
+   "item": "2030 ambition",
+   "value": "5-7% organic p.a.; EBIT margin mid-20s",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Ostomy/continence are lifelong consumables; reimbursed (PB)",
+    "Organic growth positive every year (S1)"
+   ],
+   "rationale": "Highly recurring chronic-care consumables."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Global #1 ostomy and intermittent catheters (PB)",
+    "Patient loyalty/switching costs in stoma care"
+   ],
+   "rationale": "Strong switching costs."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Historic EBIT margin ~30%+ vs Convatec ~22% (PB)"
+   ],
+   "rationale": "Scale yields superior margins though declining."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "5-7% organic ambition to 2030 (S1)"
+   ],
+   "rationale": "Solid demographic runway."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    ">60% Europe (PB)"
+   ],
+   "rationale": "Europe-heavy but diversified by country."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "CEO turnover 2025-26; margin reset (S1)"
+   ],
+   "rationale": "Mixed recent record."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Kerecis/biologics underperformed after US skin-substitute reimbursement change (S1)",
+    "Atos acquired at high multiple"
+   ],
+   "rationale": "Recent M&A returns weak."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Dual-class with foundation/family control"
+   ],
+   "rationale": "Stable owner but weaker minority influence."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical medical consumables"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Customer service/home-care ops"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Reimbursed pricing"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Gross margin pressure from inflation and Portugal ramp-up (S1)"
+   ],
+   "rationale": "Partial pass-through via tenders/reimbursement."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Modest special items"
+   ],
+   "rationale": "Generally clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5% (device consumables; no single patent cliff)",
+  "top_product_pct": "Ostomy Care ~ largest business (share not collected)",
+  "litigation": "Historic transvaginal mesh litigation (largely settled; not re-verified)",
+  "reimbursement": "High: national reimbursement in Europe; US Medicare DMEPOS competitive bidding proposal (2025 rule) for ostomy/continence; US skin-substitute (Kerecis) payment changes hit Biologics"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 leverage not computed here (post Atos/Kerecis NIBD/EBITDA ~2.5-3x per prior disclosures, verify). Dual-class noted neutrally."
+ },
+ "bull_points": [
+  "Archetypal recurring chronic-care consumables with high switching costs",
+  "5-7% organic growth sustained through cycles",
+  "Cost programme supports mid-20s margin"
+ ],
+ "bear_points": [
+  "Margin reset from ~28% to ~25% and weak acquisition returns (Kerecis)",
+  "US reimbursement risks: DMEPOS competitive bidding and skin-substitute payment cuts",
+  "CEO change adds execution risk"
+ ],
+ "thesis_breakers": [
+  "Organic growth below 5% in FY26/27",
+  "EBIT margin below 24%",
+  "CMS competitive bidding implemented with >5% US price cuts"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Coloplast A/S - Announcement no. 11/2026: 2025/26 full year financial results",
+   "publisher": "Coloplast A/S (via Inderes)",
+   "url": "https://www.inderes.dk/en/releases/coloplast-as-announcement-no-112026-202526-full-year-financial-results",
+   "doc_date": "2026-11-03",
+   "retrieved": "2026-11-12",
+   "page_ref": "headline; guidance FY26/27; 2030 ambition; CEO"
+  },
+  {
+   "id": "S2",
+   "title": "Coloplast H1 2025/26 earnings release",
+   "publisher": "Coloplast A/S",
+   "url": "https://www.coloplast.com/siteassets/investors/latest-results/q2-20252026/05_2026_h1_2025_26_earnings_release.pdf",
+   "doc_date": "2026-05",
+   "retrieved": "2026-11-12",
+   "page_ref": "H1"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/60726-97/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

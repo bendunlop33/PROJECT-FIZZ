@@ -1,0 +1,372 @@
+{
+ "id": "AWK",
+ "name": "American Water Works Company, Inc. [ADJACENT - regulated water utility]",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "AWK",
+  "isin": "US0304201033",
+  "hq": "Camden, New Jersey, USA",
+  "domicile": "USA (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2025-10 (announced)",
+    "event": "All-stock merger with Essential Utilities (WTRG) - AWK is acquirer/surviving company; shareholders approved Feb-2026; HSR expired 14-Aug-2026; KY/OH/VA approvals; PA/TX pending; close expected by end Q1-2027",
+    "source": "S2"
+   },
+   {
+    "date": "2026",
+    "event": "Completed purchase of Nexus Water Group systems in eight states",
+    "source": "S3"
+   }
+  ]
+ },
+ "pitchbook_pbid": "42099-67",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": 100.0,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": 100.0,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "US only (14 states + military services).",
+  "source_ids": [
+   "S4"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3-26 adj. EPS / GAAP EPS",
+   "value": "$2.00 / $1.94",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Long-term targets",
+   "value": "EPS growth 7-9%; rate base growth 8-9% incl. acquisitions",
+   "period": "LT",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "5.4x",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Negative FCF (capex > OCF) by design - not collected",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2026",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "",
+   "notes": "Nexus Water Group systems; Essential Utilities all-stock merger pending",
+   "source_id": "S3"
+  }
+ ],
+ "management": {
+  "ceo": "John C. Griffith",
+  "ceo_since": "2024-05 (prior knowledge)",
+  "cfo": "not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "CEO changes 2022 (Lynch) and 2024 (Griffith) - prior knowledge",
+  "succession_notes": "",
+  "guidance_record": "2026 adj. EPS narrowed to $6.07-6.12; Q3 below consensus"
+ },
+ "ownership": {
+  "controlling_holders": "None",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-29",
+   "item": "FY2026 adj. EPS",
+   "value": "$6.07-6.12",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-10-29",
+   "item": "FY2027 standalone adj. EPS",
+   "value": "$6.53-6.63 (~8% growth)",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Regulated water/wastewater (S4)"
+   ],
+   "rationale": "Regulated monopoly."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Regulated franchises; returns set by state PUCs"
+   ],
+   "rationale": "Monopoly with regulated returns."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Largest US investor-owned water utility; acquisition platform (S4)"
+   ],
+   "rationale": "Scale aids fragmented-system acquisitions."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "8-9% rate base growth (S1)"
+   ],
+   "rationale": "Long runway in fragmented US water."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "US only"
+   ],
+   "rationale": "Single country."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Q3 miss vs consensus; guidance narrowed (S1)"
+   ],
+   "rationale": "Mixed recent."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Large all-stock merger (S2)"
+   ],
+   "rationale": "Transformational M&A; outcome pending."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical utility"
+   ],
+   "rationale": "Not substitutable."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "<2%."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Rate cases pass savings to customers"
+   ],
+   "rationale": "Limited retention."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Rate mechanisms, infrastructure surcharges"
+   ],
+   "rationale": "Regulatory pass-through with lag; weather sensitivity."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Small adjustments (weather, merger costs) (S1)"
+   ],
+   "rationale": "Clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "PFAS: EPA drinking-water MCL compliance capex (multi-$bn industry-wide; partly offset by 3M/DuPont settlements) - AWK amount not collected.",
+  "commodity_sensitivity": "Low; weather (volumes)."
+ },
+ "gates": {
+  "G1": "A",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "B",
+  "G7": "C",
+  "notes": "ADJACENT subgroup (not core services; does not count toward core 10). G1 A (MECHANICAL): provider ND/EBITDA 5.4x > 5.0x; regulated utility leverage is structural - lead may apply regulated basis (threshold 4.5x would still fail). G6 B: pending all-stock merger with Essential Utilities (expected close by end Q1-2027) - AWK is acquirer, not target, but the record is transaction-dominated until close and combined guidance is deferred."
+ },
+ "bull_points": [
+  "7-9% EPS growth target from 8-9% rate base growth.",
+  "Merger creates largest US regulated water platform (4.7m water customers).",
+  "Fragmented US water systems acquisition runway."
+ ],
+ "bear_points": [
+  "Merger execution and regulatory conditions (PA/TX pending).",
+  "High leverage and equity-dilutive funding needs.",
+  "Rate-case/affordability pressure; Q3 miss."
+ ],
+ "thesis_breakers": [
+  "Merger blocked or conditions materially dilutive.",
+  "Allowed ROEs cut below ~9.5% in key states.",
+  "EPS growth <6% for 2027-28."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "American Water Q3 2026 results (Form 8-K Ex.99.1)",
+   "publisher": "American Water / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001410636/000141063626000150/ex991-9302026q3pressrelease.htm",
+   "doc_date": "2026-10-29",
+   "retrieved": "2026-11-12",
+   "page_ref": "EPS, guidance, LT targets"
+  },
+  {
+   "id": "S2",
+   "title": "American Water and Essential Utilities Announce Expiration of HSR Waiting Period",
+   "publisher": "American Water newsroom",
+   "url": "https://newsroom.amwater.com/2026-08-17-American-Water-and-Essential-Utilities-Announce-Expiration-of-Hart-Scott-Rodino-Waiting-Period-for-Proposed-Merger?asPDF=1",
+   "doc_date": "2026-08-17",
+   "retrieved": "2026-11-12",
+   "page_ref": "Merger status"
+  },
+  {
+   "id": "S3",
+   "title": "American Water completes purchase of Nexus Water Group systems in eight states",
+   "publisher": "American Water IR",
+   "url": "https://ir.amwater.com/news-and-events/financial-releases/financial-release-details/2026/American-Water-Completes-Purchase-of-Nexus-Water-Group-Systems-in-Eight-States/default.aspx",
+   "doc_date": "2026",
+   "retrieved": "2026-11-12",
+   "page_ref": "Release"
+  },
+  {
+   "id": "S4",
+   "title": "PitchBook company profile: American Water Works",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/42099-67/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 42099-67",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/42099-67/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/AWK.json"
+  }
+ ]
+}

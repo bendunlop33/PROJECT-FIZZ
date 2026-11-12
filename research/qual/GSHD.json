@@ -1,0 +1,380 @@
+{
+ "id": "GSHD",
+ "name": "Goosehead Insurance, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "GSHD",
+  "isin": "US38267D1090",
+  "hq": "Westlake, TX, USA",
+  "domicile": "US (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2026-11-06",
+    "event": "8-K Item 4.02: FY2023-2025 audited statements and interims to Jun-2026 should no longer be relied upon (commission-cost capitalisation ASC 340-40; franchise fee presentation ASC 606); material weakness expected; Q3-26 10-Q delayed (NT 10-Q). Non-cash; preliminary impact raises operating income",
+    "source": "S2"
+   },
+   {
+    "date": "2027-01-01",
+    "event": "CEO transition: Mark Jones Jr. (son of co-founder) succeeds Mark Miller",
+    "source": "S5"
+   }
+  ]
+ },
+ "pitchbook_pbid": "221932-00",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": 0,
+  "north_america_pct": 100,
+  "uk_pct": 0,
+  "other_pct": 0,
+  "largest_country": "United States",
+  "largest_country_pct": 100,
+  "china_pct": 0,
+  "em_pct": 0,
+  "fx_notes": "US-only personal-lines franchise agency; state concentration in Texas, California, Illinois, Florida (state %s not extracted).",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 24.8,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 20.4,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 16.2,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 17,
+   "source_id": "S4"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Core revenue growth (company's organic-like measure)",
+   "value": "+12.9% Q3-26 (secondary source; company restating)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "Total written premium",
+   "value": "$1.31bn, +10.6% (Q3-26) after +13.6% Q2, +13.4% Q1",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "Policies in force",
+   "value": "2.12m, +14.5% y/y",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S4"
+  },
+  {
+   "name": "Reported revenue growth (PitchBook USD, pre-restatement)",
+   "value": "2023 +24.8%, 2024 +20.4%, 2025 +16.2%",
+   "period": "2023-25",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Gross debt / EBITDA (provider)",
+   "value": "~3.5x (PitchBook TTM 2Q26: debt $373m / EBITDA $106m); equity negative after 2025 recap",
+   "period": "TTM Q2 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted; restatement pending (no cash impact expected)",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2025",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "n/a",
+   "notes": "Organic franchise model, no material M&A. Debt rose $153m -> $352m in 1Q25 and equity turned negative (PitchBook) - consistent with a debt-funded special distribution/recap (INFERENCE; details not extracted).",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Mark Miller (retiring 31-Dec-2026); successor Mark Jones Jr. from 1-Jan-2027",
+  "ceo_since": "2024-07-01",
+  "cfo": "not verified (Mark Jones Jr. ceased to be CFO on promotion to President/COO, Apr-2026)",
+  "cfo_since": "",
+  "senior_turnover_5y": "High: co-founder CEO -> Miller (2024) -> Jones Jr. (2027); CFO vacancy/turnover 2026",
+  "succession_notes": "Family succession (founder's son)",
+  "guidance_record": "FY26 revenue guidance reaffirmed despite restatement (S2)"
+ },
+ "ownership": {
+  "controlling_holders": "Co-founders Mark & Robyn Jones control via Class B (Up-C) - % not extracted",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "Up-C with Tax Receivable Agreement; family succession; restatement originated from SEC comment letter"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-06",
+   "item": "FY2026 revenue",
+   "value": "reaffirmed (range not extracted)",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "2.12m policies; renewal royalties from franchise book (S4)"
+   ],
+   "rationale": "Recurring renewal commissions/royalties, though personal-lines client retention historically mid-80s% (not verified this pass)."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Franchise model with service centre; written premium +10.6% (S4)"
+   ],
+   "rationale": "Some differentiation via choice of carriers and service centre, low switching costs for consumers."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "PitchBook EBITDA margin ~26% TTM (S1)"
+   ],
+   "rationale": "Scale benefits unclear."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Policies +14.5% (S4)",
+    "State expansion runway (S1)"
+   ],
+   "rationale": "Under-penetrated outside core states."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "US-only (S1)"
+   ],
+   "rationale": "Single country."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Restatement and late 10-Q (S2,S3)",
+    "Three CEO changes in ~3 years incl. founder's son (S5,S6)"
+   ],
+   "rationale": "Control failures and frequent leadership change."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Leveraged recap 2025 left negative equity (S1)"
+   ],
+   "rationale": "Shareholder returns via leverage rather than reinvestment; not clearly value-destructive."
+  },
+  "H": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "Founder-family control via Up-C; family CEO succession (S5)",
+    "Non-reliance on 3 years of audited accounts (S2)"
+   ],
+   "rationale": "Concentrated control plus control weaknesses."
+  },
+  "I1": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Personal auto/home distribution (S1)"
+   ],
+   "rationale": "Personal lines most exposed to direct-to-consumer, comparative raters and AI agents (INFERENCE)."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Service centre labour (S1)"
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Commission/royalty based (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Homeowners rate cycle and cat-driven carrier capacity (S1)"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "Item 4.02 non-reliance FY2023-25; material weakness expected (S2)"
+   ],
+   "rationale": "Unresolved restatement."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "INFERENCE: written premium growth (10.6%) is below policy growth (14.5%), implying personal-lines premium per policy now flat-to-down as homeowners/auto rate increases fade; 2023-24 growth was boosted by double-digit personal-lines rate increases.",
+  "retention_pct": "not disclosed in sources used (Q2-26 release: 'improving client retention', no number)",
+  "contingent_consideration": "n/a (no material M&A)",
+  "producer_retention": "not disclosed (franchise count not extracted)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "A",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G2 = A per methodology (unresolved restatement): 8-K Item 4.02 on 6-Nov-2026 covering FY2023-25 and interims, expected material weakness, NT 10-Q. Mitigants: non-cash, SEC-comment driven, expected to raise operating income - re-test once restated 10-K/A and Q3 10-Q filed. G4 = B: cash statements for Q3 not available. G1 C: ~3.5x < 4.0x."
+ },
+ "bull_points": [
+  "Fast policy growth (+14.5%) and long franchise runway; renewal royalties are high-margin.",
+  "Restatement is non-cash and expected to increase operating income."
+ ],
+ "bear_points": [
+  "Unresolved restatement, material weakness and late filing.",
+  "Personal lines are the most AI/direct-to-consumer-exposed distribution niche.",
+  "Family-controlled Up-C with frequent CEO turnover and negative book equity after recap."
+ ],
+ "thesis_breakers": [
+  "Restated filings not completed by end-Q1 2027 or auditor qualification.",
+  "Written premium growth < 5%.",
+  "Policies in force decline y/y."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: Goosehead Insurance (221932-00)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/221932-00/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile (Texas, California, Illinois, Florida); TTM 2Q26 revenue $402m, EBITDA $106m, debt $373m, equity -$189m"
+  },
+  {
+   "id": "S2",
+   "title": "Goosehead Insurance Form 8-K (non-reliance / restatement; preliminary Q3-2026 results)",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001726978/000172697826000072/gshd-20261106.htm",
+   "doc_date": "2026-11-06",
+   "retrieved": "2026-11-12",
+   "page_ref": "Item 4.02 non-reliance FY2023-FY2025 and interims through Jun-2026; ASC 340-40 and ASC 606 errors; expected material weakness"
+  },
+  {
+   "id": "S3",
+   "title": "Goosehead Insurance Form NT 10-Q (Q3 2026)",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001726978/000172697826000074/gooseheadnt10-qxgheditsnfa.htm",
+   "doc_date": "2026-11",
+   "retrieved": "2026-11-12",
+   "page_ref": "10-Q not filed by 9-Nov-2026 due date"
+  },
+  {
+   "id": "S4",
+   "title": "Goosehead Q3 Revenue Rises 17% to $110 Million Amid Restatement and Filing Delay",
+   "publisher": "Panabee (secondary)",
+   "url": "https://www.panabee.com/news/goosehead-earnings-q3-2026",
+   "doc_date": "2026-11",
+   "retrieved": "2026-11-12",
+   "page_ref": "Total revenue ~+17%; core revenue +12.9%; written premium $1.31bn +10.6%; policies 2.12m +14.5%; no Q3 buybacks"
+  },
+  {
+   "id": "S5",
+   "title": "Goosehead names Mark Jones Jr as CEO; Mark Miller to retire at year-end",
+   "publisher": "Reinsurance News",
+   "url": "https://www.reinsurancene.ws/goosehead-names-mark-jones-jr-as-ceo-mark-miller-to-retire-at-year-end/",
+   "doc_date": "2026-07",
+   "retrieved": "2026-11-12",
+   "page_ref": "Miller retires 31-Dec-2026; Jones Jr. CEO from 1-Jan-2027; Mark Jones Sr. Executive Chairman since 1-Jul-2024"
+  },
+  {
+   "id": "S6",
+   "title": "Goosehead Insurance announces CEO transition (2024)",
+   "publisher": "Goosehead (company press release)",
+   "url": "https://ir.gooseheadinsurance.com/news-releases/news-release-details/goosehead-insurance-announces-ceo-transition",
+   "doc_date": "2024-02-21",
+   "retrieved": "2026-11-12",
+   "page_ref": "Mark Miller CEO effective 1-Jul-2024"
+  }
+ ]
+}

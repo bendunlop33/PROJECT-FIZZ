@@ -1,0 +1,6 @@
+id,as_of,economic_shares_m,notes,source
+RYAN,2026-10-26,251.58,"Up-C: Class A + LLC units exchangeable 1:1 (sector agent; 1:1 ratio per cover page, NCI note not re-verified)",research/share_classes_S6.csv (10-Q cover)
+TWFG,2026-11-04,54.08,"Up-C: Class A + Class B + Class C units (sector agent)",research/share_classes_S6.csv (10-Q cover)
+GSHD,2026-07-20,35.52,"Up-C: Class A + Class B (Q2 10-Q; Q3 delayed by restatement)",research/share_classes_S6.csv
+BWIN,2026-10-30,140.55,"Up-C: Class A + Class B units",research/share_classes_S6.csv
+CRD,2026-10-26,47.66,"CRD-A 28.75m + CRD-B 18.90m valued at CRD-B price (approximation; A trades at a small discount)",research/share_classes_S6.csv

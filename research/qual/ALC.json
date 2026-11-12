@@ -1,0 +1,324 @@
+{
+ "id": "ALC",
+ "name": "Alcon Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S2",
+ "listing": {
+  "status": "listed",
+  "exchange": "SIX Swiss Exchange and NYSE",
+  "ticker": "ALC",
+  "isin": "CH0432492467 (not re-verified)",
+  "hq": "Geneva, Switzerland (operational HQ Fort Worth, TX)",
+  "domicile": "Switzerland",
+  "corporate_actions": [
+   {
+    "date": "2019-04",
+    "event": "Spun off from Novartis",
+    "source": "PB"
+   },
+   {
+    "date": "2026-01-06",
+    "event": "STAAR Surgical shareholders rejected Alcon's $1.6bn offer; deal terminated, no fee",
+    "source": "S3"
+   },
+   {
+    "date": "2026",
+    "event": "Neurotech acquisition referenced in Q3 release",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "41516-56",
+ "geography": {
+  "fy": "FY2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Reports USD (US GAAP); US ~45% (recalled, not re-verified); international ~55%",
+  "source_ids": [
+   "PB"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "9M 2026 (cc)",
+   "organic_pct": 6,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 7,
+   "source_id": "S1"
+  },
+  {
+   "fy": "Q3 2026 (cc)",
+   "organic_pct": 5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 5,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2026 guidance (cc)",
+   "organic_pct": "5-7",
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3 2026 sales",
+   "value": "$2.7bn",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Core diluted EPS growth",
+   "value": "+15%",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Segments",
+   "value": "Surgical (~55%) / Vision Care (~45%) (recalled)",
+   "period": "FY2025",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": "",
+  "note": "not collected in this pass"
+ },
+ "acquisitions": [],
+ "management": {
+  "ceo": "David Endicott",
+  "ceo_since": "2019 (CEO of Alcon division since 2016)",
+  "cfo": "Tim Stonesifer",
+  "cfo_since": "2019 (recalled)",
+  "senior_turnover_5y": "Stable",
+  "succession_notes": "n/a",
+  "guidance_record": "Generally within guidance"
+ },
+ "ownership": {
+  "controlling_holders": "Widely held",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Swiss Code; majority independent",
+  "remuneration_notes": "Not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-08",
+   "item": "2026 sales growth cc",
+   "value": "5-7%",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Surgical consumables (IOLs, packs) tied to installed base; daily lenses recurring (PB)"
+   ],
+   "rationale": "Largely recurring."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Largest installed base of ophthalmic surgical equipment (PB)"
+   ],
+   "rationale": "Installed-base lock-in."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "#1 eye care globally"
+   ],
+   "rationale": "Scale advantage in surgical."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Ageing-driven cataract volumes; PC-IOLs; dry eye launches"
+   ],
+   "rationale": "Good runway."
+  },
+  "E": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Global, US <50%"
+   ],
+   "rationale": "Balanced."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Stable team; delivering guidance (S1)"
+   ],
+   "rationale": "Good."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "STAAR bid failed (S3); bolt-ons"
+   ],
+   "rationale": "Average."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Widely held"
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical surgery"
+   ],
+   "rationale": "Very low."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Some."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Premium IOL pricing"
+   ],
+   "rationale": "Good."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Tariffs $40-90m net burden (press)"
+   ],
+   "rationale": "Partial."
+  },
+  "K": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Core vs IFRS/US GAAP gap from Novartis-era amortisation (PB)"
+   ],
+   "rationale": "Some adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "None."
+ },
+ "sector_specific": {
+  "patent_exposure_pct": "<5% (pharma ocular products small; device IP diversified - INFERENCE)",
+  "top_product_pct": "not disclosed",
+  "litigation": "None material identified",
+  "reimbursement": "Cataract surgery Medicare-reimbursed; premium IOLs self-pay"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "All C."
+ },
+ "bull_points": [
+  "Installed-base driven surgical consumables",
+  "Demographic cataract tailwind",
+  "Balanced geography"
+ ],
+ "bear_points": [
+  "Competitive pressure in specific areas (S1)",
+  "Contact lens market slowdown",
+  "M&A ambitions rebuffed"
+ ],
+ "thesis_breakers": [
+  "Organic growth below 4% for a year",
+  "Core margin regression"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Alcon Q3 2026 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001167379/000116737926000033/q32026pressrelease.htm",
+   "doc_date": "2026-11",
+   "retrieved": "2026-11-12",
+   "page_ref": "headline"
+  },
+  {
+   "id": "S2",
+   "title": "Alcon Q2 2026 results press release (6-K)",
+   "publisher": "Alcon Inc. / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001167379/000116737926000030/q22026pressrelease.htm",
+   "doc_date": "2026-08",
+   "retrieved": "2026-11-12",
+   "page_ref": "2026 guidance 5-7% cc"
+  },
+  {
+   "id": "S3",
+   "title": "Staar Surgical's takeover saga ends as shareholder revolt stops Alcon's attempted merger deal",
+   "publisher": "Fierce Biotech",
+   "url": "https://www.fiercebiotech.com/medtech/staar-surgicals-takeover-saga-ends-shareholder-revolt-stops-alcons-attempted-merger-deal",
+   "doc_date": "2026-01",
+   "retrieved": "2026-11-12",
+   "page_ref": "STAAR deal terminated"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet, USD)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41516-56/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook file"
+  }
+ ]
+}

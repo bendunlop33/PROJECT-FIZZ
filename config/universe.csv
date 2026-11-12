@@ -1,0 +1,98 @@
+id,name,yahoo,sector,subsector,peer_group,depth,hq_country,gaap,notes
+CTAS,Cintas,CTAS,S1,Uniform & facility services,Route-based hygiene/uniform,detailed,US,USGAAP,
+ROL,Rollins,ROL,S1,Pest control,Route-based hygiene/uniform,detailed,US,USGAAP,
+RTO,Rentokil Initial,RTO.L,S1,Pest control & hygiene,Route-based hygiene/uniform,detailed,GB,IFRS,Reports in USD from FY2024
+ELIS,Elis,ELIS.PA,S1,Textile rental & hygiene,Route-based hygiene/uniform,detailed,FR,IFRS,
+UNF,UniFirst,UNF,S1,Uniform rental,Route-based hygiene/uniform,detailed,US,USGAAP,Check Cintas approach / transaction status
+ECL,Ecolab,ECL,S1,Hygiene & water treatment,Route-based hygiene/uniform,detailed,US,USGAAP,Secondary exposure: water (S5)
+CPG,Compass Group,CPG.L,S1,Contract catering,Catering & facilities,detailed,GB,IFRS,Reports in USD
+SW,Sodexo,SW.PA,S1,Contract catering,Catering & facilities,detailed,FR,IFRS,Pluxee spun off Feb-2024
+ARMK,Aramark,ARMK,S1,Contract catering,Catering & facilities,detailed,US,USGAAP,Vestis spun off Sep-2023
+ISS,ISS A/S,ISS.CO,S1,Facilities management,Catering & facilities,detailed,DK,IFRS,
+BVI,Bureau Veritas,BVI.PA,S1,Testing inspection certification,TIC,detailed,FR,IFRS,
+SGSN,SGS,SGSN.SW,S1,Testing inspection certification,TIC,detailed,CH,IFRS,
+ITRK,Intertek,ITRK.L,S1,Testing inspection certification,TIC,detailed,GB,IFRS,
+ERF,Eurofins Scientific,ERF.PA,S1,Laboratory testing,TIC,detailed,LU,IFRS,
+ABM,ABM Industries,ABM,S1,Facilities management,Catering & facilities,screen,US,USGAAP,
+MTO,Mitie Group,MTO.L,S1,Facilities management,Catering & facilities,screen,GB,IFRS,
+VSTS,Vestis,VSTS,S1,Uniform rental,Route-based hygiene/uniform,screen,US,USGAAP,
+HLN,Haleon,HLN.L,S2,Consumer health (OTC/oral),Consumer health brands,detailed,GB,IFRS,
+PRGO,Perrigo,PRGO,S2,Consumer health (store brand OTC),Consumer health brands,detailed,IE,USGAAP,
+GALD,Galderma,GALD.SW,S2,Dermatology (consumer + aesthetics + Rx),Consumer health brands,detailed,CH,IFRS,
+KVUE,Kenvue,KVUE,S2,Consumer health (OTC/skin),Consumer health brands,screen,US,USGAAP,Kimberly-Clark acquisition announced Nov-2025 - verify status
+COLO,Coloplast,COLO-B.CO,S2,Chronic care consumables,Medical consumables,detailed,DK,IFRS,
+CTEC,Convatec,CTEC.L,S2,Chronic care consumables,Medical consumables,detailed,GB,IFRS,Reports in USD
+STE,STERIS,STE,S2,Sterilisation consumables & services,Medical consumables,detailed,IE,USGAAP,
+BDX,Becton Dickinson,BDX,S2,Medical consumables & devices,Medical consumables,detailed,US,USGAAP,Biosciences/Diagnostics combined with Waters - verify
+COO,Cooper Companies,COO,S2,Contact lenses & women's health,Vision/hearing/dental,detailed,US,USGAAP,
+ALC,Alcon,ALC.SW,S2,Eye care consumables & devices,Vision/hearing/dental,detailed,CH,USGAAP,Reports US GAAP in USD
+EL,EssilorLuxottica,EL.PA,S2,Lenses & eyewear,Vision/hearing/dental,detailed,FR,IFRS,
+STMN,Straumann,STMN.SW,S2,Dental implants & aligners,Vision/hearing/dental,detailed,CH,IFRS,
+SOON,Sonova,SOON.SW,S2,Hearing care,Vision/hearing/dental,detailed,CH,IFRS,
+DEMANT,Demant,DEMANT.CO,S2,Hearing care,Vision/hearing/dental,detailed,DK,IFRS,
+BIM,bioMerieux,BIM.PA,S2,In-vitro diagnostics,Diagnostics,detailed,FR,IFRS,
+SN,Smith & Nephew,SN.L,S2,Orthopaedics/wound/sports medicine,Medtech,screen,GB,IFRS,Reports in USD
+AMBU,Ambu,AMBU-B.CO,S2,Single-use endoscopy,Medical consumables,screen,DK,IFRS,
+NESN,Nestle,NESN.SW,S3,Packaged food & beverages,Food & beverage,detailed,CH,IFRS,
+ULVR,Unilever,ULVR.L,S3,Personal & home care / food,HPC,detailed,GB,IFRS,Ice cream (Magnum) demerged Dec-2025
+RKT,Reckitt,RKT.L,S3,Hygiene & health brands,HPC,detailed,GB,IFRS,Essential Home disposal - verify
+PG,Procter & Gamble,PG,S3,Household & personal care,HPC,detailed,US,USGAAP,
+CL,Colgate-Palmolive,CL,S3,Oral/personal/home care & pet nutrition,HPC,detailed,US,USGAAP,
+CHD,Church & Dwight,CHD,S3,Household & personal care,HPC,detailed,US,USGAAP,
+BEI,Beiersdorf,BEI.DE,S3,Skin care & adhesives,HPC,detailed,DE,IFRS,Tchibo/maxingvest controlling holder
+OR,L'Oreal,OR.PA,S3,Beauty,HPC,detailed,FR,IFRS,
+BN,Danone,BN.PA,S3,Dairy/specialised nutrition/water,Food & beverage,detailed,FR,IFRS,
+KO,Coca-Cola,KO,S3,Beverages,Food & beverage,detailed,US,USGAAP,
+MKC,McCormick,MKC,S3,Spices & flavours,Food & beverage,detailed,US,USGAAP,
+COST,Costco Wholesale,COST,S3,Membership warehouse retail,Essential retail,detailed,US,USGAAP,
+L,Loblaw,L.TO,S3,Grocery & pharmacy retail,Essential retail,detailed,CA,IFRS,
+AD,Ahold Delhaize,AD.AS,S3,Grocery retail,Essential retail,detailed,NL,IFRS,
+LISN,Lindt & Spruengli,LISN.SW,S3,Premium chocolate,Food & beverage,screen,CH,IFRS,
+HEN3,Henkel,HEN3.DE,S3,Adhesives & consumer brands,HPC,screen,DE,IFRS,
+ATD,Alimentation Couche-Tard,ATD.TO,S3,Convenience retail & fuel,Essential retail,screen,CA,IFRS,
+BNZL,Bunzl,BNZL.L,S4,Value-added distribution (consumables),Distribution,detailed,GB,IFRS,
+DPLM,Diploma,DPLM.L,S4,Value-added distribution (specialist components),Distribution,detailed,GB,IFRS,
+FAST,Fastenal,FAST,S4,MRO distribution,Distribution,detailed,US,USGAAP,
+GWW,W.W. Grainger,GWW,S4,MRO distribution,Distribution,detailed,US,USGAAP,
+MSM,MSC Industrial Direct,MSM,S4,MRO distribution,Distribution,detailed,US,USGAAP,
+AIT,Applied Industrial Technologies,AIT,S4,Bearings/power transmission/fluid power distribution,Distribution,detailed,US,USGAAP,
+WSO,Watsco,WSO,S4,HVAC replacement distribution,Distribution,detailed,US,USGAAP,
+POOL,Pool Corp,POOL,S4,Pool supplies distribution,Distribution,detailed,US,USGAAP,
+FERG,Ferguson Enterprises,FERG,S4,Plumbing/HVAC distribution,Distribution,detailed,US,USGAAP,Re-domiciled to US 2024
+TIH,Toromont Industries,TIH.TO,S4,Equipment dealer & aftermarket,Aftermarket/serial acquirers,detailed,CA,IFRS,
+INDT,Indutrade,INDT.ST,S4,Niche industrial technology (serial acquirer),Aftermarket/serial acquirers,detailed,SE,IFRS,
+LIFCO,Lifco,LIFCO-B.ST,S4,Dental/demolition/systems (serial acquirer),Aftermarket/serial acquirers,detailed,SE,IFRS,
+ADDT,Addtech,ADDT-B.ST,S4,Technical solutions (serial acquirer),Aftermarket/serial acquirers,detailed,SE,IFRS,
+HLMA,Halma,HLMA.L,S4,Safety/environmental/medical technology,Safety & specialist components,detailed,GB,IFRS,
+SPX,Spirax Group,SPX.L,S4,Steam systems & fluid path,Safety & specialist components,detailed,GB,IFRS,
+RS1,RS Group,RS1.L,S4,Electronics/MRO distribution,Distribution,screen,GB,IFRS,
+ROR,Rotork,ROR.L,S4,Flow control actuators,Safety & specialist components,screen,GB,IFRS,
+ATCO,Atlas Copco,ATCO-A.ST,S4,Compressors/vacuum (aftermarket heavy),Safety & specialist components,screen,SE,IFRS,
+WM,WM (Waste Management),WM,S5,Solid waste collection & disposal,Solid waste,detailed,US,USGAAP,Stericycle acquired Nov-2024
+RSG,Republic Services,RSG,S5,Solid waste collection & disposal,Solid waste,detailed,US,USGAAP,
+WCN,Waste Connections,WCN,S5,Solid waste (secondary/exclusive markets),Solid waste,detailed,CA,USGAAP,
+GFL,GFL Environmental,GFL,S5,Solid waste,Solid waste,detailed,CA,IFRS,Environmental Services sold Mar-2025
+CWST,Casella Waste Systems,CWST,S5,Solid waste & recycling,Solid waste,detailed,US,USGAAP,
+CLH,Clean Harbors,CLH,S5,Hazardous waste & industrial services,Environmental services,detailed,US,USGAAP,
+VIE,Veolia Environnement,VIE.PA,S5,Water/waste/energy services,Environmental services,detailed,FR,IFRS,
+SCHP,Seche Environnement,SCHP.PA,S5,Hazardous waste,Environmental services,detailed,FR,IFRS,
+MEG,Onterris (formerly Montrose Environmental),ONT,S5,Environmental testing & remediation,Environmental services,detailed,US,USGAAP,
+TTEK,Tetra Tech,TTEK,S5,Water & environmental consulting,Environmental services,detailed,US,USGAAP,
+XYL,Xylem,XYL,S5,Water equipment (ADJACENT - equipment),Adjacent: water equipment/instrumentation,detailed,US,USGAAP,Adjacent subgroup
+VLTO,Veralto,VLTO,S5,Water quality instrumentation (ADJACENT),Adjacent: water equipment/instrumentation,detailed,US,USGAAP,Adjacent subgroup
+SVT,Severn Trent,SVT.L,S5,Regulated water utility (ADJACENT),Adjacent: regulated water,detailed,GB,IFRS,Adjacent subgroup
+AWK,American Water Works,AWK,S5,Regulated water utility (ADJACENT),Adjacent: regulated water,detailed,US,USGAAP,Adjacent subgroup
+BFSA,Befesa,BFSA.DE,S5,Steel-dust recycling (commodity-sensitive),Environmental services,screen,LU,IFRS,
+MMC,Marsh McLennan (Marsh),MRSH,S6,Global insurance broking & consulting,Global brokers,detailed,US,USGAAP,Verify ticker/rebrand
+AON,Aon,AON,S6,Global insurance broking & consulting,Global brokers,detailed,IE,USGAAP,
+WTW,Willis Towers Watson,WTW,S6,Global insurance broking & consulting,Global brokers,detailed,IE,USGAAP,
+AJG,Arthur J. Gallagher,AJG,S6,Insurance broking & claims,Global brokers,detailed,US,USGAAP,AssuredPartners acquired 2025
+BRO,Brown & Brown,BRO,S6,Insurance broking & MGA,US brokers & specialty,detailed,US,USGAAP,Accession acquired 2025
+RYAN,Ryan Specialty,RYAN,S6,Wholesale/MGA specialty distribution,US brokers & specialty,detailed,US,USGAAP,Up-C structure
+BWIN,The Baldwin Group,BWIN,S6,Insurance broking & MGA,US brokers & specialty,detailed,US,USGAAP,Up-C structure
+GSHD,Goosehead Insurance,GSHD,S6,Personal lines franchise broker,US brokers & specialty,detailed,US,USGAAP,Up-C structure
+TWFG,TWFG,TWFG,S6,Personal lines independent agency,US brokers & specialty,detailed,US,USGAAP,IPO Jul-2024; short history
+CRVL,CorVel,CRVL,S6,Claims & managed care services (specialist risk services),Specialist risk services,detailed,US,USGAAP,Adjacent: risk services
+CRD,Crawford & Company,CRD-B,S6,Claims management (specialist risk services),Specialist risk services,detailed,US,USGAAP,Adjacent: risk services; dual class
+VRSK,Verisk Analytics,VRSK,S6,Insurance risk data & analytics (ADJACENT),Specialist risk services,detailed,US,USGAAP,Adjacent: high AI-substitution relevance
+MLP,MLP SE,MLP.DE,S6,Financial advisory & broking (Europe),Specialist risk services,screen,DE,IFRS,European broker scarcity - adjacent

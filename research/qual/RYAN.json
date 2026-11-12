@@ -1,0 +1,422 @@
+{
+ "id": "RYAN",
+ "name": "Ryan Specialty Holdings, Inc.",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "RYAN",
+  "isin": "US78351F1075",
+  "hq": "Chicago, IL, USA",
+  "domicile": "US (Delaware)",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "66353-14",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "'Majority of revenue generated from the United States' (PitchBook); small UK/Europe (Lloyd's/delegated authority) presence. Exact split not extracted.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2022",
+   "organic_pct": 16.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 15.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 20.4,
+   "source_id": "S4"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 12.8,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 10.1,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 21.3,
+   "source_id": "S3"
+  },
+  {
+   "fy": "2026 9M",
+   "organic_pct": 7.3,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 8.8,
+   "source_id": "S2"
+  },
+  {
+   "fy": "2026 Q3",
+   "organic_pct": 4.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 4.7,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Adj EBITDAC / margin",
+   "value": "$244.4m, 30.9% (Q3-26); $803.4m, 32.1% (9M-26); FY25 $966.7m",
+   "period": "2025-26",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Fiduciary investment income",
+   "value": "$14.9m Q3-26; $41.1m 9M-26 (vs $43.4m)",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Debt principal / cash",
+   "value": "$3.7bn / $168.8m at 30-Sep-2026",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Gross debt / EBITDA",
+   "value": "~4.7x on PitchBook GAAP-basis EBITDA ($0.82bn); ~3.6x on company adj EBITDAC (ESTIMATE: $3.7bn / ~$1.03bn TTM)",
+   "period": "TTM Q3 2026",
+   "class": "ESTIMATE",
+   "source_id": "S1"
+  },
+  {
+   "name": "Share repurchases",
+   "value": "$450m 9M-26; $150m Q3; further $50m Oct-26",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Quarterly organic trajectory 2026",
+   "value": "11.8% Q1 -> 6.7% Q2 -> 4.0% Q3 (Q3-25 comp 15.0%)",
+   "period": "2026",
+   "class": "FACT",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "2025 9M",
+   "cash_spent": 636.9,
+   "currency": "USD m",
+   "earnouts": "Contingent consideration expense $34.2m 9M-26; $37.4m paid 9M-26; Q3-26 $10.7m benefit incl. $12.9m reduction in US Assure liability (higher loss ratios) (S2)",
+   "notes": "Business combinations 9M-25 $636.9m (incl. US Assure, Innovisk, Velocity etc. - names not verified here); FY25 acquisitions contributed ~10pts of 21% growth (S3)",
+   "source_id": "S2"
+  },
+  {
+   "fy": "2026 9M",
+   "cash_spent": 0,
+   "currency": "USD m",
+   "earnouts": "see above",
+   "notes": "Company reports no business combinations in 9M-26 (reported zero, not missing)",
+   "source_id": "S2"
+  }
+ ],
+ "management": {
+  "ceo": "Timothy W. Turner",
+  "ceo_since": "2024-10-01",
+  "cfo": "Janice M. Hamilton",
+  "cfo_since": "2024-10-01",
+  "senior_turnover_5y": "Planned 2024 succession: founder Pat Ryan to Executive Chairman, Jeremiah Bickham to President",
+  "succession_notes": "Orderly founder-to-insider handover; founder remains executive officer",
+  "guidance_record": "FY26 organic guide cut from high-single-digit to mid-single-digit during 2026; margin guide now 'down modestly' (S2)"
+ },
+ "ownership": {
+  "controlling_holders": "Founder Patrick G. Ryan: beneficial owner of ~127.4m shares (13G, 31-Dec-2023) via Class A/B units in Up-C; current % voting power not extracted from 2026 proxy",
+  "dual_class": true,
+  "activists": [],
+  "board_independence": "not reviewed (2026 proxy elects 5 nominees for one-year terms)",
+  "remuneration_notes": "Large equity-based compensation (IPO awards) depresses GAAP earnings; not reviewed in detail",
+  "related_party": "Up-C with Tax Receivable Agreement benefiting pre-IPO LLC unitholders (standard Up-C feature; amounts not extracted)"
+ },
+ "guidance": [
+  {
+   "date": "2026-10-30",
+   "item": "FY2026 organic growth",
+   "value": "mid-single digits (high end per call)",
+   "class": "TARGET",
+   "source_id": "S2"
+  },
+  {
+   "date": "2026-10-30",
+   "item": "FY2026 adj EBITDAC margin",
+   "value": "down modestly vs 2025",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Organic decelerated from 16.4% (2022) to 4.0% (Q3-26) (S4,S2)"
+   ],
+   "rationale": "Wholesale/MGA flows renew, but E&S volume and property rates make revenue cyclical."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Delegated underwriting authority and specialist wholesale relationships (S1)"
+   ],
+   "rationale": "Specialist E&S expertise and carrier capacity access are hard to replicate."
+  },
+  "C": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Adj EBITDAC margin ~31-32% (S2)"
+   ],
+   "rationale": "Scale in US wholesale but margin now slipping."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "E&S market share gains drove 15%+ organic 2022-23 (S4)"
+   ],
+   "rationale": "Long structural E&S/MGA runway, cyclically paused."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "Majority of revenue US (S1)"
+   ],
+   "rationale": "One country >70% (INFERENCE)."
+  },
+  "F": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Organic guide cut mid-year 2026 (S2)",
+    "Orderly CEO succession 2024 (S5)"
+   ],
+   "rationale": "Good succession, recent guidance misses."
+  },
+  "G": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "$637m acquisitions 9M-25 then pause; $450m buybacks 9M-26 (S2)"
+   ],
+   "rationale": "Reasonable pivot to buybacks; leverage elevated."
+  },
+  "H": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Up-C with founder high-vote control (S7)",
+    "Tax receivable agreement (S6)"
+   ],
+   "rationale": "Founder-controlled Up-C with TRA weakens minority protection (noted neutrally as controlling holder)."
+  },
+  "I1": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Wholesale placement of complex E&S risks (S1)"
+   ],
+   "rationale": "Complex risks resist automation, but binding-authority small-risk flow is exposed to digital E&S platforms (INFERENCE)."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "None identified"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Comp & benefits +9.9% Q3-26, ~61% of revenue (S2)"
+   ],
+   "rationale": "Large labour cost base."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Commission-based (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Mgmt expects property pricing to deteriorate into 2027 (S2)",
+    "Comp growth outpacing revenue (S2)"
+   ],
+   "rationale": "High sensitivity to property E&S pricing cycle."
+  },
+  "K": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "TTM GAAP NI $105m vs FY25 adj EBITDAC $967m (S1,S3)",
+    "Contingent consideration revaluations through P&L (S2)"
+   ],
+   "rationale": "Large gap between GAAP and adjusted earnings (equity comp, amortisation, Up-C)."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None identified."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "INFERENCE: Q3-26 organic 4.0% vs 15.0% a year earlier while 'property softening squeezes E&S'; management cites new clients and casualty growth. With property rates down ~10% (Marsh index), underlying new-business/volume growth is perhaps high-single-digit with rate a negative 3-5pt drag in property-heavy lines.",
+  "retention_pct": "not disclosed",
+  "contingent_consideration": "9M-26 expense $34.2m; paid $37.4m; US Assure liability reduced $12.9m in Q3-26 (S2); balance not extracted",
+  "producer_retention": "not disclosed"
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1 = B: PitchBook gross debt/EBITDA ~4.7x (> 4.0x broker threshold); on company adj EBITDAC ~3.6x (ESTIMATE) - basis difference needs reconciliation with lead agent. G4: GAAP NI depressed by non-cash comp/Up-C; FCF/NI likely >100% - not computed here."
+ },
+ "bull_points": [
+  "Structural share gains of E&S/delegated authority market; 16%/15%/13%/10% organic 2022-25.",
+  "Founder-aligned ownership; disciplined pause in M&A and buybacks at depressed price.",
+  "Casualty E&S still growing (US excess casualty rates +13%)."
+ ],
+ "bear_points": [
+  "Organic slowing sharply (4.0% Q3-26); property softening expected to worsen into 2027.",
+  "Leverage 4.7x on provider EBITDA; margins guided down; comp growing faster than revenue.",
+  "Founder-controlled Up-C with TRA; GAAP earnings a fraction of adjusted."
+ ],
+ "thesis_breakers": [
+  "FY2027 organic growth < 3%.",
+  "Adj EBITDAC margin < 30% for a full year.",
+  "Net debt/adj EBITDAC above 4.0x."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: Ryan Specialty Holdings (66353-14)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/66353-14/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile (majority revenue US); TTM 3Q26 total debt $3.86bn, EBITDA $0.82bn, NI $105m"
+  },
+  {
+   "id": "S2",
+   "title": "Ryan Specialty Reports Third Quarter 2026 Results (8-K Ex.99.1)",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001849253/000184925326000045/ryan-20260930xex991.htm",
+   "doc_date": "2026-10-30",
+   "retrieved": "2026-11-12",
+   "page_ref": "Highlights; outlook; contingent consideration; capital return"
+  },
+  {
+   "id": "S3",
+   "title": "Ryan Specialty Reports Fourth Quarter 2025 Results (8-K Ex.99.1)",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1849253/000184925326000004/ryan-20251231xex991.htm",
+   "doc_date": "2026-02-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "FY25 organic 10.1% vs 12.8% (2024); revenue +21.3%; adj EBITDAC $966.7m"
+  },
+  {
+   "id": "S4",
+   "title": "Ryan Specialty Reports Fourth Quarter 2023 Results (8-K Ex.99.1)",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1849253/000095017024021174/ryan-ex99_1.htm",
+   "doc_date": "2024-02-27",
+   "retrieved": "2026-11-12",
+   "page_ref": "FY23 organic 15.0% vs 16.4% (2022)"
+  },
+  {
+   "id": "S5",
+   "title": "Ryan Specialty to implement leadership succession plan (8-K Ex.99.1)",
+   "publisher": "SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/1849253/000095017024079273/ryan-ex99_1.htm",
+   "doc_date": "2024-07-01",
+   "retrieved": "2026-11-12",
+   "page_ref": "Tim Turner CEO effective 1-Oct-2024; Pat Ryan Executive Chairman; Janice Hamilton CFO"
+  },
+  {
+   "id": "S6",
+   "title": "Ryan Specialty 2026 proxy statement (DEF 14A)",
+   "publisher": "Ryan Specialty IR",
+   "url": "https://ir.ryanspecialty.com/financial-reports/sec-filings/content/0001849253-26-000013/0001849253-26-000013.pdf",
+   "doc_date": "2026-03-17",
+   "retrieved": "2026-11-12",
+   "page_ref": "Ownership table not extracted in this pass"
+  },
+  {
+   "id": "S7",
+   "title": "Schedule 13G (Patrick G. Ryan) - 127,421,527 shares as of 31-Dec-2023",
+   "publisher": "SEC via quantisnow",
+   "url": "https://qnow.quantisnow.com/insight/sec-form-sc-13g-filed-by-ryan-specialty-group-holdings-2402105",
+   "doc_date": "2024-02",
+   "retrieved": "2026-11-12",
+   "page_ref": "Beneficial ownership"
+  }
+ ]
+}

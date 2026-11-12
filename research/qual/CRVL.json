@@ -1,0 +1,318 @@
+{
+ "id": "CRVL",
+ "name": "CorVel Corporation (ADJACENT - specialist risk services: claims & managed care)",
+ "as_of": "2026-11-12",
+ "agent": "S6",
+ "listing": {
+  "status": "listed",
+  "exchange": "Nasdaq",
+  "ticker": "CRVL",
+  "isin": "US2210061097",
+  "hq": "Fort Worth, TX, USA",
+  "domicile": "US (Delaware)",
+  "corporate_actions": []
+ },
+ "pitchbook_pbid": "41036-68",
+ "geography": {
+  "fy": "FY2026 (Mar)",
+  "basis": "revenue",
+  "europe_pct": 0,
+  "north_america_pct": 100,
+  "uk_pct": 0,
+  "other_pct": 0,
+  "largest_country": "United States",
+  "largest_country_pct": 100,
+  "china_pct": 0,
+  "em_pct": 0,
+  "fx_notes": "US-only operations (workers' comp, auto, liability, health payment integrity).",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "FY2023 (Mar)",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 11.3,
+   "source_id": "S1"
+  },
+  {
+   "fy": "FY2024 (Mar)",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 10.6,
+   "source_id": "S1"
+  },
+  {
+   "fy": "FY2025 (Mar)",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 12.7,
+   "source_id": "S1"
+  },
+  {
+   "fy": "FY2026 (Mar)",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 7.0,
+   "source_id": "S1"
+  },
+  {
+   "fy": "Q2 FY2027",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 11,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q2 FY27 revenue / EPS",
+   "value": "$267m (+11%) / $0.67 vs $0.54",
+   "period": "Q2 FY2027",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Net cash",
+   "value": "~$237m (PitchBook TTM 2Q FY27); no financial debt",
+   "period": "Sep-2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Organic growth",
+   "value": "Company does not report organic separately; acquisitions historically immaterial - reported growth used as proxy (not substituted into organic field)",
+   "period": "FY2023-26",
+   "class": "FACT",
+   "source_id": "S1"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "FY2026",
+   "definition": "not extracted",
+   "value": null,
+   "currency": "USD",
+   "source_id": ""
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "FY2024-27",
+   "cash_spent": null,
+   "currency": "USD m",
+   "earnouts": "n/a",
+   "notes": "No material acquisitions identified",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Michael G. Combs",
+  "ceo_since": "not verified in this pass",
+  "cfo": "not verified in this pass",
+  "cfo_since": "",
+  "senior_turnover_5y": "Low (INFERENCE)",
+  "succession_notes": "Founder V. Gordon Clemons remains Chairman (not re-verified)",
+  "guidance_record": "Does not give guidance"
+ },
+ "ownership": {
+  "controlling_holders": "Founder/Chairman V. Gordon Clemons and affiliates are large holders - % not extracted",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "Long-tenured board (not reviewed)",
+  "remuneration_notes": "not reviewed",
+  "related_party": "not reviewed"
+ },
+ "guidance": [],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Recurring claims administration, bill review and network contracts with employers/TPAs/insurers (S1)",
+    "Growth every year FY23-27 (S1,S2)"
+   ],
+   "rationale": "Contracted, multi-year service relationships; volume linked to employment/claims."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Integrated managed-care + TPA platform; new Top-10 health plan win (S2)"
+   ],
+   "rationale": "Proprietary integrated platform and networks create switching costs."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "NI margin ~12% TTM, ROIC high with zero debt (S1)"
+   ],
+   "rationale": "Scale in workers' comp managed care shows in rising margins."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "CERiS health payment integrity expanding to Top-10 plans and BCBS market (S2)"
+   ],
+   "rationale": "Under-penetrated runway in health payment integrity."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "H",
+   "evidence": [
+    "US-only (S1)"
+   ],
+   "rationale": "Single country."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "Consistent growth and buybacks; no guidance given (S2)"
+   ],
+   "rationale": "Steady."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Zero debt; continual buybacks ($18.1m Q2 FY27) (S2)"
+   ],
+   "rationale": "Organic reinvestment and buybacks."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Founder-chairman large holder (S1)"
+   ],
+   "rationale": "Standard; not reviewed in depth."
+  },
+  "I1": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Bill review, claims admin and case management (S1)"
+   ],
+   "rationale": "Bill review/claims processing automatable by AI (risk and opportunity); nurse case management more resilient (INFERENCE)."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "None"
+   ],
+   "rationale": "Not dependent."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Labour-heavy claims operations; G&A +19% (S2)"
+   ],
+   "rationale": "Large addressable cost base."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Mix of per-claim fees and % of savings (INFERENCE)"
+   ],
+   "rationale": "Savings-based fees allow some retention."
+  },
+  "J": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Acyclical claims volume (S1)"
+   ],
+   "rationale": "Low cyclicality."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "No adjusted EPS; GAAP reporting, net cash (S1,S2)"
+   ],
+   "rationale": "Clean."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Company markets AI/ML/NLP in claims handling (S1)."
+ },
+ "sector_specific": {
+  "organic_ex_rate_note": "Not a broker: revenue is fee/volume-based (claims, bills, network savings), not tied to premium rates. Reported growth ~7-13% p.a.",
+  "retention_pct": "not disclosed",
+  "contingent_consideration": "n/a",
+  "producer_retention": "n/a (not a producer model)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "Net cash. Customer concentration not disclosed in sources used. Adjacent subgroup (specialist risk services)."
+ },
+ "bull_points": [
+  "Debt-free compounder with double-digit growth and steady buybacks.",
+  "CERiS health payment integrity adds a large new runway."
+ ],
+ "bear_points": [
+  "G&A growing faster than revenue for two quarters.",
+  "AI-native claims/bill-review entrants could commoditise core services.",
+  "US workers' comp claim frequency structurally declining."
+ ],
+ "thesis_breakers": [
+  "Revenue growth < 5% for a fiscal year.",
+  "Operating margin declines two consecutive years."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "PitchBook company profile and financials: CorVel (41036-68)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/41036-68/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Profile; FY (Mar) revenue: FY23 $719m, FY24 $795m, FY25 $896m, FY26 $959m; TTM 2Q FY27 revenue $1,011m, EBITDA $195m, NI $122m, debt $33m (leases), net cash $237m"
+  },
+  {
+   "id": "S2",
+   "title": "CorVel announces revenues and earnings (fiscal Q2 2027, quarter ended 30-Sep-2026)",
+   "publisher": "CorVel press release via Panabee/Finsee",
+   "url": "https://www.panabee.com/news/corvel-earnings-q2-2027",
+   "doc_date": "2026-10",
+   "retrieved": "2026-11-12",
+   "page_ref": "Revenue +11% to $267m; EPS $0.67 vs $0.54; $18.1m buybacks; new Top-10 health plan for CERiS; BCBS partnership; G&A +19%"
+  }
+ ]
+}

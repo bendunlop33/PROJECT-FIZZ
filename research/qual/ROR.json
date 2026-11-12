@@ -1,0 +1,286 @@
+{
+ "id": "ROR",
+ "name": "Rotork plc",
+ "as_of": "2026-11-12",
+ "agent": "S4",
+ "listing": {
+  "status": "pending_takeover",
+  "exchange": "London Stock Exchange (FTSE 250)",
+  "ticker": "ROR",
+  "isin": "GB00BVFNZH21",
+  "hq": "Bath, United Kingdom",
+  "domicile": "United Kingdom (England & Wales plc)",
+  "corporate_actions": [
+   {
+    "date": "2026-07-16",
+    "event": "Recommended cash acquisition by ABB Ltd at 506p per share (503p cash + up to 3p permitted dividend), ~73% premium; scheme of arrangement; scheme document dated 6-Aug-2026; completion expected H1 2027 subject to approvals",
+    "source": "S1"
+   },
+   {
+    "date": "2026-08-04",
+    "event": "H1 2026: revenue GBP367.2m (OCC +1.3%), orders OCC -4.0%, adj. op margin 22.4%",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "60433-66",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "not extracted",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Global (Americas, EMEA, APAC incl. China/Middle East); not extracted at screen depth.",
+  "source_ids": [
+   "S3"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "H1 2026",
+   "organic_pct": 1.3,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 0.0,
+   "source_id": "S2"
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Adjusted operating margin",
+   "value": "22.4% (+40bp)",
+   "period": "H1 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Service share of revenue",
+   "value": "~24%",
+   "period": "H1 2026",
+   "class": "FACT",
+   "source_id": "S2"
+  },
+  {
+   "name": "Net cash",
+   "value": "GBP25.3m",
+   "period": "30-Jun-2026",
+   "class": "FACT",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "not extracted",
+   "value": null,
+   "currency": "GBP",
+   "source_id": "S2"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "latest",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "latest",
+    "value": null
+   }
+  ],
+  "source_id": "screen-depth: not extracted"
+ },
+ "acquisitions": [
+  {
+   "fy": "2024-2026",
+   "cash_spent": null,
+   "currency": "GBP",
+   "earnouts": "",
+   "notes": "Small bolt-ons; not quantified",
+   "source_id": "S3"
+  }
+ ],
+ "management": {
+  "ceo": "Kiet Huynh",
+  "ceo_since": "2019 (not re-verified)",
+  "cfo": "not verified",
+  "cfo_since": "",
+  "senior_turnover_5y": "not assessed",
+  "succession_notes": "Company to be acquired",
+  "guidance_record": "FY2026 outlook maintained (S2)"
+ },
+ "ownership": {
+  "controlling_holders": "None; subject to ABB offer",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None"
+ },
+ "guidance": [
+  {
+   "date": "2026-08-04",
+   "item": "FY2026",
+   "value": "Further progress on OCC basis; oil & gas revenue slightly lower than PY",
+   "class": "TARGET",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "B": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "C": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "D": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "E": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "F": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "G": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "H": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "I1": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "I2": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "I3": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "I4": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "J": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  },
+  "K": {
+   "score": null,
+   "confidence": "L",
+   "evidence": [],
+   "rationale": "Not scored: G6 exclusion (pending agreed takeover)."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "Not assessed (excluded G6)."
+ },
+ "sector_specific": {
+  "ai_dc_pct": null,
+  "semis_pct": null,
+  "construction_pct": null,
+  "acquisition_growth_pct": null,
+  "notes": "Excluded under G6; oil & gas largest end market historically."
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "A",
+  "G7": "C",
+  "notes": "G6 -> A: recommended cash offer from ABB at 506p (announced 16-Jul-2026), scheme of arrangement pending, completion expected H1 2027. Investment case is transaction-dominated (price capped near offer)."
+ },
+ "bull_points": [
+  "Takeover at 506p (~73% premium) provides defined outcome (S1)"
+ ],
+ "bear_points": [
+  "Upside capped by offer price; deal-break risk (regulatory) (S1)",
+  "Orders declining OCC -4% in H1 2026 (S2)",
+  "Oil & gas weakness (S2)"
+ ],
+ "thesis_breakers": [
+  "Deal lapses or is blocked (re-evaluate standalone)"
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Recommended cash acquisition of Rotork plc by ABB Ltd (Rule 2.7 announcement)",
+   "publisher": "Rotork plc / ABB Ltd",
+   "url": "https://media.rotork.com/api/public/content/a.rule2.7announcement-pdf-dk2vre0qsdkhw5ikmgjnlq.pdf",
+   "doc_date": "2026-07-16",
+   "retrieved": "2026-11-12",
+   "page_ref": "Offer terms (via search summary)"
+  },
+  {
+   "id": "S2",
+   "title": "Rotork 2026 Interim Results",
+   "publisher": "Rotork plc via Investegate",
+   "url": "https://www.investegate.co.uk/announcement/rns/rotork--ror/2026-interim-results/9702405",
+   "doc_date": "2026-08-04",
+   "retrieved": "2026-11-12",
+   "page_ref": "Headline figures (via search summaries)"
+  },
+  {
+   "id": "S3",
+   "title": "PitchBook company profile Rotork",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/60433-66/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "Description"
+  }
+ ]
+}

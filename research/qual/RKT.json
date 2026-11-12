@@ -1,0 +1,462 @@
+{
+ "id": "RKT",
+ "name": "Reckitt Benckiser Group plc",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "London Stock Exchange",
+  "ticker": "RKT",
+  "isin": "GB00B24CGK77",
+  "hq": "Slough, United Kingdom",
+  "domicile": "United Kingdom",
+  "corporate_actions": [
+   {
+    "date": "2025-12-31",
+    "event": "Essential Home (Air Wick, Cillit Bang etc.; 2025 net revenue GBP1,852m) divested to Advent International (EV up to USD4.8bn); Reckitt retains 30% equity stake in acquisition vehicle",
+    "source": "S3"
+   },
+   {
+    "date": "2026-02",
+    "event": "Special dividend c.GBP1.6bn paid from Essential Home proceeds",
+    "source": "S2"
+   },
+   {
+    "date": "2024-07",
+    "event": "Mead Johnson Nutrition designated non-core; options under review (status not re-verified)",
+    "source": "S2"
+   }
+  ]
+ },
+ "pitchbook_pbid": "59366-80",
+ "geography": {
+  "fy": "2025",
+  "basis": "revenue",
+  "europe_pct": 27.4,
+  "north_america_pct": 20.7,
+  "uk_pct": null,
+  "other_pct": 51.9,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": 34.7,
+  "fx_notes": "GBP reporter. Shares computed on continuing net revenue (Core GBP10,234m + Mead Johnson GBP2,119m = GBP12,353m): Emerging Markets GBP4,291m 34.7%, Europe GBP3,384m 27.4%, North America GBP2,559m 20.7%, Mead Johnson GBP2,119m 17.2% (mostly US/Americas plus Asia; not split) - 'other_pct' = EM + MJN. ESTIMATE from S2 segment data. UK share not disclosed.",
+  "source_ids": [
+   "S2"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "2022",
+   "organic_pct": 7.5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2023",
+   "organic_pct": 3.5,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2024",
+   "organic_pct": 1.4,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "2025",
+   "organic_pct": 5.0,
+   "price_pct": 3.7,
+   "volume_mix_pct": 1.5,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": 0.3,
+   "source_id": "S2"
+  },
+  {
+   "fy": "9M2026",
+   "organic_pct": 2.9,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Core Reckitt LFL FY2025 (volume / price-mix)",
+   "value": "+5.2% (1.5% / 3.7%); group LFL +5.0% (price/vol split shown is Core)",
+   "period": "FY2025",
+   "source_id": "S4"
+  },
+  {
+   "class": "FACT",
+   "name": "Core Reckitt LFL Q3-2026 (price-mix / volume)",
+   "value": "+3.3% (3.2% / 0.1%); EM +8.0%, Europe +0.8%, North America -1.3% (Lysol supply constraints)",
+   "period": "Q3 2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Adjusted operating margin",
+   "value": "24.9% (+40bp)",
+   "period": "FY2025",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Net debt / adjusted EBITDA",
+   "value": "1.6x (2.0x FY2024)",
+   "period": "31-Dec-2025",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Fixed cost base % net revenue",
+   "value": "19.4% (target <19% by end-2027)",
+   "period": "FY2025",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "Capex % net revenue",
+   "value": "4.2%",
+   "period": "FY2025",
+   "source_id": "S2"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2025",
+   "definition": "Reckitt free cash flow (company definition, after capex; includes GBP179m one-off restructuring cash costs)",
+   "value": 1709,
+   "currency": "GBP",
+   "source_id": "S2"
+  },
+  {
+   "fy": "2024",
+   "definition": "Reckitt free cash flow (company definition)",
+   "value": null,
+   "currency": "GBP",
+   "source_id": "S2",
+   "note": "c.GBP2.2bn per release narrative; exact not retrieved"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "2025",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "not retrieved this session; methodology lease proxy applies"
+ },
+ "acquisitions": [
+  {
+   "fy": "2025",
+   "cash_spent": null,
+   "currency": "GBP",
+   "earnouts": "not disclosed",
+   "notes": "No material acquisitions identified; net disposal (Essential Home)",
+   "source_id": "S2"
+  }
+ ],
+ "management": {
+  "ceo": "Kris Licht",
+  "ceo_since": "2023-10",
+  "cfo": "Shannon Eisenhardt",
+  "cfo_since": "2024",
+  "senior_turnover_5y": "High: CEO Laxman Narasimhan left for Starbucks (2022), Licht from Oct-2023; CFO Jeff Carr retired, replaced 2024",
+  "succession_notes": "Internal CEO successor (ex-Health president)",
+  "guidance_record": "Mixed: 2024 hit by MJN tornado/NEC; FY2026 Core LFL guidance cut at Q3 to 3.5-4.5% from 4-5%"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "None publicly confirmed (press speculation only)",
+    "since": "",
+    "objective": "",
+    "company_response": ""
+   }
+  ],
+  "board_independence": "Majority independent (UK Code; not re-verified)",
+  "remuneration_notes": "Remuneration Report 2025 published; not reviewed",
+  "related_party": "Retains 30% of Essential Home vehicle (Advent-controlled)"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-10-27",
+   "item": "FY2026 Core Reckitt LFL",
+   "value": "3.5% to 4.5% (cut from 4-5%)",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-03-05",
+   "item": "Medium-term Core LFL",
+   "value": "+4% to +5% p.a.",
+   "source_id": "S2"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-03-05",
+   "item": "Fixed costs",
+   "value": "<19% of net revenue by end-2027",
+   "source_id": "S2"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-03-05",
+   "item": "Mead Johnson FY2026 LFL",
+   "value": "low single digit",
+   "source_id": "S2"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Consumable OTC health/hygiene (Durex, Finish, Lysol, Mucinex) (S6)",
+    "No customer concentration disclosed"
+   ],
+   "rationale": "Repeat consumables; infant formula more volatile."
+  },
+  "B": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Core price/mix +3.7% with positive volume 2025 (S4)",
+    "Many #1/#2 category positions (S6)"
+   ],
+   "rationale": "Strong consumer-health brands with pricing power; hygiene more contestable."
+  },
+  "C": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Adjusted operating margin 24.9% (S2)"
+   ],
+   "rationale": "Margins at upper end of HPC peers, evidencing scale/brand economics."
+  },
+  "D": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "EM +14.6% FY2025 vs NA +0.2%, Europe -1.4% (S4)"
+   ],
+   "rationale": "Runway concentrated in EM; developed markets stagnant."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "EM 35%, Europe 27%, NA 21% + MJN 17% (S2)"
+   ],
+   "rationale": "Diversified but EM-heavy; UK listing with limited UK revenue."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "FY2026 guidance cut Oct-2026 (S1)",
+    "CEO/CFO turnover 2022-2024; Lysol supply issues (S1)"
+   ],
+   "rationale": "Repeated misses and operational disruptions."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Mead Johnson (USD16.6bn, 2017) written down heavily (S6)",
+    "Essential Home sale + GBP1.6bn special dividend (S2)"
+   ],
+   "rationale": "Legacy value-destroying M&A; current disposals and returns more disciplined."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    "Widely held; UK Code"
+   ],
+   "rationale": "Standard governance."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical consumer health/hygiene products"
+   ],
+   "rationale": "Very low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Fixed cost reduction programme to <19% (S2)"
+   ],
+   "rationale": "Some productivity scope."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Brand pricing power vs retailer pressure (INFERENCE)"
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Lysol supply constraints (S1)",
+    "NEC litigation exposure in MJN (S6)"
+   ],
+   "rationale": "Partial resilience; litigation and supply-chain events."
+  },
+  "K": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Large historic impairments on MJN; recurring adjusting items (S6)",
+    "FCF -23% to GBP1.7bn in 2025 (S2)"
+   ],
+   "rationale": "Material adjustments and cash/profit gaps in recent years."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue (business mix)."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "2025": 3.7,
+   "Q3-2026": 3.2
+  },
+  "volume_pct": {
+   "2025": 1.5,
+   "Q3-2026": 0.1
+  },
+  "private_label_risk": "Medium in hygiene (dishwasher, surface cleaning) where private label is strong in Europe; lower in OTC health/sexual wellbeing (INFERENCE)",
+  "top_customer_pct": null,
+  "top_customer_note": "not disclosed",
+  "litigation": "Mead Johnson NEC (preterm infant formula) product-liability suits in US - unresolved; not quantified this session",
+  "comparability": "Essential Home (13% of 2025 revenue) excluded from LFL; 2026 reported base drops ~GBP1.85bn"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "B",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G1: 1.6x net debt/EBITDA (S2). G2 B: unresolved NEC litigation in Mead Johnson (open question, not accounting). G4 B: FY2025 FCF GBP1.7bn vs reported net income ~USD4.2bn (PitchBook TTM incl. disposal gain) - check 3y cumulative with standardised FCF; restructuring cash costs cited as temporary. G6 C: Essential Home completed; MJN future disposal possible. G7 C: UK consumer revenue not disclosed but small."
+ },
+ "bull_points": [
+  "Portfolio now focused on higher-margin Core health/hygiene with medium-term 4-5% LFL target (S2)",
+  "EM growth strong (+14.6% 2025, +8% Q3-26) (S4,S1)",
+  "Low leverage 1.6x and ongoing buybacks (S2)"
+ ],
+ "bear_points": [
+  "Developed markets stagnant (NA -1.3%, Europe +0.8% in Q3-26) and guidance cut (S1)",
+  "Mead Johnson NEC litigation and infant formula volatility",
+  "History of operational misses and large impairments (MJN)"
+ ],
+ "thesis_breakers": [
+  "Core Reckitt LFL below 3% in FY2027",
+  "Adverse NEC litigation outcome > GBP1bn",
+  "Free cash flow below GBP1.5bn excluding one-offs"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "Reckitt cuts full-year sales outlook after weaker third quarter (Q3 2026 trading update)",
+   "publisher": "Hargreaves Lansdown / Reckitt RNS",
+   "url": "https://www.hl.co.uk/shares/stock-market-news/company--news/reckitt-cuts-full-year-sales-outlook-after-weaker-third-quarter",
+   "doc_date": "2026-10-27",
+   "page_ref": "Q3 LFL, regions, guidance (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "Reckitt Benckiser - Results for the year ended 31 December 2025",
+   "publisher": "Reckitt (RNS reprint via James Sharp)",
+   "url": "https://www.jamessharp.co.uk/market-news/reckitt-benckiser-results-for-the-year-ended-31-december-2025",
+   "doc_date": "2026-03-05",
+   "page_ref": "Segment table; cash flow; guidance"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "Completion of Divestment (Essential Home)",
+   "publisher": "Reckitt (RNS via Investegate)",
+   "url": "https://www.investegate.co.uk/announcement/rns/reckitt-benckiser-group--rkt/completion-of-divestment-/9327151",
+   "doc_date": "2025-12-31",
+   "page_ref": "Completion; 30% retained stake"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "Reckitt reports strong FY25 results",
+   "publisher": "Grocery Gazette",
+   "url": "https://www.grocerygazette.co.uk/2026/03/05/reckitt-reports-strong-fy25-results/",
+   "doc_date": "2026-03-05",
+   "page_ref": "Core LFL volume/price-mix; regional growth"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "Reckitt full-year results 2022-2024",
+   "publisher": "Reckitt",
+   "url": "https://www.reckitt.com/investors/",
+   "doc_date": "2023-03 to 2025-03",
+   "page_ref": "Group LFL headline; recalled, not re-fetched this session (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "PitchBook company profile and financials: Reckitt (59366-80)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/59366-80/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/RKT.json"
+  }
+ ]
+}

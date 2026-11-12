@@ -1,0 +1,378 @@
+{
+ "id": "MEG",
+ "name": "Onterris, Inc. (formerly Montrose Environmental Group)",
+ "as_of": "2026-11-12",
+ "agent": "S5",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "ONT (formerly MEG)",
+  "isin": "not verified (pre-rename US6151111019; CUSIP/ISIN after rename not confirmed)",
+  "hq": "North Little Rock, Arkansas, USA",
+  "domicile": "USA (Delaware)",
+  "corporate_actions": [
+   {
+    "date": "2026-04-21",
+    "event": "Rebrand to Onterris announced; name and ticker change MEG -> ONT effective on NYSE 2026-05-04 (per company release)",
+    "source": "S2"
+   },
+   {
+    "date": "2026-08-05",
+    "event": "Board announced strategic review (advisers Evercore, AEC Advisors, Kirkland & Ellis); engaged with strategic and financial parties; no timetable; ongoing at 4-Nov-2026",
+    "source": "S1"
+   }
+  ]
+ },
+ "pitchbook_pbid": "63594-19",
+ "geography": {
+  "fy": "2026",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "Mainly US with Canada and Australia operations; INFERENCE US ~85-90%.",
+  "source_ids": [
+   "S1"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "Q3-2026",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": -9.7,
+   "source_id": "S1"
+  },
+  {
+   "fy": "2021",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2022",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2023",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2024",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  },
+  {
+   "fy": "2025",
+   "organic_pct": null,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": ""
+  }
+ ],
+ "kpis": [
+  {
+   "name": "Q3-26 revenue / net service revenue",
+   "value": "$203.0m (vs $224.9m; prior year had $45.4m recovery event) / NSR $162.5m",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Consolidated adj. EBITDA",
+   "value": "$35.9m, 17.7% of revenue (record)",
+   "period": "Q3 2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "Leverage (company)",
+   "value": "2.9x (3.2x Jun-26); ~2.5x targeted YE26",
+   "period": "30-Sep-2026",
+   "class": "FACT",
+   "source_id": "S1"
+  },
+  {
+   "name": "2030 targets",
+   "value": "~15% revenue CAGR, ~25% adj. EBITDA CAGR",
+   "period": "to 2030",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "name": "Provider net debt / EBITDA",
+   "value": "5.56x (reported EBITDA basis)",
+   "period": "TTM 3Q2026",
+   "class": "ESTIMATE",
+   "source_id": "PB"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "2026 guidance",
+   "definition": "Operating cash flow = 60% of consolidated adj. EBITDA (no FCF definition)",
+   "value": null,
+   "currency": "USD",
+   "source_id": "S1"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [],
+  "lease_interest_paid": [],
+  "source_id": ""
+ },
+ "acquisitions": [
+  {
+   "fy": "H2 2026",
+   "cash_spent": 13.9,
+   "currency": "USD m",
+   "earnouts": "",
+   "notes": "Three tuck-ins",
+   "source_id": "S1"
+  }
+ ],
+ "management": {
+  "ceo": "Vijay Manthripragada",
+  "ceo_since": "2015 (prior knowledge)",
+  "cfo": "not named in Q3 release",
+  "cfo_since": "",
+  "senior_turnover_5y": "CFO turnover in prior years (prior knowledge, not verified)",
+  "succession_notes": "",
+  "guidance_record": "2026 guidance reiterated; history of guidance resets (prior knowledge)"
+ },
+ "ownership": {
+  "controlling_holders": "None; Series A-2 preferred (Oaktree) fully redeemed 2025",
+  "dual_class": false,
+  "activists": [],
+  "board_independence": "not reviewed",
+  "remuneration_notes": "not reviewed",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "date": "2026-11-04",
+   "item": "FY2026 OCF conversion",
+   "value": "60% of adj. EBITDA; Q4 OCF $30-40m",
+   "class": "TARGET",
+   "source_id": "S1"
+  },
+  {
+   "date": "2026-11-04",
+   "item": "YE2026 leverage",
+   "value": "~2.5x",
+   "class": "TARGET",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Revenue swung by single emergency-response events ($45.4m prior-year) (S1)"
+   ],
+   "rationale": "Project/event-driven consulting and remediation."
+  },
+  "B": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Accredited air/water labs, PFAS treatment IP (prior knowledge)"
+   ],
+   "rationale": "Some differentiation; competitive market."
+  },
+  "C": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Adj. EBITDA margin ~15-18% (S1); reported EBIT near zero (PB)"
+   ],
+   "rationale": "Subscale."
+  },
+  "D": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "PFAS regulation, 2030 targets (S1)"
+   ],
+   "rationale": "Large regulatory-driven runway; execution unproven."
+  },
+  "E": {
+   "score": 1,
+   "confidence": "M",
+   "evidence": [
+    "US majority (INFERENCE)"
+   ],
+   "rationale": "US >70%."
+  },
+  "F": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Strategic review; restructuring of segments (S1)"
+   ],
+   "rationale": "Mixed."
+  },
+  "G": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Acquisition-led history; leverage near 3x (S1)"
+   ],
+   "rationale": "Below average."
+  },
+  "H": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Standard."
+  },
+  "I1": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Field sampling/labs physical; consulting reports more exposed"
+   ],
+   "rationale": "Low-moderate."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "L",
+   "evidence": [
+    "No DC exposure"
+   ],
+   "rationale": "<2%."
+  },
+  "I3": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Lab analytics and consulting labour"
+   ],
+   "rationale": "Large addressable cost base."
+  },
+  "I4": {
+   "score": 3,
+   "confidence": "L",
+   "evidence": [
+    ""
+   ],
+   "rationale": "Mixed."
+  },
+  "J": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Event-driven revenue volatility (S1)"
+   ],
+   "rationale": "Limited pass-through/cyclical."
+  },
+  "K": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Adj. EPS $0.56 vs GAAP $0.24 (S1)"
+   ],
+   "rationale": "Large adjustments."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": null,
+  "semis_revenue_pct": null,
+  "notes": "None identified."
+ },
+ "sector_specific": {
+  "landfills": null,
+  "maintenance_capex_pct_rev": null,
+  "env_liabilities": "Limited balance-sheet environmental liabilities (service provider).",
+  "commodity_sensitivity": "Low; sensitive to emergency events and regulation (PFAS rules, EPA enforcement)."
+ },
+ "gates": {
+  "G1": "B",
+  "G2": "C",
+  "G3": "C",
+  "G4": "B",
+  "G5": "C",
+  "G6": "B",
+  "G7": "C",
+  "notes": "LEAD QUERY RESOLVED: Montrose was NOT taken private; it was renamed Onterris, Inc. and trades on NYSE as ONT (rename announced 21-Apr-2026, ticker change effective 4-May-2026) - Yahoo 'MEG' symbol is therefore stale; use ONT. G6 B: board strategic review announced 5-Aug-2026 with Evercore/AEC; engaging strategic and financial parties; ongoing, no agreed deal at 4-Nov-2026 -> possible sale. G1 B: company leverage 2.9x but provider ND/EBITDA 5.6x and TTM EBIT (~$16m) far below interest -> cover <4x. G4 B: net loss TTM; FCF/NI not meaningful."
+ },
+ "bull_points": [
+  "PFAS testing/treatment regulatory runway.",
+  "Margin improving (record 17.7% adj. EBITDA) and deleveraging.",
+  "Strategic review could crystallise value."
+ ],
+ "bear_points": [
+  "Reported losses; heavy adjustments.",
+  "Event-driven, lumpy revenue.",
+  "Strategic review creates transaction-dominated outcome risk."
+ ],
+ "thesis_breakers": [
+  "Strategic review ends in agreed sale (G6 -> A).",
+  "Leverage >3.5x.",
+  "PFAS regulatory rollback."
+ ],
+ "sources": [
+  {
+   "id": "S1",
+   "title": "Onterris Q3 2026 results (Form 8-K Ex.99.1)",
+   "publisher": "Onterris / SEC EDGAR",
+   "url": "https://www.sec.gov/Archives/edgar/data/0001643615/000119312526447197/ont-ex99_1.htm",
+   "doc_date": "2026-11-04",
+   "retrieved": "2026-11-12",
+   "page_ref": "Results, strategic review, leverage"
+  },
+  {
+   "id": "S2",
+   "title": "Montrose Environmental Group Is Now Onterris",
+   "publisher": "Business Wire via StreetInsider",
+   "url": "https://www.streetinsider.com/Basic+Content/Montrose+Environmental+Group+Is+Now+Onterris/26344016.html",
+   "doc_date": "2026-04-21",
+   "retrieved": "2026-11-12",
+   "page_ref": "Name/ticker change effective 2026-05-04"
+  },
+  {
+   "id": "PB",
+   "title": "PitchBook company financials (TTM income statement/balance sheet), PBID 63594-19",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/63594-19/company/profile",
+   "doc_date": "2026-11-12",
+   "retrieved": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/MEG.json"
+  }
+ ]
+}

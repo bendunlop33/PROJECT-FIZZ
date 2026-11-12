@@ -1,0 +1,435 @@
+{
+ "id": "PG",
+ "name": "The Procter & Gamble Company",
+ "as_of": "2026-11-12",
+ "agent": "S3",
+ "listing": {
+  "status": "listed",
+  "exchange": "NYSE",
+  "ticker": "PG",
+  "isin": "US7427181091",
+  "hq": "Cincinnati, Ohio, USA",
+  "domicile": "United States (Ohio)",
+  "corporate_actions": [
+   {
+    "date": "2026-01-01",
+    "event": "Shailesh Jejurikar succeeded Jon Moeller as CEO; Moeller became Executive Chairman",
+    "source": "S4"
+   },
+   {
+    "date": "2025-06",
+    "event": "Restructuring: up to ~7,000 non-manufacturing roles to be cut over two years; brand/category exits",
+    "source": "S4"
+   }
+  ]
+ },
+ "pitchbook_pbid": "10215-01",
+ "geography": {
+  "fy": "FY2026 (Jun)",
+  "basis": "revenue",
+  "europe_pct": null,
+  "north_america_pct": null,
+  "uk_pct": null,
+  "other_pct": null,
+  "largest_country": "United States",
+  "largest_country_pct": null,
+  "china_pct": null,
+  "em_pct": null,
+  "fx_notes": "USD reporter; 'sales outside the US just over half' (S3) -> US just under 50% (not an exact disclosure). Greater China a high single-digit % historically (not verified this session). FX +2% on FY2026 sales (S1).",
+  "source_ids": [
+   "S1",
+   "S3"
+  ]
+ },
+ "organic_growth": [
+  {
+   "fy": "FY2021",
+   "organic_pct": 6.0,
+   "price_pct": null,
+   "volume_mix_pct": null,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "FY2022",
+   "organic_pct": 7.0,
+   "price_pct": 5.0,
+   "volume_mix_pct": 2.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "FY2023",
+   "organic_pct": 7.0,
+   "price_pct": 9.0,
+   "volume_mix_pct": -2.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "FY2024",
+   "organic_pct": 4.0,
+   "price_pct": 4.0,
+   "volume_mix_pct": 0.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "FY2025",
+   "organic_pct": 2.0,
+   "price_pct": 1.0,
+   "volume_mix_pct": 1.0,
+   "acq_pct": null,
+   "fx_pct": null,
+   "reported_pct": null,
+   "source_id": "S5"
+  },
+  {
+   "fy": "FY2026",
+   "organic_pct": 1.0,
+   "price_pct": 1.0,
+   "volume_mix_pct": 0.0,
+   "acq_pct": null,
+   "fx_pct": 2.0,
+   "reported_pct": 3.0,
+   "source_id": "S1"
+  }
+ ],
+ "kpis": [
+  {
+   "class": "FACT",
+   "name": "Net sales",
+   "value": "USD87.0bn (+3%)",
+   "period": "FY2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Core EPS",
+   "value": "USD6.89 (+1%)",
+   "period": "FY2026",
+   "source_id": "S1"
+  },
+  {
+   "class": "FACT",
+   "name": "Walmart share of sales",
+   "value": "~16% (FY2024-FY2026); no other customer >10%",
+   "period": "FY2026",
+   "source_id": "S2"
+  },
+  {
+   "class": "FACT",
+   "name": "USD1bn+ brands",
+   "value": ">20",
+   "period": "FY2025",
+   "source_id": "S3"
+  }
+ ],
+ "company_fcf": [
+  {
+   "fy": "FY2026",
+   "definition": "Adjusted free cash flow (OCF - capex, excl. certain items)",
+   "value": null,
+   "currency": "USD",
+   "source_id": "S1",
+   "note": "not retrieved this session"
+  }
+ ],
+ "lease": {
+  "lease_principal_paid": [
+   {
+    "fy": "FY2026",
+    "value": null
+   }
+  ],
+  "lease_interest_paid": [
+   {
+    "fy": "FY2026",
+    "value": null
+   }
+  ],
+  "source_id": "",
+  "notes": "US GAAP filer; operating lease cost within EBITDA; finance leases immaterial (not verified)"
+ },
+ "acquisitions": [
+  {
+   "fy": "FY2026",
+   "cash_spent": null,
+   "currency": "USD",
+   "earnouts": "not disclosed",
+   "notes": "No material acquisitions identified; P&G historically bolt-on only",
+   "source_id": "S2"
+  }
+ ],
+ "management": {
+  "ceo": "Shailesh Jejurikar",
+  "ceo_since": "2026-01-01",
+  "cfo": "Andre Schulten",
+  "cfo_since": "2021-11",
+  "senior_turnover_5y": "Low and orderly: Taylor->Moeller (2021)->Jejurikar (2026), all internal",
+  "succession_notes": "Planned internal succession; Moeller Executive Chair",
+  "guidance_record": "Generally met/narrowed guidance; FY2026 organic +1% at low end of a slowing range"
+ },
+ "ownership": {
+  "controlling_holders": "None; widely held",
+  "dual_class": false,
+  "activists": [
+   {
+    "name": "Trian (Nelson Peltz) - historic",
+    "since": "2017",
+    "objective": "Operational/structural change (2017 proxy fight)",
+    "company_response": "Peltz added to board 2018; left 2021. No current activist identified"
+   }
+  ],
+  "board_independence": "Majority independent (NYSE; not re-verified)",
+  "remuneration_notes": "not reviewed this session",
+  "related_party": "None identified"
+ },
+ "guidance": [
+  {
+   "class": "TARGET",
+   "date": "2026-07-29",
+   "item": "FY2027 organic sales growth",
+   "value": "+1% to +3% (incl. 30-50bp headwind from discontinuations)",
+   "source_id": "S1"
+  },
+  {
+   "class": "TARGET",
+   "date": "2026-07-29",
+   "item": "FY2027 all-in sales growth",
+   "value": "+1% to +3%",
+   "source_id": "S1"
+  }
+ ],
+ "scores": {
+  "A": {
+   "score": 4,
+   "confidence": "H",
+   "evidence": [
+    "Daily-use consumables (Tide, Pampers, Charmin) (S3)",
+    "Walmart ~16% of sales (S2)"
+   ],
+   "rationale": "Highly recurring demand but one retailer >15%."
+  },
+  "B": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "Pricing +9% in FY2023 with only -3% volume (S5)",
+    "Category share leadership; >20 USD1bn brands (S3)"
+   ],
+   "rationale": "Demonstrated pricing power and superiority-led share in most categories."
+  },
+  "C": {
+   "score": 5,
+   "confidence": "M",
+   "evidence": [
+    "EBIT margin ~24% (PitchBook TTM) vs HPC peers high-teens/~20% (S6)"
+   ],
+   "rationale": "Scale in US retail, media and R&D translates into best-in-class margins."
+  },
+  "D": {
+   "score": 2,
+   "confidence": "M",
+   "evidence": [
+    "Organic growth slowed to +1% FY2026; guided 1-3% (S1)"
+   ],
+   "rationale": "Mature, highly penetrated categories; runway limited to premiumisation/EM."
+  },
+  "E": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "US just under half of sales (S3)"
+   ],
+   "rationale": "Two-region skew: US plus diversified international."
+  },
+  "F": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Orderly internal CEO succession (S4)",
+    "Consistent delivery through 2022-23 inflation (S5)"
+   ],
+   "rationale": "Experienced, stable management with credible track record."
+  },
+  "G": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Minimal M&A; steady dividends and buybacks (S3)"
+   ],
+   "rationale": "Disciplined capital allocation; buybacks at full valuations."
+  },
+  "H": {
+   "score": 4,
+   "confidence": "L",
+   "evidence": [
+    "No controlling holder; independent board (S3)"
+   ],
+   "rationale": "Standard-to-strong governance."
+  },
+  "I1": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "Physical consumables"
+   ],
+   "rationale": "Very low AI substitution risk."
+  },
+  "I2": {
+   "score": 5,
+   "confidence": "H",
+   "evidence": [
+    "No AI/data-centre revenue"
+   ],
+   "rationale": "No dependence."
+  },
+  "I3": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "7,000 non-manufacturing roles targeted (S4)"
+   ],
+   "rationale": "Meaningful SG&A/marketing productivity scope."
+  },
+  "I4": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Pricing power and leading shares (S5)"
+   ],
+   "rationale": "Well placed to retain part of savings."
+  },
+  "J": {
+   "score": 3,
+   "confidence": "M",
+   "evidence": [
+    "Tariff and commodity headwinds cited in FY2026/27 outlook (S1)"
+   ],
+   "rationale": "Partial pass-through; low cyclicality."
+  },
+  "K": {
+   "score": 4,
+   "confidence": "M",
+   "evidence": [
+    "Core vs GAAP EPS differences mainly restructuring (S1)"
+   ],
+   "rationale": "Generally clean, high cash conversion."
+  }
+ },
+ "ai": {
+  "ai_dc_capex_revenue_pct": 0,
+  "semis_revenue_pct": 0,
+  "notes": "No AI/data-centre or semis revenue (business mix)."
+ },
+ "sector_specific": {
+  "price_pct": {
+   "FY2022": 5.0,
+   "FY2023": 9.0,
+   "FY2024": 4.0,
+   "FY2025": 1.0,
+   "FY2026": 1.0
+  },
+  "volume_pct": {
+   "FY2022": 2.0,
+   "FY2023": -2.0,
+   "FY2024": 0.0,
+   "FY2025": 1.0,
+   "FY2026": 0.0
+  },
+  "volume_note": "volume_pct = organic volume + mix; FY2022-FY2025 from recalled releases (confidence M)",
+  "private_label_risk": "Low-medium: P&G superiority strategy holds share vs private label in US; private label gaining in diapers/tissue in downturns (INFERENCE)",
+  "top_customer_pct": 16,
+  "top_customer_note": "Walmart Inc. and affiliates ~16% of sales FY2024-2026 (S2)"
+ },
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "B",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C",
+  "notes": "G3 B: Walmart ~16% of sales (>15% single-customer rule). G1: low leverage (~1x). G7: negligible UK consumer exposure."
+ },
+ "bull_points": [
+  "Best-in-class margins and pricing power across daily-use categories (S5)",
+  "Orderly leadership succession; productivity programme supports EPS",
+  "Low leverage and long dividend record"
+ ],
+ "bear_points": [
+  "Organic growth slowed to +1% with flat volume in FY2026; guidance 1-3% (S1)",
+  "Walmart dependence (~16%) and retailer/private-label pressure in US (S2)",
+  "Growth FY2022-24 was price-driven; US consumer slowdown and tariffs"
+ ],
+ "thesis_breakers": [
+  "Organic growth below 1% in FY2027",
+  "Walmart share of sales above 20% or loss of category share in US",
+  "Core operating margin falls >150bp"
+ ],
+ "sources": [
+  {
+   "retrieved": "2026-11-12",
+   "id": "S1",
+   "title": "P&G Announces Fourth Quarter and Fiscal Year 2026 Results",
+   "publisher": "The Procter & Gamble Company (Business Wire)",
+   "url": "https://www.pginvestor.com/news/news-details/2026/PG-Announces-Fourth-Quarter-and-Fiscal-Year-2026-Results/default.aspx",
+   "doc_date": "2026-07-29",
+   "page_ref": "Headline results and FY2027 guidance (via search summary)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S2",
+   "title": "P&G Form 10-K fiscal 2026",
+   "publisher": "SEC / Boardroom Alpha",
+   "url": "https://www.boardroomalpha.com/sec/pg-10-k-2026-08-04-0000080424-26-000103",
+   "doc_date": "2026-08-04",
+   "page_ref": "Item 1 Customers (Walmart ~16%)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S3",
+   "title": "PitchBook company profile and financials: Procter & Gamble (10215-01)",
+   "publisher": "PitchBook / Morningstar description",
+   "url": "https://my.pitchbook.com/profile/10215-01/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "Profile; data/raw/pitchbook/PG.json"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S4",
+   "title": "P&G CEO succession and restructuring announcements",
+   "publisher": "The Procter & Gamble Company",
+   "url": "https://us.pg.com/newsroom/",
+   "doc_date": "2025-06 / 2025-07",
+   "page_ref": "Recalled public announcements; not re-fetched this session"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S5",
+   "title": "P&G fiscal-year results FY2021-FY2025",
+   "publisher": "The Procter & Gamble Company",
+   "url": "https://www.pginvestor.com/financial-reporting/",
+   "doc_date": "2021-07 to 2025-07",
+   "page_ref": "Organic sales and volume/price/mix headline; recalled, not re-fetched (confidence M)"
+  },
+  {
+   "retrieved": "2026-11-12",
+   "id": "S6",
+   "title": "PitchBook TTM EBIT and revenue (calculation)",
+   "publisher": "PitchBook",
+   "url": "https://my.pitchbook.com/profile/10215-01/company/profile",
+   "doc_date": "2026-11-12",
+   "page_ref": "data/raw/pitchbook/PG.json; ESTIMATE"
+  }
+ ]
+}
