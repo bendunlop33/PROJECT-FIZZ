@@ -1,0 +1,52 @@
+{
+  "id": "SCHP",
+  "verified_on": "2026-11-12",
+  "organic_growth": [
+    {"fy": "2019", "organic_pct": null, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "rate_effect_note": "", "term_used": "croissance organique / à périmètre constant (contributive revenue)", "source_id": "", "note": "NOT VERIFIED - FY2019-2024 annual releases not retrieved (web-search budget exhausted; site archive paginated 28 pages)."},
+    {"fy": "2020", "organic_pct": null, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "rate_effect_note": "", "term_used": "", "source_id": "", "note": "NOT VERIFIED"},
+    {"fy": "2021", "organic_pct": null, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "rate_effect_note": "", "term_used": "", "source_id": "", "note": "NOT VERIFIED"},
+    {"fy": "2022", "organic_pct": null, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "rate_effect_note": "", "term_used": "", "source_id": "", "note": "NOT VERIFIED (INFERENCE: energy-price windfall years 2022-24 per company's own 2025 commentary)"},
+    {"fy": "2023", "organic_pct": null, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "rate_effect_note": "", "term_used": "", "source_id": "", "note": "NOT VERIFIED"},
+    {"fy": "2024", "organic_pct": null, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "rate_effect_note": "", "term_used": "", "source_id": "", "note": "NOT VERIFIED; FY24 contributive revenue EUR 1,110.4m, EBITDA 242.3m (FY25 release comparatives)."},
+    {"fy": "2025", "organic_pct": 0.7, "price_pct": null, "volume_mix_pct": null, "acq_pct": 3.3, "fx_pct": -0.3, "reported_pct": 3.7, "rate_effect_note": "Contributive revenue EUR 1,152.0m (+3.7% reported); at constant scope EUR 1,114.9m (+0.7%). France -2.8% organic (H1 +7.0%, H2 -11.4%: energy resale price normalisation, European chemicals crisis hitting solvent regeneration/purification, WtE outages); International +17.7% reported incl. +37.1m scope (Eco Singapore) and -3.7m FX; LatAm +33.8% cc, Southern Africa +9.0% cc. acq_pct/fx_pct derived (37.1/1110.4; -3.7/1110.4). Price/volume not disclosed.", "term_used": "à périmètre constant (organic)", "source_id": "V1"}
+  ],
+  "latest_interim": {"period": "9M 2026 (to 30-Sep-2026)", "organic_pct": 0.2, "reported_pct": 6.9, "note": "9M contributive revenue EUR 916.6m (+6.9% reported, +0.2% organic). Q3-26: +11.4% reported / +4.6% organic (France +1.8%, International +27.8% reported / +9.4% organic); scope Q3 EUR 17.2m (Hidronor Chile 12.6m, La Filippa Italy 4.6m). H1-26 organic -1.5% at cc (France -8.7%). FY2026 guidance: contributive revenue EUR 1,230-1,260m incl. organic +2% to +3%; EBITDA EUR 260-270m.", "source_id": "V3"},
+  "geography": {"fy": "2025", "north_america_pct": 0, "europe_pct": null, "uk_pct": 0, "china_pct": 0, "em_other_pct": null, "largest_country": "France", "largest_country_pct": 63.8, "note": "Contributive revenue 2025: France EUR 735.1m (63.8%; company says 64%), International EUR 416.9m (36%) - International split by country not extracted (includes Italy, Spain, Germany, Finland/Nordics = Europe; Chile/Peru = LatAm; South Africa; Singapore/Eco). Europe total therefore >=64% but exact not derived. 2026 acquisitions (Hidronor Chile, La Filippa Italy) raise International share (Q3-26 42%).", "source_id": "V1"},
+  "cash_flow_check": {
+    "fy": "2025",
+    "currency": "EUR m",
+    "ocf_reported": 226.1,
+    "ocf_note": "OCF is stated BEFORE interest: the statement adds back 'Coût de l'endettement financier brut' (44.0) to reach 'Marge brute d'autofinancement avant impôts et frais financiers' (211.7); WC inflow +30.7 (2024: +4.9) attributed by the company to 'gestion rigoureuse du DSO et de la politique d'affacturage' (factoring).",
+    "interest_paid": -33.6,
+    "interest_paid_classification": "financing ('Intérêts décaissés')",
+    "lease_repayments_incl_interest": -36.7,
+    "lease_classification": "financing ('Remboursements des dettes de location et charges financières associées')",
+    "capex_gross": -109.8,
+    "capex_disposals": 7.8,
+    "capex_net_company": -102.0,
+    "ifric12_and_financial_receivables": -19.9,
+    "ifric12_note": "Investing: increase in loans & financial receivables -23.3 / decrease +3.4; net-debt bridge shows 'Créances concessives IFRIC 12' +18.6 (concession capex financed via dedicated lines and booked as receivables, not PP&E). Company also deducts concession site rehabilitation/maintenance (GER) charges in its recurring cash flow (H1-26: 20.0).",
+    "nci_dividends": -5.1,
+    "hybrid_issued": 292.6,
+    "hybrid_note": "EUR 300m green perpetual hybrid (TSSDI) at 5.87% issued Oct-2025, classified as EQUITY - it is the main reason IFRS net debt fell from 849.7 to 548.8. Coupons (~EUR 17.6m/yr from 2026) are equity distributions, outside FCF.",
+    "standardised_fcf_ocf_minus_capex": 116.3,
+    "true_fcf_estimate": 28.8,
+    "true_fcf_estimate_ex_wc": -1.9,
+    "fcf_reconciliation": "226.1 OCF - 109.8 capex + 7.8 disposals - 19.9 IFRIC12/financial receivables - 33.6 interest - 36.7 lease payments - 5.1 NCI dividends = 28.8 (INFERENCE); excluding the +30.7 factoring/DSO-driven WC inflow ~ -1.9; after hybrid coupon pro forma ~ -20. Company 'cashflow opérationnel disponible' = 114.0 (deducts interest incl. lease interest, but not lease principal, IFRIC 12 or dividends).",
+    "gap_explanation": "Lead's ~17% FCF yield comes from OCF (pre-interest, flattered by +30.7 factoring/WC) less capex only. Interest (33.6) and leases (36.7) sit in financing, concession capex sits in financial receivables, and the 2025 WC inflow is non-recurring - together ~EUR 90-120m of the gap. Sustainable equity FCF is close to zero-to-low-single-digit % yield.",
+    "source_id": "V2"
+  },
+  "claim_checks": [
+    {"claim": "Leverage: IFRS leverage >3x by 30-Jun-2027 is a thesis breaker", "status": "confirmed", "finding": "Bank-covenant leverage 2.3x at 31-Dec-2025 (3.2x in 2024) on adjusted net debt EUR 509.2m (excl. non-recourse and factoring debt) / EBITDA 225.4m; 2.9x at 30-Jun-2026 after Hidronor/La Filippa (net debt EUR 757.4m). Company target IFRS leverage <3.0x at 30-Jun-2027 including pending 'Groupe Flamme'. Excludes EUR 300m hybrid (equity) - including it, leverage at H1-26 would be roughly 4x (INFERENCE). Little headroom.", "source_id": "V3"},
+    {"claim": "9M-2026 organic +0.2%, Q3 +4.6%", "status": "confirmed", "finding": "Q3-26 release (27-Oct-2026) exactly as qual.", "source_id": "V4"},
+    {"claim": "France ~58% of revenue (Q3-26 estimate)", "status": "confirmed", "finding": "Q3-26 France 178.8 / 308.8 = 57.9%; FY2025 France 64%.", "source_id": "V4"}
+  ],
+  "sources": [
+    {"id": "V1", "title": "Séché Environnement - Résultats annuels 2025 (communiqué de presse)", "publisher": "Séché Environnement", "url": "https://www.groupe-seche.com/uploads/2026/03/26-02_cp-bn-25.pdf", "doc_date": "2026-03-09", "page_ref": "p1 key figures; pp4-6 revenue France/International; p9-10 cash flow and leverage; p11 outlook", "retrieved": "2026-11-12"},
+    {"id": "V2", "title": "Séché Environnement - Document d'enregistrement universel 2025", "publisher": "Séché Environnement", "url": "https://www.groupe-seche.com/uploads/2026/03/seche_environnement_deu_2025_fr.pdf", "doc_date": "2026-03-10", "page_ref": "p169-170 section 4.1.5 État des flux de trésorerie consolidé", "retrieved": "2026-11-12"},
+    {"id": "V3", "title": "Séché Environnement - Rapport financier semestriel 2026", "publisher": "Séché Environnement", "url": "https://www.groupe-seche.com/uploads/2026/10/26-10_rfs2026.pdf", "doc_date": "2026-10-15", "page_ref": "p22-24 sections 2.2.4-2.2.5 (cash flow, net debt table and bridge incl. FY2025 column); p34 cash flow statement", "retrieved": "2026-11-12"},
+    {"id": "V4", "title": "Séché Environnement - Chiffre d'affaires au 30 septembre 2026 (communiqué)", "publisher": "Séché Environnement", "url": "https://www.groupe-seche.com/uploads/2026/10/26-10_cp-ca-t3.pdf", "doc_date": "2026-10-27", "page_ref": "p1 highlights; p2-3 geographic analysis; outlook", "retrieved": "2026-11-12"},
+    {"id": "V5", "title": "Séché Environnement - Résultats semestriels au 30 juin 2026 (communiqué)", "publisher": "Séché Environnement", "url": "https://www.groupe-seche.com/uploads/2026/09/26-06_cp-bn-s1-26.pdf", "doc_date": "2026-09-09", "page_ref": "pp4-5 H1 revenue at constant scope", "retrieved": "2026-11-12"}
+  ],
+  "notes": "Organic = 'à périmètre constant' on contributive revenue (excludes IFRIC 12 revenue and TGAP). FY2019-2024 organic not verified. Cash-flow figures FACT from the URD statement; true FCF and hybrid-adjusted leverage are INFERENCE. Material correction: standardised FCF (~EUR 116-124m) overstates equity FCF by ~4x."
+}

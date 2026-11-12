@@ -401,10 +401,11 @@ def growth_metrics(pbl: pd.DataFrame, h: pd.DataFrame) -> pd.DataFrame:
         hh = h[h.id == cid].sort_values("period_end")
         if len(hh) >= 3:
             last3 = hh.tail(3)
-            rec["fcf_to_ni_3y_cum"] = last3["fcf_std"].sum() / last3["net_income"].sum() if last3["net_income"].sum() > 0 else np.nan
-            rec["fcf_to_ebitdaal_3y_cum"] = last3["fcf_std"].sum() / last3["ebitdaal"].sum() if last3["ebitdaal"].sum() > 0 else np.nan
-            rec["acq_spend_3y_pct_ocf"] = last3["acquisitions"].abs().sum() / last3["ocf"].sum() if last3["ocf"].sum() > 0 else np.nan
-            rec["wc_contrib_3y_pct_ocf"] = last3["wc_change"].sum() / last3["ocf"].sum() if last3["ocf"].sum() > 0 else np.nan
+            fsum = last3["fcf_std"].sum(min_count=3)  # NaN unless all three years present (never treat missing as zero)
+            rec["fcf_to_ni_3y_cum"] = fsum / last3["net_income"].sum() if last3["net_income"].sum() > 0 else np.nan
+            rec["fcf_to_ebitdaal_3y_cum"] = fsum / last3["ebitdaal"].sum(min_count=3) if last3["ebitdaal"].sum() > 0 else np.nan
+            rec["acq_spend_3y_pct_ocf"] = last3["acquisitions"].abs().sum(min_count=1) / last3["ocf"].sum() if last3["ocf"].sum() > 0 else np.nan
+            rec["wc_contrib_3y_pct_ocf"] = last3["wc_change"].sum(min_count=3) / last3["ocf"].sum() if last3["ocf"].sum() > 0 else np.nan
             f0, f1 = hh["fcf_ps"].iloc[0], hh["fcf_ps"].iloc[-1]
             n = (hh["period_end"].iloc[-1] - hh["period_end"].iloc[0]).days / 365.25
             rec["fcf_ps_cagr_hist"] = (f1 / f0) ** (1 / n) - 1 if f0 > 0 and f1 > 0 and n > 1 else np.nan
