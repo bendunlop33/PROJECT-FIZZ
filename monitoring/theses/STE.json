@@ -12,8 +12,8 @@
   "ev_ebitda_provider": 15.8,
   "fcf_yield": 0.0375,
   "pe": 30.2,
-  "buy_below_9pct_irr": 266.2,
-  "fair_max_7pct_irr": 292.02
+  "buy_below_9pct_irr": 266.1,
+  "fair_max_7pct_irr": 291.92
  },
  "measurable_expectations": [
   "Constant-currency organic growth >=5% p.a. (FY27 guide 6-7%)",
@@ -23,14 +23,14 @@
  ],
  "scenarios_local": {
   "5y": {
-   "bear": 0.0399,
-   "base": 0.0983,
-   "bull": 0.1175
+   "bear": 0.0398,
+   "base": 0.0982,
+   "bull": 0.1174
   },
   "3y": {
-   "bear": 0.0142,
-   "base": 0.1018,
-   "bull": 0.1244
+   "bear": 0.014,
+   "base": 0.1017,
+   "bull": 0.1242
   },
   "base_growth": 0.065,
   "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: FY2027 constant-currency organic guidance 6-7% (AST cut to 6-7% on 4-Nov-2026). Midpoint."

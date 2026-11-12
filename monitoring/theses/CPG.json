@@ -12,8 +12,8 @@
   "ev_ebitda_provider": 14.7,
   "fcf_yield": 0.0307,
   "pe": 28.3,
-  "buy_below_9pct_irr": 35.46,
-  "fair_max_7pct_irr": 38.9
+  "buy_below_9pct_irr": 35.5,
+  "fair_max_7pct_irr": 38.95
  },
  "measurable_expectations": [
   "Organic growth >=6% p.a.; net new business >=4%",
@@ -23,14 +23,14 @@
  ],
  "scenarios_local": {
   "5y": {
-   "bear": 0.0088,
-   "base": 0.102,
-   "bull": 0.1311
+   "bear": 0.0092,
+   "base": 0.1023,
+   "bull": 0.1313
   },
   "3y": {
-   "bear": -0.0405,
-   "base": 0.1051,
-   "bull": 0.1443
+   "bear": -0.0398,
+   "base": 0.1056,
+   "bull": 0.1448
   },
   "base_growth": 0.07,
   "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: Company guides ~7% organic FY26 and mid-to-high single digit medium term; FY22-23 post-COVID reopening years (37.5%, 18.8%) excluded as non-representative."

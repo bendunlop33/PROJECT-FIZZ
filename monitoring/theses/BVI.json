@@ -10,10 +10,10 @@
   "date": "2026-11-11",
   "ev_ebitdaal": 14.1,
   "ev_ebitda_provider": 12.8,
-  "fcf_yield": 0.0504,
+  "fcf_yield": 0.0477,
   "pe": 26.5,
-  "buy_below_9pct_irr": 33.32,
-  "fair_max_7pct_irr": 36.56
+  "buy_below_9pct_irr": 32.95,
+  "fair_max_7pct_irr": 36.15
  },
  "measurable_expectations": [
   "Organic growth >=5% p.a. (LEAP|28 mid-to-high single digit)",
@@ -23,14 +23,14 @@
  ],
  "scenarios_local": {
   "5y": {
-   "bear": 0.0471,
-   "base": 0.1128,
-   "bull": 0.1354
+   "bear": 0.0441,
+   "base": 0.1103,
+   "bull": 0.133
   },
   "3y": {
-   "bear": 0.0171,
-   "base": 0.1184,
-   "bull": 0.147
+   "bear": 0.0135,
+   "base": 0.1152,
+   "bull": 0.1439
   },
   "base_growth": 0.0625,
   "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: FY2024 10.2% confirmed; FY2023 recall-sourced; H1-2026 organic 5.0% (Q2 5.5%); LEAP|28 mid-to-high single digit target. Blend pending verification."

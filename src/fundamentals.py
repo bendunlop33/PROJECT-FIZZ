@@ -222,8 +222,10 @@ def snapshot(yf: YF, u: pd.DataFrame, prices, pbl=None) -> pd.DataFrame:
         if r.id in fcf_ov:
             o = fcf_ov[r.id]
             if pd.notna(o.get("fcf_std_override")):
+                rec["fcf_override"] = float(o["fcf_std_override"])
                 rec["fcf_std"] = float(o["fcf_std_override"]); notes.append(f"FCF overridden to verified {o['period']} value (config/fcf_ev_overrides.csv)")
             if pd.notna(o.get("debt_like_add")) and float(o["debt_like_add"]) != 0:
+                rec["debt_like_add"] = float(o["debt_like_add"])
                 rec["net_debt_pre_lease"] += float(o["debt_like_add"]); rec["net_debt_incl_lease"] += float(o["debt_like_add"])
                 rec["ev_post_lease"] += float(o["debt_like_add"]); rec["ev_provider_basis"] += float(o["debt_like_add"])
                 notes.append(f"debt-like item {float(o['debt_like_add']):.0f} added to net debt/EV")

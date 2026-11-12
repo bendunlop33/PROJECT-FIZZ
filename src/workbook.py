@@ -144,7 +144,8 @@ def ltm_build(wb, S):
             ("revenue", "Revenue LTM"), ("ebitda", "EBITDA LTM (reported)"), ("unusual_items", "Unusual items (provider)"),
             ("lease_principal", "Lease principal (IFRS)"), ("lease_interest", "Lease interest (IFRS)"),
             ("ocf", "Operating cash flow LTM"), ("capex", "Capex LTM (neg)"), ("interest_adj", "Interest paid in financing (IFRS adj)"),
-            ("net_income", "Net income LTM"), ("sbc", "Share-based comp LTM"), ("ebit", "EBIT LTM")]
+            ("net_income", "Net income LTM"), ("sbc", "Share-based comp LTM"), ("ebit", "EBIT LTM"),
+            ("debt_like_add", "Debt-like items added (verified override)"), ("fcf_override", "Verified FCF override (blank = formula)")]
     hdr = [h for _, h in cols]
     formulas = ["Market cap", "Net debt pre-lease", "EV post-lease", "EBITDA adj (ex unusual)", "EBITDAaL adj",
                 "EV/EBITDAaL adj", "Std FCF (post-lease)", "FCF yield", "FCF yield after SBC", "P/E (reported)",
@@ -166,7 +167,7 @@ def ltm_build(wb, S):
                 v = abs(v) if pd.notna(v) else 0.0
                 if "Up-C" in str(r.get("shares_source", "")):
                     v = 0.0
-            if k in ("lt_investments", "unusual_items") and pd.isna(v):
+            if k in ("lt_investments", "unusual_items", "debt_like_add") and pd.isna(v):
                 v = 0.0
             c = ws.cell(row=rr, column=j + 1, value=None if (isinstance(v, float) and np.isnan(v)) else (v.item() if hasattr(v, "item") else v))
             c.font = BLUE
@@ -176,12 +177,12 @@ def ltm_build(wb, S):
                 c.number_format = "0.0000" if k == "fx_price_to_rep" else '#,##0.0;(#,##0.0);"-"'
         g = lambda k: f"{L[k]}{rr}"
         f = {"Market cap": f"={g('price')}*{g('fx_price_to_rep')}*{g('shares_m')}",
-             "Net debt pre-lease": f"={g('total_debt')}-{g('lease_liab')}-{g('cash_sti')}",
+             "Net debt pre-lease": f"={g('total_debt')}-{g('lease_liab')}-{g('cash_sti')}+{g('debt_like_add')}",
              "EV post-lease": f"={FL['Market cap']}{rr}+{FL['Net debt pre-lease']}{rr}+{g('minorities')}-{g('lt_investments')}",
              "EBITDA adj (ex unusual)": f"={g('ebitda')}-{g('unusual_items')}",
              "EBITDAaL adj": f"={FL['EBITDA adj (ex unusual)']}{rr}-{g('lease_principal')}-{g('lease_interest')}",
              "EV/EBITDAaL adj": f"=IF({FL['EBITDAaL adj']}{rr}>0,{FL['EV post-lease']}{rr}/{FL['EBITDAaL adj']}{rr},\"n/m\")",
-             "Std FCF (post-lease)": f"={g('ocf')}-ABS({g('capex')})-{g('lease_principal')}-{g('interest_adj')}",
+             "Std FCF (post-lease)": f"=IF(ISNUMBER({g('fcf_override')}),{g('fcf_override')},{g('ocf')}-ABS({g('capex')})-{g('lease_principal')}-{g('interest_adj')})",
              "FCF yield": f"={FL['Std FCF (post-lease)']}{rr}/{FL['Market cap']}{rr}",
              "FCF yield after SBC": f"=({FL['Std FCF (post-lease)']}{rr}-N({g('sbc')}))/{FL['Market cap']}{rr}",
              "P/E (reported)": f"=IF({g('net_income')}>0,{FL['Market cap']}{rr}/{g('net_income')},\"n/m\")",
@@ -236,7 +237,7 @@ def scenarios_sheet(wb, S, rowmap, L, FL):
         def irr(n, g, dm, mult):
             arr = "{" + ",".join(str(t) for t in range(1, n + 1)) + "}"
             mf = f"IF({I}>0.02,({I}+({dm}))/{I},1)"
-            eq = f"({mult}*{e0}*(1+{g})^{n}*{mf}-{nd0}+SUMPRODUCT({fcf0}*(1+{g})^{arr}*(1+({mf}-1)*{arr}/{n})))"
+            eq = f"({mult}*{e0}*(1+{g})^{n}*{mf}-{nd0}-{ref(L['minorities'])}+{ref(L['lt_investments'])}+SUMPRODUCT({fcf0}*(1+{g})^{arr}*(1+({mf}-1)*{arr}/{n})))"
             return f"=IFERROR(IF({eq}<=0,-1,({eq}/(1+{J})^{n}/{mc})^(1/{n})-1),NA())"
         ws[f"N{rr}"] = irr(5, f"({D}-0.02)", "-0.01", f"L{rr}"); ws[f"O{rr}"] = irr(5, D, "0", f"K{rr}"); ws[f"P{rr}"] = irr(5, f"({D}+0.015)", "0.005", f"M{rr}")
         ws[f"Q{rr}"] = irr(3, f"({D}-0.02)", "-0.01", f"L{rr}"); ws[f"R{rr}"] = irr(3, D, "0", f"K{rr}"); ws[f"S{rr}"] = irr(3, f"({D}+0.015)", "0.005", f"M{rr}")

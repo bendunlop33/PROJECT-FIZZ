@@ -151,7 +151,9 @@ def scenario(r, g_org, years, case):
     e_n = e0 * (1 + g) ** years * marg_factor
     cum_fcf = sum(fcf0 * ((1 + g) ** t) * (1 + (marg_factor - 1) * t / years) for t in range(1, years + 1))
     dil = (r["sbc"] / mcap) if pd.notna(r.get("sbc")) and r["sbc"] > 0 else 0.0
-    equity_exit = mult * e_n - nd0 + cum_fcf
+    mino = abs(r["minorities"]) if pd.notna(r.get("minorities")) and "Up-C" not in str(r.get("shares_source", "")) else 0.0
+    inv = r["lt_investments"] if pd.notna(r.get("lt_investments")) else 0.0
+    equity_exit = mult * e_n - nd0 - mino + inv + cum_fcf  # same EV->equity bridge as entry (minorities out, associates in)
     share_factor = (1 + dil) ** years
     if equity_exit <= 0:
         return -1.0, equity_exit, {}

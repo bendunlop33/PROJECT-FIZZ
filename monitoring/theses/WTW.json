@@ -3,7 +3,7 @@
  "name": "Willis Towers Watson",
  "status": "PROPOSED (not purchased; requires investor approval)",
  "record_created": "2026-11-12",
- "original_rationale": "Global broker/consultant; verified 4-8% organic 2019-25 with no negative year; ~5.6% FCF yield; cheaper than MMC/AJG. Provides non-healthcare, non-consumer diversification. Risks: P&C rate softening, AI-driven commission pressure, lower quality score.",
+ "original_rationale": "Global broker/consultant; verified 2-8% organic 2019-25 with no negative year; base growth cut to 4.5% (Q3-26 organic 4%, softening rates) gives base 5y IRR ~9.1% - AT the hurdle, so accumulate only at/below the 9%-IRR price. Chosen over Alcon (equal IRR) for portfolio fit: only non-healthcare, non-consumer factor in the basket. Risks: P&C rate cycle, fiduciary income, AI commission pressure, lower quality score.",
  "entry_valuation": {
   "price": 334.18,
   "price_ccy": "USD",
@@ -12,28 +12,28 @@
   "ev_ebitda_provider": 13.1,
   "fcf_yield": 0.0565,
   "pe": 19.7,
-  "buy_below_9pct_irr": 344.12,
-  "fair_max_7pct_irr": 377.5
+  "buy_below_9pct_irr": 336.05,
+  "fair_max_7pct_irr": 368.65
  },
  "measurable_expectations": [
   "Organic growth >=4% p.a. through softer P&C pricing",
-  "Adjusted operating margin >=24% (2026) and rising",
+  "Adjusted operating margin rising year on year",
   "Client retention stable; producer attrition low",
   "FCF conversion >=100% of adjusted net income; buybacks below intrinsic value"
  ],
  "scenarios_local": {
   "5y": {
-   "bear": 0.0367,
-   "base": 0.0964,
-   "bull": 0.1164
+   "bear": 0.0316,
+   "base": 0.0912,
+   "bull": 0.1112
   },
   "3y": {
-   "bear": 0.0099,
-   "base": 0.1017,
-   "bull": 0.1257
+   "bear": 0.0049,
+   "base": 0.0963,
+   "bull": 0.1203
   },
-  "base_growth": 0.05,
-  "base_growth_source": "50/50 median reported organic 2022+ and latest full year (FACT, verified)"
+  "base_growth": 0.045,
+  "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: Q3-2026 organic 4% with softening P&C rates and delayed large-client implementations (Q3 call 29-Oct-2026); verified 2019-25 organic 2-8% with no negative year; 4.5% = recent run-rate."
  },
  "principal_risks": [
   "Lowest organic growth of the global three (4% Q3-26).",

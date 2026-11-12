@@ -30,11 +30,12 @@
  ],
  "mechanical_proposal": [
   "COLO",
-  "CPG",
   "STE",
+  "CPG",
   "ROL",
   "ALC",
   "ISS",
+  "OR",
   "WTW",
   "MMC",
   "BN"
@@ -89,7 +90,7 @@
   "covid_ttm_ebitda_peak_trough": -0.2934,
   "tr_gbp_drawdown_2020": -0.3143,
   "tr_gbp_drawdown_2022": -0.2327,
-  "rates_+200bp_half_refinanced_pct_fcf": 0.0283,
+  "rates_+200bp_half_refinanced_pct_fcf": 0.0286,
   "gbp_+10pct_translation_hit": -0.0909,
   "wage_energy_passthrough_judgement": 1.4,
   "ai_capex_contraction_judgement": 1.0,

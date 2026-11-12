@@ -12,8 +12,8 @@
   "ev_ebitda_provider": 14.8,
   "fcf_yield": 0.0498,
   "pe": 36.2,
-  "buy_below_9pct_irr": 543.38,
-  "fair_max_7pct_irr": 596.09
+  "buy_below_9pct_irr": 543.73,
+  "fair_max_7pct_irr": 596.48
  },
  "measurable_expectations": [
   "Organic growth >=5% p.a. (FY26/27 guide 5-7%)",
@@ -23,14 +23,14 @@
  ],
  "scenarios_local": {
   "5y": {
-   "bear": 0.0495,
-   "base": 0.1113,
-   "bull": 0.1315
+   "bear": 0.0497,
+   "base": 0.1115,
+   "bull": 0.1316
   },
   "3y": {
-   "bear": 0.0221,
-   "base": 0.1166,
-   "bull": 0.1406
+   "bear": 0.0224,
+   "base": 0.1169,
+   "bull": 0.1409
   },
   "base_growth": 0.06,
   "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: Company cut 2030 ambition to 5-7% organic and guided FY26/27 5-7% (3-Nov-2026); Q4 FY25/26 organic 5%. Midpoint used."
