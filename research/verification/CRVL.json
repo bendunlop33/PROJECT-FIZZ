@@ -1,0 +1,26 @@
+{
+  "id": "CRVL",
+  "verified_on": "2026-11-12",
+  "organic_growth": [
+    {"fy": "FY2019 (Mar)", "organic_pct": null, "reported_pct": 6.7, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": 0, "rate_effect_note": "Revenue $595.7m vs $558.4m.", "term_used": "none - CorVel reports only total revenue growth (no organic metric); US-only, no FX", "source_id": "V1"},
+    {"fy": "FY2020 (Mar)", "organic_pct": null, "reported_pct": -0.6, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": 0, "rate_effect_note": "Revenue $592.2m.", "term_used": "reported revenue growth", "source_id": "V1"},
+    {"fy": "FY2021 (Mar)", "organic_pct": null, "reported_pct": -6.7, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": 0, "rate_effect_note": "Revenue $552.6m (COVID: lower claims volumes).", "term_used": "reported revenue growth", "source_id": "V1"},
+    {"fy": "FY2022 (Mar)", "organic_pct": null, "reported_pct": 16.9, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": 0, "rate_effect_note": "Revenue $646.2m (recovery).", "term_used": "reported revenue growth", "source_id": "V1"},
+    {"fy": "FY2023 (Mar)", "organic_pct": null, "reported_pct": 11.2, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": 0, "rate_effect_note": "Revenue $718.6m (qual 11.3%).", "term_used": "reported revenue growth", "source_id": "V1"},
+    {"fy": "FY2024 (Mar)", "organic_pct": null, "reported_pct": 10.7, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": 0, "rate_effect_note": "Revenue $795.3m.", "term_used": "reported revenue growth", "source_id": "V1"},
+    {"fy": "FY2025 (Mar)", "organic_pct": null, "reported_pct": 12.6, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": 0, "rate_effect_note": "Revenue $895.6m.", "term_used": "reported revenue growth", "source_id": "V1"},
+    {"fy": "FY2026 (Mar)", "organic_pct": null, "reported_pct": 7.0, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": 0, "rate_effect_note": "Revenue $958.5m. 10-K describes no completed acquisition in FY24-26 (INFERENCE: reported ~= organic).", "term_used": "reported revenue growth", "source_id": "V2"}
+  ],
+  "latest_interim": {"period": "6M FY2027 (Apr-Sep 2026)", "organic_pct": null, "reported_pct": 11.1, "note": "Revenue $527.1m vs $474.4m (+11.1%); Q2 FY27 $267.1m vs $239.6m (+11.5%) - per XBRL from 10-Q filed 2026-11-05 (accession 0001193125-26-449982). No organic metric; acquisitions not material (INFERENCE).", "source_id": "V1"},
+  "geography": {"fy": "FY2026 (Mar)", "north_america_pct": 100, "europe_pct": 0, "uk_pct": 0, "china_pct": 0, "em_other_pct": 0, "largest_country": "United States", "largest_country_pct": 100, "note": "10-K: 'Our entire workforce is concentrated in the United States'; nationwide US presence. INFERENCE 100% US revenue (10-K licensing language mentions 'foreign jurisdiction' generically).", "source_id": "V2"},
+  "cash_flow_check": {},
+  "claim_checks": [
+    {"claim": "Customer concentration risk", "status": "confirmed", "finding": "10-K FY2026: 'No single customer accounted for 10% or more of revenue for fiscal years 2026, 2025 or 2024'; 'Two customers accounted for 10% or more of accounts receivable as of March 31, 2026 and 2025'; 'Most of our customer contracts permit either party to terminate without cause.' Revenue concentration is therefore moderate, but receivable concentration and terminable contracts are real risks.", "source_id": "V2"},
+    {"claim": "Revenue growth FY23-FY26: 11.3/10.6/12.7/7.0%", "status": "confirmed", "finding": "XBRL: 11.2 / 10.7 / 12.6 / 7.0% (rounding differences only). Earlier: FY19 +6.7, FY20 -0.6, FY21 -6.7, FY22 +16.9. Q2 FY27 +11.5% re-accelerated (confirms qual's ~11%).", "source_id": "V1"}
+  ],
+  "sources": [
+    {"id": "V1", "title": "CorVel Corp XBRL company concept: RevenueFromContractWithCustomerExcludingAssessedTax (10-K and 10-Q filings FY2018-Q2 FY2027)", "publisher": "SEC EDGAR (data.sec.gov XBRL API)", "url": "https://data.sec.gov/api/xbrl/companyconcept/CIK0000874866/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json", "doc_date": "2026-11-05", "page_ref": "Annual (FY) values from 10-K accessions 0001564590-19-022038 ... 0001193125-26-237024; 10-Q 0001193125-26-449982", "retrieved": "2026-11-12"},
+    {"id": "V2", "title": "CorVel Corp Form 10-K for fiscal year ended 31-Mar-2026 (crvl-20260331.htm)", "publisher": "SEC EDGAR", "url": "https://www.sec.gov/Archives/edgar/data/874866/000119312526237024/crvl-20260331.htm", "doc_date": "2026-05-22", "page_ref": "Item 1 Business (workforce, presence); Item 1A Risk Factors (customer contracts); notes - concentration of credit risk", "retrieved": "2026-11-12"}
+  ],
+  "notes": "CorVel discloses no organic, price or volume metric; reported growth used. No FX (US-only). Service-line split (patient management vs network solutions) not extracted."
+}

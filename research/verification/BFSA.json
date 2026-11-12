@@ -1,0 +1,48 @@
+{
+  "id": "BFSA",
+  "verified_on": "2026-11-12",
+  "organic_growth": [
+    {"fy": "2019", "organic_pct": null, "reported_pct": -10.0, "price_pct": null, "volume_mix_pct": null, "acq_pct": 0, "fx_pct": null, "rate_effect_note": "Revenue EUR 647.9m vs 720.1m (2018). No M&A; decline driven by zinc/aluminium prices and treatment charges (INFERENCE).", "term_used": "none - Befesa does not report organic/LFL growth; reported revenue growth shown", "source_id": "V1"},
+    {"fy": "2020", "organic_pct": null, "reported_pct": -6.7, "price_pct": null, "volume_mix_pct": null, "acq_pct": 0, "fx_pct": null, "rate_effect_note": "Revenue EUR 604.3m. No M&A (organic = reported less FX, INFERENCE).", "term_used": "reported revenue growth", "source_id": "V2"},
+    {"fy": "2021", "organic_pct": null, "reported_pct": 36.0, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "rate_effect_note": "Revenue EUR 821.6m; includes American Zinc Recycling (AZR, consolidated from Aug-2021) - acquisition contribution not separately extracted; zinc price recovery.", "term_used": "reported revenue growth", "source_id": "V2"},
+    {"fy": "2022", "organic_pct": null, "reported_pct": 38.3, "price_pct": null, "volume_mix_pct": null, "acq_pct": null, "fx_pct": null, "rate_effect_note": "Revenue EUR 1,136.0m (per AR2023 comparative); full-year AZR plus high zinc/alu prices.", "term_used": "reported revenue growth", "source_id": "V3"},
+    {"fy": "2023", "organic_pct": null, "reported_pct": 3.9, "price_pct": null, "volume_mix_pct": null, "acq_pct": 0, "fx_pct": null, "rate_effect_note": "Revenue EUR 1,180.6m. No M&A.", "term_used": "reported revenue growth", "source_id": "V3"},
+    {"fy": "2024", "organic_pct": null, "reported_pct": 4.9, "price_pct": null, "volume_mix_pct": null, "acq_pct": 0, "fx_pct": null, "rate_effect_note": "Revenue EUR 1,239.0m (AR2025 comparative). No M&A.", "term_used": "reported revenue growth", "source_id": "V4"},
+    {"fy": "2025", "organic_pct": null, "reported_pct": -4.6, "price_pct": null, "volume_mix_pct": null, "acq_pct": 0, "fx_pct": null, "rate_effect_note": "Revenue EUR 1,182.6m: Steel Dust 799.7 (2024: 825.6), Salt Slags 114.0, Secondary Aluminium 331.3, eliminations -62.4. No M&A; price/volume not disclosed as a bridge.", "term_used": "reported revenue growth", "source_id": "V4"}
+  ],
+  "latest_interim": {"period": "9M 2026 (to 30-Sep-2026)", "organic_pct": null, "reported_pct": 1.0, "note": "Revenue EUR 901.1m (+1.0%); Q3 +7.4%. Adj. EBITDA 191.8m (+10.4%). Driven by LME zinc (avg ,512 vs ,768) and alu FMB prices; EAF steel dust throughput -0.5% (Q3 -12.1%), utilisation 67.8% (68.7%). No acquisitions -> reported growth is effectively organic + FX (INFERENCE). FY26 adj. EBITDA guidance narrowed to EUR 260-270m incl. EUR 26m US critical-minerals grant in Q4.", "source_id": "V5"},
+  "geography": {"fy": "2025", "north_america_pct": 25.5, "europe_pct": 62.1, "uk_pct": null, "china_pct": 1.3, "em_other_pct": 11.0, "largest_country": "United States", "largest_country_pct": 25.5, "note": "Revenue by geographical area (note 5), EUR 1,182.6m: US 301.7 (25.5%; 2024 30%); Spain 240.8 (20.4%); Germany 124.0 (10.5%); Belgium 57.4; Finland 52.5; Netherlands 41.4; Italy 40.7; France 38.4; Norway 36.5; Portugal 19.4; Sweden 19.1; Switzerland 14.3; Poland 13.0; Rest of Europe 37.4 (Europe total 734.8 = 62.1%); South Korea 32.1; Australia 30.9; Japan 24.6; Brazil 19.3; China 15.4 (1.3%); RoW 23.8. UK not separately disclosed (within Rest of Europe). Customer concentration: largest customer ~34% of group revenue, second ~11% (Steel Dust).", "source_id": "V4"},
+  "cash_flow_check": {
+    "fy": "2025",
+    "currency": "EUR m",
+    "ocf_reported": 211.9,
+    "ocf_note": "OCF starts from profit before tax and adds back finance costs (35.4) less interest income (10.4): i.e. interest is NOT deducted in OCF. Taxes paid -21.2 are in OCF. WC change net -7.8 (receivables +23.4, inventories -4.2, payables -27.0).",
+    "interest_paid": -33.7,
+    "interest_paid_classification": "financing ('Interest paid')",
+    "lease_repayments": null,
+    "lease_note": "No separate lease line in the statement; lease payments are INFERRED to sit within 'Cash outflows from bank borrowings and other liabilities (Note 14)' -34.1 (financing). Lease liabilities are small (EUR 21.8m non-current + 11.3m current), so lease principal ~EUR 10-12m/yr (INFERENCE).",
+    "capex": -76.1,
+    "capex_note": "PP&E 73.8 + intangibles 2.3. 9M-26 capex 55.3 (Bernburg growth capex largely complete).",
+    "factoring": "Non-recourse factoring derecognised: EUR 59.9m outstanding at 31-Dec-2025 (2024: 61.5m) - stable, so ~-1.6m effect on 2025 OCF; reverse factoring (supplier) EUR 1.8m. Not a material driver of 2025 FCF.",
+    "dividends_paid": -25.6,
+    "standardised_fcf_ocf_minus_capex": 135.8,
+    "true_fcf_estimate": 91.0,
+    "fcf_reconciliation": "211.9 OCF - 76.1 capex - 33.7 interest - ~11 lease principal (INFERENCE) = ~91 (INFERENCE).",
+    "gap_explanation": "Lead's ~8% FCF yield uses OCF that is pre-interest. Deducting cash interest (33.7, financing) and leases cuts FCF by ~one third (to ~EUR 90m, i.e. ~5-5.5% on the same market value - INFERENCE). Factoring and working capital are not material; capex was depressed relative to growth needs (US expansion largely done). 2026 benefits from lower interest after deleveraging and a one-off US grant.",
+    "source_id": "V4"
+  },
+  "claim_checks": [
+    {"claim": "China plants under-utilised", "status": "confirmed", "finding": "Q3-26 presentation: 'China continue running at low utilisation rates and break-even earnings'; Asian volumes -18% YoY in 9M-26; Korea load factor 70%. Group steel-dust utilisation 67.8% 9M-26; company targets 90% by 2028 from <70% in 2025. China plant-level % not disclosed. China = 1.3% of revenue but EUR 77.3m of PP&E/intangibles/ROU (2025) - capital tied up at ~breakeven.", "source_id": "V6"},
+    {"claim": "Zinc price sensitivity / hedges rolling off at lower prices", "status": "corrected", "finding": "Hedge book provides visibility to Q3-2029 at rising prices: ~,990/t 2026, ~,000 2027, ~,100 2028, ~,200 2029. LME averaged ,830 in Q3-26 vs hedge ,972, so the near-term risk is capped upside rather than roll-off at lower prices; blended price EUR 2,723/t vs hedged 2,561 (9M-26). Downside risk only if LME falls below ~,000 after hedges.", "source_id": "V5"},
+    {"claim": "Net leverage >3x is a thesis breaker", "status": "confirmed", "finding": "Net leverage 2.16x at 30-Sep-2026 (2.59x Sep-25), net debt EUR 563.7m; company expects <2.0x by YE-2026.", "source_id": "V5"}
+  ],
+  "sources": [
+    {"id": "V1", "title": "Befesa Annual Report 2019", "publisher": "Befesa S.A.", "url": "https://images.befesa.com/media/2021/06/Befesa-AR-2019-FINAL1.pdf", "doc_date": "2020-04", "page_ref": "Consolidated income statement / segment note (revenue 647,940 vs 720,090 EUR k)", "retrieved": "2026-11-12"},
+    {"id": "V2", "title": "Befesa Annual Report 2021", "publisher": "Befesa S.A.", "url": "https://images.befesa.com/media/2022/04/Befesa-AR-2021.pdf", "doc_date": "2022-04", "page_ref": "Consolidated income statement (revenue 821,613 vs 604,330 EUR k)", "retrieved": "2026-11-12"},
+    {"id": "V3", "title": "Befesa Annual Report 2023", "publisher": "Befesa S.A.", "url": "https://images.befesa.com/media/2024/03/Befesa_AR_2023-65fc12441237e.pdf", "doc_date": "2024-03", "page_ref": "Consolidated income statement (revenue 1,180,600 vs 1,136,033 EUR k)", "retrieved": "2026-11-12"},
+    {"id": "V4", "title": "Befesa Annual Report 2025", "publisher": "Befesa S.A.", "url": "https://images.befesa.com/media/2026/04/Befesa_Annual_Report_2025.pdf", "doc_date": "2026-04-29", "page_ref": "p133-134 consolidated statement of cash flows; note 5 segment/geographical revenue and customer concentration; note 3 factoring", "retrieved": "2026-11-12"},
+    {"id": "V5", "title": "Befesa Q3 2026 Statement", "publisher": "Befesa S.A.", "url": "https://images.befesa.com/media/2026/10/Q3_2026_Statement_29_October_2026-1.pdf", "doc_date": "2026-10-29", "page_ref": "p2 key figures; p3 highlights/guidance; segment section and hedging paragraph", "retrieved": "2026-11-12"},
+    {"id": "V6", "title": "Befesa Q3 2026 Earnings Presentation", "publisher": "Befesa S.A.", "url": "https://images.befesa.com/media/2026/10/Q3_2026_Earnings_Presentation_vf-6ae22aae3ab7d.pdf", "doc_date": "2026-10-29", "page_ref": "slide 7 regional steel dust highlights; slide 25 capacity/utilisation target", "retrieved": "2026-11-12"}
+  ],
+  "notes": "Befesa does not publish organic/LFL growth; reported revenue growth is given and, except 2021-22 (AZR acquisition), equals organic plus FX (INFERENCE). Revenue swings are dominated by zinc/alu prices and hedges, not volume. All cash-flow line items FACT from the AR2025 statement except lease split (INFERENCE)."
+}

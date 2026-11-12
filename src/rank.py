@@ -179,7 +179,9 @@ def main():
         g5 = r.get("revenue_cagr_5y_rep")
         acq_heavy = pd.notna(r.get("acq_spend_3y_pct_ocf")) and r["acq_spend_3y_pct_ocf"] > 0.3
         if pd.notna(rec["org_median_2022on"]):
-            g_base, g_src = rec["org_median_2022on"], "median reported organic 2022+ (FACT" + (", verified)" if rec["org_verified"] else ")")
+            lf = rec["org_latest_full"] if pd.notna(rec["org_latest_full"]) else rec["org_median_2022on"]
+            g_base = 0.5 * rec["org_median_2022on"] + 0.5 * lf
+            g_src = "50/50 median reported organic 2022+ and latest full year (FACT" + (", verified)" if rec["org_verified"] else ")")
             if pd.notna(rec["org_latest_interim"]) and rec["org_latest_interim"] < g_base - 0.02:
                 g_base = (g_base + rec["org_latest_interim"]) / 2; g_src += "; blended down with weaker latest interim"
         elif pd.notna(rec["org_latest_full"]):
@@ -190,7 +192,10 @@ def main():
         else:
             g_base, g_src = np.nan, "n/a"
         if pd.notna(g_base):
-            g_base = float(np.clip(g_base, -0.02, 0.10))
+            cap = 0.09 if (pd.notna(rec["q_D"]) and rec["q_D"] >= 5) else 0.08
+            if g_base > cap:
+                g_src += f"; capped {cap:.0%} (long-run sustainability)"
+            g_base = float(np.clip(g_base, -0.02, cap))
             if pd.notna(rec["q_D"]) and rec["q_D"] <= 2:
                 g_base = min(g_base, 0.04); g_src += "; capped 4% (weak runway score)"
         rec["g_base"], rec["g_base_source"] = g_base, g_src
