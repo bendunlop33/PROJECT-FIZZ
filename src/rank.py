@@ -164,10 +164,25 @@ def pct(s, higher_better=True):
     return (r if higher_better else 1 - r + 1 / max(len(s.dropna()), 1)) * 100
 
 
+def _ov(name):
+    f = PROC.parent.parent / "config" / name
+    return pd.read_csv(f) if f.exists() else pd.DataFrame()
+
+
 def main():
     u = universe()
     snap = pd.read_csv(PROC / "snapshot.csv")
     Q = load_qual()
+    G_OV = _ov("growth_overrides.csv").set_index("id") if len(_ov("growth_overrides.csv")) else pd.DataFrame()
+    GATE_OV = _ov("gate_overrides.csv")
+    SC_OV = _ov("score_overrides.csv")
+    for _, o in SC_OV.iterrows():  # documented lead/QC score revisions applied to the authoritative record copy in memory
+        q = Q.setdefault(o.id, {}); q.setdefault("scores", {})[o.dimension] = {"score": float(o.score), "confidence": o.confidence, "rationale": "OVERRIDE: " + o.rationale}
+    # point-in-time history unusable where PitchBook-implied shares deviate >10% from reported (methodology §10)
+    bad = snap["implied_vs_reported_shares"].sub(1).abs() > 0.10
+    for c in [c for c in snap.columns if c.startswith("ev_ebitda_") and ("median" in c or "p25" in c or "p75" in c or "pctile" in c or c.endswith("pit_now"))] + ["pe_median_10y"]:
+        snap.loc[bad, c] = np.nan
+    snap["pit_history_excluded"] = bad
     rows, gates_log, scen = [], [], []
     for _, r in snap.iterrows():
         q = Q.get(r.id, {})
@@ -198,8 +213,14 @@ def main():
             g_base = float(np.clip(g_base, -0.02, cap))
             if pd.notna(rec["q_D"]) and rec["q_D"] <= 2:
                 g_base = min(g_base, 0.04); g_src += "; capped 4% (weak runway score)"
+        if len(G_OV) and r.id in G_OV.index:
+            g_base = float(G_OV.loc[r.id, "g_base_override"]); g_src = "GUIDANCE-ANCHORED OVERRIDE: " + str(G_OV.loc[r.id, "rationale"])
         rec["g_base"], rec["g_base_source"] = g_base, g_src
         gs, status, reason = combine_gates(r, q)
+        for _, o in GATE_OV[GATE_OV.id == r.id].iterrows() if len(GATE_OV) else []:
+            if ORDER[o.status] > ORDER[gs[o.gate]]:
+                gs[o.gate] = o.status; reason += f" | {o.gate}={o.status} (lead override after challenge): {o.rationale}"
+        status = max(gs.values(), key=lambda z: ORDER[z])
         rec.update({f"gate_{k}": v for k, v in gs.items()}); rec["gate_status"] = status
         gates_log.append({"id": r.id, "name": r["name"], "sector": r.sector, "status": status, **gs, "evidence_and_rationale": reason})
         for yrs in (3, 5):

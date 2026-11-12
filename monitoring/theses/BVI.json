@@ -1,0 +1,72 @@
+{
+ "id": "BVI",
+ "name": "Bureau Veritas",
+ "status": "PROPOSED (not purchased; requires investor approval)",
+ "record_created": "2026-11-12",
+ "original_rationale": "TIC network: regulatory/mandatory demand, diversified end markets, ~5% post-lease FCF yield; base 6.25% organic (blend of verified 10.2% FY24 and 5% H1-26). Risks: cyclic commodity/industrial segments, Wendel stake overhang.",
+ "entry_valuation": {
+  "price": 30.05,
+  "price_ccy": "EUR",
+  "date": "2026-11-11",
+  "ev_ebitdaal": 14.1,
+  "ev_ebitda_provider": 12.8,
+  "fcf_yield": 0.0504,
+  "pe": 26.5,
+  "buy_below_9pct_irr": 33.32,
+  "fair_max_7pct_irr": 36.56
+ },
+ "measurable_expectations": [
+  "Organic growth >=5% p.a. (LEAP|28 mid-to-high single digit)",
+  "Adjusted operating margin stable-to-up (>=16%)",
+  "Cash conversion: FCF/adjusted net income >=90%",
+  "Net debt/EBITDA (pre-lease) <=2x"
+ ],
+ "scenarios_local": {
+  "5y": {
+   "bear": 0.0471,
+   "base": 0.1128,
+   "bull": 0.1354
+  },
+  "3y": {
+   "bear": 0.0171,
+   "base": 0.1184,
+   "bull": 0.147
+  },
+  "base_growth": 0.0625,
+  "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: FY2024 10.2% confirmed; FY2023 recall-sourced; H1-2026 organic 5.0% (Q2 5.5%); LEAP|28 mid-to-high single digit target. Blend pending verification."
+ },
+ "principal_risks": [
+  "High EM/China exposure and commodity/oil sensitivity in I&C.",
+  "Business Assurance (certification) growth slow and exposed to AI/digital audit.",
+  "Wendel forward-sale overhang; M&A acceleration may dilute returns."
+ ],
+ "thesis_break_conditions": [
+  "Organic growth below 4% for FY2027.",
+  "Adjusted operating margin below 15.5%.",
+  "Cash conversion below 90% for two years."
+ ],
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C"
+ },
+ "evidence_confidence": 27.0,
+ "source_records": [
+  "research/qual/BVI.json",
+  "research/verification/BVI.json",
+  "research/challenge/challenge_report.md"
+ ],
+ "subsequent_developments": [],
+ "decisions": [
+  {
+   "date": "2026-11-12",
+   "decision": "Proposed for basket (equal-weight baseline)",
+   "by": "lead agent",
+   "approved_by_investor": false
+  }
+ ]
+}

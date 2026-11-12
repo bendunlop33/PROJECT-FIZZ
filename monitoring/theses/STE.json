@@ -1,0 +1,71 @@
+{
+ "id": "STE",
+ "name": "STERIS",
+ "status": "PROPOSED (not purchased; requires investor approval)",
+ "record_created": "2026-11-12",
+ "original_rationale": "Sterilisation consumables/services; FY27 guidance 6-7% organic (6.5% used); recurring hospital/biopharma demand. Risks: US healthcare utilisation, EtO regulation/litigation, AST cut.",
+ "entry_valuation": {
+  "price": 256.27,
+  "price_ccy": "USD",
+  "date": "2026-11-11",
+  "ev_ebitdaal": 15.7,
+  "ev_ebitda_provider": 15.8,
+  "fcf_yield": 0.0375,
+  "pe": 30.2,
+  "buy_below_9pct_irr": 266.2,
+  "fair_max_7pct_irr": 292.02
+ },
+ "measurable_expectations": [
+  "Constant-currency organic growth >=5% p.a. (FY27 guide 6-7%)",
+  "AST (applied sterilisation) segment margins stable",
+  "No material new EtO litigation charges",
+  "Net leverage <=2.5x"
+ ],
+ "scenarios_local": {
+  "5y": {
+   "bear": 0.0399,
+   "base": 0.0983,
+   "bull": 0.1175
+  },
+  "3y": {
+   "bear": 0.0142,
+   "base": 0.1018,
+   "bull": 0.1244
+  },
+  "base_growth": 0.065,
+  "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: FY2027 constant-currency organic guidance 6-7% (AST cut to 6-7% on 4-Nov-2026). Midpoint."
+ },
+ "principal_risks": [
+  "EtO regulation and tort liability",
+  "US concentration",
+  "Elevated capex for chemistry plant compresses FCF"
+ ],
+ "thesis_break_conditions": [
+  "AST organic below 4% for a year",
+  "Material EtO liability/plant closure"
+ ],
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C"
+ },
+ "evidence_confidence": 47.0,
+ "source_records": [
+  "research/qual/STE.json",
+  "research/verification/STE.json",
+  "research/challenge/challenge_report.md"
+ ],
+ "subsequent_developments": [],
+ "decisions": [
+  {
+   "date": "2026-11-12",
+   "decision": "Proposed for basket (equal-weight baseline)",
+   "by": "lead agent",
+   "approved_by_investor": false
+  }
+ ]
+}

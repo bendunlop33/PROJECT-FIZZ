@@ -403,7 +403,7 @@ def main():
         for kk, vv in v.items():
             exp_rows.append({"dimension": k, "bucket": kk, "weight": vv})
     for kk, vv in port["geo_weighted_pct"].items():
-        exp_rows.append({"dimension": "revenue geography (% of revenue, weighted)", "bucket": kk, "weight": vv / 100 if pd.notna(vv) else np.nan})
+        exp_rows.append({"dimension": "revenue geography (% of revenue, weighted over names with data)", "bucket": kk, "weight": vv / 100 if isinstance(vv, (int, float)) and pd.notna(vv) else (np.nan if not isinstance(vv, str) else vv)})
     for kk, vv in port["basket_corr_with_existing"].items():
         exp_rows.append({"dimension": "5y monthly GBP return correlation: basket vs existing", "bucket": kk, "weight": vv})
     write_df(ws, pd.DataFrame(exp_rows), r0=r + 4, fmt={"weight": "0.00"})

@@ -1,128 +1,111 @@
 {
  "basket": [
-  "VRSK",
   "COLO",
-  "OR",
-  "ALC",
-  "STMN",
-  "WTW",
-  "MMC",
-  "BN",
-  "SPX",
-  "WCN"
+  "BVI",
+  "CPG",
+  "STE",
+  "WTW"
  ],
  "shortlist": [
+  "COLO",
+  "BVI",
+  "CPG",
+  "STE",
+  "ALC",
+  "WTW",
+  "MMC",
+  "SGSN",
+  "HLN",
+  "ISS",
   "VRSK",
   "HLMA",
-  "COLO",
+  "AON",
+  "ROL",
+  "CTAS",
+  "WM",
   "OR",
-  "ALC",
-  "STMN",
-  "STE",
-  "WTW",
-  "MMC",
-  "BN",
-  "KO",
-  "AJG",
-  "SPX",
-  "WCN",
-  "VLTO",
-  "XYL",
-  "ULVR",
-  "RSG"
+  "EL",
+  "ELIS",
+  "BN"
  ],
  "mechanical_proposal": [
-  "VRSK",
   "COLO",
-  "OR",
+  "CPG",
+  "STE",
+  "ROL",
   "ALC",
-  "STMN",
+  "ISS",
   "WTW",
   "MMC",
-  "BN",
-  "SPX",
-  "WCN"
+  "BN"
  ],
  "weights": {
-  "VRSK": 0.1,
-  "COLO": 0.1,
-  "OR": 0.1,
-  "ALC": 0.1,
-  "STMN": 0.1,
-  "WTW": 0.1,
-  "MMC": 0.1,
-  "BN": 0.1,
-  "SPX": 0.1,
-  "WCN": 0.1
+  "COLO": 0.2,
+  "BVI": 0.2,
+  "CPG": 0.2,
+  "STE": 0.2,
+  "WTW": 0.2
  },
  "exposures": {
   "sector": {
-   "S2": 0.3,
-   "S6": 0.3,
-   "S3": 0.2,
-   "S4": 0.1,
-   "S5": 0.1
+   "S1": 0.4,
+   "S2": 0.4,
+   "S6": 0.2
   },
   "peer_group": {
+   "Medical consumables": 0.4,
+   "Catering & facilities": 0.2,
    "Global brokers": 0.2,
-   "Vision/hearing/dental": 0.2,
-   "HPC": 0.1,
-   "Food & beverage": 0.1,
-   "Medical consumables": 0.1,
-   "Safety & specialist components": 0.1,
-   "Solid waste": 0.1,
-   "Specialist risk services": 0.1
+   "TIC": 0.2
   },
   "rep_ccy": {
-   "USD": 0.5,
-   "EUR": 0.2,
-   "CHF": 0.1,
-   "DKK": 0.1,
-   "GBP": 0.1
+   "USD": 0.6,
+   "DKK": 0.2,
+   "EUR": 0.2
   },
   "price_ccy": {
-   "USD": 0.4,
-   "CHF": 0.2,
-   "EUR": 0.2,
-   "DKK": 0.1,
-   "GBp": 0.1
+   "USD": 0.6,
+   "DKK": 0.2,
+   "EUR": 0.2
   },
   "region": {
-   "EU": 0.5,
+   "EU": 0.4,
    "US": 0.4,
-   "GB": 0.1
+   "GB": 0.2
   }
  },
  "geo_weighted_pct": {
-  "na": 38.3,
-  "eu": 33.6,
-  "uk": 0.0,
-  "other": 28.0,
+  "na": 63.3,
+  "eu": 38.9,
+  "uk": 15.2,
+  "other": 11.5,
   "china": 0.0,
-  "em": 0.0
+  "em": 11.5,
+  "coverage": "na:3/5, eu:4/5, uk:2/5, other:3/5, china:1/5, em:3/5"
  },
  "stress_weighted": {
-  "gfc_ttm_revenue_peak_trough": -0.0584,
-  "gfc_ttm_ebitda_peak_trough": -0.1558,
-  "covid_ttm_ebitda_peak_trough": -0.1696,
-  "tr_gbp_drawdown_2020": -0.1212,
-  "tr_gbp_drawdown_2022": -0.2102,
-  "rates_+200bp_half_refinanced_pct_fcf": 0.0314,
-  "gbp_+10pct_translation_hit": -0.0818,
+  "gfc_ttm_revenue_peak_trough": -0.0682,
+  "gfc_ttm_ebitda_peak_trough": -0.1942,
+  "covid_ttm_ebitda_peak_trough": -0.2934,
+  "tr_gbp_drawdown_2020": -0.3143,
+  "tr_gbp_drawdown_2022": -0.2327,
+  "rates_+200bp_half_refinanced_pct_fcf": 0.0283,
+  "gbp_+10pct_translation_hit": -0.0909,
   "wage_energy_passthrough_judgement": 1.4,
   "ai_capex_contraction_judgement": 1.0,
-  "acq_spend_3y_pct_ocf": 0.2108,
-  "coverage_note": "weighted over names with data; gfc_ttm_revenue_peak_trough:4/10, gfc_ttm_ebitda_peak_trough:4/10, covid_ttm_ebitda_peak_trough:10/10, tr_gbp_drawdown_2020:10/10, tr_gbp_drawdown_2022:10/10, rates_+200bp_half_refinanced_pct_fcf:10/10, gbp_+10pct_translation_hit:10/10, wage_energy_passthrough_judgement:10/10, ai_capex_contraction_judgement:10/10, acq_spend_3y_pct_ocf:10/10"
+  "acq_spend_3y_pct_ocf": 0.1772,
+  "coverage_note": "weighted over names with data; gfc_ttm_revenue_peak_trough:3/5, gfc_ttm_ebitda_peak_trough:3/5, covid_ttm_ebitda_peak_trough:5/5, tr_gbp_drawdown_2020:5/5, tr_gbp_drawdown_2022:5/5, rates_+200bp_half_refinanced_pct_fcf:5/5, gbp_+10pct_translation_hit:5/5, wage_energy_passthrough_judgement:5/5, ai_capex_contraction_judgement:5/5, acq_spend_3y_pct_ocf:5/5"
  },
  "basket_corr_with_existing": {
-  "EXISTING:ACCOR": 0.24,
-  "EXISTING:TUI": 0.213,
-  "EXISTING:JET2": 0.246,
-  "EXISTING:FTSE100": 0.462,
-  "EXISTING:GLOBAL": 0.467,
-  "EXISTING:TRAVEL_EW": 0.269
+  "EXISTING:ACCOR": 0.272,
+  "EXISTING:TUI": 0.272,
+  "EXISTING:JET2": 0.372,
+  "EXISTING:FTSE100": 0.469,
+  "EXISTING:GLOBAL": 0.425,
+  "EXISTING:US500": 0.428,
+  "EXISTING:TRAVEL_EW": 0.356
  },
- "avg_pairwise_corr_basket": 0.30657551855480164,
- "basket_vol_5y_gbp": 0.14695573746431967,
+ "avg_pairwise_corr_basket": 0.3328417541479352,
+ "basket_vol_5y_gbp": 0.14778831671696926,
  "travel_vol_5y_gbp": 0.30920676647123896
 }

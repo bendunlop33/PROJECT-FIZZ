@@ -1,0 +1,72 @@
+{
+ "id": "WTW",
+ "name": "Willis Towers Watson",
+ "status": "PROPOSED (not purchased; requires investor approval)",
+ "record_created": "2026-11-12",
+ "original_rationale": "Global broker/consultant; verified 4-8% organic 2019-25 with no negative year; ~5.6% FCF yield; cheaper than MMC/AJG. Provides non-healthcare, non-consumer diversification. Risks: P&C rate softening, AI-driven commission pressure, lower quality score.",
+ "entry_valuation": {
+  "price": 334.18,
+  "price_ccy": "USD",
+  "date": "2026-11-11",
+  "ev_ebitdaal": 12.9,
+  "ev_ebitda_provider": 13.1,
+  "fcf_yield": 0.0565,
+  "pe": 19.7,
+  "buy_below_9pct_irr": 344.12,
+  "fair_max_7pct_irr": 377.5
+ },
+ "measurable_expectations": [
+  "Organic growth >=4% p.a. through softer P&C pricing",
+  "Adjusted operating margin >=24% (2026) and rising",
+  "Client retention stable; producer attrition low",
+  "FCF conversion >=100% of adjusted net income; buybacks below intrinsic value"
+ ],
+ "scenarios_local": {
+  "5y": {
+   "bear": 0.0367,
+   "base": 0.0964,
+   "bull": 0.1164
+  },
+  "3y": {
+   "bear": 0.0099,
+   "base": 0.1017,
+   "bull": 0.1257
+  },
+  "base_growth": 0.05,
+  "base_growth_source": "50/50 median reported organic 2022+ and latest full year (FACT, verified)"
+ },
+ "principal_risks": [
+  "Lowest organic growth of the global three (4% Q3-26).",
+  "HWC exposed to benefits-admin automation and Middle East disruption; BD&O implementation delays.",
+  "Strategic stop-start (Willis Re sold 2021, re-entered 2026) raises execution risk."
+ ],
+ "thesis_break_conditions": [
+  "Organic growth < 3% for a full year.",
+  "Adjusted operating margin fails to expand in 2027.",
+  "FCF < $1.4bn in 2027."
+ ],
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C"
+ },
+ "evidence_confidence": 47.0,
+ "source_records": [
+  "research/qual/WTW.json",
+  "research/verification/WTW.json",
+  "research/challenge/challenge_report.md"
+ ],
+ "subsequent_developments": [],
+ "decisions": [
+  {
+   "date": "2026-11-12",
+   "decision": "Proposed for basket (equal-weight baseline)",
+   "by": "lead agent",
+   "approved_by_investor": false
+  }
+ ]
+}

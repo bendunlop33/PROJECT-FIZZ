@@ -1,0 +1,6 @@
+date,id,action,status,rationale,approved_by
+2026-11-12,COLO,propose_buy_satellite,proposed,see monitoring/theses/COLO.json,PENDING
+2026-11-12,BVI,propose_buy_satellite,proposed,see monitoring/theses/BVI.json,PENDING
+2026-11-12,CPG,propose_buy_satellite,proposed,see monitoring/theses/CPG.json,PENDING
+2026-11-12,STE,propose_buy_satellite,proposed,see monitoring/theses/STE.json,PENDING
+2026-11-12,WTW,propose_buy_satellite,proposed,see monitoring/theses/WTW.json,PENDING

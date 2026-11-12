@@ -1,0 +1,26 @@
+id,yahoo,role,news_query,competitor_of
+COLO,COLO-B.CO,basket,Coloplast,
+BVI,BVI.PA,basket,Bureau Veritas,
+CPG,CPG.L,basket,Compass Group,
+STE,STE,basket,STERIS,
+ALC,ALC.SW,basket,Alcon,
+WTW,WTW,basket,Willis Towers Watson,
+MMC,MRSH,shortlist,Marsh McLennan (Marsh),
+SGSN,SGSN.SW,shortlist,SGS,
+HLN,HLN.L,shortlist,Haleon,
+ISS,ISS.CO,shortlist,ISS A/S,
+VRSK,VRSK,shortlist,Verisk Analytics,
+HLMA,HLMA.L,shortlist,Halma,
+AON,AON,shortlist,Aon,
+ROL,ROL,shortlist,Rollins,
+CTAS,CTAS,shortlist,Cintas,
+WM,WM,shortlist,WM (Waste Management),
+OR,OR.PA,shortlist,L'Oreal,
+EL,EL.PA,shortlist,EssilorLuxottica,
+ELIS,ELIS.PA,shortlist,Elis,
+BN,BN.PA,shortlist,Danone,
+ITRK,ITRK.L,competitor,Intertek,BVI
+SW,SW.PA,competitor,Sodexo,CPG
+ARMK,ARMK,competitor,Aramark,CPG
+COO,COO,competitor,Cooper Companies,ALC
+CTEC,CTEC.L,competitor,Convatec,COLO

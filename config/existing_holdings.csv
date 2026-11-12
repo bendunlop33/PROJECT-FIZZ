@@ -3,4 +3,5 @@ ACCOR,AC.PA,Accor,Disclosed travel holding (weight unknown)
 TUI,TUI1.DE,TUI AG (Xetra line),Disclosed travel holding; also listed LSE (TUI.L) - Xetra used for history continuity
 JET2,JET2.L,Jet2,Disclosed travel holding (weight unknown)
 FTSE100,CUKX.L,FTSE 100 proxy (UK index holdings),Disclosed UK/global index exposure - proxy
-GLOBAL,^SP500TR,S&P 500 TR (global index proxy),Disclosed global index exposure - proxy (global index weights unknown)
+GLOBAL,SWDA.L,iShares Core MSCI World (Acc) - global index proxy,Disclosed global index exposure - MSCI World proxy (actual fund unknown)
+US500,^SP500TR,S&P 500 TR,US index reference

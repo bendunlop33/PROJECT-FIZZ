@@ -1,0 +1,8 @@
+id,g_base_override,rationale,source
+COLO,0.060,"Company cut 2030 ambition to 5-7% organic and guided FY26/27 5-7% (3-Nov-2026); Q4 FY25/26 organic 5%. Midpoint used.",research/challenge/challenge_report.md; research/verification/COLO.json
+MMC,0.045,"2026 underlying growth guided 'similar to 2025' (~4%); 9M-26 5%; reinsurance -6% and property rates -10% in Q3; 2022-23 hard-market years excluded from run-rate.",research/challenge/challenge_report.md; research/verification/MMC.json
+STE,0.065,"FY2027 constant-currency organic guidance 6-7% (AST cut to 6-7% on 4-Nov-2026). Midpoint.",research/verification/STE.json; research/challenge/challenge_report.md
+CPG,0.070,"Company guides ~7% organic FY26 and mid-to-high single digit medium term; FY22-23 post-COVID reopening years (37.5%, 18.8%) excluded as non-representative.",research/verification/CPG.json; research/challenge/challenge_report.md
+WM,0.0425,"No disclosed organic series; internal growth ex energy surcharges/mandated fees ~4-4.5% (C&D volume ~flat, yield 3.4%).",research/challenge/challenge_report.md
+BVI,0.0625,"FY2024 10.2% confirmed; FY2023 recall-sourced; H1-2026 organic 5.0% (Q2 5.5%); LEAP|28 mid-to-high single digit target. Blend pending verification.",research/challenge/challenge_report.md
+ALC,0.050,"Q3-2026 call (11-Nov-2026): FY26 ~6% reaffirmed but aggregate eye-care markets now ~3%; 2027 guided only as above-market growth; Neurotech (75-100bp) is acquired, excluded. 5% = market + ~2pp share/premiumisation.",PitchBook transcript Alcon Q3 2026 (2026-11-11) https://my.pitchbook.com/research-center/report/a0228bbc-f04c-37ce-827a-ce5014f48ebe

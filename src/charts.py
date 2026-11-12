@@ -127,12 +127,16 @@ def fcf_ps_chart(ids, path):
         ax.set_visible(False)
     for ax, cid in zip(axes.flat, ids):
         g = h[h.id == cid].sort_values("period_end")
-        ax.bar(g.period_end.dt.year.astype(str), g["fcf_ps"], color=PAL[0], width=0.6)
-        ax.bar(g.period_end.dt.year.astype(str), g["ebitda_ps"] * 0, color=PAL[0])
+        yrs = g.period_end.dt.year.astype(str)
+        ax.set_axisbelow(True)
+        ax.bar(yrs, g["fcf_ps"].fillna(0), color=PAL[0], width=0.6)
+        for x_, v_ in zip(yrs, g["fcf_ps"]):
+            if pd.isna(v_):
+                ax.text(x_, 0, "n/d", ha="center", va="bottom", fontsize=7, color=INK2)
         ax.set_title(f"{cid} - FCF/share", loc="left", fontsize=8, color=INK)
         ax.axhline(0, color="#c9c8c3", lw=0.8)
     _finish(fig, "Standardised post-lease FCF per diluted share, by fiscal year (reporting currency)",
-            "OCF - capex - lease principal (IFRS proxy where undisclosed). Acquisitions excluded; SBC not added back. Source: Yahoo annual statements (~4 years).", path)
+            "OCF - capex - lease principal (IFRS proxy where undisclosed). Acquisitions excluded; SBC not added back. Source: Yahoo annual statements (~4 years). n/d = component not disclosed by provider for that year.", path)
 
 
 def main(shortlist=None):

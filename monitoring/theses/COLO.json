@@ -1,0 +1,72 @@
+{
+ "id": "COLO",
+ "name": "Coloplast",
+ "status": "PROPOSED (not purchased; requires investor approval)",
+ "record_created": "2026-11-12",
+ "original_rationale": "Chronic-care consumables; verified 6-8% organic every year 2018-25; base uses guidance midpoint 6% and normalised FCF; trades ~15x EV/EBITDAaL vs ~26x 10y median, so no re-rating is assumed. Risks: lowered 2030 ambition, Kerecis impairment, foundation control.",
+ "entry_valuation": {
+  "price": 493.2,
+  "price_ccy": "DKK",
+  "date": "2026-11-11",
+  "ev_ebitdaal": 15.1,
+  "ev_ebitda_provider": 14.8,
+  "fcf_yield": 0.0498,
+  "pe": 36.2,
+  "buy_below_9pct_irr": 543.38,
+  "fair_max_7pct_irr": 596.09
+ },
+ "measurable_expectations": [
+  "Organic growth >=5% p.a. (FY26/27 guide 5-7%)",
+  "Reported EBIT margin recovers toward >=27% by FY27/28",
+  "Kerecis (wound biologics) grows >=20% with no further impairment",
+  "Standardised post-lease FCF >= DKK5.0bn p.a."
+ ],
+ "scenarios_local": {
+  "5y": {
+   "bear": 0.0495,
+   "base": 0.1113,
+   "bull": 0.1315
+  },
+  "3y": {
+   "bear": 0.0221,
+   "base": 0.1166,
+   "bull": 0.1406
+  },
+  "base_growth": 0.06,
+  "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: Company cut 2030 ambition to 5-7% organic and guided FY26/27 5-7% (3-Nov-2026); Q4 FY25/26 organic 5%. Midpoint used."
+ },
+ "principal_risks": [
+  "Margin reset from ~28% to ~25% and weak acquisition returns (Kerecis)",
+  "US reimbursement risks: DMEPOS competitive bidding and skin-substitute payment cuts",
+  "CEO change adds execution risk"
+ ],
+ "thesis_break_conditions": [
+  "Organic growth below 5% in FY26/27",
+  "EBIT margin below 24%",
+  "CMS competitive bidding implemented with >5% US price cuts"
+ ],
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C"
+ },
+ "evidence_confidence": 54.0,
+ "source_records": [
+  "research/qual/COLO.json",
+  "research/verification/COLO.json",
+  "research/challenge/challenge_report.md"
+ ],
+ "subsequent_developments": [],
+ "decisions": [
+  {
+   "date": "2026-11-12",
+   "decision": "Proposed for basket (equal-weight baseline)",
+   "by": "lead agent",
+   "approved_by_investor": false
+  }
+ ]
+}

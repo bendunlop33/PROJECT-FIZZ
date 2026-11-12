@@ -1,0 +1,72 @@
+{
+ "id": "CPG",
+ "name": "Compass Group",
+ "status": "PROPOSED (not purchased; requires investor approval)",
+ "record_created": "2026-11-12",
+ "original_rationale": "Global contract caterer, ~70% North America; base 7% organic (guidance) and FCF after client investments (3.1% yield). Lowest bear case in basket (~1%) because no reliable own-multiple history - sized at lower end. Risks: wage inflation, US recession volumes.",
+ "entry_valuation": {
+  "price": 33.57,
+  "price_ccy": "USD",
+  "date": "2026-11-11",
+  "ev_ebitdaal": 15.4,
+  "ev_ebitda_provider": 14.7,
+  "fcf_yield": 0.0307,
+  "pe": 28.3,
+  "buy_below_9pct_irr": 35.46,
+  "fair_max_7pct_irr": 38.9
+ },
+ "measurable_expectations": [
+  "Organic growth >=6% p.a.; net new business >=4%",
+  "Client retention >=96%",
+  "Underlying operating margin >=7% (no erosion from wage inflation)",
+  "FCF after client investments grows with EBIT"
+ ],
+ "scenarios_local": {
+  "5y": {
+   "bear": 0.0088,
+   "base": 0.102,
+   "bull": 0.1311
+  },
+  "3y": {
+   "bear": -0.0405,
+   "base": 0.1051,
+   "bull": 0.1443
+  },
+  "base_growth": 0.07,
+  "base_growth_source": "GUIDANCE-ANCHORED OVERRIDE: Company guides ~7% organic FY26 and mid-to-high single digit medium term; FY22-23 post-COVID reopening years (37.5%, 18.8%) excluded as non-representative."
+ },
+ "principal_risks": [
+  "~68% North America (US-concentrated) and exposure to sports & leisure/B&I volumes.",
+  "Thin 7.2% margins: wage inflation or contract mobilisation slippage hits profit quickly.",
+  "Pass-through contract structures limit retention of productivity gains; premium multiple vs peers."
+ ],
+ "thesis_break_conditions": [
+  "Retention below 95% or NNB below 3% for a full year.",
+  "Organic growth below 5% in FY2027.",
+  "Underlying margin decline >30bp in a year."
+ ],
+ "gates": {
+  "G1": "C",
+  "G2": "C",
+  "G3": "C",
+  "G4": "C",
+  "G5": "C",
+  "G6": "C",
+  "G7": "C"
+ },
+ "evidence_confidence": 37.0,
+ "source_records": [
+  "research/qual/CPG.json",
+  "research/verification/CPG.json",
+  "research/challenge/challenge_report.md"
+ ],
+ "subsequent_developments": [],
+ "decisions": [
+  {
+   "date": "2026-11-12",
+   "decision": "Proposed for basket (equal-weight baseline)",
+   "by": "lead agent",
+   "approved_by_investor": false
+  }
+ ]
+}

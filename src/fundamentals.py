@@ -84,6 +84,8 @@ def snapshot(yf: YF, u: pd.DataFrame, prices, pbl=None) -> pd.DataFrame:
     if sop.exists():
         so = pd.read_csv(sop)
         share_ov = {x.id: x.to_dict() for _, x in so.dropna(subset=["economic_shares_m"]).iterrows()}
+    fop = PROC.parent.parent / "config" / "fcf_ev_overrides.csv"
+    fcf_ov = {x.id: x.to_dict() for _, x in pd.read_csv(fop).iterrows()} if fop.exists() else {}
     cfp = PROC.parent.parent / "research" / "ifrs_cashflow_classification.csv"
     cfclass = {}
     if cfp.exists():
@@ -156,6 +158,12 @@ def snapshot(yf: YF, u: pd.DataFrame, prices, pbl=None) -> pd.DataFrame:
             if pd.notna(dev) and abs(dev) > 0.15:
                 notes.append(f"EBITDA differs from PitchBook by {dev:+.0%} (period {pbk['period_end'].date()})")
         unus = rec["unusual_items"] if pd.notna(rec["unusual_items"]) else 0.0
+        ua = yf.series(r.id, "TotalUnusualItems", "annual")["value"].tail(3) / M
+        eb = yf.series(r.id, "EBITDA", "annual")["value"].tail(3) / M
+        recurring = (ua.abs() > 0.01 * eb.abs().reindex(ua.index).fillna(eb.abs().mean())).sum() >= 2 if len(ua) else False
+        if recurring and unus != 0:
+            notes.append("provider 'unusual items' recur (>=2 of last 3 FY) - not added back")
+            unus = 0.0
         rec["ebitda_adj"] = rec["ebitda"] - unus  # add back charges Yahoo classifies as unusual
         if pd.isna(rec["capex"]) and pd.notna(pd.to_numeric(cfclass.get(r.id, {}).get("capex"), errors="coerce")):
             rec["capex"] = -abs(float(cfclass[r.id]["capex"])); notes.append("capex from latest annual report (IFRS table), Yahoo missing")
@@ -211,6 +219,14 @@ def snapshot(yf: YF, u: pd.DataFrame, prices, pbl=None) -> pd.DataFrame:
             notes.append(f"interest paid ({abs(float(cf['interest_paid'])):.0f}) classified in financing; deducted")
             if pd.notna(cf.get("interest_received")) and str(cf.get("interest_received_section", "")).lower().startswith(("financ", "invest")):
                 rec["fcf_std"] += abs(float(cf["interest_received"]))
+        if r.id in fcf_ov:
+            o = fcf_ov[r.id]
+            if pd.notna(o.get("fcf_std_override")):
+                rec["fcf_std"] = float(o["fcf_std_override"]); notes.append(f"FCF overridden to verified {o['period']} value (config/fcf_ev_overrides.csv)")
+            if pd.notna(o.get("debt_like_add")) and float(o["debt_like_add"]) != 0:
+                rec["net_debt_pre_lease"] += float(o["debt_like_add"]); rec["net_debt_incl_lease"] += float(o["debt_like_add"])
+                rec["ev_post_lease"] += float(o["debt_like_add"]); rec["ev_provider_basis"] += float(o["debt_like_add"])
+                notes.append(f"debt-like item {float(o['debt_like_add']):.0f} added to net debt/EV")
         rec["recon_notes"] = "; ".join(notes)
         rec["fcf_std_less_sbc"] = rec["fcf_std"] - (rec["sbc"] if pd.notna(rec["sbc"]) else 0.0)
         rec["capex_pct_rev"] = -capex / rec["revenue"] if rec["revenue"] else np.nan

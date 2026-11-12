@@ -52,11 +52,15 @@ def geo(cid):
     vf = QUAL.parent / "verification" / f"{cid}.json"
     if vf.exists():
         vg = (json.loads(vf.read_text()).get("geography") or {})
-        if any(isinstance(vg.get(k), (int, float)) for k in ("north_america_pct", "europe_pct")):
-            g = {**g, **{k: vg.get(k) for k in ("north_america_pct", "europe_pct", "uk_pct", "china_pct", "largest_country", "largest_country_pct")},
-                 "other_pct": vg.get("em_other_pct"), "em_pct": vg.get("em_other_pct")}
+        upd = {k: vg.get(k) for k in ("north_america_pct", "europe_pct", "uk_pct", "china_pct", "largest_country", "largest_country_pct") if vg.get(k) not in (None, "")}
+        if isinstance(vg.get("em_other_pct"), (int, float)):
+            upd.update({"other_pct": vg["em_other_pct"], "em_pct": vg["em_other_pct"]})
+        g = {**g, **upd}
     f = lambda k: g.get(k) if isinstance(g.get(k), (int, float)) else np.nan
-    return {"na": f("north_america_pct"), "eu": f("europe_pct"), "uk": f("uk_pct"), "other": f("other_pct"),
+    na = f("north_america_pct")
+    if pd.isna(na) and "United States" in str(g.get("largest_country", "")) and isinstance(g.get("largest_country_pct"), (int, float)):
+        na = g["largest_country_pct"]  # US share used as lower-bound proxy for North America (labelled in report)
+    return {"na": na, "eu": f("europe_pct"), "uk": f("uk_pct"), "other": f("other_pct"),
             "china": f("china_pct"), "em": f("em_pct"), "largest_country": g.get("largest_country"),
             "largest_country_pct": f("largest_country_pct")}
 
@@ -73,7 +77,7 @@ def monthly_returns(ids, u):
         t = tr_index(ymap[cid], p2, d2)
         ser[cid] = t["tr_gbp"]
     for _, e in eh.iterrows():
-        t = tr_index(e.yahoo, p2, d2, use_adjclose=e.yahoo in ("CUKX.L", "^SP500TR"))
+        t = tr_index(e.yahoo, p2, d2, use_adjclose=e.yahoo in ("CUKX.L", "^SP500TR", "SWDA.L"))
         ser["EXISTING:" + e.key] = t["tr_gbp"]
     m = pd.DataFrame({k: v.resample("ME").last() for k, v in ser.items()})
     m = m[m.index >= VALUATION_DATE - pd.DateOffset(years=5)]
@@ -96,10 +100,13 @@ def stress(S, ids, w):
         ebitda_gfc = p2t(gfc["ebitda"]) if "ebitda" in gfc else np.nan
         cov = g[(g.index >= "2019-12-31") & (g.index <= "2021-06-30")]
         ebitda_covid = p2t(cov["ebitda"]) if "ebitda" in cov else np.nan
-        col = f"{cid}|tr_gbp"
-        s = mret[col].dropna() if col in mret else pd.Series(dtype=float)
-        dd2020 = s[(s.index >= "2020-01-31") & (s.index <= "2020-12-31")].min() / s.asof(pd.Timestamp("2020-01-31")) - 1 if len(s) and s.index[0] <= pd.Timestamp("2020-01-31") else np.nan
-        dd2022 = s[(s.index >= "2021-12-31") & (s.index <= "2022-12-31")].min() / s.asof(pd.Timestamp("2021-12-31")) - 1 if len(s) and s.index[0] <= pd.Timestamp("2021-12-31") else np.nan
+        ymap = universe().set_index("id")["yahoo"].to_dict()
+        daily = tr_index(ymap[cid], *load_prices())["tr_gbp"]
+        def pk2tr(x, a, b):
+            w_ = x[(x.index >= a) & (x.index <= b)]
+            return float((w_ / w_.cummax() - 1).min()) if len(w_) > 20 and x.index[0] <= pd.Timestamp(a) else np.nan
+        dd2020 = pk2tr(daily, "2020-01-01", "2020-12-31")
+        dd2022 = pk2tr(daily, "2022-01-01", "2022-12-31")
         nd = r.net_debt_pre_lease if pd.notna(r.net_debt_pre_lease) else 0
         rate_hit = max(nd, 0) * 0.5 * 0.02 / r.fcf_std if pd.notna(r.fcf_std) and r.fcf_std > 0 else np.nan
         non_gbp = 0.0 if r.rep_ccy == "GBP" else 1.0
@@ -147,7 +154,9 @@ def main():
         ex[col] = B.groupby(col)["weight"].sum().sort_values(ascending=False)
     gq = pd.DataFrame({i: geo(i) for i in basket}).T
     gnum = gq[["na", "eu", "uk", "other", "china", "em"]].apply(pd.to_numeric, errors="coerce")
-    geo_w = gnum.mul(pd.Series(w), axis=0).sum() / pd.Series(w)[gnum.notna().any(axis=1)].sum()
+    ws_ = pd.Series(w)
+    geo_w = pd.Series({c: (gnum[c] * ws_).sum() / ws_[gnum[c].notna()].sum() if gnum[c].notna().any() else np.nan for c in gnum.columns})
+    geo_w["coverage"] = ", ".join(f"{c}:{int(gnum[c].notna().sum())}/{len(gnum)}" for c in gnum.columns)
     ai = B.set_index("id")[["q_I1", "q_I2", "q_I3", "q_I4"]]
     st, st_w = stress(S, basket, w)
     # correlations: basket names vs each other and vs disclosed existing holdings (monthly GBP TR, 5y)
@@ -158,7 +167,7 @@ def main():
     travel = mr[[c for c in mr.columns if c in ("EXISTING:ACCOR", "EXISTING:TUI", "EXISTING:JET2")]].mean(axis=1)
     rel["EXISTING:TRAVEL_EW"] = bsk.corr(travel)
     out = {"basket": basket, "shortlist": short, "mechanical_proposal": prop, "weights": w,
-           "exposures": {k: v.round(4).to_dict() for k, v in ex.items()}, "geo_weighted_pct": geo_w.round(1).to_dict(),
+           "exposures": {k: v.round(4).to_dict() for k, v in ex.items()}, "geo_weighted_pct": {k: (round(v, 1) if isinstance(v, float) else v) for k, v in geo_w.items()},
            "stress_weighted": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in st_w.items()}, "basket_corr_with_existing": {k: round(v, 3) for k, v in rel.items()},
            "avg_pairwise_corr_basket": float(corr.loc[basket, basket].where(~np.eye(len(basket), dtype=bool)).stack().mean()) if len(basket) > 1 else np.nan,
            "basket_vol_5y_gbp": float(bsk.std() * np.sqrt(12)), "travel_vol_5y_gbp": float(travel.std() * np.sqrt(12))}

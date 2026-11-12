@@ -1,0 +1,5 @@
+id,fcf_std_override,debt_like_add,period,evidence,source
+SCHP,29,300,FY2025,Verified: OCF EUR226m is pre-interest and includes ~EUR31m one-off factoring/collection inflow; interest EUR34m and leases EUR37m in financing; ~EUR20m concession capex in receivables -> true FCF ~EUR29m (~-2m ex one-off). EUR300m hybrid booked as equity treated as debt-like.,research/verification/SCHP.json
+BFSA,91,0,FY2025,Verified: interest EUR34m in financing; true FCF ~EUR91m vs EUR136m standardised before adjustment.,research/verification/BFSA.json
+CPG,1751,0,TTM,"Deduct purchases of contract fulfilment assets (client investments, ~USD520m TTM est. from FY25 USD492m) which Compass treats as capex; Yahoo capex excludes them while EBITDA bears their amortisation.",research/challenge/qc_findings.csv; Compass FY25 annual report
+COLO,5540,0,avg FY24/25-FY25/26,"FY25/26 OCF includes +DKK355m working-capital release vs -850 to -1,030 in prior years; normalised as 2-year average of standardised FCF (4,937; 6,147).",research/challenge/qc_findings.csv; research/ifrs_cashflow_classification.csv

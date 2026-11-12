@@ -1,0 +1,21 @@
+id,decision,baseline_weight,recommended_range,rationale
+COLO,basket,0.2,15-25%,"Chronic-care consumables; verified 6-8% organic every year 2018-25; base uses guidance midpoint 6% and normalised FCF; trades ~15x EV/EBITDAaL vs ~26x 10y median, so no re-rating is assumed. Risks: lowered 2030 ambition, Kerecis impairment, foundation control."
+BVI,basket,0.2,15-25%,"TIC network: regulatory/mandatory demand, diversified end markets, ~5% post-lease FCF yield; base 6.25% organic (blend of verified 10.2% FY24 and 5% H1-26). Risks: cyclic commodity/industrial segments, Wendel stake overhang."
+CPG,basket,0.2,12-20%,"Global contract caterer, ~70% North America; base 7% organic (guidance) and FCF after client investments (3.1% yield). Lowest bear case in basket (~1%) because no reliable own-multiple history - sized at lower end. Risks: wage inflation, US recession volumes."
+STE,basket,0.2,15-22%,"Sterilisation consumables/services; FY27 guidance 6-7% organic (6.5% used); recurring hospital/biopharma demand. Risks: US healthcare utilisation, EtO regulation/litigation, AST cut."
+ALC,shortlist,,,"FIRST RESERVE: after Q3-26 (markets ~3%, IOL competition) base growth cut to 5%; base 5y IRR ~9.0% = hurdle, bear ~3%. Add only below the 9%-IRR price (Scenarios) or on evidence that Vivity Pro restores IOL growth."
+WTW,basket,0.2,12-20%,"Global broker/consultant; verified 4-8% organic 2019-25 with no negative year; ~5.6% FCF yield; cheaper than MMC/AJG. Provides non-healthcare, non-consumer diversification. Risks: P&C rate softening, AI-driven commission pressure, lower quality score."
+MMC,shortlist,,,Reserve: base IRR 8.5% after guidance-anchored 4.5% organic - below 9% working hurdle; buy below ~USD195 (challenge estimate) / see Scenarios buy-below.
+SGSN,shortlist,,,"Reserve: TIC peer, base ~9.9%; second TIC name would concentrate the same factor as BVI."
+HLN,shortlist,,,"Reserve: consumer health, base ~9.4%; China ~9% of revenue; would be a 4th healthcare name."
+ISS,shortlist,,,"Value watch: highest base IRR (~14.5%) but quality score 58 (contract losses, FM commoditisation) - consider small position only after verified evidence of OneISS margin delivery."
+VRSK,shortlist,,,Gate B: AccuLynx debt-funded deal pending (pro-forma ~3.6x). Reconsider once deleveraging path is evident; AI-substitution debate requires monitoring.
+HLMA,shortlist,,,Gate B: one hyperscaler customer ~20% of revenue (AI-capex dependence). Reconsider if concentration falls below 15%.
+AON,shortlist,,,Gate B: post-USI leverage ~4.5x.
+ROL,shortlist,,,Quality but base IRR ~9% at 22x and AI-search lead-generation pressure; buy-below level in Scenarios.
+CTAS,shortlist,,,Highest quality score; base IRR ~6% at ~29x EV/EBITDAaL - entry valuation not met; UniFirst antitrust/integration risk.
+WM,shortlist,,,Quality defensive; base IRR ~7% after guidance-consistent 4.25% internal growth - below hurdle.
+OR,shortlist,,,Top-quality beauty; base IRR ~8% - below hurdle at current price.
+EL,shortlist,,,Lenses/eyewear; base ~9.4%; Meta smart-glasses tie-up adds AI-hardware exposure to monitor.
+ELIS,shortlist,,,Textile rental; base ~9.6% but bear ~0% and low evidence confidence.
+BN,shortlist,,,"Staples: volume recovery, base ~8.9%; EM exposure."
