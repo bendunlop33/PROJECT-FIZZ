@@ -366,13 +366,17 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       hidden.push({ sentence: tokens.plainText, reason: previous.reason, detail: LEANS_ON_HIDDEN_DETAIL });
       return tokens.segments.flatMap((a) => (a.kind === 'action' ? [{ kind: 'action_line' as const, ref: a.ref, actionId: a.actionId, rendered: a.rendered }] : []));
     }
-    for (const ref of tokens.unknownRefs) {
-      hidden.push({ sentence, reason: 'unknown_token', detail: `It cited a change (${ref}) that wasn't saved.` });
-    }
     const out: ReplyItem[] = [];
     const cited = new Set<string>();
     const actions = tokens.segments.filter((s) => s.kind === 'action');
     for (const a of actions) cited.add(a.actionId);
+    // (13 Nov, build 568) A sentence citing a change that wasn't saved is hidden whole, never shown with the
+    // citation cut out of it. With a card this turn, the sentence is about that card: it stays, the ref worded.
+    if (tokens.unknownRefs.length > 0 && !anyCardThisTurn(ledger)) {
+      for (const ref of tokens.unknownRefs) hidden.push({ sentence, reason: 'unknown_token', detail: `It cited a change (${ref}) that wasn't saved.` });
+      for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
+      return out;
+    }
 
     // Build 131: on a general turn where the app can build one, "I can't build workouts here" is false.
     // The sentence is hidden (listed in Why?) and the reply says, once, what works instead.
@@ -442,14 +446,12 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
         return out;
       }
       if (check.keep) {
-        for (const seg of tokens.segments) {
-          if (seg.kind === 'text') {
-            const t = seg.text.trim();
-            if (t.length > 0) out.push({ kind: 'sentence', text: t });
-          } else {
-            out.push({ kind: 'action_line', ref: seg.ref, actionId: seg.actionId, rendered: seg.rendered });
-          }
-        }
+        // (13 Nov, build 568: "…targeted work. gives them direct attention…") The sentence is shown whole, its
+        // tokens worded or dropped (`displayText`), never as the pieces between them: the app line isn't inline.
+        const line = (a: (typeof actions)[number]): ReplyItem => ({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
+        out.push(...actions.slice(0, tokens.leadingActions).map(line));
+        if (tokens.displayText.length > 0) out.push({ kind: 'sentence', text: tokens.displayText });
+        out.push(...actions.slice(tokens.leadingActions).map(line));
         return out;
       }
       // Dropped whole, whatever the reason; a wrong number is never rewritten into the model's sentence.
