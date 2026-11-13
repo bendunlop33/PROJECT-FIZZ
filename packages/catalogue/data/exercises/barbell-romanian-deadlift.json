@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-romanian-deadlift",
+  "tier": "rich",
+  "name": "Romanian deadlift",
+  "aliases": ["RDL", "Barbell RDL", "BB RDL", "Romanian DL", "Barbell Romanian deadlift"],
+  "family": "romanian_deadlift",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["hamstrings", "glutes"],
+  "secondaryMuscles": ["spinal_erectors", "adductors", "upper_back", "grip"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 150,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Start standing, bar taken from a rack or the floor",
+      "Feet hip width, hands just outside your thighs",
+      "Soften your knees and keep that bend",
+      "Shoulders back, brace before each rep"
+    ],
+    "execution": [
+      "Push your hips back, not down",
+      "Slide the bar down your thighs",
+      "Stop before your back starts to round",
+      "Squeeze your glutes to stand tall"
+    ],
+    "faults": [
+      "Don't bend your knees more on the way down",
+      "Don't round your lower back to reach lower",
+      "Don't let the bar drift away from your legs",
+      "Don't lean back at the top"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Your back position sets the depth, not the floor. A typical end point is the bar just below the knee; go only as low as your back stays flat.",
+      "Starting from a rack set at mid-thigh height saves pulling the bar off the floor for every set.",
+      "If you lift the bar from the floor, use a proper deadlift with a flat back to get it to the start position.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-romanian-deadlift", "name": "Dumbbell RDL", "reason": "Lighter and easier to set up; same hinge." },
+      { "key": "cable-pull-through", "name": "Cable pull-through", "reason": "Same hips-back pattern with the load pulling from behind; easier on the grip." },
+      { "key": "dowel-hip-hinge", "name": "Dowel hip hinge", "reason": "Teaches hips back with a flat back before adding load." }
+    ],
+    "progressions": [
+      { "key": "barbell-deficit-romanian-deadlift", "name": "Deficit RDL", "reason": "Standing on a low step adds range; only if the back stays flat at the bottom." },
+      { "key": "dumbbell-single-leg-romanian-deadlift", "name": "Single-leg RDL", "reason": "One side at a time, with more balance demand." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-romanian-deadlift", "name": "Dumbbell RDL", "reason": "Same hinge; load is each dumbbell, so numbers are not comparable." },
+      { "key": "cable-pull-through", "name": "Cable pull-through", "reason": "Hip hinge on a cable when no bar is free." },
+      { "key": "bodyweight-45-degree-back-extension", "name": "45° back extension", "reason": "Hinge for glutes and hamstrings with less load in the hands." },
+      { "key": "machine-seated-leg-curl", "name": "Seated leg curl", "reason": "Hamstrings with no hinge; a knee-bending movement instead." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view, figure facing right, camera at hip height, whole body in frame. No rack.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Standing tall with knees softly bent (about 15°). Arms straight, bar hanging against the upper thighs with an overhand grip just outside the legs. Shoulders back, spine neutral, feet flat about hip width.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "hipFlexion": 8, "kneeFlexion": 15, "ankleDorsiflexion": 7, "elbowFlexion": 0 }
+      },
+      {
+        "label": "Knee level",
+        "describe": "Hips pushed back and torso leaning forward. Bar sliding down the thighs to just above the knees. Knee bend unchanged, shins near vertical, spine still neutral.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 45, "hipFlexion": 58, "kneeFlexion": 18, "ankleDorsiflexion": 5, "elbowFlexion": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Torso about 15° above horizontal. Bar just below the knees, no lower than mid-shin. Back flat, neck in line with the spine. Shoulders slightly in front of the bar. Knee bend the same as at the start. Hips well behind the heels.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 75, "hipFlexion": 90, "kneeFlexion": 20, "ankleDorsiflexion": 5, "elbowFlexion": 0 }
+      }
+    ],
+    "barPath": "Vertical over mid-foot, touching or within about 1 cm of the legs; drift ≤ 3% of body height",
+    "tempo": { "downMs": 1600, "holdMs": 200, "upMs": 1200 },
+    "props": ["barbell_loaded"],
+    "emphasise": [
+      "Hips move back while the knee angle barely changes",
+      "Bar stays in contact with the legs",
+      "Back angle held flat from start to bottom"
+    ],
+    "doNotShow": ["Bar touching the floor", "Rounded back", "Leaning back at the top", "Knees bending more as the bar lowers (turning it into a squat)"]
+  },
+  "sources": [
+    {
+      "url": "https://catalystathletics.com/article/23/The-Romanian-Deadlift/",
+      "title": "Catalyst Athletics: The Romanian Deadlift (G. Rinaldi, 2007)",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[2-3]; cues.execution[0-3]; cues.faults[0-3]; guideBrief.keyPositions[0] (knee bend about 15°)"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8057707",
+      "title": "Andersen V et al. (2021) Comparison of muscle activity in three single-joint, hip extension exercises in resistance-trained women. J Sports Sci Med 20(2):181-187",
+      "checkedOn": "2026-10-09",
+      "supports": "primaryMuscles; cues.setup[1]; guideBrief.keyPositions[2] (torso near parallel, hip angle about 90°)"
+    },
+    {
+      "url": "https://www.nsca.com/education/articles/kinetic-select/romanian-deadlift-rdl/",
+      "title": "NSCA Kinetic Select: Romanian Deadlift (excerpt, Exercise Technique Manual for Resistance Training, 3rd ed.)",
+      "checkedOn": "2026-10-09",
+      "supports": "safety.notes[0] (lower to just below the knee or until the spine can't stay neutral); barPath (bar close to the body)",
+      "note": "The page returned 403 to the fetcher. Content was seen only through a search-result summary. Supporting source only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Bottom position uses the about 90° hip angle from Andersen 2021. Other angles are worked out geometrically, not measured."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "key": "jump-rope",
+  "tier": "rich",
+  "name": "Jump rope",
+  "aliases": ["Skipping", "Skipping rope", "Skip rope", "Rope skipping", "Jumping rope", "Jump rope skipping"],
+  "family": "jump_rope",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["calves"],
+  "secondaryMuscles": ["quads", "forearms"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Check the rope length: handles near your armpits",
+      "Elbows close to your sides",
+      "Rope behind your heels to start"
+    ],
+    "execution": [
+      "Turn the rope with your wrists",
+      "Small hops on the balls of your feet",
+      "Land softly, knees slightly bent",
+      "Stay tall and keep a steady rhythm"
+    ],
+    "faults": [
+      "Don't jump high",
+      "Don't swing from the shoulders",
+      "Don't land flat-footed or stiff-legged"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Skip on a flat surface with some give, such as a gym floor or mat, in supportive shoes, with space overhead and around you.",
+      "Build up the total time gradually; the calves and Achilles area take time to get used to many small landings.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the shin, ankle or heel that builds",
+      "Chest pain, faintness or unusual breathlessness",
+      "Dizziness"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Shorter intervals", "reason": "Short rounds with rests while timing and calf tolerance build." },
+      { "key": null, "name": "Rope-free hops", "reason": "Practise the hop rhythm without the rope." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Alternate-foot step", "reason": "Running-style step over the rope; faster rhythm." },
+      { "key": null, "name": "Double-unders", "reason": "Rope passes twice per jump; much higher demand." },
+      { "key": null, "name": "Longer rounds", "reason": "Add time once landings stay soft." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-pogo-jump", "name": "Pogo jumps", "reason": "Same quick ankle bounces with no rope." },
+      { "key": "air-bike", "name": "Air bike", "reason": "Conditioning with no impact." },
+      { "key": "rowing-erg", "name": "Rowing machine", "reason": "Conditioning with no impact." },
+      { "key": "battle-ropes", "name": "Battle ropes", "reason": "High-rate conditioning with the arms." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right. The rope is drawn as an arc that passes under the feet at the low point of each hop.",
+    "keyPositions": [
+      {
+        "label": "Landing",
+        "describe": "On the balls of the feet, heels just off the floor, knees slightly bent. Elbows close to the sides, hands at hip height. Rope arc behind and above.",
+        "approxAnglesDeg": { "kneeFlexion": 15, "ankleDorsiflexion": -15, "elbowFlexion": 70 }
+      },
+      {
+        "label": "Airborne",
+        "describe": "Feet a few centimetres off the floor, legs nearly straight, toes pointed down. Rope passing under the feet.",
+        "approxAnglesDeg": { "kneeFlexion": 5, "ankleDorsiflexion": -30, "elbowFlexion": 70 }
+      }
+    ],
+    "ikHints": ["Hands circle in small loops at hip height", "Rope ends fixed to the handles"],
+    "tempo": { "downMs": 200, "holdMs": 50, "upMs": 200 },
+    "props": ["jump_rope"],
+    "emphasise": [
+      "Small, quick hops",
+      "Wrists turn the rope",
+      "Soft landings on the balls of the feet"
+    ],
+    "doNotShow": ["High jumps", "Big arm circles", "Flat-footed landings"]
+  },
+  "sources": [
+    {
+      "url": "https://simplifaster.com/articles/skipping-rope/",
+      "title": "SimpliFaster: A case for skipping rope in sports training",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (quick, elastic ankle work); measurement (timed rounds); variations.progressions[0-1]",
+      "note": "Coaching article; seen through a search listing."
+    },
+    {
+      "url": "https://library.crossfit.com/premium/pdf/62_07_Jump_Rope_Basics.pdf",
+      "title": "CrossFit Journal: Jump rope basics",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1]; cues.execution[0-3]; safety.notes[1] (build capacity gradually)",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "compatibleEquipment",
+      "note": "No equipment kind exists for a skipping rope; 'bodyweight_station' is used as the nearest kind (no load recorded)."
+    },
+    {
+      "field": "measurement",
+      "note": "'duration' assumes Ben logs rounds by time; some people log skip counts, which would be 'reps'."
+    },
+    {
+      "field": "guideBrief.tempo",
+      "note": "One hop cycle is about half a second; slowed timings may be needed for readability."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative ankleDorsiflexion means the ankle is pointed."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,129 @@
+{
+  "specVersion": 1,
+  "file": {
+    "delimiter": ",",
+    "headerLine": 1,
+    "decimal": "."
+  },
+  "layout": {
+    "kind": "row_per_set",
+    "setOrder": {
+      "header": "set_index",
+      "index": 7
+    }
+  },
+  "workoutKey": [],
+  "date": {
+    "column": {
+      "header": "start_time",
+      "index": 1
+    },
+    "format": "D MMM YYYY, HH:mm"
+  },
+  "exercise": {
+    "header": "exercise_title",
+    "index": 4
+  },
+  "load": {
+    "column": {
+      "header": "weight_lbs",
+      "index": 9
+    },
+    "unit": {
+      "kind": "header_token",
+      "column": {
+        "header": "weight_lbs",
+        "index": 9
+      },
+      "token": "lbs"
+    }
+  },
+  "reps": {
+    "header": "reps",
+    "index": 10
+  },
+  "setType": {
+    "column": {
+      "header": "set_type",
+      "index": 8
+    },
+    "values": [
+      {
+        "cell": "warmup",
+        "meaning": "warmup"
+      },
+      {
+        "cell": "normal",
+        "meaning": "working"
+      },
+      {
+        "cell": "failure",
+        "meaning": "failure"
+      },
+      {
+        "cell": "dropset",
+        "meaning": "drop"
+      }
+    ]
+  },
+  "rpe": {
+    "header": "rpe",
+    "index": 13
+  },
+  "notes": [
+    {
+      "header": "description",
+      "index": 3
+    },
+    {
+      "header": "exercise_notes",
+      "index": 6
+    }
+  ],
+  "unmapped": [
+    {
+      "header": "title",
+      "index": 0
+    },
+    {
+      "header": "end_time",
+      "index": 2
+    },
+    {
+      "header": "superset_id",
+      "index": 5
+    },
+    {
+      "header": "distance_miles",
+      "index": 11
+    },
+    {
+      "header": "duration_seconds",
+      "index": 12
+    }
+  ],
+  "selfCheck": [
+    {
+      "line": 3,
+      "date": "2025-12-22",
+      "exercise": "Bench Press (Barbell)",
+      "load": 185,
+      "reps": 8
+    },
+    {
+      "line": 9,
+      "date": "2025-12-24",
+      "exercise": "Squat (Barbell)",
+      "load": 225,
+      "reps": 5
+    },
+    {
+      "line": 12,
+      "date": "2025-12-27",
+      "exercise": "Squat (Barbell)",
+      "load": 230,
+      "reps": 5
+    }
+  ],
+  "unsupported": null
+}

@@ -1,0 +1,178 @@
+import type { PlanBuilderAnswers } from '@fizz/schemas';
+import { kitAbove, kitBelow, kitDown, pbBackOff, pbLowerBackOff, pbMainLine, type PlanKit } from './loads';
+import type { PbExercise } from './engine';
+import { PB_EFFORT, PB_FOCUS_GAIN } from './tables';
+
+/**
+ * Weekly progression across the plan (§2 "Weekly progression and the week strip"; the prototype's `atWeek`). Pure.
+ * These are planned targets: in the app each week follows what Ben actually lifted (history-target rules).
+ *
+ * - Barbell (and stack) main lifts rise at the effort's weekly rate × the focus's multiplier, snapped down to an
+ *   achievable load; dumbbell main lifts add reps first (6 → 7 → 8), then the next dumbbell. Never past the item's
+ *   max (rule 4): at the max the load holds.
+ * - Accessories: double progression (a rep a week to the top of the range, then one achievable step and back to the
+ *   bottom).
+ * - Deload weeks (Standard: the last week of 4+; Push: every 4th; Maintain: none) take ~10 % off and one set fewer
+ *   per exercise, never below 2 (main lifts keep the top set, one back-off fewer; training-blocks §2.3 Q3, Ben 21 Oct,
+ *   which supersedes the prototype's "about a third of the sets"); back-offs come down by the same −10 % (D4, SS4,
+ *   HT8). Maintain holds weights. The Today drafter's deload (`deloadSetCount`) uses the same set count.
+ */
+
+/** (Ben, 21 Oct, Q3) A deload week's working sets: one fewer, never below 2 (or below what there was). */
+export function deloadSetCount(sets: number): number {
+  return Math.max(Math.min(2, sets), sets - 1);
+}
+
+/**
+ * The answers a week's deload reads: the effort's schedule, (Ben, 2 Nov) any lighter weeks the coach applied, and
+ * (LW1) the effort's deload weeks that a lighter week turned back into normal build weeks.
+ */
+export type PbDeloadAnswers = Pick<PlanBuilderAnswers, 'effort' | 'weeks'> & { lighterWeeks?: readonly number[] | undefined; skippedDeloads?: readonly number[] | undefined };
+
+/** The effort's own deload schedule (Standard: the last week of 4+; Push: every 4th; Maintain: none), before LW1. */
+export function pbIsPlannedDeload(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks'>, w: number): boolean {
+  if (w < 1 || w > a.weeks) return false;
+  if (a.effort === 'standard') return a.weeks >= 4 && w === a.weeks;
+  if (a.effort === 'push') return w % 4 === 0;
+  return false;
+}
+
+export function pbIsDeload(a: PbDeloadAnswers, w: number): boolean {
+  // (Ben, 2 Nov) A lighter week Ben asked for drafts as a deload week does (the approved shape, Q3).
+  if (a.lighterWeeks?.includes(w) === true && w <= a.weeks) return true;
+  // (LW1) A planned deload a lighter week came just before drafts as a normal build week.
+  if (a.skippedDeloads?.includes(w) === true) return false;
+  return pbIsPlannedDeload(a, w);
+}
+
+/** (LW1) Lighter week L and the next planned deload D come within this many weeks: D becomes a normal week. */
+export const PB_LIGHTER_SKIP_WITHIN = 3;
+
+/**
+ * (Ben, 2 Nov, LW1) The planned deload a lighter week in week `l` turns into a normal build week, or null: the next
+ * planned deload D after L, when D − L ≤ 3 (null too when D is skipped already). Forward only: a deload already done
+ * never goes, and later deloads stay.
+ */
+export function pbDeloadSkippedBy(a: PbDeloadAnswers, l: number): number | null {
+  for (let d = l + 1; d <= a.weeks; d += 1) {
+    if (!pbIsPlannedDeload(a, d)) continue;
+    return d - l <= PB_LIGHTER_SKIP_WITHIN && a.skippedDeloads?.includes(d) !== true ? d : null;
+  }
+  return null;
+}
+
+export function pbDeloadWeeks(a: PbDeloadAnswers): number[] {
+  return Array.from({ length: a.weeks }, (_, i) => i + 1).filter((w) => pbIsDeload(a, w));
+}
+
+/**
+ * (Ben, 2 Nov: the coach must be able to say why) The plan's weeks as the coach reads them (YOUR DATA
+ * `plan.inUse.weeks`): where the block is, its deload weeks, the lighter weeks Ben asked for, and each planned deload
+ * a lighter week turned into a normal week (LW1), with its reason. `now`: the block now (null: not known).
+ * `Week 4 of 6 · no planned deload weeks · lighter week (asked for): 3 · week 6 deload dropped: lighter week 3 was 3
+ * weeks before (LW1)`.
+ */
+export function pbWeeksCoachLine(a: PbDeloadAnswers, now: { week: number; done: boolean; leadIn: boolean } | null): string {
+  const parts: string[] = [];
+  if (now !== null) parts.push(now.done ? `Plan finished (${String(a.weeks)} weeks)` : now.leadIn ? `Lead-in week, then week 1 of ${String(a.weeks)}` : `Week ${String(now.week)} of ${String(a.weeks)}`);
+  else parts.push(`${String(a.weeks)} weeks`);
+  const lighter = (a.lighterWeeks ?? []).filter((w) => w >= 1 && w <= a.weeks).sort((x, y) => x - y);
+  const deloads = pbDeloadWeeks(a).filter((w) => !lighter.includes(w));
+  parts.push(deloads.length === 0 ? 'no planned deload weeks' : `planned deload ${deloads.length === 1 ? 'week' : 'weeks'}: ${deloads.join(', ')}`);
+  if (lighter.length > 0) parts.push(`${lighter.length === 1 ? 'lighter week' : 'lighter weeks'} (asked for): ${lighter.join(', ')}`);
+  for (const d of [...(a.skippedDeloads ?? [])].sort((x, y) => x - y)) {
+    const l = [...lighter].reverse().find((x) => x < d && d - x <= PB_LIGHTER_SKIP_WITHIN);
+    parts.push(l === undefined ? `week ${String(d)} deload dropped (LW1)` : `week ${String(d)} deload dropped: lighter week ${String(l)} was ${String(d - l)} ${d - l === 1 ? 'week' : 'weeks'} before (LW1)`);
+  }
+  return parts.join(' · ');
+}
+
+/** Progression weeks before week `w` (deloads don't count). */
+export function pbProgWeeks(a: PbDeloadAnswers, w: number): number {
+  let k = 0;
+  for (let i = 1; i < w; i += 1) if (!pbIsDeload(a, i)) k += 1;
+  return k;
+}
+
+export interface PbWeekTarget {
+  week: number;
+  deload: boolean;
+  sets: number;
+  reps: number;
+  /** Working load (main: the top set); null: bodyweight or none. */
+  load: number | null;
+  /** Main lifts: back-offs. */
+  backs: number;
+  back: number | null;
+  backReps: number;
+  /** `1 × 6 + 2 × 8 · 102.5 / 95`, or `3 × 10`. */
+  line: string;
+}
+
+/** One exercise's planned target in week `w` (1-based). `kit`: its item here, null for bodyweight. */
+export function pbAtWeek(a: PbDeloadAnswers & Pick<PlanBuilderAnswers, 'focus'>, e: PbExercise, kit: PlanKit | null, w: number): PbWeekTarget {
+  const k = a.effort === 'maintain' ? 0 : pbProgWeeks(a, w);
+  const dl = pbIsDeload(a, w);
+  const load0 = e.load.kind === 'kg' ? e.load.value : null;
+  if (e.role === 'main' && (e.bodyweightMain || e.main === null)) {
+    const reps = e.reps + Math.min(k, 4);
+    const sets = dl ? deloadSetCount(e.sets) : e.sets;
+    return { week: w, deload: dl, sets, reps, load: load0, backs: 0, back: null, backReps: reps, line: `${String(sets)} × ${String(reps)}` };
+  }
+  if (e.role === 'main' && e.main !== null) {
+    const m = e.main;
+    const perHand = kit?.convention === 'per_hand';
+    if (m.top === null || kit === null) {
+      const backs = dl ? Math.max(Math.min(1, m.backs), m.backs - 1) : m.backs;
+      return { week: w, deload: dl, sets: backs + 1, reps: m.reps, load: null, backs, back: null, backReps: 8, line: pbMainLine(null, null, m.reps, backs, 8, perHand) };
+    }
+    let top = m.top;
+    let reps = m.reps;
+    if (perHand) {
+      // Reps first, 6 → 7 → 8, then the next dumbbell; at the rack's heaviest the reps hold at +2.
+      let steps = Math.floor(k / 3);
+      let done = 0;
+      while (steps > 0) {
+        const up = kitAbove(kit, top);
+        if (up === null) break;
+        top = up;
+        steps -= 1;
+        done += 1;
+      }
+      reps = m.reps + Math.min(2, k - 3 * done);
+    } else {
+      const rate = PB_EFFORT[a.effort].pct * PB_FOCUS_GAIN[a.focus];
+      top = Math.max(m.top, kitDown(kit, m.top * (1 + rate * k)) ?? m.top);
+    }
+    const bo = pbBackOff(kit, top, reps, 8, a.focus);
+    let back = bo.back;
+    const backReps = bo.reps;
+    if (dl) {
+      const lowered = kitDown(kit, top * 0.9) ?? kitBelow(kit, top) ?? top;
+      back = pbLowerBackOff(kit, back, 0.9, lowered);
+      top = lowered;
+    }
+    const backs = dl ? Math.max(Math.min(1, m.backs), m.backs - 1) : m.backs;
+    return { week: w, deload: dl, sets: backs + 1, reps, load: top, backs, back, backReps, line: pbMainLine(top, back, reps, backs, backReps, perHand) };
+  }
+  // Accessories: double progression.
+  const lo = e.reps <= 12 ? 8 : 12;
+  const hi = e.reps <= 12 ? 12 : 15;
+  let reps = Math.max(lo, Math.min(hi, e.reps));
+  let kg = load0;
+  const harder = (x: number): number | null => (kit === null ? null : kit.convention === 'assistance' ? kitBelow(kit, x) : kitAbove(kit, x));
+  for (let i = 0; i < k; i += 1) {
+    if (reps < hi || kg === null) reps = Math.min(hi, reps + 1);
+    else {
+      const up = harder(kg);
+      if (up === null) reps = hi;
+      else {
+        kg = up;
+        reps = lo;
+      }
+    }
+  }
+  if (dl && kg !== null && kit !== null && kit.convention !== 'assistance') kg = kitDown(kit, kg * 0.9) ?? kg;
+  const sets = dl ? deloadSetCount(e.sets) : e.sets;
+  return { week: w, deload: dl, sets, reps, load: kg, backs: 0, back: null, backReps: reps, line: `${String(sets)} × ${String(reps)}` };
+}

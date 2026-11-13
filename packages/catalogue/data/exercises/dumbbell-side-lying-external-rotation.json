@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-side-lying-external-rotation",
+  "tier": "rich",
+  "name": "Side-lying dumbbell external rotation",
+  "aliases": ["Side-lying external rotation", "Side-lying ER", "Lying dumbbell external rotation", "Side-lying shoulder external rotation", "DB side-lying external rotation"],
+  "family": "shoulder_external_rotation",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["rotator_cuff"],
+  "secondaryMuscles": ["rear_delts", "upper_back"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "implements": 1,
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your side on a bench or mat",
+      "Light dumbbell in the top hand",
+      "Elbow bent to 90°, pinned to your side",
+      "Rolled towel between elbow and ribs"
+    ],
+    "execution": [
+      "Rotate the dumbbell up toward the ceiling",
+      "Keep the elbow on your side",
+      "Pause briefly at the top",
+      "Lower slowly to your stomach"
+    ],
+    "faults": [
+      "Don't lift the elbow off your side",
+      "Don't roll your body back",
+      "Don't go too heavy"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a light dumbbell. The cuff muscles are small; heavy loads make the elbow and trunk cheat.",
+      "Go only as high as you can with the elbow still on your side.",
+      "Load is the one dumbbell; reps are per arm.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain in the shoulder that builds during the set",
+      "Numbness or tingling in the arm"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "No-weight side-lying rotation", "reason": "Learn the range with the arm's weight only." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Slow lowering", "reason": "A 3-second lowering adds work without more weight." }
+    ],
+    "substitutions": [
+      { "key": "band-external-rotation", "name": "Band external rotation", "reason": "Same rotation standing with a band; good for warm-ups and travel." },
+      { "key": null, "name": "Cable external rotation", "reason": "Standing on a stack; easy to load in small steps." },
+      { "key": "cable-face-pull", "name": "Face pull", "reason": "Rear-shoulder and upper-back pull with an outward rotation at the end." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Camera at bench height looking at the figure's front as it lies on its side, head to the left. Shows the forearm swinging up like a gate while the upper arm stays on the ribs.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Lying on the side, bottom arm under the head. Top elbow bent to 90° and resting on the ribs with a towel, forearm across the stomach holding a light dumbbell.",
+        "approxAnglesDeg": { "elbowFlexion": 90, "shoulderExternalRotation": -45 }
+      },
+      {
+        "label": "Top",
+        "describe": "Forearm rotated up toward the ceiling, elbow still on the ribs and bent to 90°. Body has not rolled back.",
+        "approxAnglesDeg": { "elbowFlexion": 90, "shoulderExternalRotation": 45 }
+      }
+    ],
+    "ikHints": ["Upper elbow fixed on the side of the ribs", "Torso stays still on the bench"],
+    "tempo": { "downMs": 1800, "holdMs": 400, "upMs": 1000 },
+    "props": ["flat_bench", "dumbbell_single", "rolled_towel"],
+    "emphasise": [
+      "Elbow stays on the ribs",
+      "Only the forearm moves",
+      "Slow lowering"
+    ],
+    "doNotShow": ["Elbow lifting off the side", "Body rolling back", "Heavy dumbbell"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/lying-dumbbell-external-shoulder-rotation/",
+      "title": "StrengthLog: Lying Dumbbell External Shoulder Rotation",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-1,3]"
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/15296366/",
+      "title": "Reinold MM et al. (2004) EMG of the rotator cuff and deltoid during common shoulder external rotation exercises. J Orthop Sports Phys Ther 34(7):385-94",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (side-lying external rotation is among the exercises tested); cues.setup[3] (towel roll)",
+      "note": "Abstract only; cited from the research file [REI]. The review notes that 'highest cuff activity' for the side-lying version was confirmed only through a secondary source."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "The main muscles are the rotator cuff (infraspinatus, teres minor), the catalogue's rotator_cuff word (added 23 Oct 2026, expansion research Q1; rear_delts was the stand-in before). The rear deltoid assists [Reinold 2004], so it is secondary."
+    },
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'horizontal_pull' (rear-shoulder work); no rotation or prehab pattern exists."
+    },
+    {
+      "field": "guideBrief.view",
+      "note": "'front' here means the camera faces the front of the lying figure. The guide-maker may prefer a different framing."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

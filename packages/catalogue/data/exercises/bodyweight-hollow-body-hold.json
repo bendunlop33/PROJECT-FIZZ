@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-hollow-body-hold",
+  "tier": "rich",
+  "name": "Hollow body hold",
+  "aliases": ["Hollow hold", "Hollow body", "Hollow position hold", "Dish hold"],
+  "family": "hollow_body",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs", "hip_flexors"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your back on a mat",
+      "Press your lower back into the floor",
+      "Arms overhead, legs long and together"
+    ],
+    "execution": [
+      "Lift your shoulders and legs off the floor",
+      "Keep your lower back pinned down",
+      "Ribs down, chin slightly tucked",
+      "Breathe steadily and hold"
+    ],
+    "faults": [
+      "Don't let your lower back arch up",
+      "Don't hold your breath",
+      "Don't crane your neck forward"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "If your lower back lifts off the floor, shorten the lever: bend the knees or bring the arms forward until it stays down.",
+      "End the hold when the position breaks rather than pushing on with an arched back.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Tuck hollow hold", "reason": "Knees bent toward the chest and arms by the sides; much shorter lever." },
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Same lower-back-down position, with rests built into each rep." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Hollow rock", "reason": "Rocking in the hollow shape adds a moving challenge." },
+      { "key": "bodyweight-v-up", "name": "V-up", "reason": "Dynamic fold from the hollow position." },
+      { "key": "bodyweight-toes-to-bar", "name": "Toes-to-bar", "reason": "Uses the hollow shape while hanging." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-plank", "name": "Plank", "reason": "Same anti-extension idea, face down." },
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Easier on the back position; good warm-up." },
+      { "key": "bodyweight-body-saw", "name": "Body saw", "reason": "Anti-extension with a moving lever." },
+      { "key": "bodyweight-ab-wheel-rollout", "name": "Ab-wheel rollout", "reason": "Harder anti-extension work with a wheel." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level so the gap (or no gap) under the lower back is visible. Mat along the floor line, head on the left.",
+    "keyPositions": [
+      {
+        "label": "Set",
+        "describe": "Lying flat, arms resting overhead, legs straight. Lower back pressed into the mat.",
+        "approxAnglesDeg": { "shoulderFlexion": 170, "hipFlexion": 0, "trunkCurl": 0 }
+      },
+      {
+        "label": "Hold",
+        "describe": "Shoulder blades just off the mat, arms by the ears and off the floor, straight legs lifted about 20–30° with feet together. Body forms a shallow banana shape; only the lower back and hips touch the mat.",
+        "approxAnglesDeg": { "shoulderFlexion": 160, "hipFlexion": 25, "trunkCurl": 15 }
+      }
+    ],
+    "ikHints": ["Lower back and pelvis stay in contact with the mat"],
+    "tempo": { "downMs": 1000, "holdMs": 6000, "upMs": 1000 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "No gap under the lower back",
+      "Low, long legs and arms make it harder",
+      "Even breathing during the hold"
+    ],
+    "doNotShow": ["Lower back arched off the mat", "Chin jammed to chest", "Legs raised to vertical"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/hollow-hold/",
+      "title": "StrengthLog: Hollow Hold",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-3]; primaryMuscles; secondaryMuscles; variations.regressions[0]; guideBrief.keyPositions[1] (legs about 15–30° up)"
+    },
+    {
+      "url": "https://breakingmuscle.com/the-hollow-body-the-most-important-skill-to-master/",
+      "title": "Breaking Muscle: The Hollow Body, the Most Important Skill to Master",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[0] (shorten the lever if the back arches); variations.regressions[0]",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "The hip flexors work hard holding the legs up, so they are listed as primary with the abs (vocabulary word added 23 Oct 2026, expansion research Q1). Reasoned from the position rather than measured."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

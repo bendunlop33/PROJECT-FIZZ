@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-incline-y-raise",
+  "tier": "rich",
+  "name": "Incline Y-raise",
+  "aliases": ["Incline Y raise", "Prone Y-raise", "Prone Y raise", "Incline dumbbell Y-raise", "Prone incline Y-raise", "Chest-supported Y-raise"],
+  "family": "y_raise",
+  "movementPattern": "vertical_push",
+  "mechanic": "isolation",
+  "primaryMuscles": ["traps", "rear_delts", "upper_back"],
+  "secondaryMuscles": ["side_delts"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["incline_bench"],
+  "defaultLoadConvention": "per_hand",
+  "implements": 2,
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Set the bench to about 30–45 degrees",
+      "Lie chest-down, chin just off the pad",
+      "Very light dumbbells, thumbs up",
+      "Arms hanging straight down"
+    ],
+    "execution": [
+      "Raise your arms up and out in a Y",
+      "Shoulder blades down and back",
+      "Lift to about ear height, then pause",
+      "Lower slowly"
+    ],
+    "faults": [
+      "Don't shrug toward your ears",
+      "Don't arch off the bench",
+      "Don't swing the weights up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use very light dumbbells; the long arms make a small weight feel heavy.",
+      "Keep the chest on the pad; lifting off it turns the movement into a back arch.",
+      "Lift only as high as you can without shrugging.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain in the shoulder that builds during the set",
+      "Numbness or tingling in the arm"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "No-weight Y-raise", "reason": "Learn the shoulder-blade position with the arms' weight only." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Pause at the top", "reason": "A 2-second hold adds work without more weight." }
+    ],
+    "substitutions": [
+      { "key": null, "name": "Prone T-raise", "reason": "Arms out straight to the sides; more mid-back." },
+      { "key": null, "name": "Cable Y-raise", "reason": "Standing with cables; steady tension." },
+      { "key": "cable-face-pull", "name": "Face pull", "reason": "Rear shoulder and upper back on a cable." },
+      { "key": "dumbbell-rear-delt-fly", "name": "Dumbbell rear-delt fly", "reason": "Rear-shoulder raise with the arms out to the sides." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height, figure lying chest-down on an incline bench, head to the right. Shows the arms rising from hanging straight down to in line with the body in a Y.",
+    "keyPositions": [
+      {
+        "label": "Hang",
+        "describe": "Chest on the incline pad, feet on the floor. Arms hanging straight down from the shoulders, thumbs forward, light dumbbells.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 50, "shoulderFlexion": 50, "elbowFlexion": 5 }
+      },
+      {
+        "label": "Y",
+        "describe": "Arms raised forward and out to about ear height, in line with the torso and angled out in a Y. Thumbs up, shoulder blades down. Chest still on the pad.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 50, "shoulderFlexion": 160, "elbowFlexion": 5 }
+      }
+    ],
+    "ikHints": ["Chest stays on the pad", "Feet fixed on the floor"],
+    "tempo": { "downMs": 1800, "holdMs": 600, "upMs": 1200 },
+    "props": ["incline_bench", "dumbbell_pair_light"],
+    "emphasise": [
+      "Arms rise in a Y, thumbs up",
+      "Shoulders stay down, away from the ears",
+      "Chest stays on the bench"
+    ],
+    "doNotShow": ["Shrugging", "Arching off the bench", "Swinging the weights"]
+  },
+  "sources": [
+    {
+      "url": "https://motra.com/exercises/dumbbellProneYraise",
+      "title": "Motra exercise library: Dumbbell Prone Y-Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-3]; cues.execution[0,3]; cues.faults[0-2]",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://ijspt.scholasticahq.com/article/74969",
+      "title": "IJSPT: Lower-trapezius exercise selection (secondary citation of the Cools exercise set)",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (traps: lower-trapezius bias)",
+      "note": "Cited from the research file [COOLS]; primary paper not checked."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "The lower trapezius is the target. 'traps' in the vocabulary is shown as 'top of shoulders', which suggests the upper traps. Research marked the whole entry uncertain because the primary paper was not checked."
+    },
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'vertical_push' to match how Lateral raise is tagged (arm raised overhead); no raise or prehab pattern exists. 'horizontal_pull' would also be defensible."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

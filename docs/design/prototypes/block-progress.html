@@ -1,0 +1,258 @@
+<title>Block Progress Mockup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{
+  color-scheme: dark;
+  --page:#050505;
+  --canvas:#0D0C0B; --surface:#181615; --raised:#23201E; --divider:#302C29; --control:#75706A;
+  --t1:#F3EEE8; --t2:#B5ADA5; --t3:#948C84; --accent:#EDE5DA; --accent-s:#2B2724; --on-accent:#0D0C0B;
+  --done:#5CC98A; --done-s:#15301F; --warn:#F2B84B; --warn-s:#33280F; --danger:#FF7B72;
+  --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Inter, Roboto, system-ui, sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--t1);font-family:var(--font);-webkit-text-size-adjust:100%;
+  padding-block:20px 40px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));overflow-x:hidden}
+.intro{max-width:1300px;margin:0 auto 20px;display:flex;flex-direction:column;gap:6px}
+.intro h1{font-size:22px;line-height:28px;margin:0;font-weight:600;text-wrap:balance}
+.intro p{margin:0;color:var(--t2);font-size:15px;line-height:21px;max-width:68ch}
+.frames{max-width:1300px;margin:0 auto;display:flex;flex-wrap:wrap;gap:28px;justify-content:center}
+.frame{display:flex;flex-direction:column;gap:10px;width:100%;max-width:390px;min-width:0}
+.cap{font-size:13px;line-height:18px;letter-spacing:1.2px;text-transform:uppercase;color:var(--t3);font-weight:600}
+.cap b{color:var(--t1);letter-spacing:0;text-transform:none;font-size:15px;display:block;margin-top:2px}
+.phone{width:100%;background:var(--canvas);border-radius:44px;border:10px solid #1d1d1f;box-shadow:0 0 0 1px #333,0 20px 50px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column;min-height:820px}
+.sb{height:46px;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0 30px;font-size:15px;font-weight:600;position:relative}
+.sb .di{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:104px;height:28px;border-radius:20px;background:#000}
+.bat{width:24px;height:11px;border:1.5px solid var(--t1);border-radius:3px;position:relative}
+.bat:after{content:"";position:absolute;inset:1.5px;right:5px;background:var(--t1);border-radius:1px}
+.scroll{flex:1;padding:12px 18px 24px;display:flex;flex-direction:column;gap:18px}
+.tabbar{border-top:1px solid var(--divider);display:flex;height:49px;align-items:center}
+.tabbar span{flex:1;text-align:center;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--t3)}
+.tabbar span.on{color:var(--t1);font-weight:600}
+.navbar{height:44px;display:flex;align-items:center;padding:0 8px;position:relative}
+.navbar .back{color:var(--accent);font-size:17px}
+.navbar .ttl{position:absolute;left:80px;right:80px;text-align:center;font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t1{font-size:30px;line-height:36px;font-weight:600;letter-spacing:-.4px}
+.sec{font-size:13px;line-height:18px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--t3)}
+.c2{color:var(--t2)}.c3{color:var(--t3)}.ok{color:var(--done)}.wr{color:var(--warn)}
+.num{font-variant-numeric:tabular-nums}
+.row{display:flex;align-items:center;gap:8px}.between{justify-content:space-between}
+.col{display:flex;flex-direction:column}.f1{flex:1;min-width:0}
+.seg{display:flex;background:var(--surface);border-radius:12px;padding:3px}
+.seg span{flex:1;text-align:center;font-size:15px;padding:7px 0;border-radius:9px;color:var(--t2)}
+.seg span.on{background:var(--raised);color:var(--t1);font-weight:600}
+.card{background:var(--surface);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.group{background:var(--surface);border-radius:20px;overflow:hidden}
+.gr{display:flex;align-items:center;gap:12px;min-height:60px;padding:12px 16px;position:relative}
+.gr+.gr:before{content:"";position:absolute;left:16px;right:0;top:0;height:1px;background:var(--divider)}
+.name{font-size:16px;line-height:21px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{font-size:14px;line-height:19px;color:var(--t2)}
+.delta{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chev{color:var(--t3);font-size:18px}
+/* mini week bars */
+.wk{display:flex;align-items:flex-end;gap:3px;height:26px;flex:0 0 auto}
+.wk i{display:block;width:7px;border-radius:2px;background:var(--done)}
+.wk i.n{background:var(--divider)}
+.wk i.dl{background:transparent;border:1px dashed var(--control);height:8px!important}
+.wk i.st{background:var(--warn)}
+.pill{font-size:12px;line-height:16px;padding:2px 8px;border-radius:999px;font-weight:600}
+.pill.st{background:var(--warn-s);color:var(--warn)}
+.pill.up{background:var(--done-s);color:var(--done)}
+.lnk{font-size:15px;color:var(--t1);text-decoration:underline;text-decoration-color:var(--control);text-underline-offset:3px}
+.btn-p{min-height:48px;border-radius:999px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;padding:0 18px}
+.btn-s{min-height:48px;border-radius:999px;border:1px solid var(--control);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:500;padding:0 18px}
+/* chart */
+.chart{width:100%;height:auto;display:block}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--t3);font-weight:600;text-align:right;padding:6px 0}
+th:first-child,td:first-child{text-align:left}
+td{font-size:15px;padding:10px 0;border-top:1px solid var(--divider);text-align:right}
+td.c3{color:var(--t3)}
+.circles{display:flex;justify-content:space-between;padding:4px 2px}
+.circles span{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--control);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--t2)}
+.circles span.d{background:var(--done-s);border-color:var(--done);color:var(--done)}
+.circles span.cur{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--t3)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.note{max-width:1300px;margin:26px auto 0;color:var(--t2);font-size:14px;line-height:20px}
+.note b{color:var(--t1)}
+</style>
+
+<div class="intro">
+  <h1>Block progress, mockup</h1>
+  <p>One place to see whether each main lift is actually going up across the 6-week block. Example data. Bars are one per week: green up or held, amber stalled, dashed is the deload week, grey not reached yet.</p>
+</div>
+
+<div class="frames">
+
+  <!-- 1. Progress › Lifts with This block -->
+  <div class="frame">
+    <div class="cap">1 · Progress › Lifts<b>“This block” at the top</b></div>
+    <div class="phone">
+      <div class="sb"><span>18:20</span><span class="di"></span><span class="row"><span class="bat"></span></span></div>
+      <div class="scroll">
+        <div class="t1">Progress</div>
+        <div class="seg"><span class="on">Lifts</span><span>Training</span><span>Body</span></div>
+
+        <div class="col" style="gap:10px">
+          <div class="row between"><span class="sec">This block</span><span class="sm c3" style="font-size:14px">Week 3 of 6</span></div>
+          <div class="group">
+            <div class="gr">
+              <div class="f1 col"><span class="name">Bench press</span><span class="sub num">100×6 → 105×6</span></div>
+              <div class="wk"><i style="height:12px"></i><i style="height:18px"></i><i style="height:24px"></i><i class="n" style="height:6px"></i><i class="n" style="height:6px"></i><i class="dl"></i></div>
+              <span class="delta ok">+5%</span><span class="chev">›</span>
+            </div>
+            <div class="gr">
+              <div class="f1 col"><span class="name">Back squat</span><span class="sub num">120×5 → 127.5×5</span></div>
+              <div class="wk"><i style="height:10px"></i><i style="height:17px"></i><i style="height:24px"></i><i class="n" style="height:6px"></i><i class="n" style="height:6px"></i><i class="dl"></i></div>
+              <span class="delta ok">+6%</span><span class="chev">›</span>
+            </div>
+            <div class="gr">
+              <div class="f1 col"><span class="name">Barbell row</span><span class="sub num">95×8 → 95×8</span></div>
+              <div class="wk"><i style="height:18px"></i><i class="st" style="height:18px"></i><i class="st" style="height:18px"></i><i class="n" style="height:6px"></i><i class="n" style="height:6px"></i><i class="dl"></i></div>
+              <span class="pill st">Stalled</span><span class="chev">›</span>
+            </div>
+            <div class="gr">
+              <div class="f1 col"><span class="name">Romanian deadlift</span><span class="sub num">80×8 → 82.5×8</span></div>
+              <div class="wk"><i style="height:16px"></i><i style="height:16px"></i><i style="height:20px"></i><i class="n" style="height:6px"></i><i class="n" style="height:6px"></i><i class="dl"></i></div>
+              <span class="delta ok">+3%</span><span class="chev">›</span>
+            </div>
+            <div class="gr">
+              <div class="f1 col"><span class="name">DB shoulder press</span><span class="sub num">32×8 → 34×8 ea</span></div>
+              <div class="wk"><i style="height:14px"></i><i style="height:20px"></i><i class="n" style="height:6px"></i><i class="n" style="height:6px"></i><i class="n" style="height:6px"></i><i class="dl"></i></div>
+              <span class="delta ok">+6%</span><span class="chev">›</span>
+            </div>
+            <div class="gr">
+              <div class="f1 col"><span class="name">Pull-up</span><span class="sub num">BW×8 → BW+5×8</span></div>
+              <div class="wk"><i style="height:14px"></i><i style="height:22px"></i><i class="n" style="height:6px"></i><i class="n" style="height:6px"></i><i class="n" style="height:6px"></i><i class="dl"></i></div>
+              <span class="delta ok">+5 kg</span><span class="chev">›</span>
+            </div>
+          </div>
+          <div class="legend"><span><i style="background:var(--done)"></i>Up / held</span><span><i style="background:var(--warn)"></i>Stalled</span><span><i style="border:1px dashed var(--control)"></i>Deload</span></div>
+        </div>
+
+        <div class="col" style="gap:10px">
+          <span class="sec">All lifts</span>
+          <div class="card" style="min-height:120px;justify-content:center"><span class="c3" style="font-size:14px">… existing per-lift charts below, unchanged</span></div>
+        </div>
+      </div>
+      <div class="tabbar"><span>Today</span><span>Library</span><span class="on">Progress</span><span>Profile</span></div>
+    </div>
+  </div>
+
+  <!-- 2. Lift detail -->
+  <div class="frame">
+    <div class="cap">2 · Tap a lift<b>Week by week, with the fix</b></div>
+    <div class="phone">
+      <div class="sb"><span>18:20</span><span class="di"></span><span class="row"><span class="bat"></span></span></div>
+      <div class="navbar"><span class="back">‹ Progress</span><span class="ttl">Barbell row</span></div>
+      <div class="scroll" style="padding-top:4px">
+        <div class="col" style="gap:4px">
+          <div class="row"><span class="pill st">Stalled 2 weeks</span></div>
+          <span class="c2" style="font-size:15px">Top set 95×8, three weeks running.</span>
+        </div>
+
+        <div class="card" style="padding:14px 12px">
+          <svg class="chart" viewBox="0 0 320 150" role="img" aria-label="Top set by week: 95, 95, 95">
+            <line x1="30" y1="20" x2="310" y2="20" stroke="#302C29"/><line x1="30" y1="65" x2="310" y2="65" stroke="#302C29"/><line x1="30" y1="110" x2="310" y2="110" stroke="#302C29"/>
+            <text x="24" y="24" fill="#948C84" font-size="11" text-anchor="end">100</text>
+            <text x="24" y="69" fill="#948C84" font-size="11" text-anchor="end">95</text>
+            <text x="24" y="114" fill="#948C84" font-size="11" text-anchor="end">90</text>
+            <polyline points="55,65 105,65 155,65" fill="none" stroke="#F2B84B" stroke-width="2"/>
+            <circle cx="55" cy="65" r="5" fill="#5CC98A" stroke="#181615" stroke-width="2"/>
+            <circle cx="105" cy="65" r="5" fill="#F2B84B" stroke="#181615" stroke-width="2"/>
+            <circle cx="155" cy="65" r="5" fill="#F2B84B" stroke="#181615" stroke-width="2"/>
+            <line x1="155" y1="65" x2="205" y2="42" stroke="#75706A" stroke-width="1.5" stroke-dasharray="4 4"/>
+            <circle cx="205" cy="42" r="5" fill="none" stroke="#75706A" stroke-width="1.5"/>
+            <text x="55" y="138" fill="#948C84" font-size="11" text-anchor="middle">W1</text>
+            <text x="105" y="138" fill="#948C84" font-size="11" text-anchor="middle">W2</text>
+            <text x="155" y="138" fill="#F3EEE8" font-size="11" text-anchor="middle" font-weight="600">W3</text>
+            <text x="205" y="138" fill="#948C84" font-size="11" text-anchor="middle">W4</text>
+            <text x="255" y="138" fill="#948C84" font-size="11" text-anchor="middle">W5</text>
+            <text x="300" y="138" fill="#948C84" font-size="11" text-anchor="middle">Deload</text>
+          </svg>
+        </div>
+
+        <table>
+          <tr><th>Week</th><th>Top set</th><th>Sets</th><th>Est. 1RM</th></tr>
+          <tr><td>1</td><td>95×8</td><td>3</td><td>120 est.</td></tr>
+          <tr><td>2</td><td>95×8</td><td>3</td><td>120 est.</td></tr>
+          <tr><td>3</td><td>95×7</td><td>3</td><td>117 est.</td></tr>
+          <tr><td class="c3">4</td><td class="c3">—</td><td class="c3">—</td><td class="c3">—</td></tr>
+        </table>
+
+        <div class="card">
+          <span class="sec">Next week</span>
+          <div class="row between"><span class="name">Barbell row</span><span class="num" style="font-size:16px">3×8 → 4×6 · 97.5</span></div>
+          <div class="row between"><a class="lnk">Why?</a><div class="row" style="gap:10px"><span class="btn-s">Skip</span><span class="btn-p">Apply</span></div></div>
+        </div>
+      </div>
+      <div class="tabbar"><span>Today</span><span>Library</span><span class="on">Progress</span><span>Profile</span></div>
+    </div>
+  </div>
+
+  <!-- 3. Library › Plan summary line -->
+  <div class="frame">
+    <div class="cap">3 · Library › Plan<b>One line in the plan card</b></div>
+    <div class="phone">
+      <div class="sb"><span>18:20</span><span class="di"></span><span class="row"><span class="bat"></span></span></div>
+      <div class="scroll">
+        <div class="t1">Library</div>
+        <div class="seg"><span class="on">Plan</span><span>Workouts</span><span>Exercises</span></div>
+        <div class="card">
+          <div class="row between"><span class="name" style="font-size:18px">Muscle · 6 days</span><span class="c3">⋯</span></div>
+          <span class="c2" style="font-size:15px">Goal: Muscle · 6 days a week · 45 min</span>
+          <div class="circles"><span class="d">✓</span><span class="d">✓</span><span class="cur">3</span><span>4</span><span>5</span><span>6</span></div>
+          <div class="row between" style="padding-top:8px;border-top:1px solid var(--divider)">
+            <span style="font-size:15px"><span class="ok w6" style="font-weight:600">5 lifts up</span> <span class="c3">·</span> <span class="wr" style="font-weight:600">1 stalled</span></span>
+            <span class="chev">›</span>
+          </div>
+        </div>
+        <div class="col" style="gap:10px">
+          <div class="row between"><span class="sec">This week</span><span class="c2" style="font-size:15px">3 of 6 days</span></div>
+          <div class="card" style="min-height:220px;justify-content:center"><span class="c3" style="font-size:14px">… this week's days, unchanged</span></div>
+        </div>
+      </div>
+      <div class="tabbar"><span>Today</span><span class="on">Library</span><span>Progress</span><span>Profile</span></div>
+    </div>
+  </div>
+
+  <!-- 4. Past blocks -->
+  <div class="frame">
+    <div class="cap">4 · Progress › Lifts › Blocks<b>Every block kept, side by side</b></div>
+    <div class="phone">
+      <div class="sb"><span>18:20</span><span class="di"></span><span class="row"><span class="bat"></span></span></div>
+      <div class="navbar"><span class="back">‹ Progress</span><span class="ttl">Blocks</span></div>
+      <div class="scroll" style="padding-top:4px">
+        <div class="group">
+          <div class="gr">
+            <div class="f1 col"><span class="name">Block 3 · Muscle</span><span class="sub num">2 Nov – 13 Dec · week 3 of 6</span></div>
+            <span class="pill up">Now</span><span class="chev">›</span>
+          </div>
+          <div class="gr">
+            <div class="f1 col"><span class="name">Block 2 · Muscle</span><span class="sub num">21 Sep – 1 Nov · 32 of 36 sessions</span><span class="sub num"><span class="ok">5 up</span> · <span class="wr">1 stalled</span> · Bench +7.5 kg</span></div>
+            <span class="chev">›</span>
+          </div>
+          <div class="gr">
+            <div class="f1 col"><span class="name">Block 1 · Strength</span><span class="sub num">3 Aug – 13 Sep · 22 of 24 sessions</span><span class="sub num"><span class="ok">4 up</span> · Squat +10 kg</span></div>
+            <span class="chev">›</span>
+          </div>
+        </div>
+
+        <div class="col" style="gap:10px">
+          <div class="row between"><span class="sec">Bench press by block</span><span class="c3" style="font-size:14px">best set</span></div>
+          <table>
+            <tr><th>Block</th><th>Start</th><th>End</th><th>Change</th></tr>
+            <tr><td>1 · Strength</td><td>90×5</td><td>97.5×5</td><td class="ok" style="color:var(--done)">+8%</td></tr>
+            <tr><td>2 · Muscle</td><td>92.5×8</td><td>100×8</td><td style="color:var(--done)">+8%</td></tr>
+            <tr><td>3 · Muscle</td><td>100×6</td><td>105×6</td><td style="color:var(--done)">+5%</td></tr>
+          </table>
+          <span class="c3" style="font-size:13px">Pick any lift to compare blocks. Lifts with different rep ranges show Est. 1RM (labelled est.).</span>
+        </div>
+      </div>
+      <div class="tabbar"><span>Today</span><span>Library</span><span class="on">Progress</span><span>Profile</span></div>
+    </div>
+  </div>
+
+</div>
+
+<p class="note"><b>How it reads:</b> each main lift's best working set this week against week 1. <b>Up</b> means more weight or more reps at the same weight. <b>Stalled</b> means no gain for 2 or more weeks in a row. The deload week never counts as a stall. A stalled lift offers one fix for next week (Apply or Skip), the same as the Summary's Next time changes. Nothing changes until you apply it.</p>

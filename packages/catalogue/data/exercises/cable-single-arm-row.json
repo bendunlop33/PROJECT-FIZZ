@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-single-arm-row",
+  "tier": "basic",
+  "name": "Single-arm cable row",
+  "aliases": ["One-arm cable row", "Single-arm seated cable row", "One-arm seated cable row", "SA cable row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back"],
+  "secondaryMuscles": ["rear_delts", "biceps", "brachialis", "obliques", "grip"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

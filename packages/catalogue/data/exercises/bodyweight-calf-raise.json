@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-calf-raise",
+  "tier": "basic",
+  "name": "Calf raise (bodyweight)",
+  "aliases": ["Bodyweight calf raise", "Bodyweight calf raises", "Standing bodyweight calf raise", "BW calf raise"],
+  "family": "calf_raise",
+  "movementPattern": "calves",
+  "mechanic": "isolation",
+  "primaryMuscles": ["calves"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-19" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

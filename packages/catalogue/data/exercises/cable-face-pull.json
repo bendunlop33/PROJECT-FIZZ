@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-face-pull",
+  "tier": "basic",
+  "name": "Face pull",
+  "aliases": ["Cable face pull", "Rope face pull", "Facepull", "Face pulls"],
+  "family": "face_pull",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["rear_delts", "upper_back"],
+  "secondaryMuscles": ["traps", "side_delts"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

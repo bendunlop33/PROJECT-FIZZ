@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-single-leg-curl",
+  "tier": "rich",
+  "name": "Single-leg leg curl",
+  "aliases": ["One-leg leg curl", "One-legged leg curl", "Single leg curl", "Unilateral leg curl", "Single-leg hamstring curl"],
+  "family": "leg_curl",
+  "movementPattern": "hinge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["hamstrings"],
+  "secondaryMuscles": ["calves"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Line your knee up with the machine's pivot",
+      "Pad just above the back of the heel",
+      "Hips pressed into the pad or seat",
+      "Pick a lighter pin than for both legs"
+    ],
+    "execution": [
+      "Curl your heel toward your glutes",
+      "Squeeze for a moment at the end",
+      "Lower slowly to a straight knee",
+      "Keep your hips down the whole rep"
+    ],
+    "faults": [
+      "Don't lift your hips to finish the rep",
+      "Don't let the weight drop back",
+      "Don't twist to help the working leg"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Works on a lying or a seated leg curl. Use the same machine each time so your numbers compare.",
+      "Set the knee in line with the pivot and the pad above the heel, not on the calf.",
+      "The stack number is the selector reading and isn't half of a two-leg set.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "A cramp that won't ease",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-lying-leg-curl", "name": "Lying leg curl", "reason": "Both legs together on the same machine." },
+      { "key": "machine-seated-leg-curl", "name": "Seated leg curl", "reason": "Both legs together, seated." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Slow lowering", "reason": "A 3–4 second lowering adds work without more weight." }
+    ],
+    "substitutions": [
+      { "key": "machine-seated-leg-curl", "name": "Seated leg curl", "reason": "Both legs; stack numbers aren't comparable." },
+      { "key": "machine-lying-leg-curl", "name": "Lying leg curl", "reason": "Both legs; stack numbers aren't comparable." },
+      { "key": "dumbbell-single-leg-romanian-deadlift", "name": "Single-leg Romanian deadlift", "reason": "One-leg hamstring work as a hip hinge; no machine." },
+      { "key": "bodyweight-nordic-curl", "name": "Nordic curl", "reason": "Hard bodyweight knee-bend work for the hamstrings." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view of a lying leg curl at bench height, figure lying face down with the head to the left; working leg nearest the camera.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Lying face down, hips on the pad, hands on the handles. Near leg nearly straight with the pad just above the heel. Far leg relaxed.",
+        "approxAnglesDeg": { "nearKneeFlexion": 10, "farKneeFlexion": 10, "hipFlexion": 10 }
+      },
+      {
+        "label": "Top",
+        "describe": "Near heel curled toward the glutes, hips still pressed down. Far leg unchanged.",
+        "approxAnglesDeg": { "nearKneeFlexion": 110, "farKneeFlexion": 10, "hipFlexion": 10 }
+      }
+    ],
+    "ikHints": ["Ankle pad stays on the near heel", "Hips stay on the pad"],
+    "tempo": { "downMs": 1800, "holdMs": 400, "upMs": 1000 },
+    "props": ["lying_leg_curl_machine"],
+    "emphasise": [
+      "Only the working knee bends",
+      "Hips stay pressed down",
+      "Slow lowering to a straight knee"
+    ],
+    "doNotShow": ["Hips lifting", "Both legs moving", "Weight dropping back"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/one-legged-lying-leg-curl/",
+      "title": "StrengthLog: One-Legged Lying Leg Curl",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[1-2]; cues.execution[0-3]"
+    },
+    {
+      "url": "https://www.strengthlog.com/one-legged-seated-leg-curl/",
+      "title": "StrengthLog: One-Legged Seated Leg Curl",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[0] (done on either machine); cues.setup[0]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "key",
+      "note": "One entry covers the lying and the seated machine, following the research note 'Lying or seated leg curl'. If Ben logs both one-leg versions, they could split like the two-leg entries."
+    },
+    {
+      "field": "sources",
+      "note": "Both sources are from the same publisher. No independent second source was checked for this exact variant."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

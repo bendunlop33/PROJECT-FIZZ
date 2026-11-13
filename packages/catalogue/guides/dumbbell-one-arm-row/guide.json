@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "dumbbell-one-arm-row",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2700,
+  "loop": "cycle",
+  "motion": "phases",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "props": [
+    { "id": "bench", "type": "bench", "x": -0.33, "length": 0.58, "height": 0.244 },
+    { "id": "db", "type": "dumbbell", "size": "medium", "seen": "side", "anchor": { "kind": "hand", "hand": "near" } }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Back flat, arm hanging under the shoulder",
+      "root": { "x": -0.12, "y": 0.52, "pelvisDeg": 72.5 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": 0, "shoulderNear": 72.5, "elbowNear": 5, "hipFar": 72.5, "kneeFar": 90, "ankleFar": -20 },
+      "ik": {
+        "footNear": { "x": -0.1, "y": 0, "planted": true },
+        "footFar": null,
+        "handNear": null,
+        "handFar": { "x": 0.193, "y": 0.244, "contact": "palm", "bend": "cw" }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.143, "pass": true, "label": "Halfway", "caption": "Elbow leads up and back",
+      "joints": { "shoulderNear": 48.3, "elbowNear": 27.7 },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.3704, "label": "Top", "caption": "Dumbbell pulled to the hip, forearm vertical, chest square",
+      "joints": { "shoulderNear": -10, "elbowNear": 82.5 },
+      "holdMs": 300, "ease": "smooth"
+    },
+    { "t": 0.7998, "sameAs": 1, "caption": "Lower slowly to a full hang", "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "db", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0, "to": 0.3704 }] },
+  "checks": { "planted": ["footNear"], "besideProps": ["armNear", "legNear"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view. Far knee and far hand on a flat bench, near foot on the floor, back flat and close to level. The near arm pulls the dumbbell up by driving the elbow up and back towards the hip, holds briefly by the hip with the forearm vertical, then lowers slowly to a full hang. The torso stays still and square."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
+}

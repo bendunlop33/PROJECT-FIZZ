@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-hip-abduction",
+  "tier": "basic",
+  "name": "Hip abduction machine",
+  "aliases": ["Hip abduction", "Abductor machine", "Seated hip abduction", "Outer thigh machine", "Hip abductor machine"],
+  "family": "hip_abduction",
+  "movementPattern": "lunge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abductors"],
+  "secondaryMuscles": ["glutes"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

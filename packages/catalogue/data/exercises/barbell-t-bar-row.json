@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-t-bar-row",
+  "tier": "rich",
+  "name": "T-bar row",
+  "aliases": ["T-bar rows", "T bar row", "Landmine row", "Landmine T-bar row", "T-bar row (landmine)", "Barbell T-bar row", "V-handle landmine row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back"],
+  "secondaryMuscles": ["rear_delts", "traps", "biceps", "spinal_erectors", "grip"],
+  "compatibleEquipment": ["barbell", "plate_loaded_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Bar end in a landmine or a padded corner",
+      "Load the free end; V-handle under the bar",
+      "Straddle the bar, feet about hip-width",
+      "Hinge to about 45°, back flat, arms long"
+    ],
+    "execution": [
+      "Brace, then row the handle to your belly",
+      "Drive your elbows back close to your sides",
+      "Squeeze your shoulder blades at the top",
+      "Lower until your arms are straight"
+    ],
+    "faults": [
+      "Don't stand up taller to finish the rep",
+      "Don't round your back",
+      "Don't jerk the weight with your hips"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Keep the torso angle fixed. If you have to rise up to finish the rep, the load is too heavy.",
+      "Make sure the bar end can't slip out of the landmine or corner, and protect the wall or floor with a pad.",
+      "Lift the bar into position and set it down with a flat back. Straps are fine if grip gives out first.",
+      "Smaller plates let the handle come closer to your body; large plates can stop the rep short.",
+      "The logged load is the plates added. The bar's own weight and the lever angle aren't counted, so loads aren't comparable with a barbell row or another set-up.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "A chest pad takes away the lower-back demand." },
+      { "key": "dumbbell-chest-supported-row", "name": "Chest-supported dumbbell row", "reason": "Face-down on an incline bench; no hinge to hold." }
+    ],
+    "progressions": [
+      { "key": "barbell-bent-over-row", "name": "Barbell row", "reason": "Free bar with no pivot; more balance and lower-back demand." }
+    ],
+    "substitutions": [
+      { "key": "barbell-bent-over-row", "name": "Barbell row", "reason": "Same hinged row with a straight bar." },
+      { "key": "dumbbell-one-arm-row", "name": "One-arm dumbbell row", "reason": "One arm at a time, braced on a bench." },
+      { "key": "cable-seated-row", "name": "Seated cable row", "reason": "Seated row with stack loading." },
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "Same row with the chest supported." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height. The bar's pivot end sits on the floor on the left, rising to the loaded end between the figure's feet. A V-handle hooks under the bar just behind the plates.",
+    "keyPositions": [
+      {
+        "label": "Hang",
+        "describe": "Straddling the bar, hinged forward about 45° with a flat back, knees softly bent. Arms straight, hands on the V-handle under the bar, plates just off the floor.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 45, "hipFlexion": 55, "kneeFlexion": 25, "shoulderFlexion": 45, "elbowFlexion": 5 }
+      },
+      {
+        "label": "Top",
+        "describe": "Handle pulled to the belly, elbows driven back past the torso and close to the sides, shoulder blades squeezed. Torso angle unchanged.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 45, "hipFlexion": 55, "kneeFlexion": 25, "shoulderFlexion": -20, "elbowFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Feet fixed; torso angle constant", "Bar pivots about its floor end; hands follow its arc"],
+    "barPath": "A short arc around the floor pivot, close to vertical under the chest",
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 900 },
+    "props": ["landmine_barbell_loaded", "v_handle"],
+    "emphasise": [
+      "Torso angle stays fixed",
+      "Elbows drive back close to the body",
+      "Arms fully straight at the bottom"
+    ],
+    "doNotShow": ["Standing upright to finish", "Rounded back", "Hips jerking the weight up"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/t-bar-row/",
+      "title": "StrengthLog: T-Bar Row",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles; cues.execution[0,3]"
+    },
+    {
+      "url": "https://www.gymshark.com/blog/article/how-to-t-bar-row",
+      "title": "Gymshark: How to T-bar row",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-3] (landmine or corner, V-grip under the bar, 45° hinge); cues.execution[0-3]; safety.notes[1,3]",
+      "note": "Commercial brand blog."
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/BackGeneral/LVTBarRow",
+      "title": "ExRx.net: Lever T-bar Row (plate loaded)",
+      "checkedOn": "2026-10-23",
+      "supports": "compatibleEquipment (plate-loaded T-bar machine); safety.notes[0] (lighten the load if the torso rises)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "Landmine and plate-loaded lever loads are logged as plates added, matching the landmine press. The final convention is still open (expansion research Q3). The validator may warn that added is unusual for a barbell."
+    },
+    {
+      "field": "aliases",
+      "note": "FitNotes' \"T-Bar Row\" can mean the landmine set-up or a plate-loaded T-bar machine. Both are covered here; the chest-supported T-bar machine is a separate Should proposal and isn't an alias. \"Landmine row\" usually means this two-hand row; the one-arm Meadows row is separate."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

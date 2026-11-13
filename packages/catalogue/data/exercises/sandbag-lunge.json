@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "sandbag-lunge",
+  "tier": "basic",
+  "name": "Sandbag lunge",
+  "aliases": ["Sandbag lunges", "HYROX sandbag lunges", "Sandbag walking lunge", "Walking sandbag lunge"],
+  "family": "lunge",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["hamstrings", "adductors", "calves", "core", "upper_back"],
+  "compatibleEquipment": ["sandbag"],
+  "defaultLoadConvention": "total",
+  "measurement": "distance",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

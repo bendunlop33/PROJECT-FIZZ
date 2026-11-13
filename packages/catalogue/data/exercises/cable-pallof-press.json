@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-pallof-press",
+  "tier": "basic",
+  "name": "Pallof press",
+  "aliases": ["Cable Pallof press", "Anti-rotation press", "Cable anti-rotation press"],
+  "family": "anti_rotation",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["obliques", "core"],
+  "secondaryMuscles": ["abs", "glutes"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

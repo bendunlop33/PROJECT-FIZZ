@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-landmine-squat",
+  "tier": "rich",
+  "name": "Landmine squat",
+  "aliases": ["Landmine goblet squat", "Barbell landmine squat", "LM squat", "Landmine squats"],
+  "family": "squat",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "core", "upper_back"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Fix one end of the bar in the landmine",
+      "Hold the loaded end at your chest",
+      "Feet about shoulder-width, a step from the bar"
+    ],
+    "execution": [
+      "Sit down between your heels",
+      "Keep the bar end against your chest",
+      "Lean into the bar a little as you go",
+      "Drive up through the whole foot"
+    ],
+    "faults": [
+      "Don't let the bar drift away from you",
+      "Don't let your knees cave in",
+      "Don't round your back at the bottom"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a proper landmine or a corner that holds the bar end firmly, and keep the arc of the bar clear of people.",
+      "Lift the bar end from the floor to your chest with a squat, not by bending over.",
+      "Log the plates on the bar (added). The bar end rests on the floor, so you hold only part of the weight; numbers aren't comparable with a goblet or back squat.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-squat", "name": "Bodyweight squat", "reason": "Learn the depth and stance with no load." },
+      { "key": null, "name": "Unloaded landmine squat", "reason": "Just the bar; the lean into it teaches an upright squat." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Heavier plates", "reason": "Add load once depth and bar position stay the same every rep." },
+      { "key": "barbell-front-squat", "name": "Front squat", "reason": "Full bar load held in front; needs more wrist and upper-back mobility." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-goblet-squat", "name": "Goblet squat", "reason": "Same front-loaded squat with one dumbbell; load is the dumbbell." },
+      { "key": "kettlebell-goblet-squat", "name": "Kettlebell goblet squat", "reason": "Same pattern with a kettlebell." },
+      { "key": "machine-hack-squat", "name": "Hack squat", "reason": "Guided squat with heavier loads." },
+      { "key": "machine-leg-press", "name": "Leg press", "reason": "Quads and glutes with the back supported." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right toward the landmine. The bar runs from the floor pivot up to the figure's chest, so its arc is visible.",
+    "keyPositions": [
+      {
+        "label": "Standing",
+        "describe": "Standing tall, a step back from the bar, hands cupping the bar end at the upper chest. Slight lean into the bar.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 10, "kneeFlexion": 0, "hipFlexion": 10 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Thighs about parallel, knees over the toes, heels down. Torso fairly upright, bar end still at the chest. The bar has swung down and slightly toward the pivot along its arc.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 25, "kneeFlexion": 110, "hipFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Bar end fixed to the hands at the chest", "Far end of the bar fixed at the floor pivot"],
+    "barPath": "An arc around the floor pivot",
+    "tempo": { "downMs": 1600, "holdMs": 200, "upMs": 1200 },
+    "props": ["landmine_barbell_loaded"],
+    "emphasise": [
+      "Bar stays against the chest",
+      "Upright squat with a slight lean into the bar",
+      "Heels stay down"
+    ],
+    "doNotShow": ["Bar held at arm's length", "Knees caving in", "Rounded back"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/landmine-squat/",
+      "title": "StrengthLog: Landmine Squat",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-2]; cues.execution[0,3]"
+    },
+    {
+      "url": "https://www.coachweb.com/leg-exercises/4920/how-to-nail-the-landmine-squat",
+      "title": "Coach: How to nail the landmine squat",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1-2] (bar close to the chest, slight lean because the bar moves in an arc); cues.faults[0]",
+      "note": "Seen through a search listing. Magazine coaching article."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "'added' follows the existing Landmine press entry and research Q3 (landmine load convention still to decide in an ADR). The validator warns because 'added' is unusual for a barbell."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

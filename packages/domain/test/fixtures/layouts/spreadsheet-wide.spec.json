@@ -1,0 +1,20 @@
+{
+  "specVersion": 1,
+  "file": { "delimiter": ",", "headerLine": 1, "decimal": "." },
+  "layout": { "kind": "wide_set_columns", "setColumns": [{ "header": "Set 1", "index": 2 }, { "header": "Set 2", "index": 3 }, { "header": "Set 3", "index": 4 }, { "header": "Set 4", "index": 5 }], "notation": "load_x_reps" },
+  "workoutKey": [],
+  "date": { "column": { "header": "Date", "index": 0 }, "format": "YYYY-MM-DD" },
+  "exercise": { "header": "Exercise", "index": 1 },
+  "load": null,
+  "reps": null,
+  "setType": null,
+  "rpe": null,
+  "notes": [],
+  "unmapped": [],
+  "selfCheck": [
+    { "line": 2, "date": "2025-09-01", "exercise": "Bench Press", "load": 100, "reps": 8 },
+    { "line": 4, "date": "2025-09-03", "exercise": "Squat", "load": 140, "reps": 5 },
+    { "line": 6, "date": "2025-09-05", "exercise": "Bench Press", "load": 102.5, "reps": 8 }
+  ],
+  "unsupported": null
+}

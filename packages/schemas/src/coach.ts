@@ -1,0 +1,2100 @@
+import { z } from 'zod';
+import {
+  IdSchema,
+  LoadConventionSchema,
+  LoadSchema,
+  OperationIdSchema,
+  RecordMetaSchema,
+  RepRangeSchema,
+  RpeSchema,
+  UtcTimestampSchema,
+  WeightUnitSchema,
+  ZonedTimestampSchema,
+} from './common';
+import { PainAreaSchema, type PainFlag } from './checkin';
+import { DraftBasisSchema } from './draft';
+import { GymEditSchema, GymEquipmentKindSchema, type GymEditRecord } from './equipment';
+import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
+import { CustomExerciseFieldsSchema, EquipmentKindSchema, LateralitySchema, MeasurementSchema, MuscleSchema, type Exercise } from './exercise';
+import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SetTypeSchema, SplitDayIdSchema } from './routine';
+import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
+import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
+import { LiftTargetSchema, type LiftTarget } from './lift-targets';
+import { PLAN_BUILDER_LIMITS, PlanBuilderAnswersSchema, PlanPrefAnswerSchema } from './plan-builder';
+import { FitRestLevelSchema, RestDefaultKeySchema, RestSettingsSchema, WarmupPrefsSchema, type TrainingChange } from './training-profile';
+import { ActivityEffortSchema, ActivityFieldsShapeSchema, ActivityKindSchema, ActivityStatusSchema, WeekBasisSchema, WeekMergeSchema, WeekRowSchema, WeekSkipSchema, type Activity } from './activity';
+import { LocalDateSchema } from './import';
+import { BuilderProposalSchema } from './builder-coach';
+
+/**
+ * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
+ * the shapes the model must send; action records are what the app saved. The
+ * app renders every change line from an `ActionRecord`, never from model text.
+ *
+ * Tool argument objects are strict and use `nullable` rather than optional
+ * fields, so their JSON Schema is valid for strict function calling.
+ */
+
+// ---------------------------------------------------------------------------
+// Registry vocabulary
+
+/** There is deliberately no `delete` or `overwrite` effect (coach-contract CC6). */
+export const ToolEffectSchema = z.enum(['read', 'append', 'versioned_update', 'propose']);
+export type ToolEffect = z.infer<typeof ToolEffectSchema>;
+
+/**
+ * What a turn must contain before the tool is offered to the model.
+ * `ben_request` is satisfied by Ben's own message or by tapping `Adjust`
+ * on an offer (CA1), never by tool output, imported text or context.
+ */
+export const ToolNeedSchema = z.enum([
+  'none',
+  'ben_request',
+  'ben_pain_words',
+  'ben_named_target',
+  'summary_turn',
+  'structural_signal',
+]);
+export type ToolNeed = z.infer<typeof ToolNeedSchema>;
+
+/** `workout`: during an active workout; `summary`: the one post-workout turn; `general`: anything else. */
+export const CoachTurnKindSchema = z.enum(['general', 'workout', 'summary']);
+export type CoachTurnKind = z.infer<typeof CoachTurnKindSchema>;
+
+/** What a write tool may touch. Finished sessions and done sets are not in this list. */
+export const CoachEntityKindSchema = z.enum([
+  'pending_set_target',
+  'next_session_target',
+  'proposal',
+  'pain_flag',
+  'memory',
+  'playbook_candidate',
+  /** (11 Oct) A set Ben told the coach to log, or a logged set he told it to correct: values only, never deleted. */
+  'logged_set',
+  /** (12 Oct, workout builder) A coach-built workout draft: a new draft or a new version of one; never a template or a session. */
+  'workout_draft',
+  /**
+   * (12 Oct) An exercise the coach added to today's workout because Ben asked
+   * (`add_exercise_today`): a new row with pending sets only, through the
+   * workout's own `add_exercise` command; Undo takes it out while nothing on it is done.
+   */
+  'session_exercise',
+  /** (14 Oct) The live workout's own name (`rename_workout`), through the workout's `rename_session` command; Undo names it back. */
+  'session_name',
+  /** (14 Oct, workout builder v2) A clarifying question card in the thread (`ask_build_question`); it changes nothing else. */
+  'build_question',
+  /** (19 Oct, plans) A coach-built multi-day plan: a proposal Ben applies; never a routine or the rotation directly. */
+  'plan_draft',
+  /** (19 Oct) A new exercise for Ben's list: a proposal card; saved only when he taps Add (rule 3). */
+  'custom_exercise',
+  /** (Ben, 20 Oct) The plan in use paused or resumed (`pause_plan`), only when Ben asked; Undo puts it back. */
+  'plan_pause',
+  /** (20 Oct, ADR 0029) A gym's profile and equipment (`update_gym`): versioned writes; Undo puts each record back. */
+  'gym_equipment',
+  /** (Ben, 20 Oct) A lift target on his training profile, set because he asked; Undo puts back what was there. */
+  'lift_target',
+  /** (Ben, 20 Oct) A run, ride, swim or sport Ben told the coach about (`log_activity`): added when he asked, else offered; Undo removes it. */
+  'activity',
+  /** (Ben, 20 Oct) This week's days reshaped around a run (`propose_week`): a proposal Ben applies; this week only. */
+  'week_plan',
+  /** ADR 0039: today's Set up (day, length, main lift) filled from Ben's words (`fill_setup`); Undo on Set up. */
+  'builder_setup',
+  /** (Ben, 1 Nov) His warm-up preferences on the training profile (`update_warmup_prefs`), with today's pending warm-ups re-planned; Undo puts both back. */
+  'warmup_prefs',
+  /** (Ben, 2 Nov) His rest settings on the training profile (`update_rest_settings`), applied when he asks; Undo puts them back. */
+  'rest_settings',
+  /** (Ben, 2 Nov) The plan in use's length, days, schedule, a lighter week or its End (`propose_plan_change`): a proposal he applies. */
+  'plan_settings',
+  /** (Ben, 2 Nov) One exercise's preference on Any preferences (the plan in use's answers, `set_exercise_preference`); Undo puts it back. */
+  'exercise_pref',
+]);
+export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
+
+export const CapabilitySectionSchema = z.enum(['read', 'when_you_ask', 'after_workout', 'suggest_only']);
+export type CapabilitySection = z.infer<typeof CapabilitySectionSchema>;
+
+// ---------------------------------------------------------------------------
+// Tool arguments (v1 subset of coach-contract §6.1, ADR 0020 §2)
+
+const reason = z.string().min(1).max(240);
+/** A short quote of Ben's own words from this turn. Checked by the gate, never trusted alone. */
+const quote = z.string().min(1).max(400);
+
+/**
+ * (Coach v3, ADR 0027, 18 Oct) The model's reading of whether Ben asked for a change to today's
+ * workout (rule 3): `benAsked` true with `benQuote`, his words copied verbatim from this turn's
+ * message. Code checks the quote against his message (`verifyAsked`); a claim it can't find is
+ * never trusted. Null or absent: no claim (code's own reading decides).
+ */
+const askClaim = {
+  benAsked: z.boolean().nullable().optional(),
+  benQuote: z.string().max(200).nullable().optional(),
+};
+
+/**
+ * A set target. Unit and convention are always explicit. In tool arguments a
+ * null field means "keep the current value"; in action records it means the
+ * set has no target for that field.
+ */
+export const CoachTargetSchema = z.strictObject({
+  load: LoadSchema.nullable(),
+  reps: RepRangeSchema.nullable(),
+  /**
+   * Target RPE for the set (CHANGELOG 2026-10-11 "Offers follow the target
+   * RPE"): the coach's recommendation. Null or absent = keep the set's
+   * current target (Ben's own override always stays).
+   */
+  rpe: RpeSchema.nullable().optional(),
+});
+export type CoachTarget = z.infer<typeof CoachTargetSchema>;
+
+export const EmptyArgsSchema = z.strictObject({});
+
+export const GetRecentTrainingArgsSchema = z.strictObject({
+  exerciseId: IdSchema,
+  sessions: z.int().min(1).max(10),
+});
+
+/** "How am I doing?": workouts, what was done and whether the main lifts moved, over the last `weeks`. */
+export const GetTrainingOverviewArgsSchema = z.strictObject({
+  weeks: z.int().min(1).max(12),
+});
+
+export const GetGymEquipmentArgsSchema = z.strictObject({
+  /** Null = everything used in the current or last workout. */
+  exerciseId: IdSchema.nullable(),
+  /** (Coach v3) One of Ben's saved gyms by name; null = the gym in context. */
+  gymName: z.string().max(80).nullable().optional(),
+});
+
+/** (Coach v3) An exercise's records: heaviest logged set, most reps, best estimated 1RM (labelled an estimate). */
+export const GetExerciseRecordsArgsSchema = z.strictObject({
+  exerciseId: IdSchema,
+});
+
+/** (Coach v3) Ben's last finished workouts, every exercise's sets as logged. */
+export const GetRecentSessionsArgsSchema = z.strictObject({
+  count: z.int().min(1).max(10),
+  /**
+   * (Ben, 28 Oct: "yesterday's workout") Only the workouts on one local day: `date` (`YYYY-MM-DD`), or `daysAgo`
+   * (0 today, 1 yesterday). Null or absent: the newest `count`. `date` wins when both are given.
+   */
+  date: LocalDateSchema.nullable().optional(),
+  daysAgo: z.int().min(0).max(366).nullable().optional(),
+});
+
+/**
+ * (Coach v3, Ben 18 Oct: "gauge itself whether it's needed") Mid-workout turns start light; the
+ * coach calls this once when the question needs more thought. The next step runs at a higher
+ * reasoning effort on Ben's main model. Changes nothing.
+ */
+export const ThinkHarderArgsSchema = z.strictObject({
+  why: z.string().max(120),
+});
+
+export const GetProgressionTargetsArgsSchema = z.strictObject({
+  exerciseId: IdSchema,
+});
+
+/** Exercises that could replace one in the plan at this gym (for a swap proposal). */
+export const GetSubstitutionsArgsSchema = z.strictObject({
+  exerciseId: IdSchema,
+});
+
+/**
+ * (19 Oct, Ben: "Why can't I add it") Search every exercise usable here, not only the capped list in
+ * the prompt: by name or other name, a muscle, an equipment word. At most 20 results. Read only.
+ */
+export const FindExercisesArgsSchema = z.strictObject({
+  query: z.string().max(80),
+  muscle: z.string().max(40).nullable(),
+  equipment: z.string().max(40).nullable(),
+});
+export type FindExercisesArgs = z.infer<typeof FindExercisesArgsSchema>;
+
+/**
+ * (19 Oct, Ben: "Why can't the chat function make exercises not in the catalogue") A new exercise for
+ * Ben's list, only after find_exercises found nothing like it. A card he checks: nothing is saved until
+ * he taps Add. loadConvention null: the equipment's usual one; laterality null: both sides together.
+ */
+export const ProposeExerciseArgsSchema = z.strictObject({
+  name: z.string().min(1).max(80),
+  /** (Review ben-kit N2) A load item: a bench or rack is never an exercise's equipment, so the model isn't offered them. */
+  equipment: EquipmentKindSchema.exclude(['bench', 'rack']),
+  loadConvention: LoadConventionSchema.nullable(),
+  primaryMuscles: z.array(MuscleSchema).min(1).max(3),
+  measurement: MeasurementSchema,
+  laterality: LateralitySchema.nullable(),
+  /** (Review exlist S3) Set only after Ben said his exercise is not the one find_exercises or a refusal named: that catalogueId. */
+  differentFrom: z.string().max(80).nullable().optional(),
+  reason,
+});
+export type ProposeExerciseArgs = z.infer<typeof ProposeExerciseArgsSchema>;
+
+/**
+ * (Ben, 20 Oct: "should also be able to pause eg if go on hols") Pause the plan in use ("I'm on holiday
+ * till 3 Nov") or resume it ("I'm back, resume my plan"). Only when Ben asks; it applies at once with
+ * Undo. `until`: the local date (`YYYY-MM-DD`) the plan is back in use on, or null until he resumes; a
+ * date Ben said outright wins over this one (code reads his words).
+ */
+export const PausePlanArgsSchema = z.strictObject({
+  action: z.enum(['pause', 'resume']),
+  until: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  reason,
+  /** ADR 0039: offered from every chat while a plan is in use; it applies only when Ben asked (code checks the claim). */
+  ...askClaim,
+});
+export type PausePlanArgs = z.infer<typeof PausePlanArgsSchema>;
+
+/**
+ * (Ben, 20 Oct) Log a run, ride, swim, sport or other activity Ben told the coach about, done or
+ * planned ("18 km run yesterday", "long run Saturday"). Only what he said: no invented pace, heart
+ * rate or effort (rule 6). `date`: local `YYYY-MM-DD` from his words and today's date (a day he
+ * said outright wins, code reads his words). Applied at once with Undo when he asked to log it;
+ * otherwise saved as an offer he taps to log (rule 3).
+ */
+export const LogActivityArgsSchema = z.strictObject({
+  kind: ActivityKindSchema,
+  status: ActivityStatusSchema,
+  date: LocalDateSchema,
+  /** Rough minutes, as he said them; null when he gave none. */
+  durationMin: z.int().min(1).max(24 * 60).nullable(),
+  /** Kilometres, as he said them; null when he gave none. */
+  distanceKm: z.number().min(0.01).max(1000).nullable(),
+  /** His own effort word; `long` for a long session; null when he gave none. */
+  effort: ActivityEffortSchema.nullable(),
+  reason,
+});
+export type LogActivityArgs = z.infer<typeof LogActivityArgsSchema>;
+
+/**
+ * (Ben, 20 Oct: "maybe we swap to a push rather than shoulder and chest separately") This week only:
+ * merge two of the week's remaining days into one ("Chest" + "Shoulders" → "Push") and/or skip one,
+ * so the week fits around a run. Day IDs are YOUR DATA week.remaining[].id. ADR 0039 (Ben, 29 Oct): when
+ * Ben asked, it applies at once with Undo; the coach's own idea is a proposal he applies (rule 3). Next week
+ * is the plan as it was.
+ */
+export const ProposeWeekArgsSchema = z.strictObject({
+  merges: z
+    .array(z.strictObject({ dayIds: z.array(z.string().min(1).max(64)).length(2), name: z.string().min(1).max(30) }))
+    .max(3),
+  skips: z.array(z.string().min(1).max(64)).max(3),
+  message: z.string().max(400),
+  /** ADR 0039: Ben asked for this change to his week (checked by code): it applies at once with Undo; else a proposal. */
+  ...askClaim,
+});
+export type ProposeWeekArgs = z.infer<typeof ProposeWeekArgsSchema>;
+
+/** Most characters of a draft edit's `change` (a few clauses: add, trim, keep, a length). */
+export const DRAFT_EDIT_CHANGE_MAX = 600;
+
+/**
+ * ADR 0039: a change to the Your workout draft in context, from any chat. Ben's own words this turn are the request
+ * (the builder's edit coach reads them, so a weight he named is his); `reason` is the coach's one line. Always a
+ * proposal he applies or skips.
+ * (Ben, 7 Nov, build 552: "U shud send this") `change`: the change in full when his words only agree to one the coach
+ * described ("do it", "make the change"); the builder's edit coach reads it beside his words, but only his words count
+ * as weights he named. Null (or absent, on calls made before it) when his words say it all.
+ */
+export const ProposeDraftEditArgsSchema = z.strictObject({ change: z.string().max(DRAFT_EDIT_CHANGE_MAX).nullish(), reason });
+export type ProposeDraftEditArgs = z.infer<typeof ProposeDraftEditArgsSchema>;
+
+/**
+ * (Ben, 30 Oct, build 486: "won't change full plan") One exercise swapped in every plan day of the plan in use where it
+ * appears, from now on: `remove` goes out, `add` comes in (catalogueIds), so the direction is explicit. Always a
+ * proposal with the before and after per day, Apply and Undo (rule 3: a structural future change). Only that exercise
+ * changes; its sets, reps, rest, place and superset stay.
+ */
+/**
+ * (Ben, 2 Nov) A plan-level change to the plan in use, always a proposal with before/after, Apply and Undo (rule 3):
+ * `lighter_week` this or next block week drafts as a deload week; `days_per_week` the plan rebuilt for that many days
+ * (the plan builder re-fits the split, keeps exercises where it can and the block's start); `length` the block's weeks;
+ * `schedule` Any days or Set days on the named weekdays; `end` the plan's End (his own workouts back). Weekdays as
+ * `mon` … `sun`; null when he named none.
+ */
+export const PlanWeekdayNameSchema = z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+export const PlanChangeArgSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('lighter_week'), week: z.enum(['this', 'next']) }),
+  z.strictObject({ kind: z.literal('days_per_week'), days: z.int().min(1).max(7), weekdays: z.array(PlanWeekdayNameSchema).max(7).nullable() }),
+  z.strictObject({ kind: z.literal('length'), weeks: z.int().min(1).max(52) }),
+  z.strictObject({ kind: z.literal('schedule'), schedule: z.enum(['any', 'set']), weekdays: z.array(PlanWeekdayNameSchema).max(7).nullable() }),
+  z.strictObject({ kind: z.literal('end') }),
+]);
+export type PlanChangeArg = z.infer<typeof PlanChangeArgSchema>;
+
+export const ProposePlanChangeArgsSchema = z.strictObject({ change: PlanChangeArgSchema, reason });
+export type ProposePlanChangeArgs = z.infer<typeof ProposePlanChangeArgsSchema>;
+
+/**
+ * (Ben, 2 Nov) Ben's rest settings, changed when he asks (applied at once with Undo: they are his settings). `rests`:
+ * a default rest per set type (`workingMain` main lift working sets, `top` top set, `backoff` back-off, `workingCompound`
+ * compound accessory, `workingIsolation` isolation accessory, `round` superset round, `warmup`), seconds, or null for the
+ * standard one; [] for none. `whenShort`: `Rest when short on time` (`normal` Standard rest, `shorter` Medium,
+ * `shortest` Minimum); null: unchanged. `shortenMain`: `Shorten main lift too`; null: unchanged.
+ */
+export const UpdateRestSettingsArgsSchema = z.strictObject({
+  rests: z.array(z.strictObject({ setType: RestDefaultKeySchema, seconds: z.int().min(0).max(3600).nullable() })).max(7),
+  whenShort: FitRestLevelSchema.nullable(),
+  shortenMain: z.boolean().nullable(),
+  ...askClaim,
+});
+export type UpdateRestSettingsArgs = z.infer<typeof UpdateRestSettingsArgsSchema>;
+
+export const ProposePlanSwapArgsSchema = z.strictObject({
+  remove: z.string().min(1).max(80),
+  add: z.string().min(1).max(80),
+  reason,
+});
+export type ProposePlanSwapArgs = z.infer<typeof ProposePlanSwapArgsSchema>;
+
+/**
+ * (Ben, 31 Oct, build 493: "add them in after the raises … fix the plan too") One exercise added to chosen days of the
+ * plan in use, every week from now on: `add` (a catalogueId), `days` (plan day names from YOUR DATA plan.inUse.days),
+ * `after` (the catalogueId it goes straight after in each day that has it; null: at the end). Sets and reps are the
+ * coach's; `load` only a weight Ben named this turn (kept as typed, rule 4), otherwise null and the app plans it from
+ * his history on the day's equipment. Always a proposal with each day's before/after, Apply and Undo (rule 3).
+ */
+export const ProposePlanAddArgsSchema = z.strictObject({
+  add: z.string().min(1).max(80),
+  days: z.array(z.string().min(1).max(120)).max(7),
+  after: z.string().min(1).max(80).nullable(),
+  workingSets: z.int().min(1).max(10),
+  reps: z.strictObject({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable(),
+  load: z.number().min(0).max(1000).nullable(),
+  /**
+   * (Ben, 2 Nov: "bike for 8 minutes first on leg days") Where it goes in each day: `first` (before every exercise),
+   * `last`, `after` (straight after `after`; the default, null `after` = at the end) or `before` (straight before
+   * `before`). Null: `after`. Absent on calls made before them.
+   */
+  position: z.enum(['first', 'last', 'after', 'before']).nullable().optional(),
+  before: z.string().min(1).max(80).nullable().optional(),
+  /** (Ben, 2 Nov) A cardio or timed exercise's target: minutes per set and a distance (metres). Null: the app's default. */
+  minutes: z.number().min(0).max(240).nullable().optional(),
+  distanceM: z.int().min(0).max(100_000).nullable().optional(),
+  /**
+   * (Ben, 2 Nov: "yes if i ask for it … the warm-up could be any cardio exercise") True only when Ben's ask calls this
+   * cardio or timed add a warm-up ("bike 8 min first as a warm-up"); the row is then marked `Warm-up`. Code keeps it
+   * only when his words say warm-up and the exercise is cardio or timed. Null or absent: a normal exercise.
+   */
+  warmup: z.boolean().nullable().optional(),
+  /**
+   * (Ben, 2 Nov: "bike for 8 minutes first on leg days, rowing for 4 minutes first on other days") More adds in the same
+   * proposal, each into its own days (a day takes one add per proposal): one card, one Apply, one Undo. The coach picks
+   * the days by name (it reads each day's exercises); code never decides which days are leg days. Null: none.
+   */
+  also: z
+    .array(
+      z.strictObject({
+        add: z.string().min(1).max(80),
+        days: z.array(z.string().min(1).max(120)).min(1).max(7),
+        position: z.enum(['first', 'last', 'after', 'before']).nullable(),
+        before: z.string().min(1).max(80).nullable(),
+        after: z.string().min(1).max(80).nullable(),
+        workingSets: z.int().min(1).max(10),
+        reps: z.strictObject({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable(),
+        minutes: z.number().min(0).max(240).nullable(),
+        distanceM: z.int().min(0).max(100_000).nullable(),
+        /** (Ben, 2 Nov) As the top-level `warmup`. Absent on calls made before it. */
+        warmup: z.boolean().nullable().optional(),
+      }),
+    )
+    .max(3)
+    .nullable()
+    .optional(),
+  /**
+   * (Ben, 2 Nov) The part of Ben's ask this proposal can't express, in a few words ("only every other week"); null when
+   * it does all of it. Shown on the card as partial (coach honesty).
+   */
+  notIncluded: z.string().max(160).nullable().optional(),
+  reason,
+});
+export type ProposePlanAddArgs = z.infer<typeof ProposePlanAddArgsSchema>;
+
+/**
+ * (Ben, 1 Nov, build 500: "Going forwards plan B should be slightly different?" after shoulders pre-fatigued the bench)
+ * One plan day of the plan in use changed every week from now on: `order` (every exercise of the day once, by
+ * catalogueId, in the new order; null: the order stays) and `changes` per exercise: working sets, reps, target RPE,
+ * `main` (false: a secondary lift) and `load` (only a weight Ben named this turn; else null). Null in a change: that part
+ * stays. Always a proposal with the day's before/after, Apply and Undo (rule 3); checked against the day's version (rule 5).
+ */
+export const ProposePlanDayEditArgsSchema = z.strictObject({
+  day: z.string().min(1).max(120),
+  /**
+   * (Ben, 3 Nov: "set the bike to 8 min on leg days") More plan days that get the same `changes` in the same proposal
+   * (one card, one Apply, one Undo); each must have every changed exercise. Never with `order`. Null or absent: none.
+   */
+  alsoDays: z.array(z.string().min(1).max(120)).max(6).nullable().optional(),
+  order: z.array(z.string().min(1).max(80)).min(1).max(20).nullable(),
+  changes: z
+    .array(
+      z.strictObject({
+        exercise: z.string().min(1).max(80),
+        workingSets: z.int().min(1).max(10).nullable(),
+        reps: z.strictObject({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable(),
+        targetRpe: z.number().min(5).max(10).nullable(),
+        main: z.boolean().nullable(),
+        load: z.number().min(0).max(1000).nullable(),
+        /** (Ben, 3 Nov) A cardio or timed exercise's minutes per set and distance (metres). Null or absent: kept. */
+        minutes: z.number().min(0).max(240).nullable().optional(),
+        distanceM: z.int().min(0).max(100_000).nullable().optional(),
+        /** (Ben, 3 Nov) The `Warm-up` mark on a cardio or timed row: true only when Ben calls it a warm-up, false to take it off. */
+        warmup: z.boolean().nullable().optional(),
+        /** (Ben, 3 Nov) Put this exercise first in the day. Null or absent: its place stays. */
+        first: z.boolean().nullable().optional(),
+      }),
+    )
+    .max(12),
+  reason,
+});
+export type ProposePlanDayEditArgs = z.infer<typeof ProposePlanDayEditArgsSchema>;
+
+/** (Ben, 1 Nov; 3 Nov) One row's change in a plan day edit proposal (`dayEdit.rows`), as written on Apply. */
+export const PlanDayEditRowSchema = z.object({
+  rowId: IdSchema,
+  sets: z.int().min(1).max(10).optional(),
+  reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).optional(),
+  targetRpe: z.number().min(1).max(10).optional(),
+  main: z.boolean().optional(),
+  load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).optional(),
+  /** (Ben, 3 Nov) A cardio or timed row's work time per set (seconds), distance (metres) and warm-up mark. */
+  durationS: z.int().min(1).max(14_400).optional(),
+  distanceM: z.int().min(1).max(100_000).optional(),
+  warmup: z.boolean().optional(),
+  /** (Ben, 3 Nov) Moved first (the edit's order carries it). */
+  first: z.literal(true).optional(),
+});
+
+/** ADR 0039: today's Set up filled from Ben's own words this turn (the builder reads them); `reason` is the coach's one line. */
+export const FillSetupTodayArgsSchema = z.strictObject({ reason });
+export type FillSetupTodayArgs = z.infer<typeof FillSetupTodayArgsSchema>;
+
+/**
+ * (11 Oct, coach tools) Log a pending set with the values Ben said in this
+ * turn ("log 100 for 8"). Unit and convention are the exercise's own; the
+ * numbers must be in Ben's words. Same `log_set` command as the Log button.
+ */
+export const LogSetArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  setId: IdSchema,
+  load: LoadSchema.nullable(),
+  reps: z.int().min(0).max(100),
+  rpe: z.number().min(1).max(10).multipleOf(0.5).nullable(),
+});
+export type LogSetArgs = z.infer<typeof LogSetArgsSchema>;
+
+/**
+ * (11 Oct, coach tools) Correct a logged set's values when Ben says which set
+ * and what it was ("set 2 was 95"). Null keeps a value. Same `correct_set`
+ * command as the correction sheet; never a mark or a delete.
+ */
+export const CorrectSetArgsSchema = z.strictObject({
+  baseVersion: z.int().min(1),
+  setId: IdSchema,
+  load: LoadSchema.nullable(),
+  reps: z.int().min(0).max(100).nullable(),
+  rpe: z.number().min(1).max(10).multipleOf(0.5).nullable(),
+});
+export type CorrectSetArgs = z.infer<typeof CorrectSetArgsSchema>;
+
+/**
+ * (12 Oct) Add an exercise to today's workout when Ben asks ("add 3 sets of
+ * lateral raises", "put in some curls"). Structure only: the app plans the
+ * loads from Ben's history on this gym's equipment (no history: blank, B6),
+ * through the workout's own `add_exercise` command. Wide bounds here; the
+ * domain check clamps with a note, like `propose_workout`.
+ */
+export const AddExerciseTodayArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  /** From `addable` in the context: a catalogue ID or Ben's own exercise's ID. */
+  exerciseId: z.string().min(1).max(80),
+  workingSets: z.int().min(0).max(100),
+  /** Rep range for a reps exercise; null = the built-in rule's range. */
+  reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
+  /** Work time for a timed or cardio exercise. */
+  workSeconds: z.int().min(0).max(36_000).nullable(),
+  /** Cardio only (19 Oct): a distance to aim for, in metres; null = none. Absent on calls made before it. */
+  distanceMetres: z.number().min(0).max(100_000).nullable().optional(),
+  /** Working sets' target RPE, 5–10 in half steps; null = the usual target. */
+  targetRpe: z.number().min(0).max(20).nullable(),
+  /** Straight after this exercise of today's workout; null = at the end. */
+  afterSessionExerciseId: IdSchema.nullable(),
+  /** In a superset with this exercise of today's workout (it must have a set left); null = none. */
+  supersetWithSessionExerciseId: IdSchema.nullable(),
+  /** (19 Oct) Ben's load for every working set, in his unit (0 = no weight); null or absent = planned from his history. */
+  load: z.number().min(0).max(1000).nullable().optional(),
+  reason,
+  ...askClaim,
+});
+export type AddExerciseTodayArgs = z.infer<typeof AddExerciseTodayArgsSchema>;
+
+/**
+ * (14 Oct) Rename the live workout when Ben asks ("change the name of the
+ * workout to Chest day"). The workout's own `rename_session` command,
+ * versioned on the session (rule 5); the routine keeps its name.
+ */
+/**
+ * (Ben, 20 Oct) `set_lift_target`: "I want to bench 100 kg by March". Only while Lift targets is
+ * on; applies only when Ben asked (`benAsked` with his words), else nothing is saved and the coach
+ * asks him. The app resolves the exercise among those he logs, takes its convention from his sets
+ * (per hand for dumbbells) and checks the values (max 3 targets, one per exercise).
+ */
+export const SetLiftTargetArgsSchema = z.strictObject({
+  /** The exercise's name or ID, one Ben logs. */
+  exercise: z.string().min(1).max(120),
+  kind: z.enum(['one_rm', 'weight_reps']),
+  load: z.number().positive().max(2000),
+  unit: WeightUnitSchema,
+  /** `weight_reps` only; null for a 1RM. */
+  reps: z.int().min(1).max(30).nullable(),
+  /** `YYYY-MM-DD`, or null for no date. */
+  byDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  ...askClaim,
+});
+export type SetLiftTargetArgs = z.infer<typeof SetLiftTargetArgsSchema>;
+
+/**
+ * (Ben, 1 Nov) `update_warmup_prefs`: "use simple warm-up weights", "no warm-ups on face pulls". `simpleLoads`: the
+ * `Simple warm-up weights` setting (null: unchanged). `exercises`: warm-ups per exercise, `off` none, `normal` the
+ * planner's, `default` back to the default. Applies at once with Undo when Ben asked (rule 3); today's not-yet-done
+ * warm-ups are planned again; logged sets never change (rule 2).
+ */
+export const UpdateWarmupPrefsArgsSchema = z.strictObject({
+  simpleLoads: z.boolean().nullable(),
+  exercises: z
+    .array(z.strictObject({ exercise: z.string().min(1).max(120), warmups: z.enum(['off', 'normal', 'default']) }))
+    .max(20),
+  ...askClaim,
+});
+export type UpdateWarmupPrefsArgs = z.infer<typeof UpdateWarmupPrefsArgsSchema>;
+
+/**
+ * (Ben, 2 Nov) Fix a past workout, always as a proposal with before/after, Apply and Undo (rule 2): `move` its date or
+ * times ("that Tuesday pull was actually Monday": `date` the new local day, `start`/`end` local `HH:MM`, null keeps the
+ * time of day / the length), `delete` a duplicate or wrong workout (a soft delete, restorable; Undo brings it back),
+ * `pair` a Health workout (`healthId`) with an app workout (`workoutId`), or (Ben, 2 Nov) link it to Ben's planned run
+ * that day (`workoutId` null, or that planned activity's ID), `unpair` a Health workout (or unlink it from the planned
+ * run). IDs come from get_recent_sessions (a day's read lists its Health workouts too).
+ * Two app workouts are never merged: the app can't; delete the duplicate instead.
+ */
+export const ProposeWorkoutFixArgsSchema = z.strictObject({
+  op: z.enum(['move', 'delete', 'pair', 'unpair']),
+  workoutId: z.string().min(1).max(64).nullable(),
+  healthId: z.string().min(1).max(64).nullable(),
+  date: LocalDateSchema.nullable(),
+  start: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  end: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  reason,
+});
+export type ProposeWorkoutFixArgs = z.infer<typeof ProposeWorkoutFixArgsSchema>;
+
+/**
+ * (Ben, 2 Nov: "I don't like leg extensions, take them out") One exercise's preference on Any preferences (the plan in
+ * use's answers): `not_preferred`, `preferred`, or `none` (cleared). `exercise`: a name or catalogueId. `swapTo`: with
+ * `not_preferred`, a substitute from get_substitutions for the plan days that have it (null: the app picks one for the
+ * same muscles). Applies at once with Undo when Ben stated it (rule 3); the plan swap is always a proposal.
+ */
+export const SetExercisePreferenceArgsSchema = z.strictObject({
+  exercise: z.string().min(1).max(120),
+  preference: z.enum(['not_preferred', 'preferred', 'none']),
+  swapTo: z.string().min(1).max(80).nullable(),
+  ...askClaim,
+});
+export type SetExercisePreferenceArgs = z.infer<typeof SetExercisePreferenceArgsSchema>;
+
+/**
+ * (Ben, 2 Nov) Plan › Muscles' Rebalance for the plan in use, from the coach: the same engine and the same card (per-day
+ * lines, bars, day lengths, per-line skip, Apply and Undo). Always a proposal (rule 3).
+ */
+export const ProposeRebalanceArgsSchema = z.strictObject({
+  reason,
+});
+export type ProposeRebalanceArgs = z.infer<typeof ProposeRebalanceArgsSchema>;
+
+export const RenameWorkoutArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  name: z.string().min(1).max(120),
+  ...askClaim,
+});
+export type RenameWorkoutArgs = z.infer<typeof RenameWorkoutArgsSchema>;
+
+/**
+ * (Coach v3, ADR 0027, 18 Oct) One change to today's live workout in `edit_today`. IDs are
+ * the workout's (`sessionExerciseId`, `setId`) or, for a new exercise, one from YOUR DATA
+ * `addable` (`exerciseId`, `toExerciseId`). Only sets not done yet change (rule 2); the app
+ * checks and fits every number (rule 4) and refuses the whole edit if any op is refused.
+ */
+export const EditTodayOpSchema = z.discriminatedUnion('op', [
+  /** A pending set's target (load, reps, target RPE; null keeps a value). */
+  z.strictObject({ op: z.literal('set'), setId: IdSchema, target: CoachTargetSchema }),
+  /**
+   * ADR 0038 (Ben, 28 Oct: "build up to 95 kg barbell row as the last set"): the exercise's remaining working sets,
+   * in order, each with its target. Pending working sets take them in order; more add sets, fewer remove pending
+   * ones from the end. Done sets stay and aren't listed.
+   */
+  z.strictObject({ op: z.literal('sets'), sessionExerciseId: IdSchema, sets: z.array(CoachTargetSchema).min(1).max(20) }),
+  /** The exercise's working sets today, done ones included: more adds pending sets like its last one, fewer removes pending ones from the end. */
+  z.strictObject({ op: z.literal('set_count'), sessionExerciseId: IdSchema, workingSets: z.int().min(0).max(20) }),
+  /** The exercise's pending sets move to another exercise (done sets stay). */
+  z.strictObject({ op: z.literal('swap'), sessionExerciseId: IdSchema, toExerciseId: z.string().min(1).max(80) }),
+  /** A new exercise with pending sets; the app plans its loads from Ben's history on this gym's equipment. */
+  z.strictObject({
+    op: z.literal('add'),
+    exerciseId: z.string().min(1).max(80),
+    workingSets: z.int().min(0).max(100),
+    reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
+    workSeconds: z.int().min(0).max(36_000).nullable(),
+    /** Cardio only (19 Oct): a distance to aim for, in metres, next to `workSeconds`; null = none. Absent on calls made before it. */
+    distanceMetres: z.number().min(0).max(100_000).nullable().optional(),
+    targetRpe: z.number().min(0).max(20).nullable(),
+    afterSessionExerciseId: IdSchema.nullable(),
+    supersetWithSessionExerciseId: IdSchema.nullable(),
+    /** (19 Oct) A load for every working set in Ben's unit, as Ben asked ("at 0"); 0 = no weight; null = planned from his history. Absent on calls made before it. */
+    load: z.number().min(0).max(1000).nullable().optional(),
+  }),
+  /** The exercise's pending sets go (a row with nothing done leaves the workout; otherwise its rest is skipped). */
+  z.strictObject({ op: z.literal('remove'), sessionExerciseId: IdSchema }),
+  /** The exercise (with its superset) goes straight after another one, or first (null). */
+  z.strictObject({ op: z.literal('move'), sessionExerciseId: IdSchema, afterSessionExerciseId: IdSchema.nullable() }),
+  /** (19 Oct) Two exercises already in today's workout become a superset (sets alternate). Either order: the one further along stays put, the other joins after it. */
+  z.strictObject({ op: z.literal('superset'), sessionExerciseId: IdSchema, withSessionExerciseId: IdSchema }),
+  /** (19 Oct) The exercise's superset is taken apart (each member back to its own sets). */
+  z.strictObject({ op: z.literal('split_superset'), sessionExerciseId: IdSchema }),
+  /**
+   * (Ben, 1 Nov) `set_main_lift`: today's main lift is this exercise (one per day; the one before a normal compound).
+   * No set changes. The workout's own `set_main_lift` step; every week is `propose_plan_day_edit` with `main: true`.
+   */
+  z.strictObject({ op: z.literal('main'), sessionExerciseId: IdSchema }),
+  /**
+   * (Ben, 8 Nov, live Pull B: "not much of a warm up", "why haven't u added a 80 too") The exercise's warm-ups today:
+   * each load (the row's unit and convention) and reps, placed in the warm-up block by load, above the working sets.
+   * Loads are rounded down to the row's item and kept under its first working load. `replace`: its pending warm-ups not
+   * listed go (done ones always stay, rule 2); false: these are added to them. A load already there isn't added twice.
+   */
+  z.strictObject({
+    op: z.literal('warmups'),
+    sessionExerciseId: IdSchema,
+    /** (Ben, 8 Nov) Up to 20 (a data ceiling): the warm-up count is the coach's judgement, his ask overrides it. */
+    sets: z.array(z.strictObject({ load: z.number().min(0).max(2000), reps: z.int().min(1).max(30) })).min(1).max(20),
+    replace: z.boolean(),
+  }),
+  /**
+   * (Ben, 8 Nov, coach parity) What Ben edits by hand on a pending set (`setId`) or all the exercise's (null): its type
+   * (one set), rest, work time or distance; `position` that set's place among the pending ones (1 = next); `remove`
+   * that set; `note` on it or the exercise ("" clears); `addedWeight` true for `+ Weight`, false back to bodyweight.
+   * Null keeps each.
+   */
+  z.strictObject({
+    op: z.literal('set_details'),
+    sessionExerciseId: IdSchema,
+    setId: IdSchema.nullable(),
+    setType: SetTypeSchema.nullable(),
+    restSeconds: z.int().min(0).max(3600).nullable(),
+    workSeconds: z.int().min(1).max(36_000).nullable(),
+    distanceMetres: z.number().min(0).max(100_000).nullable(),
+    position: z.int().min(1).max(40).nullable(),
+    remove: z.boolean().nullable(),
+    note: z.string().max(500).nullable(),
+    addedWeight: z.boolean().nullable(),
+  }),
+]);
+export type EditTodayOp = z.infer<typeof EditTodayOpSchema>;
+
+export const EditTodayArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  ops: z.array(EditTodayOpSchema).min(1).max(20),
+  reason,
+  /**
+   * (Ben, 8 Nov: pain is a one-session hold he can wave through) Ben said to go ahead despite a pain hold on the
+   * exercises this edit changes. Honoured only on his explicit ask with go-ahead words of his own this turn
+   * (`painGoAheadWords`); never on an offer. Null or absent: the hold applies.
+   */
+  painGoAhead: z.boolean().nullable().optional(),
+  ...askClaim,
+});
+export type EditTodayArgs = z.infer<typeof EditTodayArgsSchema>;
+
+export const GetRecentActionsArgsSchema = z.strictObject({
+  limit: z.int().min(1).max(10),
+});
+
+export const PendingSetChangeSchema = z.strictObject({
+  setId: IdSchema,
+  target: CoachTargetSchema,
+});
+export type PendingSetChange = z.infer<typeof PendingSetChangeSchema>;
+
+export const ExerciseAdjustmentSchema = z.strictObject({
+  sessionExerciseId: IdSchema,
+  sets: z.array(PendingSetChangeSchema).max(20),
+  /** At most one extra pending set per exercise (CA2). */
+  addSet: CoachTargetSchema.nullable(),
+  /** At most one pending set removed per exercise. */
+  removeSetId: IdSchema.nullable(),
+});
+export type ExerciseAdjustment = z.infer<typeof ExerciseAdjustmentSchema>;
+
+export const AdjustPendingSetsArgsSchema = z.strictObject({
+  /** The session version the coach read. A newer session rejects the call as stale (rule 5). */
+  baseVersion: z.int().min(1),
+  exercises: z.array(ExerciseAdjustmentSchema).min(1).max(12),
+  reason,
+  ...askClaim,
+});
+export type AdjustPendingSetsArgs = z.infer<typeof AdjustPendingSetsArgsSchema>;
+
+export const NextSessionTargetSchema = z.strictObject({
+  exerciseId: IdSchema,
+  target: CoachTargetSchema,
+  /** Working sets for next time; null = keep the count. */
+  sets: z.int().min(1).max(12).nullable(),
+  reason,
+});
+export type NextSessionTarget = z.infer<typeof NextSessionTargetSchema>;
+
+export const SetNextSessionTargetsArgsSchema = z.strictObject({
+  sourceSessionId: IdSchema,
+  sourceVersion: z.int().min(1),
+  targets: z.array(NextSessionTargetSchema).min(1).max(20),
+});
+export type SetNextSessionTargetsArgs = z.infer<typeof SetNextSessionTargetsArgsSchema>;
+
+export const StructuralChangeSchema = z.discriminatedUnion('change', [
+  z.strictObject({ change: z.literal('swap'), fromExerciseId: IdSchema, toExerciseId: IdSchema }),
+  z.strictObject({ change: z.literal('add'), exerciseId: IdSchema, afterExerciseId: IdSchema.nullable() }),
+  z.strictObject({ change: z.literal('remove'), exerciseId: IdSchema }),
+  z.strictObject({ change: z.literal('reorder'), exerciseIds: z.array(IdSchema).min(2).max(20) }),
+]);
+export type StructuralChange = z.infer<typeof StructuralChangeSchema>;
+
+export const StructuralSignalKindSchema = z.enum([
+  'variety_request',
+  'goal_changed',
+  'schedule_changed',
+  'equipment_changed',
+  'pain_flag',
+]);
+export type StructuralSignalKind = z.infer<typeof StructuralSignalKindSchema>;
+
+export const ProposeNextWorkoutChangeArgsSchema = z.strictObject({
+  sourceSessionId: IdSchema,
+  sourceVersion: z.int().min(1),
+  changes: z.array(StructuralChangeSchema).min(1).max(6),
+  reason,
+});
+export type ProposeNextWorkoutChangeArgs = z.infer<typeof ProposeNextWorkoutChangeArgsSchema>;
+
+export const SetPainFlagArgsSchema = z.strictObject({
+  exerciseIds: z.array(IdSchema).min(1).max(10),
+  area: PainAreaSchema.nullable(),
+  /** Ben's words from this turn; the gate checks the turn itself, not this field. */
+  quote,
+});
+export type SetPainFlagArgs = z.infer<typeof SetPainFlagArgsSchema>;
+
+export const SaveMemoryArgsSchema = z.strictObject({
+  text: z.string().min(1).max(200),
+  quote,
+});
+export type SaveMemoryArgs = z.infer<typeof SaveMemoryArgsSchema>;
+
+export const ForgetMemoryArgsSchema = z.strictObject({
+  memoryId: IdSchema,
+  expectedVersion: z.int().min(1),
+});
+export type ForgetMemoryArgs = z.infer<typeof ForgetMemoryArgsSchema>;
+
+export const AddPlaybookCandidateArgsSchema = z.strictObject({
+  text: z.string().min(1).max(400),
+  statedBy: z.enum(['ben', 'coach']),
+});
+export type AddPlaybookCandidateArgs = z.infer<typeof AddPlaybookCandidateArgsSchema>;
+
+/**
+ * (20 Oct, Ben: "update as we go and train the app for each gym"; ADR 0029) One change to a gym's
+ * profile. Kinds are the gym-profile kinds. `not_here`: one exercise the gym can't do ("no leg
+ * press here"), by a catalogueId or Ben's own exercise's ID. Every number is checked by the app.
+ */
+export const UpdateGymChangeSchema = z.discriminatedUnion('op', [
+  z.strictObject({ op: z.literal('add'), equipment: GymEquipmentKindSchema }),
+  z.strictObject({ op: z.literal('remove'), equipment: GymEquipmentKindSchema }),
+  /** The dumbbells' heaviest (per hand) and step, in the gym's unit; null keeps one. */
+  z.strictObject({ op: z.literal('dumbbells'), max: z.number().min(0).max(1000).nullable(), step: z.number().min(0).max(100).nullable() }),
+  /**
+   * A weight stack's step in the gym's unit. `exerciseId` (review quickgym B2): that one machine's own
+   * stack; else the item named (`Cable station`, `Machines`), or every stack (null).
+   */
+  z.strictObject({ op: z.literal('stack_step'), step: z.number().min(0).max(100), itemName: z.string().max(120).nullable(), exerciseId: z.string().min(1).max(80).nullable().optional() }),
+  z.strictObject({ op: z.literal('not_here'), exerciseId: z.string().min(1).max(80) }),
+]);
+export type UpdateGymChange = z.infer<typeof UpdateGymChangeSchema>;
+
+export const UpdateGymArgsSchema = z.strictObject({
+  /** One of Ben's gyms by name; null: the workout's gym, else his selected gym. */
+  gymName: z.string().max(120).nullable(),
+  changes: z.array(UpdateGymChangeSchema).min(1).max(6),
+  reason,
+  ...askClaim,
+});
+export type UpdateGymArgs = z.infer<typeof UpdateGymArgsSchema>;
+
+/** Every v1 tool name. Anything else the model calls is `Not allowed`. */
+export const CoachToolNameSchema = z.enum([
+  'get_active_session',
+  'get_recent_training',
+  'get_training_overview',
+  'get_gym_equipment',
+  'get_progression_targets',
+  'get_substitutions',
+  /** (19 Oct) Search every exercise usable at the gym (the prompt's list is capped). */
+  'find_exercises',
+  'get_recent_actions',
+  /** (Coach v3) Records per exercise, the e1RM labelled an estimate. */
+  'get_exercise_records',
+  /** (Coach v3) The last finished workouts with their sets. */
+  'get_recent_sessions',
+  /** (Coach v3) One step at a higher reasoning effort, once per turn. */
+  'think_harder',
+  'adjust_pending_sets',
+  /** (12 Oct) Add an exercise to today's workout when Ben asks; applied at once with Undo. */
+  'add_exercise_today',
+  /** (14 Oct) Rename the live workout when Ben asks; applied at once with Undo. */
+  'rename_workout',
+  /**
+   * (Coach v3, 18 Oct) One general tool for today's live workout: swap, add, remove, move, set count
+   * and set targets. Replaces `adjust_pending_sets` and `add_exercise_today` on live-workout turns.
+   */
+  'edit_today',
+  'log_set',
+  'correct_set',
+  'set_next_session_targets',
+  'propose_next_workout_change',
+  'set_pain_flag',
+  'save_memory',
+  'suggest_memory',
+  'forget_memory',
+  'add_playbook_candidate',
+  /** (12 Oct) The workout builder's tool (workout-builder BD1); v2: structure and checked loads, never minutes. */
+  'propose_workout',
+  /** (14 Oct, workout builder v2 BD17) One clarifying question before a build; at most 2 per build request. */
+  'ask_build_question',
+  /** (19 Oct) A multi-day plan Ben asked for: every day at once, as a proposal he applies. */
+  'propose_plan',
+  /** (19 Oct) A new exercise for Ben's list, as a card he adds or edits. */
+  'propose_exercise',
+  /** (Ben, 20 Oct) Pause or resume the plan in use when Ben asks ("I'm on holiday till 3 Nov"); applied at once with Undo. */
+  'pause_plan',
+  /** (20 Oct, ADR 0029) Update a gym's equipment: applied with Undo when Ben said it, else a card he applies. */
+  'update_gym',
+  /** (Ben, 20 Oct) A lift target Ben asked for, applied with Undo (only while Lift targets is on). */
+  'set_lift_target',
+  /** (Ben, 20 Oct) A run, ride, swim or sport: logged when Ben asks ("18 km run yesterday"), else offered. */
+  'log_activity',
+  /** (Ben, 20 Oct) This week's remaining days merged or skipped around a run: a proposal Ben applies. */
+  'propose_week',
+  /**
+   * ADR 0039 (Ben, 29 Oct): a change to a Your workout draft before Start, from any chat: the builder's own edit coach
+   * makes it from Ben's words, as a proposal with Apply / Skip (rule 3).
+   */
+  'propose_workout_edit',
+  /** ADR 0039: today's Set up filled from Ben's words (a day, a length, a main lift); he opens it to build. */
+  'fill_setup',
+  /** (Ben, 30 Oct) One exercise out and another in, in every day of the plan in use: a proposal he applies, with Undo. */
+  'propose_plan_swap',
+  /** (Ben, 31 Oct) One exercise added to chosen days of the plan in use, at a chosen place: a proposal he applies, with Undo. */
+  'propose_plan_add',
+  /** (Ben, 1 Nov) Warm-up preferences (simple loads, warm-ups per exercise), applied with Undo when Ben asks. */
+  'update_warmup_prefs',
+  /** (Ben, 1 Nov) One plan day's order and sets/reps/RPE/main every week: a proposal he applies, with Undo. */
+  'propose_plan_day_edit',
+  /** (Ben, 2 Nov) A lighter week, days a week, plan length, Set/Any days or End for the plan in use: a proposal with Apply/Undo. */
+  'propose_plan_change',
+  /** (Ben, 2 Nov) Default rests per set type, `Rest when short on time`, `Shorten main lift too`: applied with Undo when Ben asks. */
+  'update_rest_settings',
+  /** (Ben, 2 Nov) A past workout's date moved, a duplicate deleted, a Health workout paired or unpaired: a proposal he applies, with Undo. */
+  'propose_workout_fix',
+  /** (Ben, 2 Nov) One exercise's preference (not preferred / preferred / none), applied with Undo when Ben states it. */
+  'set_exercise_preference',
+  /** (Ben, 2 Nov) Plan › Muscles' Rebalance for the plan in use: the same proposal as the screen's, Apply and Undo. */
+  'propose_rebalance',
+]);
+export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
+
+/** The argument schema of each tool, by name. */
+export const COACH_TOOL_ARGS = {
+  get_active_session: EmptyArgsSchema,
+  get_recent_training: GetRecentTrainingArgsSchema,
+  get_training_overview: GetTrainingOverviewArgsSchema,
+  get_gym_equipment: GetGymEquipmentArgsSchema,
+  get_progression_targets: GetProgressionTargetsArgsSchema,
+  get_substitutions: GetSubstitutionsArgsSchema,
+  find_exercises: FindExercisesArgsSchema,
+  get_recent_actions: GetRecentActionsArgsSchema,
+  get_exercise_records: GetExerciseRecordsArgsSchema,
+  get_recent_sessions: GetRecentSessionsArgsSchema,
+  think_harder: ThinkHarderArgsSchema,
+  adjust_pending_sets: AdjustPendingSetsArgsSchema,
+  add_exercise_today: AddExerciseTodayArgsSchema,
+  rename_workout: RenameWorkoutArgsSchema,
+  edit_today: EditTodayArgsSchema,
+  log_set: LogSetArgsSchema,
+  correct_set: CorrectSetArgsSchema,
+  set_next_session_targets: SetNextSessionTargetsArgsSchema,
+  propose_next_workout_change: ProposeNextWorkoutChangeArgsSchema,
+  set_pain_flag: SetPainFlagArgsSchema,
+  save_memory: SaveMemoryArgsSchema,
+  suggest_memory: SaveMemoryArgsSchema,
+  forget_memory: ForgetMemoryArgsSchema,
+  add_playbook_candidate: AddPlaybookCandidateArgsSchema,
+  propose_workout: ProposeWorkoutArgsSchema,
+  ask_build_question: AskBuildQuestionArgsSchema,
+  propose_plan: ProposePlanArgsSchema,
+  propose_exercise: ProposeExerciseArgsSchema,
+  pause_plan: PausePlanArgsSchema,
+  update_gym: UpdateGymArgsSchema,
+  set_lift_target: SetLiftTargetArgsSchema,
+  log_activity: LogActivityArgsSchema,
+  propose_week: ProposeWeekArgsSchema,
+  propose_workout_edit: ProposeDraftEditArgsSchema,
+  fill_setup: FillSetupTodayArgsSchema,
+  propose_plan_swap: ProposePlanSwapArgsSchema,
+  propose_plan_add: ProposePlanAddArgsSchema,
+  update_warmup_prefs: UpdateWarmupPrefsArgsSchema,
+  propose_plan_day_edit: ProposePlanDayEditArgsSchema,
+  propose_plan_change: ProposePlanChangeArgsSchema,
+  update_rest_settings: UpdateRestSettingsArgsSchema,
+  propose_workout_fix: ProposeWorkoutFixArgsSchema,
+  set_exercise_preference: SetExercisePreferenceArgsSchema,
+  propose_rebalance: ProposeRebalanceArgsSchema,
+} as const satisfies Record<CoachToolName, z.ZodType>;
+
+// ---------------------------------------------------------------------------
+// Fit to time: the coach's answer to `Ask coach` on `How long?` (fit-to-time §5)
+
+/**
+ * The one function the coach calls to fit today's plan (fit-to-time §5.2).
+ * Not a chat-turn tool: it is the only tool of its own request, sent when
+ * Ben taps `Ask coach`. Flat and closed for strict mode (every field
+ * present, `null` when unused). The app validates every edit
+ * (`validateTodayFit`); the model's minutes, if it gives any, are ignored.
+ */
+export const TODAY_FIT_TOOL_NAME = 'fit_today';
+
+export const TodayFitEditArgsSchema = z.strictObject({
+  kind: z.enum(['skip', 'sets', 'add', 'swap', 'superset', 'reps', 'load', 'rest']),
+  /** The plan slot (`slotKey` from the context); null for `add` and `superset`. */
+  slotKey: z.string().max(64).nullable(),
+  /** `add`: Ben's exercise to add; `swap`: the exercise to swap to. */
+  exerciseId: z.string().max(64).nullable(),
+  /** `sets`: the working-set count today. */
+  workingSets: z.int().min(0).max(20).nullable(),
+  /** `superset`: the slots to pair. */
+  slotKeys: z.array(z.string().max(64)).max(6).nullable(),
+  /** `load`, `rest` or `reps`: the number the model asked for (always refused in a fit). */
+  value: z.number().nullable(),
+});
+export type TodayFitEditArgs = z.infer<typeof TodayFitEditArgsSchema>;
+
+export const TodayFitArgsSchema = z.strictObject({
+  /** One or two sentences for `Why?`. */
+  reason: z.string().max(240),
+  edits: z.array(TodayFitEditArgsSchema).max(24),
+});
+export type TodayFitArgs = z.infer<typeof TodayFitArgsSchema>;
+
+/** A parsed, validated tool call: a discriminated union on `tool`. */
+export type CoachToolCall = {
+  [K in CoachToolName]: { tool: K; args: z.infer<(typeof COACH_TOOL_ARGS)[K]> };
+}[CoachToolName];
+
+// ---------------------------------------------------------------------------
+// Guard notes (written by the domain validators, never by the model)
+
+export const GuardNoteKindSchema = z.enum([
+  'snapped',
+  'capped',
+  'converted',
+  'pain_blocked',
+  /** Ben mentioned pain on this movement in this turn; no pain flag exists (review B1). */
+  'pain_mentioned',
+  'pain_unspecified',
+  'lighter_no_increase',
+  'no_achievable_load',
+  'no_equipment',
+  'convention_mismatch',
+  'completed_set_dropped',
+  'not_pending',
+  'unknown_target',
+  'invalid_reps',
+  'too_many_sets',
+  'structural_dropped',
+  /** The coach's target RPE wasn't used: Ben set his own for the set (review target-rpe S2). */
+  'rpe_overridden',
+  /** (12 Oct) A workout-builder check (`checkWorkoutProposal`, BD9): left out, swapped, clamped or filled in. */
+  'build_check',
+  /** (Ben, 23 Oct) A coach stall reset moved into playbook rule 8's 5–10% band (ADR 0006 amendment). */
+  'reset_band',
+]);
+export type GuardNoteKind = z.infer<typeof GuardNoteKindSchema>;
+
+export const GuardNoteSchema = z.object({
+  kind: GuardNoteKindSchema,
+  setIds: z.array(IdSchema).max(40),
+  /** App text, e.g. `Rounded to 97.5 kg: nearest your bar and plates allow.` */
+  text: z.string().min(1).max(300),
+});
+export type GuardNote = z.infer<typeof GuardNoteSchema>;
+
+// ---------------------------------------------------------------------------
+// Action records (coach-contract §6)
+
+export const ActionStatusSchema = z.enum(['committed', 'proposed', 'rejected', 'stale', 'failed']);
+export type ActionStatus = z.infer<typeof ActionStatusSchema>;
+
+/** One pending set's target before and after (targets only; never an actual). */
+export const SetTargetChangeSchema = z.object({
+  setId: IdSchema,
+  /** 1-based position in the exercise, as shown on the set card. */
+  setNumber: z.int().min(1),
+  before: CoachTargetSchema.nullable(),
+  after: CoachTargetSchema.nullable(),
+});
+export type SetTargetChange = z.infer<typeof SetTargetChangeSchema>;
+
+export const ExerciseTargetChangesSchema = z.object({
+  sessionExerciseId: IdSchema,
+  exerciseName: z.string().min(1).max(120),
+  changes: z.array(SetTargetChangeSchema).max(40),
+});
+export type ExerciseTargetChanges = z.infer<typeof ExerciseTargetChangesSchema>;
+
+export const NextTargetRowSchema = z.object({
+  exerciseId: IdSchema,
+  exerciseName: z.string().min(1).max(120),
+  before: CoachTargetSchema.nullable(),
+  after: CoachTargetSchema,
+  setsBefore: z.int().min(0).nullable(),
+  setsAfter: z.int().min(0).nullable(),
+  /** CA8: `small` is saved by default, `bigger` is a proposal. */
+  size: z.enum(['small', 'bigger']),
+});
+export type NextTargetRow = z.infer<typeof NextTargetRowSchema>;
+
+export const StructuralChangeLineSchema = z.object({
+  change: z.enum(['swap', 'add', 'remove', 'reorder', 'edit']),
+  /** App text, e.g. `Cable fly → Pec deck`. */
+  text: z.string().min(1).max(200),
+});
+
+/** One checked structural change, by plan slot (routine slot or the source workout's part root). */
+export const StructuralOpSchema = z.discriminatedUnion('change', [
+  z.object({ change: z.literal('swap'), slotKey: IdSchema, fromExerciseId: IdSchema, fromName: z.string().min(1).max(120), toExerciseId: IdSchema, toName: z.string().min(1).max(120) }),
+  z.object({ change: z.literal('remove'), slotKey: IdSchema, exerciseId: IdSchema, name: z.string().min(1).max(120) }),
+  /** `exerciseIds`: the new order by exercise (D8: Your workout's slots aren't the plan's); absent on older records. */
+  z.object({ change: z.literal('reorder'), slotKeys: z.array(IdSchema).min(2).max(40), names: z.array(z.string().max(120)).max(40), exerciseIds: z.array(IdSchema).min(2).max(40).optional() }),
+]);
+export type StructuralOpRecord = z.infer<typeof StructuralOpSchema>;
+
+export const ActionDetailSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('adjust_pending_sets'),
+    sessionId: IdSchema,
+    exercises: z.array(ExerciseTargetChangesSchema).max(12),
+  }),
+  /**
+   * (12 Oct) An exercise added to today's workout from chat. `sessionExerciseId`:
+   * the new row (Undo takes it out with `undo_op` while none of its sets is done).
+   * `target`: the first working set's target as saved (load null = blank, no history
+   * on that equipment, B6). App text names only, never model words.
+   */
+  z.object({
+    kind: z.literal('add_exercise_today'),
+    sessionId: IdSchema,
+    sessionExerciseId: IdSchema,
+    exerciseId: IdSchema.nullable(),
+    exerciseName: z.string().min(1).max(120),
+    sets: z.int().min(0).max(20),
+    target: CoachTargetSchema.nullable(),
+    durationS: z.int().min(0).max(36_000).nullable(),
+    /** Cardio (review S3): the distance target in metres; absent otherwise and on records made before it. */
+    distanceM: z.number().min(0).max(100_000).optional(),
+    equipmentName: z.string().min(1).max(120).nullable(),
+    afterName: z.string().min(1).max(120).nullable(),
+    supersetWithName: z.string().min(1).max(120).nullable(),
+  }),
+  /** (14 Oct) The live workout renamed from chat: the name before (null: none) and after, for Undo. */
+  z.object({
+    kind: z.literal('rename_workout'),
+    sessionId: IdSchema,
+    before: z.string().min(1).max(120).nullable(),
+    after: z.string().min(1).max(120),
+  }),
+  /**
+   * (Coach v3, ADR 0027, 18 Oct) The coach's change to today's live workout (`edit_today`): swaps,
+   * adds, removals, moves, set counts and set targets, as one operation (`coach_edit_today`).
+   * `lines`: app text, one per structural change (`Bench press → Dumbbell bench press`).
+   * `exercises`: set targets and counts before and after (as `adjust_pending_sets`). `names`: every
+   * exercise the edit touched, for the claim check. `command`: exactly what applies (and, on an
+   * offer, what Ben's accept applies, with no model call), or null on a refusal. `proposalId`: on
+   * the record of Ben's accept, the offer it applied. Undo is `revert_coach_edit` on the command.
+   */
+  z.object({
+    kind: z.literal('edit_today'),
+    sessionId: IdSchema,
+    baseVersion: z.int().min(1),
+    lines: z.array(StructuralChangeLineSchema).max(24),
+    exercises: z.array(ExerciseTargetChangesSchema).max(24),
+    names: z.array(z.string().min(1).max(120)).max(48),
+    /** Each added exercise as saved (in the order of the `add` lines): its first working set's target, for the card. */
+    added: z
+      .array(
+        z.object({
+          exerciseName: z.string().min(1).max(120),
+          sets: z.int().min(0).max(20),
+          target: CoachTargetSchema.nullable(),
+          durationS: z.int().min(0).max(36_000).nullable(),
+          /** Cardio (review S3): the distance target in metres; absent otherwise. */
+          distanceM: z.number().min(0).max(100_000).optional(),
+          afterName: z.string().min(1).max(120).nullable(),
+          supersetWithName: z.string().min(1).max(120).nullable(),
+        }),
+      )
+      .max(12)
+      .optional(),
+    command: CoachEditTodayCommandSchema.nullable(),
+    proposalId: IdSchema.optional(),
+    /**
+     * (Ben, 8 Nov: "If I agree to apply it there shouldn't be any limit") The coach limit Ben's ask went past, one line
+     * each (`Biceps 12 sets today · above 8 a session`), shown on the card. Absent: none.
+     */
+    tradeOff: z.array(z.string().min(1).max(200)).max(4).optional(),
+    /**
+     * (Ben, 8 Nov) Pain holds Ben told the coach to go ahead despite, cleared early with the change (`clearConfirmed`)
+     * and put back by its Undo, each at the version the clear left it. Absent: none.
+     */
+    painCleared: z.array(z.object({ id: IdSchema, version: z.int().min(1) })).max(10).optional(),
+    /**
+     * (Ben, 28 Oct) What the gym learned from weights Ben named (a dumbbell, a plate), written with the change and
+     * taken back by its Undo. Absent: nothing learned.
+     */
+    learned: GymEditSchema.optional(),
+    /**
+     * (Ben, 1 Nov, build 500: "stick to 100" when they were 100 kg) Nothing to change: every set asked for already has
+     * that target. Saved `rejected` (nothing was written) but shown as `Already 100 kg`, never as a failure.
+     */
+    noop: z.literal(true).optional(),
+  }),
+  /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
+  z.object({
+    kind: z.literal('log_set'),
+    sessionId: IdSchema,
+    setId: IdSchema,
+    exerciseName: z.string().min(1).max(120),
+    setNumber: z.int().min(1),
+    values: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    setVersionAfter: z.int().min(1).nullable(),
+  }),
+  /** (11 Oct) A logged set corrected from chat: before and after values, and the set's version after, for Undo. */
+  z.object({
+    kind: z.literal('correct_set'),
+    sessionId: IdSchema,
+    setId: IdSchema,
+    exerciseName: z.string().min(1).max(120),
+    setNumber: z.int().min(1),
+    before: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    after: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    setVersionAfter: z.int().min(1).nullable(),
+  }),
+  z.object({
+    kind: z.literal('set_next_session_targets'),
+    sourceSessionId: IdSchema,
+    /** `Push A`, or the workout's title when there is no routine. */
+    workoutLabel: z.string().min(1).max(120),
+    rows: z.array(NextTargetRowSchema).max(20),
+  }),
+  z.object({
+    kind: z.literal('propose_next_workout_change'),
+    sourceSessionId: IdSchema,
+    workoutLabel: z.string().min(1).max(120),
+    changes: z.array(StructuralChangeLineSchema).min(1).max(6),
+    /** App text after `Because:`. */
+    because: z.string().min(1).max(200),
+    /**
+     * (11 Oct, coach tools) What the next workout starts from: the routine, or
+     * the next session built from `sourceSessionId`. Absent on records made
+     * before structural proposals were built.
+     */
+    basis: DraftBasisSchema.optional(),
+    /** The basis's version when proposed: the routine's version, or the source workout's. A later version makes the card `Out of date`. */
+    basisVersion: z.int().min(1).optional(),
+    /** The checked changes, by plan slot (`structuralDraftEdits` turns them into draft edits on Apply). */
+    ops: z.array(StructuralOpSchema).max(6).optional(),
+    /** Exercise names before and after, in order. */
+    before: z.array(z.string().min(1).max(120)).max(40).optional(),
+    after: z.array(z.string().min(1).max(120)).max(40).optional(),
+    /**
+     * On Ben's own records about a proposal (author `ben`): the proposal's
+     * action ID. `committed` = Apply (undoable until the next workout
+     * starts), `rejected` = Not now.
+     */
+    proposalId: IdSchema.optional(),
+    /**
+     * (Ben, 23 Oct, D8) Applied, it lands on the next workout's Your workout draft as today-only edits with Undo.
+     * Absent on records made before: they wrote into the retired Workout overview's draft and stay `Out of date`.
+     */
+    landsOn: z.literal('your_workout').optional(),
+  }),
+  /**
+   * Ben changed a routine from today's edits (`Change Push A too ›`, ADR 0022;
+   * overview-today-edits TE4): one slot's exercise replaced through a
+   * change-review card. `before`/`after` are the slot as it was and as Apply
+   * left it, so Undo puts exactly `before` back while the routine is still at
+   * `versionAfter`. `draft`: the pre-start draft edit Apply made redundant.
+   */
+  z.object({
+    kind: z.literal('update_routine'),
+    routineId: IdSchema,
+    routineName: z.string().min(1).max(120),
+    /** Up to 6 for a one-slot change or an editor save; `Update Push A` (§11.5) lists one line per checked edit. */
+    changes: z.array(StructuralChangeLineSchema).min(1).max(40),
+    /** A one-slot change (`Change Push A too ›`); absent for an editor save. */
+    slot: z.object({ before: RoutineExerciseSchema, after: RoutineExerciseSchema }).optional(),
+    /**
+     * An editor save (routines.md WL10): the whole workout as it was, so
+     * `Undo` (also after a force-close) restores it while the workout is
+     * still at `versionAfter`.
+     */
+    before: RoutineSchema.optional(),
+    versionBefore: z.int().min(1),
+    versionAfter: z.int().min(2),
+    /**
+     * The draft edits the change made redundant (marked so in the same
+     * write; Undo brings them back). `editId` is the first; `editIds`, when
+     * present, is every one (`Update Push A`, overview-today-edits §11.5).
+     */
+    draft: z.object({ id: IdSchema, editId: IdSchema, editIds: z.array(IdSchema).min(1).max(80).optional() }).nullable(),
+  }),
+  z.object({
+    kind: z.literal('set_pain_flag'),
+    flagIds: z.array(IdSchema).max(10),
+    exerciseNames: z.array(z.string().min(1).max(120)).min(1).max(10),
+    area: PainAreaSchema.nullable(),
+  }),
+  z.object({ kind: z.literal('save_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
+  /** (11 Oct) A memory the coach suggested: `proposed`; Ben's Save or Not now changes the memory, not this record. */
+  z.object({ kind: z.literal('suggest_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
+  z.object({ kind: z.literal('forget_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
+  z.object({
+    kind: z.literal('add_playbook_candidate'),
+    candidateId: IdSchema,
+    text: z.string().min(1).max(400),
+    /** (12 Oct) The memory suggestion Ben sent here with `Add to playbook` (CM9 split). */
+    fromMemoryId: IdSchema.optional(),
+  }),
+  /**
+   * Fit to time (fit-to-time §5): the coach's fit of today's plan, applied at
+   * once because Ben asked (rule 3), today only. `editIds`: the draft edits
+   * it wrote (the fit and its skips, sets and adds; one `actionId`), so Undo
+   * removes exactly those. `lines`, `rejected` and `suggestions` are app
+   * text: what changed, what the checks refused, and the swaps offered as a
+   * `Today only` card (never applied without Apply).
+   */
+  z.object({
+    kind: z.literal('fit_today'),
+    workoutLabel: z.string().min(1).max(120),
+    minutes: z.int().min(15).max(180),
+    beforeMinutes: z.int().min(0).max(600),
+    afterMinutes: z.int().min(0).max(600),
+    draftId: IdSchema,
+    fitEditId: IdSchema,
+    editIds: z.array(IdSchema).min(1).max(40),
+    lines: z.array(z.string().min(1).max(200)).max(40),
+    rejected: z.array(z.object({ text: z.string().min(1).max(200), why: z.string().min(1).max(40) })).max(40),
+    suggestions: z.array(z.object({ slotKey: IdSchema, toExerciseId: IdSchema, text: z.string().min(1).max(200) })).max(6),
+  }),
+  /**
+   * (12 Oct, workout builder) The coach built a workout draft, or a new
+   * version of one (BD16), because Ben asked. App text and counts only; the
+   * card reads the draft itself. `lines`: the `diffDraftVersions` lines
+   * against the parent version (empty for a first version).
+   */
+  z.object({
+    kind: z.literal('build_workout'),
+    draftId: IdSchema,
+    versionN: z.int().min(1),
+    parentN: z.int().min(1).nullable(),
+    name: z.string().min(1).max(120),
+    exerciseCount: z.int().min(0).max(40),
+    leftOut: z.int().min(0).max(40),
+    gymName: z.string().min(1).max(120).nullable(),
+    lines: z.array(StructuralChangeLineSchema).max(40),
+  }),
+  /**
+   * (14 Oct, workout builder v2 BD17) A clarifying question the coach asked
+   * before building, after `checkBuildQuestion` passed it. Status
+   * `proposed` while it waits for Ben's tap. App-checked text: the question
+   * (≤ 80), 2–4 answers (≤ 24; `main_lift` answers are catalogue names with
+   * their IDs). Nothing else is written.
+   */
+  z.object({
+    kind: z.literal('build_question'),
+    topic: BuildQuestionTopicSchema,
+    question: z.string().min(1).max(80),
+    answers: z.array(z.object({ label: z.string().min(1).max(24), catalogueId: z.string().min(1).max(80).nullable() })).min(2).max(4),
+    /** The split day the question is about (`main_lift` saves go to this day), when there is one. */
+    day: z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(30) }).nullable(),
+  }),
+  /**
+   * (19 Oct, plans) The coach built a multi-day plan, or a new version of one, because Ben asked.
+   * A proposal: nothing changes until Ben applies it (the plan document records Apply and Undo).
+   * App text and counts only; the card reads the plan itself.
+   */
+  z.object({
+    kind: z.literal('build_plan'),
+    planId: IdSchema,
+    versionN: z.int().min(1),
+    parentN: z.int().min(1).nullable(),
+    name: z.string().min(1).max(120),
+    days: z.array(z.object({ name: z.string().min(1).max(30), exerciseCount: z.int().min(0).max(40), leftOut: z.int().min(0).max(40) })).max(7),
+    gymName: z.string().min(1).max(120).nullable(),
+  }),
+  /**
+   * (19 Oct) The coach proposed a new exercise for Ben's list. `proposed` until he acts: Add saves it
+   * as `exerciseId` (one exercise per card, so a double tap saves once); Edit opens the form with
+   * these fields. Checked fields only (a convention that fits the equipment); the card reads the
+   * exercise row for whether it was added.
+   */
+  z.object({
+    kind: z.literal('propose_exercise'),
+    exerciseId: IdSchema,
+    fields: CustomExerciseFieldsSchema,
+  }),
+  /**
+   * (Ben, 20 Oct) The plan in use paused (until `untilDate`, or until Ben resumes: null) or resumed,
+   * because Ben asked. `versionAfter`: the plan's version the write left (Undo only from it).
+   */
+  z.object({
+    kind: z.literal('pause_plan'),
+    planId: IdSchema,
+    planName: z.string().min(1).max(120),
+    action: z.enum(['pause', 'resume']),
+    untilDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable(),
+    versionAfter: z.int().min(1).nullable(),
+  }),
+  /**
+   * (20 Oct, ADR 0029) The coach's change to a gym's profile (`update_gym`). `committed`: applied
+   * because Ben said it (Undo puts every record back while unchanged); `proposed`: a card he applies,
+   * holding exactly what would apply (`edit`). `proposalId`: on Ben's own Apply or Not now record.
+   */
+  z.object({
+    kind: z.literal('update_gym'),
+    gymId: IdSchema,
+    gymName: z.string().min(1).max(120),
+    lines: z.array(z.string().min(1).max(200)).min(1).max(12),
+    edit: GymEditSchema,
+    proposalId: IdSchema.optional(),
+  }),
+  /**
+   * (Ben, 20 Oct) A lift target set because Ben asked. `before`: that exercise's target it replaced
+   * (null: none); Undo puts it back while the profile still has `after` for the exercise.
+   */
+  z.object({
+    kind: z.literal('set_lift_target'),
+    exerciseId: z.string().min(1).max(64),
+    exerciseName: z.string().min(1).max(120),
+    before: LiftTargetSchema.nullable(),
+    after: LiftTargetSchema,
+  }),
+  /**
+   * (Ben, 1 Nov) His warm-up preferences changed because he asked (`update_warmup_prefs`). `before`/`after`: the
+   * profile's `warmups` (null: the defaults). `sessionId`: the open workout whose pending warm-ups were planned again
+   * (its sets carry this action's ID, so Undo puts back exactly those still pending); `removedSetIds`: pending
+   * warm-ups taken out (warm-ups off for an exercise). Undo needs the profile still at `after`.
+   */
+  z.object({
+    kind: z.literal('update_warmup_prefs'),
+    lines: z.array(z.string().min(1).max(200)).min(1).max(21),
+    before: WarmupPrefsSchema.nullable(),
+    after: WarmupPrefsSchema.nullable(),
+    sessionId: IdSchema.nullable(),
+    changedSetIds: z.array(IdSchema).max(60),
+    removedSetIds: z.array(IdSchema).max(60),
+  }),
+  /**
+   * (Ben, 2 Nov) Ben's rest settings changed because he asked (`update_rest_settings`): the whole snapshot before and
+   * after (Undo needs the profile still at `after`). `today`: the live workout when the change moves some of its pending
+   * rests, for `Today too?` (its own change, on that workout's version, with its own Undo); null: none open or nothing
+   * there to change.
+   */
+  z.object({
+    kind: z.literal('update_rest_settings'),
+    lines: z.array(z.string().min(1).max(200)).min(1).max(10),
+    before: RestSettingsSchema,
+    after: RestSettingsSchema,
+    today: z.object({ sessionId: IdSchema, sets: z.int().min(1).max(200) }).nullable(),
+  }),
+  /**
+   * (Ben, 2 Nov) A plan-level change to the plan in use (`propose_plan_change`), always a proposal: `change` what it is,
+   * `answers` the plan builder's answers Apply rebuilds from (null for `end`), `planVersion` and `blockWeek` as read
+   * (Apply is refused as out of date when either moved, rule 5), `lines` the card's before → after. Apply is the plan's
+   * own `Apply changes` (or End) with an op ID from this record; Undo its own Undo. Done weeks and workouts never change.
+   */
+  z.object({
+    kind: z.literal('propose_plan_change'),
+    change: z.enum(['lighter_week', 'days_per_week', 'length', 'schedule', 'end']),
+    planId: IdSchema,
+    planName: z.string().max(120),
+    planVersion: z.int().min(1),
+    blockWeek: z.int().min(0).max(13),
+    answers: PlanBuilderAnswersSchema.nullable(),
+    lines: z.array(z.string().min(1).max(200)).max(12),
+  }),
+  /**
+   * (Ben, 2 Nov) A past workout fixed (`propose_workout_fix`). The coach's record is `proposed` (before/after, Apply,
+   * Undo); Ben's Apply writes a second `committed` record with `proposalId` and the change in one transaction (rule 5:
+   * on `sessionVersion` / `link.version` as proposed, else stale), and Undo reverts that one. `before`/`after`: app
+   * text for the card (`Tue 28 Oct · 18:04–19:02` → `Mon 27 Oct · 18:04–19:02`; `Deleted`; `Paired with Push A`).
+   * `move`: the new start and end. `link`: the Health write the day sheet's Pair, Same workout or Unpair makes.
+   */
+  z.object({
+    kind: z.literal('fix_workout'),
+    op: z.enum(['move', 'delete', 'pair', 'unpair']),
+    proposalId: IdSchema.optional(),
+    sessionId: IdSchema.nullable(),
+    sessionVersion: z.int().min(1).nullable(),
+    title: z.string().min(1).max(120),
+    before: z.string().min(1).max(200),
+    after: z.string().min(1).max(200),
+    move: z.object({ startedAt: ZonedTimestampSchema, endedAt: ZonedTimestampSchema.nullable() }).optional(),
+    link: z
+      .object({
+        mode: z.enum(['link', 'same', 'unlink', 'not_same']),
+        healthUuid: z.string().min(1).max(64),
+        /** The link record written to: the Health workout's own (`link`, `unlink`) or the paired one's (`same`, `not_same`). */
+        linkUuid: z.string().min(1).max(64),
+        /** That link's version as read; null: no record yet (`link` only). */
+        linkVersion: z.int().min(1).nullable(),
+      })
+      .optional(),
+    /**
+     * (Ben, 2 Nov) A Health run linked to (or unlinked from) Ben's planned run that day: the day sheet's `Link` /
+     * `Unlink` on that activity, at `activityVersion` as read (rule 5). `pair` / `unpair` with `sessionId` null.
+     */
+    runLink: z
+      .object({
+        mode: z.enum(['link', 'unlink']),
+        activityId: IdSchema,
+        activityVersion: z.int().min(1),
+        healthUuid: z.string().min(1).max(64),
+      })
+      .optional(),
+  }),
+  /**
+   * (Ben, 20 Oct) An activity the coach logged (committed: `activityId` names it) or offered (proposed:
+   * the fields Ben's tap logs). `versionAfter`: the activity's version the write left (Undo only from it).
+   */
+  z.object({
+    kind: z.literal('log_activity'),
+    activityId: IdSchema.nullable(),
+    /** What was (or would be) logged; a refused call keeps what it could read (possibly no duration, distance or effort). */
+    fields: ActivityFieldsShapeSchema,
+    versionAfter: z.int().min(1).nullable(),
+    /** Ben's tap on an offer: the offer it logged. */
+    proposalId: IdSchema.optional(),
+    /** A done activity that marked Ben's planned one of the same kind and day done (an edit; Undo puts the plan back). */
+    markedDone: z.literal(true).optional(),
+  }),
+  /**
+   * (Ben, 20 Oct) This week reshaped around a run: a proposal (always), with the before/after list and
+   * scope `This week`. `factsKey`: what the week looked like when proposed (plan version, workouts and
+   * activities this week); Apply is refused as stale when it changed (rule 5).
+   */
+  z.object({
+    kind: z.literal('propose_week'),
+    weekMonday: LocalDateSchema,
+    basis: WeekBasisSchema,
+    merges: z.array(WeekMergeSchema).max(3),
+    skips: z.array(WeekSkipSchema).max(3),
+    before: z.array(WeekRowSchema).max(7),
+    after: z.array(WeekRowSchema).max(7),
+    factsKey: z.string().min(1).max(256),
+    /**
+     * ADR 0039 (Ben, 29 Oct): Ben asked for this change, so the app applied it at once (its Undo is on the card, a
+     * `week_plans` write like his own Apply). Absent on proposals made before and on the coach's own ideas.
+     */
+    atOnce: z.boolean().optional(),
+  }),
+  /**
+   * ADR 0039: a change to a Your workout draft before Start, as the builder's edit coach made it from Ben's words: the
+   * exact lines Apply writes (checked again then, `Out of date. Ask again.`), Apply / Skip, and Undo after Apply.
+   */
+  z.object({
+    kind: z.literal('propose_workout_edit'),
+    draftId: z.string().min(1).max(64),
+    draftName: z.string().max(120),
+    proposal: BuilderProposalSchema,
+  }),
+  /**
+   * (Ben, 30 Oct) One exercise swapped in every day of the plan in use (`propose_plan_swap`, or Settings' `Replace` on a
+   * not-preferred exercise): always a proposal. `days`: each plan day's change against its version as read (rule 5);
+   * Apply writes each day's one change (`plans.editDayEveryWeek`, opIds from this record) and Undo reverts them.
+   * `flipped`: the coach had it the other way round and the exercise it would have put in is not preferred. `today`: the
+   * live workout's row of `removeId`, not started, for `Today too` (its own change, with Undo).
+   */
+  z.object({
+    kind: z.literal('propose_plan_swap'),
+    /**
+     * (Ben, 31 Oct) `add` (`propose_plan_add`): `addId` goes into each listed day (none comes out), straight after
+     * `afterId` where the day has it, else at the end; `removeId` and `removeName` are absent. Absent: a swap.
+     */
+    op: z.enum(['swap', 'add', 'day_edit']).optional(),
+    planId: IdSchema,
+    planName: z.string().max(120),
+    /** A swap's exercise going out. Absent on an add. */
+    removeId: z.string().min(1).max(64).optional(),
+    removeName: z.string().min(1).max(120).optional(),
+    addId: z.string().min(1).max(64),
+    addName: z.string().min(1).max(120),
+    /** An add's place: the exercise it goes after (null: at the end). */
+    afterId: z.string().min(1).max(64).nullable().optional(),
+    afterName: z.string().min(1).max(120).nullable().optional(),
+    /** An add's working sets, rep range and a load Ben named (null: planned from his history at the workout). */
+    sets: z.int().min(1).max(10).optional(),
+    reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable().optional(),
+    load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).nullable().optional(),
+    /** (Ben, 2 Nov) An add's place: `first` in each day, or straight `before` `beforeId`. Absent: after `afterId` (or at the end). */
+    position: z.enum(['first', 'before']).optional(),
+    beforeId: z.string().min(1).max(64).optional(),
+    beforeName: z.string().min(1).max(120).optional(),
+    /** (Ben, 2 Nov) A cardio or timed add's work time per set (seconds) and a distance (metres). Absent: the default. */
+    durationS: z.int().min(1).max(14_400).optional(),
+    distanceM: z.int().min(1).max(100_000).optional(),
+    /** (Ben, 2 Nov) The add is a warm-up Ben asked for: the new rows are marked `Warm-up`. Absent: not marked. */
+    warmup: z.literal(true).optional(),
+    /** (Ben, 2 Nov) The part of Ben's ask this proposal leaves out, as the coach said it: the card reads `Partial`. */
+    notIncluded: z.string().min(1).max(160).optional(),
+    days: z
+      .array(
+        z.object({
+          routineId: IdSchema,
+          routineName: z.string().max(120),
+          versionBefore: z.int().min(1),
+          /** `add`: `rowId` is the new row's ID, `afterRowId` the row it goes after (null: at the end), `afterName` that row's exercise. */
+          /** (Ben, 1 Nov) `edit` (`day_edit`): one write of the whole day's change (`dayEdit`); `rowId` is its first row. */
+          /** (Ben, 2 Nov) `add`: `first` before every row, or `beforeRowId` the row it goes straight before. */
+          edits: z.array(z.object({ kind: z.enum(['swap', 'remove', 'add', 'edit']), rowId: IdSchema, afterRowId: IdSchema.nullable().optional(), afterName: z.string().max(120).nullable().optional(), first: z.boolean().optional(), beforeRowId: IdSchema.optional() })).min(1).max(6),
+          /**
+           * (Ben, 2 Nov) A proposal with more than one add (`propose_plan_add`'s `also`): what this day gets, in place of
+           * the top-level `addId`/`sets`/`reps`/`load`/`durationS`/`distanceM`/`beforeName`. Absent: the top-level add.
+           */
+          add: z
+            .object({
+              id: z.string().min(1).max(64),
+              name: z.string().min(1).max(120),
+              sets: z.int().min(1).max(10).optional(),
+              reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).nullable().optional(),
+              durationS: z.int().min(1).max(14_400).optional(),
+              distanceM: z.int().min(1).max(100_000).optional(),
+              beforeName: z.string().min(1).max(120).optional(),
+              warmup: z.literal(true).optional(),
+            })
+            .optional(),
+          /**
+           * (Ben, 3 Nov) `day_edit` over several days (`alsoDays`): this day's own change (its row IDs). Absent: the
+           * top-level `dayEdit` (one day).
+           */
+          dayEdit: z.object({ order: z.array(IdSchema).max(30).nullable(), rows: z.array(PlanDayEditRowSchema).max(20) }).optional(),
+          /** The day's exercises before and after (names, in order): the card's before/after. */
+          before: z.array(z.string().max(120)).max(30).optional(),
+          after: z.array(z.string().max(120)).max(30).optional(),
+        }),
+      )
+      .max(28),
+    flipped: z.boolean().optional(),
+    today: z.object({ sessionId: IdSchema, sessionExerciseId: IdSchema }).nullable().optional(),
+    /**
+     * (Ben, 1 Nov, build 500) `day_edit` (`propose_plan_day_edit`): the one day's new order (row IDs; null: unchanged) and
+     * each changed row's working sets, reps, target RPE, main mark and a load Ben named; `lines` the card's one line per
+     * change (`Dumbbell bench press: 3 → 2 sets · RPE 7 · secondary`). `addId`/`addName` name the day's first changed
+     * exercise (the card's head).
+     */
+    dayEdit: z
+      .object({
+        order: z.array(IdSchema).max(30).nullable(),
+        rows: z.array(PlanDayEditRowSchema).max(20),
+        lines: z.array(z.string().max(200)).max(21),
+      })
+      .optional(),
+  }),
+  /**
+   * (Ben, 2 Nov) One exercise's preference on Any preferences, set because Ben said it (`set_exercise_preference`):
+   * `before`/`after` the plan in use's preference parts (Undo only while they are still `after`). `key`: the catalogue
+   * key (or his exercise's ID) the answers hold. `inPlan`: the plan days that have it. `swapActionId`: the plan swap
+   * proposal made with it (a `propose_plan_swap` record, shown in this card), null when none fits or it isn't in the plan.
+   */
+  z.object({
+    kind: z.literal('set_exercise_preference'),
+    planId: IdSchema,
+    exerciseId: z.string().min(1).max(64),
+    key: z.string().min(1).max(80),
+    name: z.string().min(1).max(120),
+    preference: z.enum(['not_preferred', 'preferred', 'none']),
+    before: z.object({ prefs: z.record(z.string().min(1).max(20), PlanPrefAnswerSchema), likes: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes), never: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes) }),
+    after: z.object({ prefs: z.record(z.string().min(1).max(20), PlanPrefAnswerSchema), likes: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes), never: z.array(z.string().min(1).max(80)).max(PLAN_BUILDER_LIMITS.maxLikes) }),
+    inPlan: z.array(z.string().max(120)).max(14),
+    swapActionId: IdSchema.nullable(),
+  }),
+  /**
+   * (Ben, 2 Nov) Plan › Muscles' Rebalance made by the coach (`propose_rebalance`): exactly the screen's card for the
+   * plan at `planVersion` (the same engine, `planMuscles.rebalance`). Apply is the screen's (`planMuscles.apply`, op ID
+   * from this record, refused when the plan moved on, rule 5); Undo the screen's. The card re-reads the live lines while
+   * open (per-line skip); these are what the coach saw.
+   */
+  z.object({
+    kind: z.literal('propose_rebalance'),
+    planId: IdSchema,
+    planVersion: z.int().min(1),
+    lines: z.array(z.object({ id: z.string().min(1).max(40), dayIndex: z.int().min(0).max(14), text: z.string().max(200) })).max(40),
+    bars: z.array(z.object({ group: z.string().min(1).max(40), text: z.string().max(120), inRange: z.boolean() })).max(20),
+    minutes: z.array(z.object({ dayIndex: z.int().min(0).max(14), text: z.string().max(120), over: z.boolean() })).max(14),
+    why: z.array(z.string().max(400)).max(2),
+    resolved: z.boolean(),
+  }),
+  /** ADR 0039: today's Set up filled from Ben's words (`toast`: what it says; Undo is on Set up). */
+  z.object({
+    kind: z.literal('fill_setup'),
+    toast: z.string().max(200),
+    notes: z.array(z.string().max(200)).max(6),
+  }),
+  z.object({
+    kind: z.literal('undo'),
+    undoneActionId: IdSchema,
+    /** What was undone, rendered from the original record: `the change to sets 3–4`. */
+    what: z.string().min(1).max(200),
+    /** Restored targets of sets still pending; empty when only a memory or flag was undone. */
+    restored: z.array(ExerciseTargetChangesSchema).max(12),
+    /** Set numbers that were logged since, so stayed as they were (CA `Undo partly possible`). */
+    alreadyLogged: z.array(z.int().min(1)).max(40),
+  }),
+]);
+export type ActionDetail = z.infer<typeof ActionDetailSchema>;
+export type ActionKind = ActionDetail['kind'];
+
+export const EntityVersionSchema = z.object({
+  entity: z.string().min(1).max(60),
+  id: IdSchema,
+  before: z.int().min(0).nullable(),
+  after: z.int().min(0).nullable(),
+});
+
+export const ActionRecordSchema = z.object({
+  actionId: IdSchema,
+  /** The coach turn that made it. Null for Ben's own taps (e.g. Undo from a banner). */
+  turnId: z.string().min(1).max(64).nullable(),
+  /** Idempotency key: a repeated call with the same opId returns this record. */
+  opId: OperationIdSchema,
+  status: ActionStatusSchema,
+  author: z.enum(['coach', 'ben', 'checks']),
+  detail: ActionDetailSchema,
+  /** Why a `rejected` / `stale` / `failed` action didn't happen, as app text. */
+  failure: z.string().min(1).max(200).nullable(),
+  /** The coach's reason, after the claim check. (Coach v3) Up to 600: a build's message is its reason. */
+  reason: z.string().max(600).nullable(),
+  evidenceRefs: z.array(z.string().min(1).max(120)).max(40),
+  guardNotes: z.array(GuardNoteSchema).max(40),
+  entityVersions: z.array(EntityVersionSchema).max(60),
+  undoneBy: z.object({ actionId: IdSchema, atUtc: UtcTimestampSchema }).nullable(),
+  createdAt: ZonedTimestampSchema,
+});
+export type ActionRecord = z.infer<typeof ActionRecordSchema>;
+
+/** A model sentence the claim check hid, kept for `Why?` → `Not shown` (CC9). Your data. */
+export const HiddenLineSchema = z.object({
+  turnId: z.string().min(1).max(64),
+  sentence: z.string().min(1).max(2000),
+  /** (Coach v3) `unverified_number`: a number not found in anything the coach was given. */
+  reason: z.enum(['no_action', 'not_committed', 'mismatch', 'numbers_differ', 'unknown_token', 'unverified_number']),
+  /** App text, e.g. `No change was saved in this reply.` */
+  detail: z.string().min(1).max(300),
+  atUtc: UtcTimestampSchema,
+});
+export type HiddenLine = z.infer<typeof HiddenLineSchema>;
+
+// ---------------------------------------------------------------------------
+// The coach's structured reply (PM decision 10 Oct: honesty is structural)
+
+/**
+ * The only way a model step can end a turn: a strict function call whose
+ * arguments are this object. `message` is advice, explanation or a question,
+ * never a report of a change; every change Ben sees is a card rendered from
+ * the committed `ActionRecord`. `offer` marks a coach-raised offer to adjust
+ * today's remaining sets (CLAUDE.md rule 3: it waits for Ben's accept), so
+ * the engine knows structurally, not from the words, that a bare "yes" next
+ * accepts it.
+ */
+export const COACH_REPLY_TOOL_NAME = 'reply';
+
+/**
+ * The offer on a coach message that Ben's tap (or bare "yes") accepts. `lift_target` (review
+ * lift-targets B1): the coach's own target idea, stored as a `proposed` record; accepting applies
+ * exactly that record. Only code sets it; the model's reply can offer `adjust_today` only.
+ */
+export const CoachOfferKindSchema = z.enum(['adjust_today', 'lift_target']);
+export type CoachOfferKind = z.infer<typeof CoachOfferKindSchema>;
+
+export const CoachReplySchema = z.strictObject({
+  message: z.string().max(4000),
+  offer: z.enum(['adjust_today']).nullable(),
+});
+export type CoachReply = z.infer<typeof CoachReplySchema>;
+
+// ---------------------------------------------------------------------------
+// Coach storage (ADR 0020 §9; all Your data except playbook candidates)
+
+/** A conversation. Owner-scoped; v1 keeps every thread. */
+export const CoachThreadSchema = RecordMetaSchema.extend({
+  /** The workout the thread was opened from, if any. */
+  sessionId: IdSchema.nullable(),
+  /** The thread list's title: the first words of Ben's first message (app text). */
+  title: z.string().min(1).max(80),
+});
+export type CoachThread = z.infer<typeof CoachThreadSchema>;
+
+export const CoachTurnStatusSchema = z.enum(['running', 'completed', 'interrupted', 'failed', 'cancelled']);
+export type CoachTurnStatus = z.infer<typeof CoachTurnStatusSchema>;
+
+export const CoachTurnErrorSchema = z.enum([
+  'usage_limit',
+  'not_eligible',
+  'auth_expired',
+  'model_gone',
+  'unavailable',
+  /** (21 Oct) The route rejected the request itself (HTTP 400, an unreadable response). */
+  'request_error',
+  'network',
+  'timeout',
+  'cancelled',
+  'no_reply',
+  'too_many_steps',
+]);
+export type CoachTurnError = z.infer<typeof CoachTurnErrorSchema>;
+
+/**
+ * (21 Oct, Ben's Build B report) What the provider said when a turn failed: shown behind the outcome
+ * line's `Why?`. Diagnostic only: token- and credential-shaped text, emails and long quoted spans are
+ * removed and the message is trimmed before it is saved (`scrubFailureMessage`). It is not
+ * guaranteed free of Ben's words: a provider can echo a short unquoted fragment of the request.
+ * Also kept on a completed turn whose forced change step failed (review coach-fail S2).
+ */
+export const CoachTurnFailureSchema = z.object({
+  kind: z.string().min(1).max(40),
+  status: z.int().min(100).max(599).optional(),
+  code: z.string().min(1).max(120).optional(),
+  message: z.string().min(1).max(240).optional(),
+  requestId: z.string().min(1).max(120).optional(),
+});
+export type CoachTurnFailure = z.infer<typeof CoachTurnFailureSchema>;
+
+/** One line of the turn's tool log (`ToolSummaryLine`, `Why?` → `Not used`). App text. */
+export const ToolLogLineSchema = z.object({
+  tool: z.string().min(1).max(80),
+  outcome: z.enum(['read', 'committed', 'proposed', 'rejected', 'stale', 'failed', 'not_allowed', 'invalid_args', 'replayed']),
+  text: z.string().min(1).max(300),
+  actionId: IdSchema.nullable(),
+});
+export type ToolLogLine = z.infer<typeof ToolLogLineSchema>;
+
+/**
+ * One request to the coach and what came of it. A turn still `running` at
+ * launch was cut off by a force-close and becomes `interrupted` (restart
+ * recovery); its committed actions are in `coach_actions` either way.
+ */
+export const CoachTurnSchema = RecordMetaSchema.extend({
+  threadId: IdSchema,
+  kind: CoachTurnKindSchema,
+  status: CoachTurnStatusSchema,
+  error: CoachTurnErrorSchema.nullable(),
+  /** (21 Oct) The provider's reason for a failed turn, when it gave one. Absent on older turns. */
+  failure: CoachTurnFailureSchema.optional(),
+  model: z.string().min(1).max(120),
+  /** `buildCoachContext().contextHash`, so `What the coach can see` can show what was sent. */
+  contextHash: z.string().min(1).max(128),
+  startedAt: ZonedTimestampSchema,
+  endedAtUtc: UtcTimestampSchema.nullable(),
+  toolLog: z.array(ToolLogLineSchema).max(40),
+});
+export type CoachTurn = z.infer<typeof CoachTurnSchema>;
+
+/** Ben's words (or chip) in a turn, saved before the request is sent. */
+export const BenInputSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('words'), text: z.string().min(1).max(4000), spoken: z.boolean() }),
+  z.object({
+    kind: z.literal('chip'),
+    chip: z.enum(['too_hard', 'too_easy', 'pain', 'lighter_session']),
+    /** An offer's `Adjust` (CA1): the exercise row the offer was about; only it may change (review S1). */
+    sessionExerciseId: IdSchema.optional(),
+  }),
+  z.object({ kind: z.literal('accept_offer'), offer: CoachOfferKindSchema }),
+  /** The post-workout summary turn: no words from Ben (ADR 0020 C8). */
+  z.object({ kind: z.literal('summary') }),
+]);
+export type BenInput = z.infer<typeof BenInputSchema>;
+
+/** What a coach message shows, in order. Every change line is rendered from a saved record at display time. */
+export const CoachShownItemSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('sentence'), text: z.string().min(1).max(2000) }),
+  /** A `[[ref]]` the coach cited; rendered from the record when shown. */
+  z.object({ kind: z.literal('action_line'), actionId: IdSchema }),
+]);
+export type CoachShownItem = z.infer<typeof CoachShownItemSchema>;
+
+/** Append-only. A coach message holds only what passed the checks; hidden lines are kept beside it (CC9). */
+export const CoachMessageSchema = z.object({
+  id: IdSchema,
+  ownerId: IdSchema,
+  threadId: IdSchema,
+  turnId: IdSchema,
+  /** Order within the thread. */
+  ordinal: z.int().min(0),
+  createdAt: ZonedTimestampSchema,
+  body: z.discriminatedUnion('role', [
+    z.object({ role: z.literal('ben'), input: BenInputSchema }),
+    z.object({
+      role: z.literal('coach'),
+      items: z.array(CoachShownItemSchema).max(200),
+      /** Cards: every action this turn committed or proposed, rendered from the record. */
+      actionIds: z.array(IdSchema).max(40),
+      /** `ClaimCheckNote` or the fixed no-change line (app text). */
+      note: z.string().min(1).max(300).nullable(),
+      offer: CoachOfferKindSchema.nullable(),
+      hiddenLines: z.array(HiddenLineSchema).max(200),
+      /** False when the reply was cut off (Stop, stall, force-close): no sentence is padded. */
+      complete: z.boolean(),
+    }),
+  ]),
+});
+export type CoachMessage = z.infer<typeof CoachMessageSchema>;
+
+/** Local dates a day note keeps in `hiddenOn`: only today's matters, so the writer keeps the newest few (`hideDayNoteOn`). */
+export const DAY_NOTE_HIDDEN_MAX = 14;
+
+/**
+ * (Workout builder v3) Which plan day a day note is for, and where it came from. `hiddenOn`: local
+ * dates Ben tapped ✕; only the day it's shown on matters, so `hideDayNoteOn` trims older dates and the
+ * cap never refuses a hide (review b3-data N1).
+ */
+export const DayNoteScopeSchema = z.object({
+  splitDayId: SplitDayIdSchema,
+  mainLiftExerciseId: MainLiftIdSchema.nullable(),
+  reviewId: IdSchema.nullable(),
+  hiddenOn: z.array(LocalDateSchema).max(DAY_NOTE_HIDDEN_MAX),
+});
+export type DayNoteScope = z.infer<typeof DayNoteScopeSchema>;
+
+/** The scope with `localDate` hidden: dates before it are dropped (past days can't show the note again), then the newest kept. */
+export function hideDayNoteOn(scope: DayNoteScope, localDate: string): DayNoteScope {
+  const dates = [...new Set([...scope.hiddenOn.filter((d) => d >= localDate), localDate])].sort();
+  return { ...scope, hiddenOn: dates.slice(-DAY_NOTE_HIDDEN_MAX) };
+}
+
+/** A personal fact Ben asked the coach to remember (coach-memory, v1 subset). Your data. */
+export const MemorySchema = RecordMetaSchema.extend({
+  text: z.string().min(1).max(200),
+  /** `appendContentKeys`: a live memory with the same key is the same memory. */
+  contentKey: z.string().min(1).max(160),
+  /**
+   * `active`: confirmed, sent to the coach. `forgotten`: tombstone.
+   * (11 Oct, coach tools) `suggested`: the coach suggested it; waits for Ben's
+   * Save and is never sent to the coach (CM1). `not_saved`: Ben tapped Not now.
+   */
+  status: z.enum(['active', 'forgotten', 'suggested', 'not_saved']),
+  /** Ben's words that asked for it (quoted data). */
+  quote: z.string().min(1).max(400),
+  createdByActionId: IdSchema,
+  /** (11 Oct) Where it came from: Ben asked the coach (absent on older rows), the coach suggested it, or Ben added it in Memory. */
+  source: z.enum(['ben_asked', 'coach_suggested', 'ben_added']).optional(),
+  /** (11 Oct) Ben's edits, oldest first: the text before each edit. */
+  edits: z.array(z.object({ before: z.string().min(1).max(200), atUtc: UtcTimestampSchema })).max(20).optional(),
+  /** (12 Oct) A `not_saved` suggestion Ben sent to the playbook (CM9 `Add to playbook`), not `Not now`. */
+  closedAs: z.literal('playbook').optional(),
+  /**
+   * (Workout builder v3 §2.9, §4.1) A `For next <day> day` text note from a review: shown as
+   * `From last review` on that day's Your workout. `hiddenOn`: local dates Ben tapped ✕ (off for that
+   * day, and not sent to the coach then). Numeric notes are next-session targets, never memories.
+   * Absent on every other memory.
+   */
+  dayNote: DayNoteScopeSchema.optional(),
+});
+export type Memory = z.infer<typeof MemorySchema>;
+
+/**
+ * A general training rule waiting for Ben's review. Coaching knowledge: no
+ * owner, never in Your data, never used by the coach until approved (CM9).
+ */
+export const PlaybookCandidateSchema = z.object({
+  id: IdSchema,
+  version: z.int().min(1),
+  createdAtUtc: UtcTimestampSchema,
+  updatedAtUtc: UtcTimestampSchema,
+  text: z.string().min(1).max(400),
+  contentKey: z.string().min(1).max(160),
+  statedBy: z.enum(['ben', 'coach']),
+  /**
+   * `to_review`: waiting for Ben, never used. `withdrawn`: undone.
+   * (11 Oct, coach tools; B8: the app records which rules Ben approved)
+   * `approved`: sent to the coach as Coaching knowledge, labelled not
+   * evidence-graded. `rejected`: not used and not offered again in the same words.
+   */
+  status: z.enum(['to_review', 'withdrawn', 'approved', 'rejected']),
+  createdByActionId: IdSchema,
+  /** (11 Oct) When Ben last approved or rejected it. */
+  decidedAtUtc: UtcTimestampSchema.optional(),
+});
+export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;
+
+/**
+ * One exercise's coach target for the next session of a workout (ADR 0020
+ * §5, D21, coach-adjustments CA8/CA10). Your data. One row per source
+ * workout and exercise; the action that set it is the audit.
+ * - `saved`: a small change, used by default (`nextTargetsOf` prefers it).
+ * - `undone`: Ben undid it; the built-in rule's target is used. `Use coach target` puts it back.
+ * - `proposed`: a bigger change; the built-in rule is used until Ben taps Apply.
+ * - `applied`: a bigger change Ben applied.
+ * - `not_applied`: Ben tapped Not now.
+ * A row is only used while the source workout's sets are unchanged
+ * (`sourceBasis`; rows saved before it existed: `sourceVersion`; a rename
+ * or a time edit doesn't count) and until a workout is started from it.
+ * `usedBySessionId` is worked out
+ * when the row is read: the workout started from this source that exists
+ * and isn't discarded (review S2, S3); null while there is none.
+ */
+export const NextSessionTargetRecordSchema = RecordMetaSchema.extend({
+  sourceSessionId: IdSchema,
+  sourceVersion: z.int().min(1),
+  /** `nextTargetSourceBasis` of the source workout when saved: its sets as they stood. Absent on rows saved before it existed. */
+  sourceBasis: z.string().min(1).max(80).optional(),
+  exerciseId: IdSchema,
+  exerciseName: z.string().min(1).max(120),
+  actionId: IdSchema,
+  target: CoachTargetSchema,
+  /** Working sets next time; null keeps the count. */
+  sets: z.int().min(1).max(12).nullable(),
+  /** The built-in rule's target for comparison (`Built-in rule would be …`). */
+  builtIn: CoachTargetSchema.nullable(),
+  builtInSets: z.int().min(0).max(40).nullable(),
+  size: z.enum(['small', 'bigger']),
+  status: z.enum(['saved', 'undone', 'proposed', 'applied', 'not_applied']),
+  /** The coach's reason (claim-checked), shown behind `Why?`. */
+  reason: z.string().max(240).nullable(),
+  guardNotes: z.array(GuardNoteSchema).max(20),
+  /** Load change from the last working target, in %, from the saved values. */
+  pctChange: z.number().nullable(),
+  usedBySessionId: IdSchema.nullable(),
+  /**
+   * (Ben, 23 Oct; review v5offers SP2) `rule`: not the coach's target but Ben's answer to the built-in rule's own stall
+   * reset (`Reset to … ?` on the Summary): `applied` (the rule lowers the load next time), `not_applied` (Skip: it
+   * holds), `proposed` (his Apply undone: offered again). Its `target` is the reset load. Absent: the coach's row.
+   */
+  origin: z.literal('rule').optional(),
+});
+export type NextSessionTargetRecord = z.infer<typeof NextSessionTargetRecordSchema>;
+export type NextSessionTargetStatus = NextSessionTargetRecord['status'];
+
+// ---------------------------------------------------------------------------
+// Store contract (implemented by `@fizz/persistence`, used by `@fizz/coach`)
+
+/**
+ * One coach write: the `ActionRecord` and the change it describes, committed
+ * in one transaction. Idempotent on the record's `opId`, and for the append
+ * kinds on the content (an active memory with the same key, an open playbook
+ * candidate with the same text, an active flag on the same exercise).
+ */
+export type CoachWrite =
+  /** A record with no other change: a proposal, or a rejected / stale / failed outcome. */
+  | { kind: 'record'; action: ActionRecord }
+  | { kind: 'save_memory'; action: ActionRecord; memory: Memory }
+  /** (11 Oct) A coach suggestion: a `suggested` memory, refused when the same text is already saved or waiting. */
+  | { kind: 'suggest_memory'; action: ActionRecord; memory: Memory }
+  | { kind: 'forget_memory'; action: ActionRecord; memoryId: string; expectedVersion: number; atUtc: string }
+  | { kind: 'pain_flags'; action: ActionRecord; flags: readonly PainFlag[] }
+  | { kind: 'playbook_candidate'; action: ActionRecord; candidate: PlaybookCandidate }
+  /**
+   * Next-session targets (D21): the rows, replacing earlier rows for the same
+   * source and exercise. Refused as stale when the source workout changed or
+   * a workout has started since it ended (CA10).
+   */
+  | {
+      kind: 'next_session_targets';
+      action: ActionRecord;
+      rows: readonly NextSessionTargetRecord[];
+      sourceVersion: number;
+      sourceBasis: string;
+      /**
+       * (Review ben-8-decisions S2) Ben's answer to the rule's reset, at the row version he saw: null, no row yet (his
+       * first answer); a number, that row's version (an answer again after the workout changed). Any other row there is
+       * stale (refused, never overwritten). Absent: the coach's review (a newer review replaces the rows).
+       */
+      answerAt?: number | null;
+    }
+  /**
+   * Today's pending sets (`adjust_pending_sets`): the session command runs
+   * through the reducer inside the same transaction as the record, so the
+   * targets and their record are saved together or not at all (rule 5).
+   */
+  /**
+   * `expectedSessionVersion`: refused as stale when the workout moved on since the caller read it (checked inside the write, review N3).
+   * `saveExercise` (coach add, review S3): a catalogue exercise not yet in Ben's exercises, saved in the same
+   * transaction as the command, so a refused or stale add leaves no exercise row behind (audit F4).
+   */
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise; saveExercises?: readonly Exercise[]; /** (Ben, 28 Oct) The gym learns the weights Ben named, in the same transaction. */ gymEdit?: GymEditRecord }
+  /**
+   * (12 Oct, workout builder) A coach draft and its record, in one write.
+   * `expectedVersion`: null creates the draft; otherwise the draft's version
+   * the new version was built on (a newer one refuses it as stale, rule 5).
+   */
+  | { kind: 'workout_draft'; action: ActionRecord; draft: WorkoutDraft; expectedVersion: number | null }
+  /** (19 Oct) A coach plan and its record, in one write; `expectedVersion` as for a draft. */
+  | { kind: 'plan_draft'; action: ActionRecord; plan: PlanDraft; expectedVersion: number | null }
+  /** (Ben, 20 Oct) The plan in use paused or resumed (`pause_plan`) and its record, in one write on the version read (rule 5). */
+  | { kind: 'plan_control'; action: ActionRecord; plan: PlanDraft; expectedVersion: number }
+  /** (20 Oct, ADR 0029) A gym edit and its record, in one write; every record version-checked (rule 5). */
+  | { kind: 'gym_edit'; action: ActionRecord; edit: GymEditRecord }
+  /** (Ben, 20 Oct) A lift target on the owner's training profile, on `expectedVersion` (rule 5). */
+  | { kind: 'lift_target'; action: ActionRecord; target: LiftTarget; expectedVersion: number }
+  /**
+   * (Ben, 1 Nov) His warm-up preferences on `expectedVersion` (rule 5) and, when a workout is open, its pending
+   * warm-ups planned again (`command`, an `adjust_pending_targets` on the session version read), with the record.
+   */
+  | { kind: 'warmup_prefs'; action: ActionRecord; change: TrainingChange; expectedVersion: number; session: { sessionId: string; command: SessionCommand } | null }
+  /** (Ben, 2 Nov) His rest settings (a `rest_settings` change) on `expectedVersion` (rule 5), with the record. */
+  | { kind: 'rest_settings'; action: ActionRecord; change: TrainingChange; expectedVersion: number }
+  /** (Ben, 2 Nov) The plan in use with one exercise's preference changed (`set_exercise_preference`), on `expectedVersion` (rule 5), with its record. */
+  | { kind: 'exercise_pref'; action: ActionRecord; plan: PlanDraft; expectedVersion: number }
+  /** (Ben, 20 Oct) An activity the coach logged and its record, in one write (`expectedVersion` null: new). */
+  | { kind: 'activity'; action: ActionRecord; activity: Activity; expectedVersion: number | null }
+  /**
+   * (Ben, 2 Nov) Ben's Apply on a past-workout fix: the `committed` `fix_workout` record (with `proposalId`) and its
+   * change in one transaction, through the same writes as Summary's Edit times, History's Delete and the day sheet's
+   * Pair / Same workout / Unpair. The proposal must still be `proposed`; a workout or link changed since is stale.
+   */
+  | { kind: 'workout_fix'; action: ActionRecord };
+
+export type CoachWriteResult =
+  | { status: 'written'; action: ActionRecord }
+  /** Nothing new was written: the same opId, or the same live content, already exists. */
+  | { status: 'replayed'; action: ActionRecord }
+  /** Nothing was written; the caller records the outcome as its own `rejected` / `stale` record. */
+  | { status: 'conflict'; reason: 'stale_version' | 'missing' | 'already_exists' };
+
+export type CoachUndoResult =
+  | { status: 'written' | 'replayed'; undo: ActionRecord; target: ActionRecord }
+  | { status: 'not_possible'; reason: 'missing' | 'not_committed' | 'already_undone' | 'changed_since' | 'gym_changed' | 'unsupported' };

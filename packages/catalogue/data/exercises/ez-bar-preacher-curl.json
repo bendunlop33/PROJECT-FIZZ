@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "ez-bar-preacher-curl",
+  "tier": "rich",
+  "name": "Preacher curl",
+  "aliases": ["Preacher curls", "EZ-bar preacher curl", "EZ bar preacher curl", "Barbell preacher curl", "Scott curl", "Preacher bench curl"],
+  "family": "curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["biceps", "brachialis"],
+  "secondaryMuscles": ["forearms"],
+  "compatibleEquipment": ["ez_bar", "barbell"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Set the seat so the pad sits under your armpits",
+      "Backs of your arms flat on the pad",
+      "Underhand grip, about shoulder width",
+      "Feet flat, chest against the top of the pad"
+    ],
+    "execution": [
+      "Curl the bar up toward your shoulders",
+      "Keep your upper arms on the pad",
+      "Lower slowly until your arms are nearly straight",
+      "Keep your wrists straight"
+    ],
+    "faults": [
+      "Don't lift your elbows off the pad",
+      "Don't drop fast into the bottom",
+      "Don't lean back to swing the bar up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "The bottom is where the elbows are most exposed. Lower slowly, and stop just short of locking out if that feels better.",
+      "Pick a weight you can lower under control; heavy, fast reps that bounce at the bottom are the usual way this goes wrong.",
+      "Log the total including the bar. EZ bars and straight bars weigh different amounts.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-preacher-curl", "name": "Machine preacher curl", "reason": "Fixed path and stack loading; easier to control the bottom." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Dumbbell preacher curl", "reason": "One arm at a time on the pad; evens out the two sides." }
+    ],
+    "substitutions": [
+      { "key": "machine-preacher-curl", "name": "Machine preacher curl", "reason": "Same arm-on-pad curl on a stack machine." },
+      { "key": "ez-bar-curl", "name": "EZ-bar curl", "reason": "Standing curl with the same bar; no preacher bench needed." },
+      { "key": "dumbbell-concentration-curl", "name": "Dumbbell concentration curl", "reason": "Upper arm braced on the thigh; one dumbbell." },
+      { "key": "cable-curl", "name": "Cable curl", "reason": "Steady cable tension through the whole curl." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at seated shoulder height, figure facing right, seated at a preacher bench with the arm pad angled about 45° down and away. Upper arms lie along the pad.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Seated, armpits at the top of the pad, upper arms along it. Arms nearly straight down the slope, underhand grip on the EZ bar, wrists straight.",
+        "approxAnglesDeg": { "padAngleFromVertical": 45, "elbowFlexion": 15 }
+      },
+      {
+        "label": "Top",
+        "describe": "Bar curled up toward the shoulders until the forearms are about vertical. Upper arms still flat on the pad; torso unchanged.",
+        "approxAnglesDeg": { "padAngleFromVertical": 45, "elbowFlexion": 120 }
+      }
+    ],
+    "ikHints": ["Upper arms fixed on the pad in every frame", "Torso and seat fixed; only the forearms move"],
+    "barPath": "An arc around the elbows, from low on the pad up toward the shoulders",
+    "tempo": { "downMs": 2000, "holdMs": 300, "upMs": 1000 },
+    "props": ["preacher_bench", "ez_bar_loaded"],
+    "emphasise": [
+      "Upper arms stay on the pad",
+      "Slow lowering into the bottom"
+    ],
+    "doNotShow": ["Elbows lifting off the pad", "Fast drop or bounce at the bottom", "Leaning back to swing"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/barbell-preacher-curl/",
+      "title": "StrengthLog: Barbell Preacher Curl",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles; cues.setup[0,3]; cues.execution[0-3]; cues.faults[2]; safety.notes[0-1]"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/Brachialis/BBPreacherCurl",
+      "title": "ExRx.net: Barbell Preacher Curl",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (brachialis target; biceps synergist); aliases[4] (Scott curl); cues.setup[0-2]; guideBrief.keyPositions[1] (forearms vertical at the top)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "requiresStation",
+      "note": "A preacher bench has no station value; specific_machine is the nearest. The domain doesn't check it."
+    },
+    {
+      "field": "aliases",
+      "note": "FitNotes' \"EZ-Bar Preacher Curl\" maps here. Its \"Dumbbell Preacher Curl\" is deliberately not an alias: it is logged per dumbbell, so it needs its own entry or Ben's choice at import."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Pad angles vary between benches."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

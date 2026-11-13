@@ -1,0 +1,65 @@
+import type { EquipmentInstance, Exercise } from '@fizz/schemas';
+import { missingStations, needsStationText, type GymStation } from './stations';
+
+/**
+ * Which of a gym's items an exercise can be logged on (the exercise picker).
+ *
+ * Bodyweight exercises (load convention `bodyweight`, listed for a
+ * `bodyweight_station` or nothing) carry no external load, so there is no
+ * load to check and they never need a gym equipment instance (slice-3
+ * re-review nit). The catalogue keeps listing `bodyweight_station` (push-up,
+ * plank, squat and so on); the picker just doesn't attach one. That also
+ * stops a push-up being attached to the gym's `Pull-up bar`. Weighted dips
+ * and pull-ups log the added mass with the `added` convention, which isn't
+ * affected.
+ */
+type ExerciseEquipmentInfo = Pick<Exercise, 'defaultLoadConvention' | 'compatibleEquipment'>;
+
+export function needsNoEquipment(exercise: ExerciseEquipmentInfo): boolean {
+  return exercise.defaultLoadConvention === 'bodyweight' && exercise.compatibleEquipment.every((k) => k === 'bodyweight_station' || k === 'erg');
+}
+
+/**
+ * A cardio machine (rower, bike, treadmill; catalogue kind `erg`). Gym
+ * profiles don't list these (they carry no load to check), so one never
+ * needs a gym item, like a bodyweight exercise (19 Oct).
+ */
+export function isMachineCardio(exercise: Pick<Exercise, 'compatibleEquipment'>): boolean {
+  return exercise.compatibleEquipment.length > 0 && exercise.compatibleEquipment.every((k) => k === 'erg');
+}
+
+/** (Ben, 20 Oct) Ben said this item's gym doesn't have what `exerciseId` needs (`Not at this gym`). */
+export function isNotFor(item: Pick<EquipmentInstance, 'notFor'>, exerciseId: string | undefined): boolean {
+  return exerciseId !== undefined && (item.notFor?.includes(exerciseId) ?? false);
+}
+
+/**
+ * (Review quickgym B2) The item is never mapped to this exercise: Ben said it's
+ * not for it (`notFor`), or it is another machine's own stack (`onlyFor`).
+ */
+export function isExcludedFor(item: Pick<EquipmentInstance, 'notFor' | 'onlyFor'>, exerciseId: string | undefined): boolean {
+  if (isNotFor(item, exerciseId)) return true;
+  return item.onlyFor !== undefined && (exerciseId === undefined || !item.onlyFor.includes(exerciseId));
+}
+
+/**
+ * Available gym items the exercise can be logged on; empty for bodyweight
+ * exercises. Items marked not for it (or only for others) are left out, and
+ * none when the gym is known to lack a bench or rack it needs (ADR 0030).
+ */
+export function equipmentForExercise<T extends Pick<EquipmentInstance, 'kind' | 'availability' | 'notFor' | 'onlyFor'>>(exercise: ExerciseEquipmentInfo & { id?: string }, gym: readonly T[]): T[] {
+  if (needsNoEquipment(exercise)) return [];
+  if (missingStations(exercise.id, gym).length > 0) return [];
+  return gym.filter((e) => e.availability === 'available' && exercise.compatibleEquipment.includes(e.kind) && !isExcludedFor(e, exercise.id));
+}
+
+/** The picker row's subtitle: the matching items, or why there are none (`Needs a rack` when a bench or rack is the gap, ADR 0030). */
+export function pickerEquipmentLabel(exercise: ExerciseEquipmentInfo, matches: readonly Pick<EquipmentInstance, 'name'>[], needs: readonly GymStation[] = []): string {
+  if (matches.length > 0) return matches.map((e) => e.name).join(' · ');
+  const station = needsStationText(needs);
+  if (station !== null) return station;
+  if (isMachineCardio(exercise)) return 'Cardio';
+  if (needsNoEquipment(exercise)) return 'Bodyweight';
+  if (exercise.compatibleEquipment.length === 0) return 'No equipment needed';
+  return 'Not at this gym · loads won’t be checked';
+}

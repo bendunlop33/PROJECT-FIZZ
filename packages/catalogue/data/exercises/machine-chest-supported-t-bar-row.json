@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-chest-supported-t-bar-row",
+  "tier": "rich",
+  "name": "Chest-supported T-bar row machine",
+  "aliases": ["Chest-supported T-bar row", "Lying T-bar row", "Iso-lateral T-bar row", "Supported T-bar row", "Incline lever row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back", "rear_delts"],
+  "secondaryMuscles": ["biceps", "brachialis", "traps", "grip"],
+  "compatibleEquipment": ["plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Set the pad so your chin clears the top",
+      "Chest on the pad, feet braced",
+      "Grip the handles, arms hanging long"
+    ],
+    "execution": [
+      "Pull your elbows back past your ribs",
+      "Squeeze your shoulder blades together",
+      "Keep your chest on the pad",
+      "Lower slowly to a full stretch"
+    ],
+    "faults": [
+      "Don't lift your chest off to heave it",
+      "Don't shrug toward your ears",
+      "Don't cut the stretch short"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Load plates evenly on each side, and unload the same way.",
+      "Climb on and off carefully; let the handles fully down before stepping away.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "Seated stack machine with smaller load steps." }
+    ],
+    "progressions": [
+      { "key": "barbell-t-bar-row", "name": "T-bar row", "reason": "Unsupported version; the lower back and hips have to hold the position." },
+      { "key": "barbell-bent-over-row", "name": "Bent-over row", "reason": "Free-bar row with no chest support." }
+    ],
+    "substitutions": [
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "Same supported row on a stack. Numbers aren't comparable." },
+      { "key": "dumbbell-chest-supported-row", "name": "Chest-supported dumbbell row", "reason": "Same support on an incline bench with dumbbells." },
+      { "key": "barbell-seal-row", "name": "Barbell seal row", "reason": "Fully supported barbell row." },
+      { "key": "cable-seated-row", "name": "Seated cable row", "reason": "Stack row, easy to load in small steps." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at pad height, head end on the left, lever arm and plate horn visible below the pad. Figure standing on the foot platform leaning onto the angled chest pad.",
+    "keyPositions": [
+      {
+        "label": "Stretch",
+        "describe": "Chest on the angled pad, feet braced on the platform, knees slightly bent. Arms hanging straight down holding the handles, shoulder blades spread.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 50, "shoulderFlexion": 70, "elbowFlexion": 5 }
+      },
+      {
+        "label": "Top",
+        "describe": "Elbows pulled back past the torso, handles near the lower chest. Shoulder blades squeezed together, chest still on the pad.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 50, "shoulderFlexion": -20, "elbowFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Chest stays on the pad", "Hands fixed to the handles; handles follow the lever arc"],
+    "barPath": "Handles travel up and back on the lever's arc toward the lower chest",
+    "tempo": { "downMs": 1500, "holdMs": 400, "upMs": 1000 },
+    "props": ["t_bar_row_machine", "weight_plates"],
+    "emphasise": [
+      "Chest stays on the pad",
+      "Elbows drive back",
+      "Full stretch at the bottom"
+    ],
+    "doNotShow": ["Chest lifting off the pad", "Shrugging", "Plates loaded on one side only"]
+  },
+  "sources": [
+    {
+      "url": "https://www.lifefitness.com/en-gb/catalog/strength-training/plate-loaded/iso-lateral-t-bar-row",
+      "title": "Life Fitness: Hammer Strength Plate-Loaded Iso-Lateral T-Bar Row",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1] (chest-supported, adjustable pad); primaryMuscles; secondaryMuscles (biceps); safety.notes[0]",
+      "note": "Manufacturer product page."
+    },
+    {
+      "url": "https://www.strengthlog.com/t-bar-row/",
+      "title": "StrengthLog: T-Bar Row",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[0,3]; primaryMuscles (lats, traps, rear delts)",
+      "note": "Describes a standing T-bar row, not the chest-supported machine; used for the shared row cues and muscles only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "Logged as plates added (added). The plate number isn't the true resistance and differs between machines; the plate-loaded convention is still open (expansion research Q3)."
+    },
+    {
+      "field": "key",
+      "note": "Covers both iso-lateral machines (two arms) and single-lever chest-supported T-bar machines. machine-chest-supported-row also lists plate_loaded_machine; Ben may want that one narrowed to stack machines so histories don't mix."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Pad angle varies by machine."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

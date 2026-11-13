@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-landmine-press",
+  "tier": "basic",
+  "name": "Landmine press",
+  "aliases": ["Single-arm landmine press", "One-arm landmine press", "Landmine shoulder press", "LM press"],
+  "family": "landmine_press",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts", "upper_chest"],
+  "secondaryMuscles": ["triceps", "side_delts", "core", "obliques"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

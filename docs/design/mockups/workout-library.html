@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>GymSmarter · Workouts library, edit before start, fit to time</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Direction D (Premium), dark. Values from apps/mobile/src/theme/tokens.ts PREMIUM_DIRECTION + STATUS_DARK (same as session-picker.html). No new colour values. SF only. */
+:root{
+  --bg-canvas:#0D0C0B; --bg-surface:#181615; --bg-raised:#23201E;
+  --border-divider:#302C29; --border-control:#75706A;
+  --text-primary:#F3EEE8; --text-secondary:#B5ADA5; --text-tertiary:#948C84;
+  --accent:#EDE5DA; --accent-subtle:#2B2724; --on-accent:#0D0C0B;
+  --status-warning:#F2B84B; --status-done:#5CC98A;
+  --scrim:rgba(0,0,0,0.55);
+  --radius-sm:8px; --radius-md:14px; --radius-lg:20px; --radius-pill:999px;
+  --margin:20px;
+  --sf:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#2a2725;font-family:var(--sf);color:var(--text-primary);padding:40px 24px 64px;-webkit-font-smoothing:antialiased}
+h1.page{font:600 20px/1.3 var(--sf);color:#e9e3dc;margin:0 auto 6px;max-width:2200px}
+p.lede{font:400 15px/1.45 var(--sf);color:#bdb5ad;margin:0 auto 32px;max-width:2200px}
+.frames{display:flex;gap:48px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+.frame-wrap{width:390px}
+.frame-title{font:600 13px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:#cfc7bf;margin-bottom:12px;min-height:32px}
+.notes{margin-top:14px;font:400 13px/1.5 var(--sf);color:#bdb5ad}
+.notes p{margin-bottom:6px}
+.notes code{color:#e9e3dc}
+
+.phone{position:relative;width:390px;height:844px;background:var(--bg-canvas);border-radius:48px;overflow:hidden;
+  box-shadow:0 0 0 10px #050505,0 0 0 11px #3a3633,0 30px 80px rgba(0,0,0,.55)}
+.label{font:600 12px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-tertiary)}
+.sb{height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 34px 8px 40px;font:600 17px/22px var(--sf);font-variant-numeric:tabular-nums}
+.sb .island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--text-primary);opacity:.9;z-index:12}
+u,.link{text-decoration:underline;text-underline-offset:3px}
+.tab{font-variant-numeric:tabular-nums}
+.sec{color:var(--text-secondary)}
+.ter{color:var(--text-tertiary)}
+
+/* Nav */
+.nav{height:48px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 8px}
+.nav .l{font:400 17px/22px var(--sf);height:44px;display:flex;align-items:center;padding:0 8px}
+.nav .c{font:600 17px/22px var(--sf)}
+.nav .r{justify-self:end;height:44px;min-width:44px;display:flex;align-items:center;justify-content:center;font:400 17px/22px var(--sf);padding:0 8px}
+.seg{margin:4px var(--margin) 6px;height:36px;border-radius:9px;background:var(--bg-raised);display:grid;grid-template-columns:1fr 1fr;padding:2px}
+.seg span{display:flex;align-items:center;justify-content:center;font:500 15px/20px var(--sf);color:var(--text-secondary);border-radius:7px}
+.seg span.on{background:#3a3633;color:var(--text-primary)}
+.pad{padding:0 var(--margin)}
+.sechead{display:flex;justify-content:space-between;align-items:center;height:40px;margin-top:10px}
+.sechead .act{font:400 16px/22px var(--sf);color:var(--text-primary);height:44px;display:flex;align-items:center}
+
+/* Workout row */
+.wrow{display:grid;grid-template-columns:1fr auto;align-items:center;min-height:64px;padding:8px 0;border-bottom:1px solid var(--border-divider);column-gap:8px}
+.wrow .nm{font:600 17px/22px var(--sf);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wrow .sub{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums;margin-top:2px}
+.dots{width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+.tag{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 7px;border-radius:var(--radius-sm);background:var(--bg-raised);color:var(--text-secondary);font:600 12px/16px var(--sf);letter-spacing:1.2px;text-transform:uppercase}
+.btn2{height:44px;padding:0 18px;border:1px solid var(--border-control);border-radius:var(--radius-md);background:var(--bg-raised);display:flex;align-items:center;font:600 16px/20px var(--sf);color:var(--accent)}
+.warn{color:var(--status-warning)}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:84px;border-top:1px solid var(--border-divider);background:var(--bg-canvas);display:flex;justify-content:space-around;padding-top:12px;font:500 11px/14px var(--sf);color:var(--text-tertiary);letter-spacing:.6px;z-index:5}
+.tabbar .on{color:var(--text-primary)}
+
+/* Editor */
+.fieldlabel{font:400 16px/22px var(--sf);color:var(--text-secondary);margin-top:8px}
+.field{height:48px;border:1px solid var(--border-control);border-radius:var(--radius-md);background:var(--bg-surface);display:flex;align-items:center;padding:0 14px;font:400 17px/22px var(--sf);margin-top:6px}
+.field .caret{display:inline-block;width:2px;height:22px;background:var(--accent);margin-left:1px}
+.summ{font:400 16px/22px var(--sf);color:var(--text-secondary);margin-top:8px;font-variant-numeric:tabular-nums}
+.card{background:var(--bg-surface);border-radius:var(--radius-md);padding:10px 14px 12px;margin-top:10px}
+.card .hd{display:flex;align-items:center;justify-content:space-between;min-height:44px}
+.card .hd .t{font:600 17px/22px var(--sf)}
+.card .hd .rt{display:flex;align-items:center;gap:6px}
+.chip{height:36px;min-width:44px;padding:0 12px;border:1px solid var(--border-control);border-radius:var(--radius-pill);display:inline-flex;align-items:center;justify-content:center;gap:6px;font:500 15px/20px var(--sf);font-variant-numeric:tabular-nums;color:var(--text-primary);position:relative}
+.chip::after{content:"";position:absolute;inset:-4px}
+.chip.on{background:var(--accent-subtle);border-color:var(--text-secondary)}
+.str{display:grid;grid-template-columns:44px 1fr auto auto;column-gap:8px;align-items:center;min-height:44px;border-top:1px solid var(--border-divider);font:400 16px/22px var(--sf);font-variant-numeric:tabular-nums}
+.str .n{color:var(--text-tertiary)}
+.str .rest{color:var(--text-secondary)}
+.addrow{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.pill{height:44px;padding:0 14px;border:1px solid var(--border-control);border-radius:var(--radius-pill);display:inline-flex;align-items:center;gap:6px;font:500 15px/20px var(--sf);color:var(--text-primary);white-space:nowrap}
+.rowlink{height:52px;display:flex;align-items:center;gap:8px;font:400 17px/22px var(--sf)}
+.badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;background:var(--bg-raised);font:600 12px/16px var(--sf);color:var(--text-secondary);margin-right:4px}
+.bar{position:absolute;left:0;right:0;bottom:0;padding:0 var(--margin) 34px;background:var(--bg-canvas);z-index:4}
+.bar::before{content:"";position:absolute;left:0;right:0;top:-14px;height:14px;background:linear-gradient(to bottom,rgba(13,12,11,0),var(--bg-canvas))}
+.start{height:60px;border-radius:var(--radius-pill);background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font:600 17px/22px var(--sf)}
+.bar .start{margin-top:12px}
+
+/* Overview */
+.topbar{position:relative;z-index:3;height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 8px;background:var(--bg-canvas)}
+.topbar .right{display:flex;align-items:center;gap:4px}
+.iconbtn{width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+.txtbtn{height:44px;display:flex;align-items:center;padding:0 8px;font:400 17px/22px var(--sf)}
+.gymchip{height:34px;padding:0 14px;border:1px solid var(--border-control);border-radius:var(--radius-pill);display:flex;align-items:center;gap:6px;font:500 16px/20px var(--sf)}
+.body{position:absolute;top:102px;left:0;right:0;bottom:0;overflow:hidden;padding:0 var(--margin)}
+.title{font:600 34px/40px var(--sf);letter-spacing:-0.6px;margin-top:4px}
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:10px;border-top:1px solid var(--border-divider);border-bottom:1px solid var(--border-divider)}
+.stat{padding:10px 0}
+.stat + .stat{padding-left:14px;border-left:1px solid var(--border-divider)}
+.stat .v{font:300 32px/36px var(--sf);letter-spacing:-0.6px;font-variant-numeric:tabular-nums;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.stat .v small{font:400 16px/20px var(--sf);color:var(--text-secondary);letter-spacing:0;margin-left:1px}
+.stat .v .ap{color:var(--text-secondary);margin-right:1px}
+.stat .label{margin-top:2px;display:flex;align-items:center;gap:5px}
+.stat.btn{position:relative}
+.listhead{display:flex;justify-content:space-between;margin-top:14px;padding-bottom:6px}
+.erow{border-top:1px solid var(--border-divider);padding:8px 0 10px}
+.erow .l1{display:grid;grid-template-columns:30px 1fr auto;align-items:center;min-height:44px}
+.erow .idx{font:500 16px/22px var(--sf);color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.erow .nm{font:600 17px/22px var(--sf);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.arrows{display:flex;gap:6px}
+.arrow{width:44px;height:44px;border:1px solid var(--border-control);border-radius:12px;display:flex;align-items:center;justify-content:center}
+.arrow.dis{opacity:.35}
+.erow .l2,.erow .l3{display:flex;align-items:center;justify-content:space-between;margin-left:30px;margin-top:6px;gap:8px}
+.stepper{display:flex;align-items:center;gap:10px}
+.circ{width:44px;height:44px;border:1px solid var(--border-control);border-radius:50%;display:flex;align-items:center;justify-content:center;font:400 22px/22px var(--sf)}
+.stepper .val{font:400 17px/22px var(--sf);font-variant-numeric:tabular-nums;min-width:56px;text-align:center}
+.tapval{font:400 17px/22px var(--sf);font-variant-numeric:tabular-nums;height:44px;display:flex;align-items:center}
+.load{font:500 22px/26px var(--sf);letter-spacing:-0.3px;font-variant-numeric:tabular-nums;white-space:nowrap;display:flex;align-items:center;gap:6px;height:44px}
+.load small{font:400 16px/20px var(--sf);color:var(--text-secondary);letter-spacing:0}
+.mark{font:600 12px/22px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-secondary);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.orow{position:relative;display:grid;grid-template-columns:30px 1fr auto;column-gap:6px;padding:10px 0;border-top:1px solid var(--border-divider);min-height:64px}
+.orow .name{font:600 17px/22px var(--sf)}
+.orow .detail{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums;margin-top:3px;white-space:nowrap}
+.orow .rc{text-align:right;display:flex;flex-direction:column;align-items:flex-end}
+.orow .load{height:auto;margin-top:2px}
+.orow.skip .name,.orow.skip .detail{color:var(--text-tertiary)}
+.ss{border-left:3px solid var(--text-tertiary);padding-left:8px;margin-left:-11px}
+
+/* Sheet */
+.dim{position:absolute;inset:0;background:var(--scrim);z-index:6}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--bg-surface);border-radius:var(--radius-lg) var(--radius-lg) 0 0;z-index:7;padding:0 var(--margin)}
+.grabber{width:36px;height:5px;border-radius:3px;background:var(--border-control);margin:8px auto 0}
+.shead{display:flex;justify-content:space-between;align-items:center;height:56px}
+.shead .t{font:600 22px/28px var(--sf)}
+.shead .c{font:400 17px/22px var(--sf);height:44px;display:flex;align-items:center}
+.now{font:600 22px/28px var(--sf);font-variant-numeric:tabular-nums;display:flex;align-items:center;justify-content:space-between}
+.now .ap{color:var(--text-secondary)}
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.chips .chip{height:44px;min-width:60px;font-size:17px}
+.primary{height:56px;border-radius:var(--radius-pill);background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font:600 17px/22px var(--sf);margin-top:22px}
+.secondary{height:52px;border-radius:var(--radius-pill);border:1px solid var(--border-control);background:var(--bg-raised);color:var(--accent);display:flex;align-items:center;justify-content:center;font:600 17px/22px var(--sf);margin-top:12px}
+.caption{font:400 16px/22px var(--sf);color:var(--text-secondary);margin-top:6px;display:flex;align-items:center;gap:6px;justify-content:center}
+
+/* Fit card */
+.fitcard{background:var(--bg-surface);border-radius:var(--radius-md);padding:12px 14px;margin-top:12px}
+.fitcard .h{font:600 17px/22px var(--sf);display:flex;align-items:center;gap:8px}
+.fitcard .ba{font:400 17px/22px var(--sf);font-variant-numeric:tabular-nums;margin-top:4px}
+.fitcard .ln{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.fitcard .acts{display:flex;justify-content:space-between;margin-top:10px}
+
+/* Summary + save sheet */
+.sumtitle{font:600 34px/40px var(--sf);letter-spacing:-0.6px;margin-top:12px}
+.facts{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:14px;border-top:1px solid var(--border-divider);border-bottom:1px solid var(--border-divider)}
+.sw{width:51px;height:31px;border-radius:16px;background:var(--bg-raised);border:1px solid var(--border-control);position:relative}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:25px;height:25px;border-radius:50%;background:var(--text-secondary)}
+.setrow{display:flex;justify-content:space-between;align-items:center;min-height:52px;font:400 17px/22px var(--sf);margin-top:6px}
+.kbd{position:absolute;left:0;right:0;bottom:0;height:291px;background:#2b2826;z-index:8;padding:8px 4px 0}
+.kbd .krow{display:flex;gap:6px;justify-content:center;margin-top:10px}
+.kbd .k{width:33px;height:42px;border-radius:5px;background:#4a4644;display:flex;align-items:center;justify-content:center;font:400 20px/20px var(--sf);color:var(--text-primary)}
+.kbd .k.w{width:180px}
+.kbd .k.m{width:50px;background:#3a3633;font-size:15px}
+.savebar{position:absolute;left:0;right:0;bottom:291px;padding:10px var(--margin);background:var(--bg-surface);z-index:8;border-top:1px solid var(--border-divider)}
+.toast{position:absolute;left:16px;right:16px;bottom:106px;height:52px;border-radius:var(--radius-md);background:var(--bg-raised);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 16px;font:400 16px/22px var(--sf);z-index:6;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.toast .u{font:600 16px/22px var(--sf);height:44px;display:flex;align-items:center;padding:0 10px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="next" viewBox="0 0 12 12"><path d="M10.5 6A4.5 4.5 0 1 1 8.6 2.3M8.8 .8v2.6H6.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="check" viewBox="0 0 12 10"><path d="M1 5l3.5 3.5L11 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="chev" viewBox="0 0 20 12"><path d="M2 2l8 8 8-8" fill="none" stroke="#F3EEE8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="caret" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="#B5ADA5" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="more" viewBox="0 0 20 4"><circle cx="2" cy="2" r="2" fill="#F3EEE8"/><circle cx="10" cy="2" r="2" fill="#F3EEE8"/><circle cx="18" cy="2" r="2" fill="#F3EEE8"/></symbol>
+    <symbol id="up" viewBox="0 0 14 9"><path d="M1.5 7.5L7 2l5.5 5.5" fill="none" stroke="#F3EEE8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="down" viewBox="0 0 14 9"><path d="M1.5 1.5L7 7l5.5-5.5" fill="none" stroke="#F3EEE8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="warn" viewBox="0 0 14 12"><path d="M7 1L13 11H1z" fill="none" stroke="#F2B84B" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 5v2.6" stroke="#F2B84B" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.2" r=".8" fill="#F2B84B"/></symbol>
+    <symbol id="clock" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M7 3.8V7l2.2 1.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="skip" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3 6h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+    <symbol id="plus" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 3.5v5M3.5 6h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+    <symbol id="pencil" viewBox="0 0 12 12"><path d="M2 10l.6-2.4L8.2 2l1.8 1.8-5.6 5.6z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></symbol>
+    <symbol id="swap" viewBox="0 0 14 12"><path d="M1 4h11M9 1l3 3-3 3M13 8H2M5 5L2 8l3 3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="wifioff" viewBox="0 0 16 14"><path d="M1 5a10 10 0 0 1 14 0M3.5 7.6a6.5 6.5 0 0 1 9 0M6 10.2a3 3 0 0 1 4 0" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 1l12 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="info" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="none" stroke="#B5ADA5" stroke-width="1.3"/><path d="M7 6.2v4" stroke="#B5ADA5" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="4.1" r=".85" fill="#B5ADA5"/></symbol>
+    <symbol id="sig" viewBox="0 0 44 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="#F3EEE8"/><rect x="5" y="5" width="3" height="7" rx="1" fill="#F3EEE8"/><rect x="10" y="2.5" width="3" height="9.5" rx="1" fill="#F3EEE8"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#F3EEE8"/><rect x="18.5" y=".5" width="22" height="11" rx="3" fill="none" stroke="#F3EEE8" opacity=".5"/><rect x="20" y="2" width="16" height="8" rx="2" fill="#F3EEE8"/></symbol>
+  </defs>
+</svg>
+
+<h1 class="page">Workouts library, edit before start, fit to time</h1>
+<p class="lede">Direction D dark, 390 × 844. Fixture: Push A, Pull A and Legs A in the rotation, Arms never done, FitNotes import grouped by Category; today Sun 11 Oct, Main gym. Specs: <code>docs/design/routines.md</code> Part A (frames 1, 2, 5), <code>docs/design/overview-today-edits.md</code> §11 (frame 3), <code>docs/design/fit-to-time.md</code> (frames 3, 4).</p>
+
+<div class="frames">
+
+<!-- ===================== FRAME 1: LIBRARY LIST ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">1 · Workouts library (Plan hub)</div>
+  <div class="phone">
+    <div class="sb"><span>17:40</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="nav"><span class="l">‹ Today</span><span class="c">Plan</span><span class="r" role="button" aria-label="New workout" style="font-size:26px">＋</span></div>
+    <div class="seg" role="tablist"><span>Week</span><span class="on" aria-selected="true">Workouts</span></div>
+    <div class="pad">
+      <div class="sechead"><span class="label">Your rotation</span><span class="act link">Edit order</span></div>
+      <div class="wrow" role="button" aria-label="Legs A, up next, 6 exercises, about 60 minutes, last done 6 days ago">
+        <div><div class="nm">Legs A <span class="tag"><svg width="11" height="11"><use href="#next"/></svg>Up next</span></div><div class="sub">6 exercises · ≈ 60 min · 6 days ago</div></div>
+        <span class="dots" aria-label="More"><svg width="20" height="4"><use href="#more"/></svg></span>
+      </div>
+      <div class="wrow"><div><div class="nm">Push A</div><div class="sub">5 exercises · ≈ 55 min · 4 days ago</div></div><span class="dots"><svg width="20" height="4"><use href="#more"/></svg></span></div>
+      <div class="wrow"><div><div class="nm">Pull A</div><div class="sub">6 exercises · ≈ 55 min · <svg width="13" height="11"><use href="#warn"/></svg> 1 not here</div></div><span class="dots"><svg width="20" height="4"><use href="#more"/></svg></span></div>
+
+      <div class="sechead"><span class="label">All workouts</span><span class="act">Recent <svg width="10" height="6" style="margin-left:6px"><use href="#caret"/></svg></span></div>
+      <div class="wrow"><div><div class="nm">Arms</div><div class="sub">New · 4 exercises · ≈ 40 min</div></div><span class="dots"><svg width="20" height="4"><use href="#more"/></svg></span></div>
+      <div class="wrow"><div><div class="nm">Push · 45 min <span class="tag">Coach</span></div><div class="sub">6 exercises · ≈ 45 min · 8 Oct</div></div><span class="dots"><svg width="20" height="4"><use href="#more"/></svg></span></div>
+
+      <div class="sechead"><span class="label">From history</span></div>
+      <div class="wrow"><div><div class="nm">Shoulders</div><div class="sub">5 exercises · 4 days ago</div></div><span class="btn2">Save</span></div>
+      <div class="wrow" style="border-bottom:none"><div><div class="nm">Back</div><div class="sub">6 exercises · 3 days ago</div></div><span class="btn2">Save</span></div>
+    </div>
+    <div class="tabbar"><span class="on">TODAY</span><span>PROGRESS</span><span>PROFILE</span></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>No folders (research: 5–15 workouts; the rotation already groups them). Rows have no <code>Start</code>: a row opens the overview, where edit, How long? and Start are. 3 taps to the first logged set.</p>
+    <p><code>⋯</code>: Edit workout · Duplicate · Add to / Remove from rotation · Delete (Undo toast). <code>＋</code>: New workout · New with coach.</p>
+    <p><code>FROM HISTORY</code> = FitNotes Category or named groups not yet saved. <code>Save</code> keeps their history (last done, next targets).</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 2: EDITOR ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">2 · Workout editor (v1 scope)</div>
+  <div class="phone">
+    <div class="sb"><span>17:41</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="nav"><span class="l">Cancel</span><span class="c">Edit workout</span><span class="r"></span></div>
+    <div class="pad">
+      <div class="fieldlabel">Name</div>
+      <div class="field">Push A</div>
+      <div class="summ">5 exercises · ≈ 55 min at Main gym</div>
+      <div class="label" style="margin-top:16px">Exercises</div>
+
+      <div class="card">
+        <div class="hd"><span class="t">1 Bench press</span><span class="rt"><span class="chip on" role="switch" aria-checked="true" aria-label="Main lift, on"><svg width="12" height="10"><use href="#check"/></svg>Main</span><span class="dots"><svg width="20" height="4"><use href="#more"/></svg></span></span></div>
+        <div class="str"><span class="n"><span class="badge">W</span>1</span><span>Warm-up</span><span>Auto × 5</span><span class="rest">1:00</span></div>
+        <div class="str"><span class="n"><span class="badge">T</span>2</span><span>Top</span><span>Auto × 4–6</span><span class="rest">3:00</span></div>
+        <div class="str"><span class="n">3–5</span><span>Working</span><span>Auto × 6–8</span><span class="rest">2:00</span></div>
+        <div class="addrow"><span class="pill">+ Warm-up</span><span class="pill">+ Working</span><span class="pill">+ More <svg width="10" height="6"><use href="#caret"/></svg></span></div>
+      </div>
+
+      <div class="card">
+        <div class="hd"><span class="t">2 Incline DB press</span><span class="rt"><span class="chip on"><svg width="12" height="10"><use href="#check"/></svg>Main</span><span class="dots"><svg width="20" height="4"><use href="#more"/></svg></span></span></div>
+        <div class="str"><span class="n">1–3</span><span>Working</span><span>Auto × 8–10</span><span class="rest">1:30</span></div>
+      </div>
+
+      <div class="card">
+        <div class="hd"><span class="t">3 Cable fly</span><span class="rt"><span class="chip" role="switch" aria-checked="false" aria-label="Main lift, off">Main</span><span class="dots"><svg width="20" height="4"><use href="#more"/></svg></span></span></div>
+        <div class="str"><span class="n">1–3</span><span>Working</span><span>Auto × 12–15</span><span class="rest">1:00</span></div>
+      </div>
+      <div class="rowlink" style="margin-top:4px">＋ Add exercise</div>
+    </div>
+    <div class="bar"><div class="start" style="height:56px">Save</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p><code>Main</code> marks the lifts the time fit never skips. It defaults on for compound exercises in places 1–2; Ben can change it.</p>
+    <p>Exercise <code>⋯</code>: Replace · Superset with next · Move up · Move down · Remove. Tap a set row for the set sheet (type, Auto/Fixed load, reps, rest).</p>
+    <p>Not in v1: % of top set, AMRAP, heavy-legs setting, Advanced. <code>Save</code> stays above the keypad; toast <code>Saved Push A</code> [Undo].</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 3: EDIT MODE + HOW LONG ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">3 · Overview Edit mode, How long? open</div>
+  <div class="phone">
+    <div class="sb"><span>17:44</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar"><span class="txtbtn">Reset</span><span class="txtbtn" style="font-weight:600">Done</span></div>
+    <div class="body">
+      <div class="title">Push A</div>
+      <div class="stats">
+        <div class="stat btn" role="button" aria-label="Time, about 62 minutes. How long? button."><div class="v"><span class="ap">≈</span>62<small>min</small><svg width="12" height="8" style="margin-left:2px"><use href="#caret"/></svg></div><div class="label">Time</div></div>
+        <div class="stat"><div class="v"><span class="ap">≈</span>18:50</div><div class="label">Done by</div></div>
+        <div class="stat"><div class="v">17</div><div class="label">Sets</div></div>
+      </div>
+      <div class="listhead"><span class="label">6 exercises · 2 edited</span><span class="label">Target</span></div>
+      <div class="erow">
+        <div class="l1"><span class="idx">01</span><span class="nm">Bench press</span><span class="arrows"><span class="arrow dis"><svg width="14" height="9"><use href="#up"/></svg></span><span class="arrow"><svg width="14" height="9"><use href="#down"/></svg></span></span></div>
+        <div class="l2"><span class="stepper"><span class="circ">−</span><span class="val">3 sets</span><span class="circ">+</span></span><span class="tapval">6–8 reps ›</span></div>
+      </div>
+    </div>
+    <div class="dim"></div>
+    <div class="sheet" style="top:398px" role="dialog" aria-label="How long?">
+      <div class="grabber"></div>
+      <div class="shead"><span class="t">How long?</span><span class="c">Close</span></div>
+      <div class="now"><span><span class="ap">Now ≈ </span>62 min</span><span class="iconbtn" aria-label="How this is worked out"><svg width="16" height="16"><use href="#info"/></svg></span></div>
+      <div class="chips">
+        <span class="chip">30</span><span class="chip on" aria-selected="true"><svg width="12" height="10"><use href="#check"/></svg>45</span><span class="chip">60</span><span class="chip">75</span><span class="chip">90</span><span class="chip">Other</span>
+      </div>
+      <div class="primary">Trim to 45 min</div>
+      <div class="secondary">Ask coach</div>
+    </div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>Edit mode (from <code>Edit</code> in the top bar): sets stepper, reps, today's target load, Swap, Skip and ↑ ↓ on every row; <code>＋ Add exercise</code> and <code>Update Push A ›</code> at the end. Start stays in the bar (under the sheet here).</p>
+    <p>The TIME tile is the How long? button. <code>Trim</code> is the built-in, offline fit. <code>Ask coach</code> reads <code>Coach offline</code> and is disabled when the coach can't be reached.</p>
+    <p>Chip at or above <code>Now</code>: <code>Trim</code> becomes <code>Fits already</code>; the coach can fill a longer session.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 4: FITTED RESULT ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">4 · Fitted to 45 min (before → after)</div>
+  <div class="phone">
+    <div class="sb"><span>17:45</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar">
+      <div class="iconbtn" aria-label="Close"><svg width="20" height="12"><use href="#chev"/></svg></div>
+      <div class="right"><div class="gymchip">Main gym <svg width="10" height="6"><use href="#caret"/></svg></div><span class="txtbtn">Edit</span><div class="iconbtn" aria-label="More"><svg width="20" height="4"><use href="#more"/></svg></div></div>
+    </div>
+    <div class="body">
+      <div class="title">Push A</div>
+      <div class="stats">
+        <div class="stat btn"><div class="v"><span class="ap">≈</span>44<small>min</small><svg width="12" height="8" style="margin-left:2px"><use href="#caret"/></svg></div><div class="label"><svg width="12" height="12" style="color:#948C84"><use href="#clock"/></svg>Time · fit 45</div></div>
+        <div class="stat"><div class="v"><span class="ap">≈</span>18:30</div><div class="label">Done by</div></div>
+        <div class="stat"><div class="v">10</div><div class="label">Sets</div></div>
+      </div>
+      <div class="fitcard" role="group" aria-label="Fitted to 45 minutes">
+        <div class="h"><svg width="15" height="15" style="color:#F3EEE8"><use href="#clock"/></svg>Fitted to 45 min</div>
+        <div class="ba"><span class="sec">≈</span> 62 → 44 min</div>
+        <div class="ln" style="margin-top:4px">Cable fly · skipped</div>
+        <div class="ln">Lateral raise · 3 → 2 sets</div>
+        <div class="ln">Triceps pushdown · 3 → 2 sets</div>
+        <div class="acts"><span class="pill">Undo</span><span class="pill">Change</span></div>
+      </div>
+      <div class="listhead"><span class="label">5 exercises · fitted</span><span class="label">Target</span></div>
+      <div class="orow"><span style="font:500 16px/22px var(--sf);color:var(--text-tertiary)">01</span><div><div class="name">Bench press</div><div class="detail">3 × 6–8 · 2 warm-ups</div></div><div class="rc"><span class="mark">Same</span><span class="load">100 <small>kg</small></span></div></div>
+      <div class="orow"><span style="font:500 16px/22px var(--sf);color:var(--text-tertiary)">02</span><div><div class="name">Incline DB press</div><div class="detail">3 × 8–10</div></div><div class="rc"><span class="mark">Same</span><span class="load">30 <small>kg each</small></span></div></div>
+      <div class="orow"><span style="font:500 16px/22px var(--sf);color:var(--text-tertiary)">03</span><div class="ss"><div class="name">Lateral raise</div><div class="detail">2 × 12–15</div></div><div class="rc"><span class="mark"><svg width="12" height="12"><use href="#clock"/></svg>Trimmed</span><span class="load">10 <small>kg each</small></span></div></div>
+      <div class="orow"><span style="font:500 16px/22px var(--sf);color:var(--text-tertiary)">04</span><div class="ss"><div class="name">Triceps pushdown</div><div class="detail">2 × 10–12</div></div><div class="rc"><span class="mark"><svg width="12" height="12"><use href="#clock"/></svg>Trimmed</span><span class="load">25 <small>kg</small></span></div></div>
+      <div class="orow skip"><span style="font:500 16px/22px var(--sf);color:var(--text-tertiary)">05</span><div><div class="name">Cable fly</div><div class="detail">3 × 12–15</div></div><div class="rc"><span class="mark"><svg width="12" height="12"><use href="#skip"/></svg>Skipped</span><span class="load" style="color:var(--text-tertiary)">—</span></div></div>
+    </div>
+    <div class="bar"><div class="start">Start workout</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>Built-in trim, applied at once: accessory sets to 2, then skip accessories, main lifts last (never skipped, never below 2 sets). Loads, reps and rest unchanged. Minutes are the code's estimate, always <code>≈</code>.</p>
+    <p>Can't reach the time: the card reads <code>Shortest: ≈ 52 min</code> and nothing more is cut. <code>Bring back</code> on a skipped row is Ben's choice and the trim leaves it alone.</p>
+    <p>Coach fit: same card with a <code>Coach</code> tag and <code>Why? ›</code>; swaps come as a separate <code>Today only</code> card with Apply. Start sets Finish by 18:30 (start + 45, rounded up).</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 5: SAVE FROM SUMMARY ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">5 · Save to Workouts from the Summary</div>
+  <div class="phone">
+    <div class="sb"><span>18:52</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="pad">
+      <div class="label" style="margin-top:14px">Sun 11 Oct · Main gym</div>
+      <div class="sumtitle">Workout</div>
+      <div class="link" style="font:400 16px/22px var(--sf);height:44px;display:flex;align-items:center">Save to Workouts</div>
+      <div class="facts">
+        <div class="stat"><div class="v" style="font:300 32px/36px var(--sf)">48<small style="font:400 16px/20px var(--sf);color:var(--text-secondary)"> min</small></div><div class="label">Time</div></div>
+        <div class="stat"><div class="v" style="font:300 32px/36px var(--sf)">14</div><div class="label">Sets</div></div>
+        <div class="stat"><div class="v" style="font:300 32px/36px var(--sf)">4</div><div class="label">Exercises</div></div>
+      </div>
+    </div>
+    <div class="dim"></div>
+    <div class="sheet" style="top:250px" role="dialog" aria-label="Save to Workouts">
+      <div class="grabber"></div>
+      <div class="shead"><span class="t">Save to Workouts</span><span class="c">Cancel</span></div>
+      <div class="fieldlabel" style="margin-top:0">Name</div>
+      <div class="field">Legs B<span class="caret"></span></div>
+      <div class="summ">4 exercises · 14 sets</div>
+      <div class="setrow"><span>Add to rotation</span><span class="sw" role="switch" aria-checked="false"></span></div>
+    </div>
+    <div class="savebar"><div class="start" style="height:52px">Save</div></div>
+    <div class="kbd" aria-hidden="true">
+      <div class="krow"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+      <div class="krow"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+      <div class="krow"><span class="k m">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k m">⌫</span></div>
+      <div class="krow"><span class="k m">123</span><span class="k w">space</span><span class="k m">done</span></div>
+    </div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>Any finished workout, including one started empty, can be saved: Summary, a past workout's <code>⋯</code>, a <code>FROM HISTORY</code> row, the overview <code>⋯</code> (saves what the page shows) and Repeat all open this one sheet.</p>
+    <p>Saved: exercises, order, set types and counts, rep ranges, rest, supersets. Loads are <code>Auto</code>, so next time's targets come from this workout. <code>Save</code> sits above the keyboard.</p>
+    <p>Toast <code>Saved to Workouts</code> [Undo]; the link becomes <code>Saved · Legs B ›</code>. Never a prompt on Finish.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

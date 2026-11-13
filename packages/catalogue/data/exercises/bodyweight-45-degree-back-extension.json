@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-45-degree-back-extension",
+  "tier": "basic",
+  "name": "45° back extension",
+  "aliases": ["45-degree back extension", "Back extension", "Hyperextension", "Hyper", "Roman chair back extension", "45-degree hyperextension"],
+  "family": "back_extension",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["spinal_erectors", "glutes"],
+  "secondaryMuscles": ["hamstrings"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,20 @@
+{
+  "specVersion": 1,
+  "file": { "delimiter": ",", "headerLine": 1, "decimal": "." },
+  "layout": { "kind": "row_per_set", "setOrder": null },
+  "workoutKey": [],
+  "date": { "column": { "header": "Workout DateTime", "index": 0 }, "format": "YYYY-MM-DDTHH:mm:ss" },
+  "exercise": { "header": "Exercise", "index": 3 },
+  "load": { "column": { "header": "Completed Weight Value", "index": 13 }, "unit": { "kind": "unit_column", "column": { "header": "Completed Weight Unit", "index": 14 } } },
+  "reps": { "header": "Completed Reps", "index": 6 },
+  "setType": null,
+  "rpe": { "header": "Completed RPE", "index": 9 },
+  "notes": [{ "header": "Notes", "index": 19 }],
+  "unmapped": [{ "header": "Program", "index": 1 }, { "header": "Day Name", "index": 2 }, { "header": "Is Warmup Set?", "index": 4 }, { "header": "Required Reps", "index": 5 }, { "header": "Is AMRAP?", "index": 7 }, { "header": "Required RPE", "index": 8 }, { "header": "Log RPE?", "index": 10 }, { "header": "Required Weight Value", "index": 11 }, { "header": "Required Weight Unit", "index": 12 }, { "header": "Ask Weight?", "index": 15 }, { "header": "Completed Reps Time", "index": 16 }, { "header": "Target Muscles", "index": 17 }, { "header": "Synergist Muscles", "index": 18 }],
+  "selfCheck": [
+    { "line": 2, "date": "2025-05-01", "exercise": "Squat", "load": 120, "reps": 3 },
+    { "line": 4, "date": "2025-05-01", "exercise": "Squat", "load": 120, "reps": 5 },
+    { "line": 9, "date": "2025-05-03", "exercise": "Deadlift", "load": 140, "reps": 3 }
+  ],
+  "unsupported": null
+}

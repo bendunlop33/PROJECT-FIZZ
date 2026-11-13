@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "cable-lat-pulldown",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "front",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2900,
+  "loop": "cycle",
+  "motion": "phases",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "projection": { "legNear": 0.2, "legFar": 0.2, "shankNear": 1, "shankFar": 1 },
+  "seenFrom": "back",
+  "props": [
+    { "id": "seat", "type": "bench", "x": -0.2, "length": 0.4, "height": 0.25 },
+    { "id": "bar", "type": "barbell", "plates": "none", "anchor": { "kind": "keyframed" }, "gripHalfWidth": 0.19 },
+    { "id": "cable", "type": "cable_stack", "x": 0, "pulleyY": 1.12, "hand": "near", "handle": "bar", "attach": "bar", "restLength": 0.15 },
+    { "id": "thighPad", "type": "pad", "x": 0, "y": 0.357, "w": 0.42, "h": 0.05 }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Arms up in a wide V, elbows almost straight",
+      "root": { "x": 0, "y": 0.317, "pelvisDeg": 0 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": 0 },
+      "props": { "bar": { "x": 0, "y": 0.969 } },
+      "projection": { "armNear": 1, "armFar": 1, "forearmNear": 1, "forearmFar": 1 },
+      "ik": {
+        "footNear": { "x": 0.125, "y": 0, "planted": true, "bend": "ccw" },
+        "footFar": { "x": -0.125, "y": 0, "planted": true, "bend": "ccw" },
+        "handNear": { "prop": "bar" },
+        "handFar": { "prop": "bar" }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.1976, "pass": true, "label": "Halfway", "caption": "Elbows drive down and out",
+      "props": { "bar": { "y": 0.727 } },
+      "projection": { "armNear": 0.86, "armFar": 0.86, "forearmNear": 0.72, "forearmFar": 0.72 },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.3448, "label": "Bottom", "caption": "Bar to the upper chest, elbows by the ribs",
+      "props": { "bar": { "y": 0.588 } },
+      "projection": { "armNear": 0.83, "armFar": 0.83, "forearmNear": 0.68, "forearmFar": 0.68 },
+      "holdMs": 300, "ease": "smooth"
+    },
+    { "t": 0.6838, "sameAs": 1, "caption": "Let the bar rise slowly", "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0, "to": 0.3448 }] },
+  "checks": { "barDriftMax": 0.005, "barProp": "bar", "planted": ["footNear", "footFar"], "besideProps": ["legNear", "legFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Back view, seated with thighs under the pad. Hands on a wide bar overhead. Pull the elbows down towards the ribs so the bar comes straight down in front of the face to the upper chest, behind the head from this side, then let it rise slowly back to straight arms."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
+}

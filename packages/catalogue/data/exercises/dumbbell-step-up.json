@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-step-up",
+  "tier": "basic",
+  "name": "Dumbbell step-up",
+  "aliases": ["Step-up", "Step up", "DB step-up", "Box step-up", "Bench step-up"],
+  "family": "step_up",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["hamstrings", "adductors", "calves", "grip"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

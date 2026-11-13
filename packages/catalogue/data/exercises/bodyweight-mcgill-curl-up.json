@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-mcgill-curl-up",
+  "tier": "rich",
+  "name": "McGill curl-up",
+  "aliases": ["McGill curl up", "McGill curl-ups", "Modified curl-up", "McGill modified curl-up"],
+  "family": "crunch",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 30,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your back, one knee bent",
+      "Other leg straight on the floor",
+      "Hands flat under your lower back"
+    ],
+    "execution": [
+      "Brace gently, as if before a cough",
+      "Lift head and shoulders just a little",
+      "Hold about 10 seconds, breathing",
+      "Lower slowly; swap legs halfway"
+    ],
+    "faults": [
+      "Don't flatten or arch your lower back",
+      "Don't tuck your chin to your chest",
+      "Don't curl up into a full crunch"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "The lift is small on purpose: head, neck and shoulders rise as one, only slightly off the floor.",
+      "Keep breathing during each hold.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Curl-up with head supported", "reason": "Brace and hold without lifting the head." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Curl-up with elbows lifted", "reason": "Raising the elbows off the floor adds a little demand." },
+      { "key": null, "name": "Longer holds or more reps", "reason": "Build endurance before adding anything harder." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Back-lying trunk control with no curl." },
+      { "key": "bodyweight-plank", "name": "Plank", "reason": "Trunk held still face down." },
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Another of the same three-exercise set; works the sides." },
+      { "key": "bodyweight-bird-dog", "name": "Bird dog", "reason": "Third exercise of the same set; works the back of the trunk." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, head on the left. The bent knee is the near leg so both legs read clearly. Hands visible under the lower back.",
+    "keyPositions": [
+      {
+        "label": "Rest",
+        "describe": "Lying on the back, near knee bent with the foot flat, far leg straight. Hands palm-down under the small of the back, keeping its natural curve. Head on the floor.",
+        "approxAnglesDeg": { "nearKneeFlexion": 90, "farKneeFlexion": 0, "trunkCurl": 0 }
+      },
+      {
+        "label": "Hold",
+        "describe": "Head, neck and shoulders lifted together a few centimetres off the floor; the chin is not tucked. Lower back still resting on the hands with its curve kept.",
+        "approxAnglesDeg": { "nearKneeFlexion": 90, "farKneeFlexion": 0, "trunkCurl": 10 }
+      }
+    ],
+    "ikHints": ["Pelvis and legs stay still", "Hands stay under the lower back"],
+    "tempo": { "downMs": 1500, "holdMs": 8000, "upMs": 1500 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Very small lift",
+      "Head and neck move as one with the shoulders",
+      "Lower back curve kept on the hands"
+    ],
+    "doNotShow": ["A full crunch or sit-up", "Chin tucked to the chest", "Lower back pressed flat"]
+  },
+  "sources": [
+    {
+      "url": "https://www.health.harvard.edu/staying-healthy/three-moves-for-better-spine-health",
+      "title": "Harvard Health Publishing: Three moves for better spine health",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[1-3]; cues.faults[0-1]; substitutions (the other two of McGill's three exercises)"
+    },
+    {
+      "url": "https://elitefts.com/blogs/training/youre-doing-the-mcgill-big-three-wrong-heres-the-secret-youre-missing",
+      "title": "elitefts: The Exercises You Know, The Intent You Don't",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.faults[2] (not a crunch; small lift); variations.progressions[0] (elbows lifted)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "variations.progressions[0]",
+      "note": "Sources differ on whether the elbows stay on the floor; lifting them is treated here as a progression."
+    },
+    {
+      "field": "measurement",
+      "note": "Logged as reps (each a hold of about 10 seconds). The hold length isn't recorded per rep."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

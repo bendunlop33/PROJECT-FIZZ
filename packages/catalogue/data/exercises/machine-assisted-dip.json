@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-assisted-dip",
+  "tier": "basic",
+  "name": "Assisted dip",
+  "aliases": ["Assisted dip machine", "Machine-assisted dip", "Gravitron dip", "Assisted parallel-bar dip"],
+  "family": "dip",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest", "triceps"],
+  "secondaryMuscles": ["front_delts"],
+  "compatibleEquipment": ["assisted_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "assistance",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}
