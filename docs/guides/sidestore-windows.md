@@ -165,6 +165,20 @@ The app, **GymSmarter**, is built by GitHub Actions and attached to each build r
 
 **Last resort, not for our app:** the docs' "full reset" says to delete SideStore **and every app it installed**. That would wipe the app's data. Only consider it after a fresh backup exists off the phone, and after talking to the developer. [Doc] https://docs.sidestore.io/docs/troubleshooting/common-issues
 
+### 5a. Automatic daily refresh with Shortcuts (added 13 Nov 2026)
+
+SideStore's own refresh lapsed once (SideStore "No Longer Available", 9 Nov). A daily Shortcuts automation refreshes everything well inside the 7 days. [Unverified on Ben's phone; SideStore exposes a "Refresh All Apps" Shortcuts action, seen in Spotlight 9 Nov.]
+
+1. Open **Shortcuts** › **Automation** › **＋** (or **New Automation**).
+2. Choose **Time of Day**. Pick a time the phone is usually on home Wi-Fi and charging (for example 03:30), **Repeat: Daily**.
+3. Choose **Run Immediately** and turn off **Notify When Run**. Tap **Next**.
+4. **New Blank Automation** › **Add Action**:
+   - Search **LocalDevVPN**. If it offers a **Connect** (or similar) action, add it first. If it offers none, keep LocalDevVPN connected all the time instead.
+   - Search **SideStore** › **Refresh All Apps**.
+5. Tap **Done**. Test it once: open the automation and tap ▶︎ (or wait for the time). Then check SideStore's counter shows 7 days again.
+
+It still needs Wi-Fi and the VPN, and it fails quietly if Apple's sign-in or the pairing file breaks. So glance at SideStore's day counter once a week; if it's below 4 days, refresh by hand and tell the developer.
+
 ## 6. Rules that protect your workout data
 
 1. **Never delete the app.** Deleting it deletes its database. That includes when it is expired, broken, or iOS offers "Offload/Delete".
