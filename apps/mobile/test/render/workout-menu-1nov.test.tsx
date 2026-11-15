@@ -109,7 +109,9 @@ describe('the round page’s exercise menu (Ben, 1 Nov, A)', () => {
     const moved = await load();
     expect(sessionRounds(moved).map((x) => x.members[0]?.exerciseName)).toEqual(['Incline dumbbell press', 'Lat pulldown', 'Bench press']);
     expect(currentRoundIndex(moved)).toBe(0);
-    expect(moved.sets).toEqual(before.sets);
+    // (8 Nov, SF6) A move re-plans built-in targets of exercises not started; nothing logged, added or removed changes.
+    const shape = (a: SessionAggregate) => a.sets.map((x) => ({ id: x.id, status: x.status, setType: x.setType, actual: x.actual })).sort((p, q) => p.id.localeCompare(q.id));
+    expect(shape(moved)).toEqual(shape(before));
     await r.press('Undo');
     await r.waitFor((t) => !t.includes('Bench press moved to end'), 'the toast gone');
     const back = await load();
