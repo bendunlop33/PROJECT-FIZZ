@@ -5,6 +5,7 @@ import type {
   PlannedSnap,
   TargetBasis,
   TargetBasisSet,
+  TargetEarlierWork,
   TargetProvenance,
   TargetStep,
   ZonedTimestamp,
@@ -12,7 +13,7 @@ import type {
 import { formatNumber, loadText, NBSP } from './display';
 import { isSetCountable } from './exclusions';
 import { loadDirection } from './equipment';
-import { comparableSetsOf, matchesEquipment, type HistorySession, type NextTargets, type TargetSet } from './progression';
+import { comparableSetsOf, matchesEquipment, type EarlierWorkNote, type HistorySession, type NextTargets, type TargetSet } from './progression';
 import type { StartWarning } from './session/create';
 import { buildStepCard, pctChange } from './step-card';
 import { toScaled } from './units';
@@ -184,6 +185,24 @@ export interface RuleProvenanceInput {
   at: ZonedTimestamp;
 }
 
+/**
+ * (SF7b, Ben 15 Nov) SF's note on a target as stored with it: what was done before it today, the reference read (with
+ * its time zone from history) and whether SF3 changed the target. Pure; from what `nextTargetsFor` already worked out.
+ */
+export function earlierWorkProvenance(note: EarlierWorkNote, history: readonly HistorySession[], fallbackTz: string): TargetEarlierWork {
+  const ref = note.reference;
+  const tz = ref === null ? fallbackTz : (history.find((h) => h.sessionId === ref.sessionId)?.tz ?? fallbackTz);
+  return {
+    p: note.todayP,
+    muscle: note.muscle,
+    before: note.before.slice(0, 12).map((b) => ({ name: b.name === null ? null : clip(b.name, 120), sets: b.sets, direct: b.direct.slice(0, 12), secondary: b.secondary.slice(0, 12) })),
+    reference: ref === null ? null : { sessionId: ref.sessionId, performedAt: { utc: ref.performedAtUtc, tz }, p: ref.p, sameMuscleSuperset: ref.sameMuscleSuperset },
+    basis: note.basis,
+    ...(note.cushion !== undefined ? { cushion: { reps: note.cushion.reps, stepDown: note.cushion.stepDown } } : {}),
+    ...(note.staleLower === true ? { staleLower: true as const } : {}),
+  };
+}
+
 /** Provenance for one planned set from the built-in rule's next targets (`plannedSetsFromTargets`). */
 export function ruleTargetProvenance(input: RuleProvenanceInput, target: TargetSet): TargetProvenance {
   const { result, equipment: eq } = input;
@@ -206,6 +225,7 @@ export function ruleTargetProvenance(input: RuleProvenanceInput, target: TargetS
     ...(step !== null ? { step } : {}),
     // SF3 (Ben 8 Nov): a target cushioned for earlier work today has no like-for-like basis: an estimate (rule 6).
     ...(result.earlierWork?.cushion !== undefined ? { estimate: true as const } : {}),
+    ...(result.earlierWork !== undefined ? { earlierWork: earlierWorkProvenance(result.earlierWork, input.history, input.at.tz) } : {}),
     guardNotes,
   });
 }

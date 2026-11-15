@@ -40,11 +40,12 @@ export function replanCandidates(state: SessionAggregate): ReplanCandidate[] {
   return out;
 }
 
-const valuesOf = (p: PlannedSet) => stableStringify({ load: p.load, reps: p.reps });
+// (SF7b, 15 Nov) The SF note counts too: a reorder that keeps the numbers still updates what `Why?` and the coach read.
+const valuesOf = (p: PlannedSet) => stableStringify({ load: p.load, reps: p.reps, earlierWork: p.provenance?.earlierWork ?? null });
 
 /**
  * The sets that change: the candidate's non-warm-up sets paired in order with the new plan's (same count and set
- * types, else nothing: a different shape is never forced onto today's sets), where the load or reps differ.
+ * types, else nothing: a different shape is never forced onto today's sets), where the load, reps or SF note differ.
  */
 export function replanEntries(c: ReplanCandidate, plan: readonly { setType: SetType; planned: PlannedSet }[] | null): CommandOf<'replan_built_in_targets'>['sets'] {
   if (plan === null) return [];

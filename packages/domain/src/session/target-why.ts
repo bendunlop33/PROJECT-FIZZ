@@ -23,6 +23,7 @@ import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { shownCoachNote } from './builder-loads';
 import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
+import { earlierWorkWhy } from './earlier-work-why';
 
 /**
  * `explainTarget` (active-workout.md §2.12, §6): the `Why?` panel under a set
@@ -34,12 +35,12 @@ import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
  * coach's words; `Last time` and `Before flag` hold actual results.
  */
 
-export type WhyRowKey = 'coach_workout' | 'set_by' | 'last_time' | 'reason' | 'equipment' | 'pain' | 'before_flag' | 'not_used' | 'swapped';
+export type WhyRowKey = 'coach_workout' | 'set_by' | 'last_time' | 'reason' | 'earlier_today' | 'equipment' | 'pain' | 'before_flag' | 'not_used' | 'swapped';
 
 export interface WhyRow {
   key: WhyRowKey;
   /** Null: one full-width line with no label column (`Swapped before start · Bench press`, overview-today-edits.md §5). */
-  label: 'Set by' | 'Last time' | 'Reason' | 'Coach’s note' | 'Equipment' | 'Pain' | 'Before flag' | 'Not used' | null;
+  label: 'Set by' | 'Last time' | 'Reason' | 'Earlier today' | 'Coach’s note' | 'Equipment' | 'Pain' | 'Before flag' | 'Not used' | null;
   lines: string[];
   /** `actual`: logged results, never targets. `warning`: shown with the warning icon. */
   kind: 'app' | 'actual' | 'warning';
@@ -385,7 +386,12 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   const fromHistory = p?.basis ? null : lastComparableHistory(input.history, ex);
   rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow) : historyLastTime(fromHistory, ex, eq, tz));
   const reason = reasonRow(p, planned, ex, eq);
-  if (reason) rows.push(reason);
+  // SF7(b) (Ben, 15 Nov): in-session fatigue for a rule target, one line; only here, behind `Why?`. When SF3 made the
+  // target, this line is its reason (the rule's own SF3 sentence would say the same again).
+  const earlier = p?.source === 'rule' ? earlierWorkWhy(p.earlierWork) : null;
+  const cushioned = earlier !== null && p?.earlierWork?.basis === 'cushion';
+  if (reason && !cushioned) rows.push(reason);
+  if (earlier !== null) rows.push({ key: 'earlier_today', label: 'Earlier today', lines: [earlier], kind: 'app' });
   const equipment = equipmentRow(p, eq, planned, assumedInclineWhy(ex.exerciseId, currentGymEquipment(state.session)));
   if (equipment) rows.push(equipment);
 

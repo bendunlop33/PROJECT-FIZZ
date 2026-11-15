@@ -26,7 +26,7 @@ import { stallResetLoad } from './stall-reset';
 import { toMs } from './time';
 import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
 import type { RuleReps } from './rep-range';
-import type { WorkContext } from './in-session-fatigue';
+import type { EarlierOverlap, WorkContext } from './in-session-fatigue';
 
 export interface HistorySet {
   setType: SetType;
@@ -417,6 +417,8 @@ export interface EarlierWorkNote {
   /** Today's P (earlier hard sets for its most-worked primary muscle) and that muscle. */
   todayP: number;
   muscle: string | null;
+  /** (SF7b, 15 Nov) Today's earlier exercises sharing a muscle with this one (`sharedEarlierWork`). */
+  before: EarlierOverlap[];
   /** The exposure the target was read from: its P, session and date. */
   reference: { sessionId: string; performedAtUtc: string; p: number; sameMuscleSuperset: boolean } | null;
   /** `comparable`: like for like (SF2); `other`: another context, normal rule (today fresher); `cushion`: SF3. */

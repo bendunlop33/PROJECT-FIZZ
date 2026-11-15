@@ -240,6 +240,35 @@ export const TargetStepSchema = z.object({
 });
 export type TargetStep = z.infer<typeof TargetStepSchema>;
 
+/**
+ * (SF7b, Ben 15 Nov) In-session fatigue (SF1–SF3) as it stood when a built-in target was made: today's earlier
+ * same-muscle work, the reference used and whether SF3 changed the target. Muscles are groups (`muscleGroupOf`).
+ */
+export const TargetEarlierWorkSchema = z.object({
+  /** SF1's P: earlier hard sets for this exercise's most-worked primary muscle (`muscle`; null when P is 0). */
+  p: z.number().min(0).max(1000),
+  muscle: z.string().min(1).max(60).nullable(),
+  /** Earlier exercises today sharing a muscle with this one, how they worked it (`direct` = their primary mover). */
+  before: z
+    .array(
+      z.object({
+        name: z.string().max(120).nullable(),
+        sets: z.number().min(0).max(1000),
+        direct: z.array(z.string().min(1).max(60)).max(12),
+        secondary: z.array(z.string().min(1).max(60)).max(12),
+      }),
+    )
+    .max(12),
+  /** The exposure read (its own P); null: none. */
+  reference: z.object({ sessionId: IdSchema, performedAt: ZonedTimestampSchema, p: z.number().min(0).max(1000), sameMuscleSuperset: z.boolean() }).nullable(),
+  /** `comparable`: like for like (SF2); `other`: another context, no cushion; `cushion`: SF3 changed the target. */
+  basis: z.enum(['comparable', 'other', 'cushion']),
+  cushion: z.object({ reps: z.int().min(0).max(2), stepDown: z.boolean() }).optional(),
+  /** SF2 stale: the newer other-context exposure gave the lower load. */
+  staleLower: z.literal(true).optional(),
+});
+export type TargetEarlierWork = z.infer<typeof TargetEarlierWorkSchema>;
+
 export const TargetProvenanceSchema = z.object({
   source: TargetSourceSchema,
   /** When the target was made. */
@@ -276,6 +305,8 @@ export const TargetProvenanceSchema = z.object({
   estimate: z.literal(true).optional(),
   /** (workout-builder v2, BD10) The load is held for pain (`HELD`): a flag on the movement or session pain. Never a step bound or a cap. */
   held: z.literal(true).optional(),
+  /** (SF7b, 15 Nov) Built-in targets only: in-session fatigue as worked out for this target. Absent: SF didn't read it. */
+  earlierWork: TargetEarlierWorkSchema.optional(),
   /** Equipment notes made with the target: rounding, caps, conversions, drops. */
   guardNotes: z.array(z.string().min(1).max(300)).max(10),
 });

@@ -1,4 +1,4 @@
-import { ageFromBirthYear, bodyweightEntries, type EnduranceSwitch, type EnduranceSwitchSession, lastDaysDetail, type LastDaysView, type HealthDailyValue, buildExecutionOrder, deriveId, doneSoFarByMuscle, type MusclesOf, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
+import { ageFromBirthYear, bodyweightEntries, type EnduranceSwitch, type EnduranceSwitchSession, lastDaysDetail, type LastDaysView, type HealthDailyValue, buildExecutionOrder, deriveId, doneSoFarByMuscle, earlierWorkFact, pendingEarlierWork, type MusclesOf, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
 import type { CheckIn, HealthWeightSample, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, TrainingSplit, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
@@ -503,6 +503,12 @@ export interface SessionExerciseView {
   equipment: string | null;
   /** (19 Oct) Its superset's letter (members alternate sets); absent when it isn't in one. */
   superset?: string;
+  /**
+   * (SF7b, Ben 15 Nov) How in-session fatigue (SF1–SF3) read its next built-in target, from the target's provenance:
+   * the earlier exercises today sharing its muscles, P (its own primary muscles only), the reference and whether SF3
+   * changed it. Absent: the target isn't the rule's or SF didn't read it. For answers when Ben asks.
+   */
+  earlierToday?: string;
   sets: SessionSetView[];
 }
 
@@ -645,6 +651,7 @@ export function workoutView(session: SessionAggregate, gymName: string | null, r
         loadConvention: ex.loadConvention,
         equipment: eq === null ? null : `${eq.name} (${eq.kind})`,
         ...(ex.supersetGroup === null ? {} : { superset: ex.supersetGroup }),
+        ...earlierTodayOf(sets),
         sets: sets.map((s, i) => ({
           setId: s.id,
           number: i + 1,
@@ -667,6 +674,12 @@ export function workoutView(session: SessionAggregate, gymName: string | null, r
     lastLogged: last.lastLogged,
     lastWorkingSet: last.lastWorkingSet,
   };
+}
+
+/** SF7(b): the exercise's SF fact, when its next target is the rule's and SF read it. */
+function earlierTodayOf(sets: readonly WorkoutSet[]): { earlierToday?: string } {
+  const ew = pendingEarlierWork(sets);
+  return ew === null ? {} : { earlierToday: earlierWorkFact(ew) };
 }
 
 const KIND_OF: Readonly<Record<SetType, LoggedSetView['kind']>> = { warmup: 'warm-up', working: 'working', top: 'top', backoff: 'back-off', drop: 'drop' };

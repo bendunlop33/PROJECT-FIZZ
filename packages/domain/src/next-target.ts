@@ -1,7 +1,7 @@
 import type { CheckIn, EquipmentInstance, Load, LoadConvention, Measurement, PainFlag, PlannedSet, ProgressionRule, SetType, WeightUnit } from '@fizz/schemas';
 import { compareDifficulty, loadDirection, stepLoad } from './equipment';
 import { formatNumber } from './display';
-import { cushionReps, cushionWhy, pickLikeForLike, resolveContext, type ContextExposure, type MusclesOf, type ResolvedContext, type WorkContext } from './in-session-fatigue';
+import { cushionReps, cushionWhy, pickLikeForLike, resolveContext, sharedEarlierWork, type ContextExposure, type MusclesOf, type ResolvedContext, type WorkContext } from './in-session-fatigue';
 import { painMentionedNotFlagged, painStatusFor } from './checkin';
 import { builtInDefaultRule, ruleCategory, type RuleExerciseInfo } from './default-rule';
 import { calculateNextTargets, latestJudgedSession, type EarlierWorkNote, type HistorySession, type NextTargets, type NextTargetsInput, type PainStatus } from './progression';
@@ -141,9 +141,11 @@ export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; r
   const pick = pickLikeForLike(today, exposures);
   if (pick.kind === 'all') return plain();
   const only = (ids: ReadonlySet<string>) => req.history.filter((h) => ids.has(h.sessionId) && h.context !== undefined);
+  const before = sharedEarlierWork(f.today, req.exerciseId, f.musclesOf);
   const note = (basis: EarlierWorkNote['basis'], ref: ContextExposure | null): EarlierWorkNote => ({
     todayP: today.p ?? 0,
     muscle: today.muscle,
+    before,
     reference: ref === null ? null : { sessionId: ref.sessionId, performedAtUtc: ref.performedAtUtc, p: ref.context.p ?? 0, sameMuscleSuperset: ref.context.sameMuscleSuperset },
     basis,
   });

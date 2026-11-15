@@ -39,6 +39,8 @@ export interface FatigueMuscles {
   primaryMuscles: readonly string[];
   secondaryMuscles?: readonly string[] | undefined;
   measurement?: Measurement | undefined;
+  /** Its name, for `Why?` and the coach (SF7b); absent: not named. */
+  name?: string | undefined;
 }
 
 export type MusclesOf = (exerciseId: string) => FatigueMuscles | null | undefined;
@@ -186,6 +188,39 @@ export function resolveContext(ctx: WorkContext | null | undefined, exerciseId: 
   const own = new Set((info?.primaryMuscles ?? []).map(groupOf));
   const sameMuscleSuperset = ctx.supersetWith.some((id) => (musclesOf(id)?.primaryMuscles ?? []).some((m) => own.has(groupOf(m))));
   return { p: pick.p, sameMuscleSuperset, muscle: pick.muscle };
+}
+
+/**
+ * SF7(b): one earlier exercise today that shares a muscle (group) with this one, primary or secondary on either side:
+ * its hard sets and the shared muscles, split by how the earlier exercise worked them (`direct`: one of its primary
+ * movers; `secondary`: it helped). Only `direct`/`secondary` hits on this exercise's own primary muscles count towards
+ * P (SF1); the rest is shown so "was X factored in?" has a factual answer.
+ */
+export interface EarlierOverlap {
+  name: string | null;
+  sets: number;
+  direct: string[];
+  secondary: string[];
+}
+
+/** SF7(b): today's earlier exercises sharing a muscle with `exerciseId`, most sets first. Pure. */
+export function sharedEarlierWork(ctx: WorkContext | null | undefined, exerciseId: string, musclesOf: MusclesOf): EarlierOverlap[] {
+  if (ctx == null) return [];
+  const mine = credits(musclesOf(exerciseId));
+  if (mine.size === 0) return [];
+  const out: EarlierOverlap[] = [];
+  for (const e of ctx.earlier) {
+    const info = musclesOf(e.exerciseId);
+    const direct: string[] = [];
+    const secondary: string[] = [];
+    for (const [m, c] of credits(info)) {
+      if (!mine.has(m)) continue;
+      (c === 1 ? direct : secondary).push(m);
+    }
+    if (direct.length === 0 && secondary.length === 0) continue;
+    out.push({ name: info?.name ?? null, sets: e.sets, direct: direct.sort(), secondary: secondary.sort() });
+  }
+  return out.sort((a, b) => b.sets - a.sets || ((a.name ?? '') < (b.name ?? '') ? -1 : 1));
 }
 
 /** SF2: like for like (P within the window, the same superset kind). Unknown contexts are never comparable. */
