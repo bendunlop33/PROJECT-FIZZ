@@ -716,6 +716,15 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
 }
 
 /**
+ * (Ben, 15 Nov, build 568) The Sees chip on one line: `main` shrinks with an ellipsis in its middle
+ * (`Sees: Push B · Dumb…der press`), the `(live)` / `(draft)` tag never does.
+ */
+export function seesChipParts(label: string): { main: string; tag: string | null } {
+  const m = / \((live|draft)\)$/.exec(label);
+  return m === null ? { main: label, tag: null } : { main: label.slice(0, m.index), tag: `(${m[1] ?? ''})` };
+}
+
+/**
  * The workout bar (CS3): the rest left or `Ready`; tapping closes the sheet.
  * It never logs and has no Log label.
  */

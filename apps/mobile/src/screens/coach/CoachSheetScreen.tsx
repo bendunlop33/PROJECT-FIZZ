@@ -60,6 +60,7 @@ import { RebalanceCard } from './RebalanceCard';
 import { DraftEditCard, SetupFillCard, useOpenSetup } from './DraftCards';
 import { CoachCard } from './CoachCard';
 import { HeaderButton, SendButton } from './SheetButtons';
+import { SeesChip } from './SeesChip';
 import { BuildQuestionCard, BuildRequestCard, PendingBuildCard, QUESTION_COPY, WorkoutDraftCard } from './BuildCards';
 import { PlanCard } from './PlanCard';
 import { ActivityOfferCard, WeekProposalCard } from './WeekCards';
@@ -865,9 +866,8 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
           and the route line is a short label (still visible, rule 7). */}
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: keyboardUp ? theme.space['2'] : insets.bottom + theme.space['2'], gap: theme.space['2'] }}>
         {keyboardUp ? null : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="What the coach can see"
+        <SeesChip
+          label={seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.out ?? null, profileToday ?? localDateOf(toMs(services.now().utc), services.now().tz))}
           onPress={() => {
             if (sees !== null) {
               setSees(null);
@@ -875,11 +875,7 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
             }
             void services.coach.describe(entry, threadId ?? null).then(setSees);
           }}
-          style={{ alignSelf: 'flex-start', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'] }}
-        >
-          <Icon name="eye" size={16} />
-          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.out ?? null, profileToday ?? localDateOf(toMs(services.now().utc), services.now().tz))}</AppText>
-        </Pressable>
+        />
         )}
         {sees !== null && !keyboardUp ? <SeesPanel sees={sees} maxHeight={Math.round(windowHeight * 0.35)} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>

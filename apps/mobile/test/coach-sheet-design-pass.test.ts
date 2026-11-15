@@ -81,7 +81,8 @@ describe('replies and times', () => {
 describe('sheet layout (source checks)', () => {
   it('4.2 keyboard up: footer on the keyboard, Sees chip hidden and its panel closed, the route a short label', () => {
     expect(screen).toContain("paddingBottom: keyboardUp ? theme.space['2'] : insets.bottom + theme.space['2']");
-    expect(screen).toContain('{keyboardUp ? null : ( <Pressable accessibilityRole="button" accessibilityLabel="What the coach can see"');
+    // (15 Nov) The chip is its own one-line component (SeesChip; render test sees-chip-15nov).
+    expect(screen).toContain('{keyboardUp ? null : ( <SeesChip label={seesLabel(');
     expect(screen).toContain('if (keyboardUp) setSees(null);');
     expect(screen).toContain('{route !== null && keyboardUp ? ( <AppText variant="label" color="text.secondary" numberOfLines={1}> {route.text}');
   });
