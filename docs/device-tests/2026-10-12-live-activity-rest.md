@@ -2,7 +2,17 @@
 
 **About 10 minutes on the iPhone, with one short real workout.** Updated 26 Oct 2026 for the build with Ben's lock-screen changes (last time on the Lock Screen, `−15 s` / `+15 s` / `Skip` buttons, the new rest-done text). Put **P**, **F** (with one line) or **–** in each row and paste the table back. A screenshot of anything odd helps.
 
-**Status: open, not run.** (27 Oct: rest-end switch and new cues added at the top; 27 Oct (b): Log on the Lock Screen, steps L1–L7.) Every Live Activity check so far ran against a fake ActivityKit. Only the Capability probe's countdown has passed on the phone. The buttons are new and are the main unknown: they need no entitlement, but whether iOS delivers the tap to GymSmarter when it's installed through SideStore is only known once this runs.
+**Status: open, not run.** (15 Nov: Ben's build 568 report, rest-done alert `Log`, N1–N6. 27 Oct: rest-end switch and new cues added at the top; 27 Oct (b): Log on the Lock Screen, steps L1–L7.) Every Live Activity check so far ran against a fake ActivityKit. Only the Capability probe's countdown has passed on the phone. The buttons are new and are the main unknown: they need no entitlement, but whether iOS delivers the tap to GymSmarter when it's installed through SideStore is only known once this runs.
+
+## 15 Nov: logging at the rest's end (Ben's build 568 report) (5 min)
+Ben, 15 Nov: "Won't let me log on the lock screen, just Skip or adjust timer; doesn't seem to update post rest pop-up."
+**What we found:** in code every step of the switch at 0:00 is right (the end time reaches iOS, the next set's Ready and `Log` are written with each rest, including the next exercise or a superset partner). The step never seen working is iOS redrawing the Lock Screen at 0:00 by itself while GymSmarter is asleep, and your report says it doesn't. Without push (free Apple ID) the app can't change it while asleep, so there is now a second way to log:
+- **N1. Rest-done alert has Log:** log a set, lock, wait for **Rest done**. Long-press the alert (or swipe it left › **View**): one button **Log 100 kg × 8**, the same numbers as the app's next set. Tap it without unlocking. Within a few seconds the Live Activity shows the next **Rest** countdown. Open the app: that set is logged once, `Set n logged from Lock Screen · Undo` shows.
+- **N2. Never twice:** at the next rest end, tap **Log** on the alert *and* (if it shows) **Log** on the Live Activity. One set logged.
+- **N3. Probe check (tells us if iOS redraws at all):** run check **A** below (probe countdown, phone locked, don't touch it). Note: turned to `Ready · Probe` at 0:00 / only when I woke the screen / never.
+- **N4. Skip still gives Log:** during a rest tap **Skip** on the Lock Screen: the activity turns **Ready** with **Log …**. Tap it: the next rest starts.
+- **N5. With voice cues on** (Profile › Voice), in another app or locked through a rest: at 0:00 does the activity turn Ready with Log (the app is awake for "Rest over")? Note yes/no.
+- **N6. Force-closed:** swipe GymSmarter away during a rest, wait for **Rest done**, tap **Log** on it. Either the set is logged (open the app to see) or nothing happens. Never two sets, never an error.
 
 ## New in the 27 Oct build: rest end on the Lock Screen, and rest cues (3 min)
 Ben, 27 Oct (build 435): the Lock Screen stayed at 0:00 when the rest ran out. Now the activity is told the next set when the rest starts, and iOS switches to it by itself at the end, even with GymSmarter suspended.
@@ -52,6 +62,12 @@ If time is short, run 2, 3, 4, 6 and 8.
 
 | Step | Result | Note |
 |---|---|---|
+| N1 Rest-done alert Log logs once, activity shows next rest | | |
+| N2 Alert Log + activity Log: one set | | |
+| N3 Probe turns Ready at 0:00 (at once / on wake / never) | | |
+| N4 Lock Screen Skip → Ready with Log | | |
+| N5 Voice cues on: Ready with Log at 0:00 | | |
+| N6 Force-closed: alert Log once or nothing | | |
 | L1 Ready shows Log with the in-app numbers | | |
 | L2 Log from Lock Screen → Rest with buttons; notification at end | | |
 | L3 Rest end shows Log for next set; tap starts next rest | | |

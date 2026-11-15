@@ -13,7 +13,8 @@ const body = widget.slice(widget.indexOf("'widget';"), widget.indexOf('let facto
 
 describe('RestCountdownActivity: Ready at the rest’s end without the app', () => {
   it('switches a stale Resting activity to the after-rest content written with it', () => {
-    expect(body).toContain("const restOver = environment.isStale === true && props.state === 'resting' && props.afterTitle !== '';");
+    // (Ben, 15 Nov) Stale, or drawn after the rest's end by the extension's own clock (a redraw for any reason).
+    expect(body).toContain("const restOver = (environment.isStale === true || (props.endMs > 0 && Date.now() >= props.endMs)) && props.state === 'resting' && props.afterTitle !== '';");
     for (const f of ['afterTitle', 'afterLine1', 'afterLine2', 'afterLine3', 'afterSide', 'afterA11y']) expect(body).toContain(`props.${f}`);
     // Ended: no countdown and no buttons (tap '' and endMs 0).
     expect(body).toMatch(/restOver\s*\?\s*\{ state: 'ready',[^}]*tap: '', startMs: 0, endMs: 0 \}/);
@@ -67,5 +68,26 @@ describe('RestCountdownActivity: Log on the Ready state (Ben, 27 Oct)', () => {
     expect(patch).toContain('await FizzLiveActivityTaps.waitUntilHandled(tapId, timeoutSeconds: 8)');
     // The queue keeps the target as given (no filtering on `fizz.rest`).
     expect(patch).not.toContain('fizz.rest');
+  });
+});
+
+describe('Rest-done alert: `Log …` action (Ben, 15 Nov, build 568)', () => {
+  const notifier = readFileSync(join(import.meta.dirname, '../src/alerts/notifier.ts'), 'utf8');
+  const root = readFileSync(join(import.meta.dirname, '../src/shell/Root.tsx'), 'utf8');
+
+  it('one background action that logs without unlocking, with the alert’s own text and Log target', () => {
+    expect(notifier).toContain("identifier: REST_LOG_ACTION, buttonTitle: label, options: { opensAppToForeground: false, isAuthenticationRequired: false, isDestructive: false }");
+    expect(notifier).toContain('categoryIdentifier: REST_LOG_CATEGORY, data: { log: alert.log.target }');
+    // No `:` or `-` in the category ID (expo-notifications).
+    expect(notifier).toMatch(/REST_LOG_CATEGORY = '[a-z.]+'/);
+    // Never Time Sensitive (free Apple ID, ADR 0004).
+    expect(notifier).not.toContain("'timeSensitive'");
+  });
+
+  it('the action reaches JS live and after a background launch, and goes through the Lock Screen Log path', () => {
+    expect(notifier).toContain('Notifications.getLastNotificationResponse()');
+    expect(notifier).toContain('Notifications.addNotificationResponseReceivedListener(');
+    expect(root).toContain('void taps.apply({ id: `alert:${a.identifier}`, target: a.target, atMs: a.atMs });');
+    expect(root).toContain('lockScreenLogOf(state, state.session.activeSetId,');
   });
 });

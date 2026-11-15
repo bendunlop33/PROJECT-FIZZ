@@ -26,6 +26,9 @@ import type { SessionAggregate, SessionCommand, ZonedTimestamp } from '@fizz/sch
  *   workout, an ended rest, or older than a minute is dropped, and the
  *   activity is redrawn from the true state.
  * - Nothing throws into the app: a failing read or write drops that tap.
+ * - (Ben, 15 Nov) The rest-done notification's `Log …` action carries the
+ *   same `fizz.log|…` target and is applied here too (`apply`), on the same
+ *   chain, so it and a Lock Screen Log of the same set are one write.
  */
 
 export interface RawLockScreenTap {
@@ -127,7 +130,33 @@ export function createLockScreenTapHandler(deps: LockScreenTapDeps) {
     return results;
   }
 
+  /** A Log from outside the queue (the rest-done alert's action); anything but a Log target is not ours. */
+  async function applyOne(raw: RawLockScreenTap): Promise<TapResult> {
+    const id = typeof raw.id === 'string' ? raw.id : '';
+    try {
+      if (parseLockScreenLog(raw.target) === null) return { id, result: 'ignored', reason: 'not_ours' };
+      return await handleOne(id, raw);
+    } catch (e) {
+      return { id, result: 'failed', message: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   return {
+    /**
+     * (Ben, 15 Nov) The rest-done alert's `Log …` action, applied as a Lock Screen Log tap at `raw.atMs`.
+     * Serialised with `drain`; never rejects.
+     */
+    apply(raw: RawLockScreenTap): Promise<TapResult> {
+      const next = chain.then(
+        () => applyOne(raw),
+        () => applyOne(raw),
+      );
+      chain = next.then(
+        (r) => [r],
+        () => [] as TapResult[],
+      );
+      return next;
+    },
     /** On a tap event, launch, and return to the foreground. Serialised; never rejects. */
     drain(): Promise<TapResult[]> {
       const next = chain.then(run, run).catch(() => [] as TapResult[]);

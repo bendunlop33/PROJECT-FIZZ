@@ -1,4 +1,4 @@
-import { blockSets, formatDuration, lastTimeOfSet, loadText, NBSP, repRangeText, toMs, valuesText, type LastComparableLookup } from '@fizz/domain';
+import { blockSets, formatDuration, lastTimeOfSet, loadText, lockScreenLogTarget, NBSP, repRangeText, toMs, valuesText, type LastComparableLookup, type LockScreenLog } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 /**
@@ -18,6 +18,12 @@ export interface PlannedRestAlert {
   fireAtMs: number;
   title: string;
   body: string;
+  /**
+   * (Ben, 15 Nov, build 568) The rest-done alert's `Log 80 kg × 8` action: the same Log target the Lock Screen
+   * activity draws for the set after the rest (`fizz.log|…`, `lock-screen-log.ts`), its button text and VoiceOver
+   * label. Null: no action (a work timer, a set that needs the app, or the build has Log off).
+   */
+  log: { target: string; label: string; a11y: string } | null;
 }
 
 /** Every workout alert's identifier starts with this; GymSmarter schedules nothing else under it. */
@@ -65,7 +71,7 @@ function nextSetParts(state: SessionAggregate, lastComparable?: LastComparableLo
  * any rest, so the two never compete; the identifier is the same, so one
  * replaces the other.
  */
-export function planRestAlert(state: SessionAggregate | null, nowMs: number, lastComparable?: LastComparableLookup): PlannedRestAlert | null {
+export function planRestAlert(state: SessionAggregate | null, nowMs: number, lastComparable?: LastComparableLookup, log?: LockScreenLog | null): PlannedRestAlert | null {
   if (state === null || state.session.status !== 'active' || state.session.pause !== null) return null;
   const wi = state.workInterval;
   if (wi?.status === 'running') {
@@ -81,6 +87,7 @@ export function planRestAlert(state: SessionAggregate | null, nowMs: number, las
       fireAtMs,
       title: 'Time',
       body: ex ? `${ex.exerciseName} · ${formatDuration(wi.durationS)}` : formatDuration(wi.durationS),
+      log: null,
     };
   }
   const t = state.restTimer;
@@ -88,14 +95,18 @@ export function planRestAlert(state: SessionAggregate | null, nowMs: number, las
   const fireAtMs = toMs(t.deadlineUtc);
   if (fireAtMs <= nowMs) return null;
   const { body, last } = nextSetParts(state, lastComparable);
+  // Only the set the alert names (the workout's current set), still pending.
+  const logged = log !== undefined && log !== null && log.sessionId === state.session.id && log.setId === state.session.activeSetId ? { target: lockScreenLogTarget(log), label: log.label, a11y: log.a11y } : null;
   return {
     identifier: restAlertIdentifier(state.session.id),
     // The next set's text is part of the key so a correction or Undo that changes it reschedules,
     // and so does last time arriving after the history read (Ben, 26 Oct).
-    key: `${t.id}:${String(t.version)}:${state.session.activeSetId ?? ''}:${String(state.session.version)}${last === null ? '' : `:last ${last}`}`,
+    // The Log action too: its values can arrive with last time without the text changing.
+    key: `${t.id}:${String(t.version)}:${state.session.activeSetId ?? ''}:${String(state.session.version)}${last === null ? '' : `:last ${last}`}${logged === null ? '' : `:${logged.target}`}`,
     fireAtMs,
     title: 'Rest done',
     body,
+    log: logged,
   };
 }
 
@@ -133,7 +144,19 @@ export interface NotifierPort {
  * every command, on launch and on return to the foreground. A failing
  * notifier never throws into logging (rule 1): the error is kept for display.
  */
-export function createRestAlertController(notifier: NotifierPort, layers: { liveActivity?: LiveActivityLayer; spokenCues?: SpokenCueLayer; lastTime?: LastTimeLayer } = {}) {
+export function createRestAlertController(
+  notifier: NotifierPort,
+  layers: {
+    liveActivity?: LiveActivityLayer;
+    spokenCues?: SpokenCueLayer;
+    lastTime?: LastTimeLayer;
+    /**
+     * (Ben, 15 Nov) The Log for the set after the rest (`lockScreenLogOf` with the Live Activity's carry), for the
+     * alert's `Log …` action; absent or null = no action.
+     */
+    restLog?: (state: SessionAggregate, lastComparable: LastComparableLookup | undefined) => LockScreenLog | null;
+  } = {},
+) {
   let current: ScheduledAlert | null = null;
   let lastError: string | null = null;
   let chain: Promise<void> = Promise.resolve();
@@ -169,7 +192,14 @@ export function createRestAlertController(notifier: NotifierPort, layers: { live
       } catch {
         // A cue problem never affects the alert.
       }
-      const planned = planRestAlert(state, nowMs, state === null ? undefined : layers.lastTime?.lookup(state));
+      const lookup = state === null ? undefined : layers.lastTime?.lookup(state);
+      let log: LockScreenLog | null = null;
+      try {
+        log = state === null ? null : (layers.restLog?.(state, lookup) ?? null);
+      } catch {
+        // No action; the alert itself is unaffected.
+      }
+      const planned = planRestAlert(state, nowMs, lookup, log);
       // After a relaunch nothing is known: cancel by identifier first so a stale alert can't survive.
       const known = current ?? (state ? { identifier: restAlertIdentifier(state.session.id), key: '' } : null);
       for (const a of decideAlertActions(known, planned)) {
