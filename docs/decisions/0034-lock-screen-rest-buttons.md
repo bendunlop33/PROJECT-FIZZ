@@ -68,3 +68,17 @@ Findings in-repo:
 - The Lock Screen can now write a set. Risks: whether iOS delivers the tap under SideStore signing (unproven for the rest buttons too); the 8 s wait may not cover a cold launch's database open (the entry then stays and is applied at the next launch, at the tap's time); the banner's height with the Log row.
 - `FIZZ_LA_LOG=0` (build time) removes Log only; `FIZZ_LA_BUTTONS=0` removes both.
 - Device test `2026-10-12-live-activity-rest.md`, steps L1–L7.
+
+## Amendment 2026-11-15: the rest-done alert's `Log …` action (Ben's report, build 568)
+
+**Status:** ACCEPTED by the developer for PM and Ben's review. Not yet run on the phone.
+
+**Context.** Ben: at the rest's end the Lock Screen didn't switch to Ready with `Log`. The 27 Oct design relies on iOS redrawing the activity at its stale date with the app suspended (`isStale`). Every app-side link checks out in code; the system redraw is the one never observed, and with no push (ADR 0004) nothing else can update the activity while the app is suspended.
+
+**Decision.**
+1. **The rest-done notification carries `Log 80 kg × 8`** when the set after the rest can be logged from the Lock Screen: one category (`fizz.rest.log`) re-registered with the button text at each schedule (one rest alert pending at a time), `opensAppToForeground: false`, `isAuthenticationRequired: false` (the Live Activity's Log already logs without unlocking; the set is the planned one, shown on the button). The notification's `data.log` is the same `fizz.log|…` target the activity draws, and the alert's key includes it, so a change to the set reschedules it.
+2. **Same write path.** The response (live, or read with `getLastNotificationResponse` after a background launch) goes to `createLockScreenTapHandler().apply`, on the same chain as the queue drain: `lockScreenLogCommand` → `log_set` with `lock:log:<set>:<version>` and `expectedSetVersion`. The alert's Log and the activity's Log of one set are one write; a set logged, edited or undone since is refused.
+3. **Widget:** `restOver` is also true when the widget is drawn after `endMs` by the extension's clock, in case iOS redraws (screen wake, Always-On) without setting `isStale`.
+4. **Gate:** `FIZZ_LA_LOG=0` removes this action too (one switch for Lock Screen logging). No entitlement, no push, no Time Sensitive.
+
+**Consequences / risks.** expo-notifications calls the response's completion handler at once, so iOS may suspend the app before the write lands; the write then completes when the app next runs (idempotent), and the log time is when JS received it, not the tap. From a force-closed app, iOS launches it in the background; if it is suspended before JS starts, the action may be lost (Ben logs in the app). iOS shows notification actions only when the alert is expanded (long-press or swipe left › View). `lock-screen-and-alerts.md` §2.2 "No actions" needs the designer's revision.
