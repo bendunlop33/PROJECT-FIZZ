@@ -34,7 +34,7 @@ export class StepModel implements CoachModelPort {
 export interface ContextWorkout {
   sessionId: string;
   version: number;
-  exercises: { sessionExerciseId: string; exerciseId: string; name: string; sets: { setId: string; status: string; target: { load: { value: number; unit: string; convention: string } | null; reps: { min: number; max: number } | null } }[] }[];
+  exercises: { sessionExerciseId: string; exerciseId: string; name: string; earlierToday?: string; sets: { setId: string; status: string; target: { load: { value: number; unit: string; convention: string } | null; reps: { min: number; max: number } | null } }[] }[];
 }
 
 /** The `YOUR DATA` block's workout, as the model sees it. */

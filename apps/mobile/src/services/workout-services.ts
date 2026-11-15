@@ -1520,9 +1520,28 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    */
   async function musclesFor(ids: Iterable<string>): Promise<MusclesOf> {
     const out = new Map<string, Exercise>();
+    // (15 Nov, build 568) Starter rows are seeded without `secondaryMuscles` and a seeded row is never rewritten, so a
+    // catalogue row's missing muscles are read from the bundled catalogue (as Progress already does): SF1's ½ credits
+    // (a shoulder press's chest work before bench) otherwise count as nothing. Stored rows are not changed.
+    let bundled: ReadonlyMap<string, Exercise> | null = null;
+    const bundledOf = (id: string): Exercise | undefined => {
+      bundled ??= new Map((ctx.catalogueExercises?.() ?? []).map((e) => [e.id, e]));
+      return bundled.get(id);
+    };
     for (const id of new Set(ids)) {
       const e = await repos().exercises.get(id).catch(() => null);
-      if (e) out.set(id, e);
+      if (!e) continue;
+      const b = e.ownerId === null && (e.secondaryMuscles === undefined || e.primaryMuscles.length === 0) ? bundledOf(e.id) : undefined;
+      out.set(
+        id,
+        b === undefined
+          ? e
+          : {
+              ...e,
+              primaryMuscles: e.primaryMuscles.length > 0 ? e.primaryMuscles : b.primaryMuscles,
+              ...(e.secondaryMuscles === undefined && b.secondaryMuscles !== undefined ? { secondaryMuscles: b.secondaryMuscles } : {}),
+            },
+      );
     }
     return (id) => out.get(id) ?? null;
   }
