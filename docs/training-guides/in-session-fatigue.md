@@ -19,7 +19,8 @@
 - Today's P for a target worked out before or during the workout counts the sets logged so far **plus** the working sets still planned on exercises ordered before it, so a plan made at Start already fits the order Ben will do (SF6 recomputes when he changes it).
 - FitNotes imports: the file has no set times and its row order isn't documented as the order done, so imported exposures have **unknown context** (SF2: used only when no known-context exposure exists; never blocks a target).
 - SF5 in the weekly review: a lift's sessions in another context than its newest one are skipped by ST2. The block view's ST2 doesn't read context yet (open).
-- SF7(a) "done so far today by muscle" is in the coach context's workout (`doneSoFarToday`) when the caller passes the muscles; SF7(b)/(c) are not built yet (open).
+- SF7(a) "done so far today by muscle" is in the coach context's workout (`doneSoFarToday`) when the caller passes the muscles; SF7(c) is not built yet (open).
+- (15 Nov) SF7(b) is built: each built-in target's provenance records the earlier same-muscle work, P, the reference and whether SF3 applied (`earlierWork`); the coach sees it per exercise (`earlierToday`) and `Why?` shows one `Earlier today` line. Starter exercise rows have no stored secondary muscles; SF reads them from the bundled catalogue.
 
 
 Terms:
