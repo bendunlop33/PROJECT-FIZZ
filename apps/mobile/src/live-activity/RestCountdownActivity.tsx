@@ -1,5 +1,6 @@
-/* eslint-disable no-restricted-globals -- the widget builds Dates from props (not a clock read);
-   widget code is serialised alone and can't import the clock helpers. Comments stay outside it. */
+/* eslint-disable no-restricted-globals -- the widget builds Dates from props and reads the extension's clock
+   (Date.now) to tell a rest that has run out; widget code is serialised alone and can't import the clock helpers.
+   Comments stay outside it. */
 import { Button, HStack, Image, Spacer, Text, VStack } from '@expo/ui/swift-ui';
 import {
   accessibilityElement,
@@ -68,6 +69,17 @@ import type { WorkoutActivityProps } from './controller';
  * countdown and no buttons. The app writes the same Ready state when it next
  * runs. Not yet device-checked (device test 2026-10-12, step 5).
  *
+ * (Ben, 15 Nov, build 568: "doesn't seem to update post rest pop-up") The
+ * switch above was never seen on the phone. In code every link holds (the
+ * stale date reaches ActivityKit as a Date from epoch ms; expo-widgets passes
+ * `isStale` on iOS 16.2+; `after*` is set whenever the next set is Ready), so
+ * the unproven link is iOS redrawing the activity at its stale date without
+ * the app. The widget also switches when it is drawn after `endMs` for any
+ * reason (the extension's own clock), and the app no longer relies on it: the
+ * rest-done notification carries `Log 80 kg × 8` (`alerts/notifier.ts`), a
+ * Lock Screen Skip redraws Ready from the app, and the app's deadline re-check
+ * writes Ready when it is running. Device test 2026-10-12, section 15 Nov.
+ *
  * (Ben, 27 Oct) `Log 80 kg × 8` in the Ready state (also the Ready drawn at
  * the rest's end without the app, `afterLog*`): the same expo-widgets intent
  * and tap queue as the rest buttons, with a `fizz.log|…` target the app turns
@@ -79,7 +91,8 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
   'widget';
   // The rest ran out while the app was suspended: show the Ready content written with it.
   // Plain fields, no spread: the function is serialised alone, so no helper may be needed.
-  const restOver = environment.isStale === true && props.state === 'resting' && props.afterTitle !== '';
+  // (Ben, 15 Nov) Also when iOS draws it after the rest's end for any other reason (screen wake, Always-On).
+  const restOver = (environment.isStale === true || (props.endMs > 0 && Date.now() >= props.endMs)) && props.state === 'resting' && props.afterTitle !== '';
   const p = restOver
     ? { state: 'ready', title: props.afterTitle, line1: props.afterLine1, line2: props.afterLine2, line3: props.afterLine3, side: props.afterSide, a11y: props.afterA11y, log: props.afterLog, logLabel: props.afterLogLabel, logA11y: props.afterLogA11y, tap: '', startMs: 0, endMs: 0 }
     : { state: props.state, title: props.title, line1: props.line1, line2: props.line2, line3: props.line3, side: props.side, a11y: props.a11y, log: props.log, logLabel: props.logLabel, logA11y: props.logA11y, tap: props.tap, startMs: props.startMs, endMs: props.endMs };

@@ -3,18 +3,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { toMs } from '@fizz/domain';
+import { lockScreenLogOf, toMs } from '@fizz/domain';
 import { readTextCoachState } from '@fizz/providers';
 
 import { coachConnectionPorts, deviceCredentials } from '../ai/coach-connection-ports';
-import { clearDeliveredWorkoutAlerts, expoNotifier } from '../alerts/notifier';
+import { clearDeliveredWorkoutAlerts, expoNotifier, onRestLogAction } from '../alerts/notifier';
 import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
 import { nowMs } from '../clock';
 import { createLiveActivityController } from '../live-activity/controller';
 import { probeActivityLedger } from '../live-activity/probe-ledger';
 import { createLastTimeCache } from '../live-activity/last-time-cache';
-import { lockScreenButtonsAvailable, lockScreenLogAvailable, nativeTapQueue, onLockScreenTap } from '../live-activity/tap-bridge';
+import { lockScreenButtonsAvailable, lockScreenLogAvailable, nativeTapQueue, onLockScreenTap, restAlertLogAvailable } from '../live-activity/tap-bridge';
 import { createLockScreenTapHandler } from '../live-activity/taps';
 import { activePainFlagged } from '../workout/pain-flagged';
 import { activeWarmupLookup } from '../workout/warmup-lookup';
@@ -133,7 +133,16 @@ AppState.addEventListener('change', (state) => {
 });
 
 /** One rest-alert controller for the app run (it remembers what is scheduled); the Live Activity and spoken cues follow it. */
-const restAlerts = createRestAlertController(expoNotifier, { liveActivity, spokenCues, lastTime });
+const restAlerts = createRestAlertController(expoNotifier, {
+  liveActivity,
+  spokenCues,
+  lastTime,
+  // (Ben, 15 Nov) The rest-done alert's `Log …`: the same Log, with the same carry, as the Live Activity draws for the set after the rest.
+  restLog: (state, lookup) =>
+    restAlertLogAvailable()
+      ? lockScreenLogOf(state, state.session.activeSetId, { painFlagged: activePainFlagged(), warmup: activeWarmupLookup(state.session.id), ...(lookup === undefined ? {} : { lastComparable: lookup }) })
+      : null,
+});
 
 /**
  * On return to the foreground: delivered workout alerts are stale (the screen
@@ -188,11 +197,16 @@ function useLockScreenTaps(services: AppServices) {
     const off = onLockScreenTap(() => {
       void taps.drain();
     });
+    // (Ben, 15 Nov) `Log …` on the rest-done alert: the same Log path, so it and the Lock Screen's Log are one write.
+    const offAlertLog = onRestLogAction((a) => {
+      void taps.apply({ id: `alert:${a.identifier}`, target: a.target, atMs: a.atMs });
+    }, () => toMs(services.now().utc));
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') void taps.drain();
     });
     return () => {
       off();
+      offAlertLog();
       sub.remove();
     };
   }, [services, changed]);

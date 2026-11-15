@@ -46,6 +46,15 @@ export function lockScreenLogAvailable(): boolean {
   return lockScreenButtonsAvailable() && extraFlag('liveActivityLog');
 }
 
+/**
+ * (Ben, 15 Nov) `Log …` on the rest-done notification: iOS, and not built with `FIZZ_LA_LOG=0` (the same switch
+ * turns every Lock Screen Log off). It needs no Live Activity or native queue: the notification response reaches
+ * JS through expo-notifications.
+ */
+export function restAlertLogAvailable(): boolean {
+  return Platform.OS === 'ios' && extraFlag('liveActivityLog');
+}
+
 export const nativeTapQueue: TapQueuePort = {
   available: lockScreenButtonsAvailable,
   list: () => AudioCoach?.liveActivityTaps?.() ?? [],

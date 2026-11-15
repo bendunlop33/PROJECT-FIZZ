@@ -185,7 +185,7 @@ describe('rest alert controller through a whole loop', () => {
     const { state } = startFixture();
     const s = apply(state, logCmd(setsFor(state, BENCH)[0]?.id ?? '', values(kg(60), 10), 5));
     const phone = fakeNotifier();
-    phone.pending.set(`fizz.rest.${s.session.id}`, { identifier: `fizz.rest.${s.session.id}`, key: 'from-before-the-crash', fireAtMs: ms(65), title: 'Rest done', body: '' });
+    phone.pending.set(`fizz.rest.${s.session.id}`, { identifier: `fizz.rest.${s.session.id}`, key: 'from-before-the-crash', fireAtMs: ms(65), title: 'Rest done', body: '', log: null });
     await createRestAlertController(phone.port).reconcile(s, ms(30));
     expect([...phone.pending.values()].map((p) => p.fireAtMs)).toEqual([ms(65)]);
 
