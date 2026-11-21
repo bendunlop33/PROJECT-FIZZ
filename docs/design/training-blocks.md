@@ -157,7 +157,7 @@ Weeks run Mon–Sun in the plan's tz. Week 1 = the week the block is applied whe
 
 ### 4.1a Up next and this week's days (Ben, 31 Oct)
 **(Ben, 31 Oct): Up next = least recently trained of the days left this week; schedule breaks ties.** Builder plans, Set days and Any days alike (a coach-built plan has no weeks and keeps the 20 Oct rule):
-1. The plan day not done this week whose split type (push, pull, legs, upper, lower, full body; else its body parts) Ben trained longest ago. Every workout of that type counts: plan, off-plan, imported.
+1. The plan day not done this week whose split type (push, pull, legs, upper, lower, full body; else its body parts) Ben trained longest ago. Every workout of that type counts: plan, off-plan, imported. **(Ben, 21 Nov, bug fix to match this rule)** A workout counts for its own type: a plan workout (also one started from Today's card) its own day, plus the day it mainly trained when Ben turned it into another day's session; any other workout (off-plan, imported) the one day it mainly trained, as Today's strip colours it. A push session with a few rows is not also a pull session.
 2. Ties (the same last-trained date, or never trained): Set days by the schedule (the planning day's own day first, then the earliest scheduled); Any days by plan order.
 3. The planning day is today, or **tomorrow once a gym workout is finished today**. An open workout or an activity (a run) doesn't count.
 4. Every plan day done this week: the least recently trained day overall. A day skipped this week comes only after those.

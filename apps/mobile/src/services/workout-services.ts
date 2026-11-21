@@ -2521,7 +2521,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     // (Ben, 28 Oct) An imported or past-logged workout that matches a plan day (or that Ben counted as one) reads as it.
     const plan = await repos().planDrafts.applied(p.id).catch(() => null);
     const links = await readPlanLinks(ctx.store(), { ownerId: p.id, plan, templates: planDays, nowMs: toMs(ctx.now().utc), exerciseOf, sessions: read });
-    const all: PlanDueWorkout[] = read.map((a) => ({ sessionId: a.session.id, routineId: linkedRoutineId(links, a.session.id, a.session.routineId ?? null), startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf), leadExerciseId: leadLiftOf(a) }));
+    // (Ben, 21 Nov) Its plan day too (a plan day started from Today's card has no routine): it counts as that day, not
+    // as an off-plan workout credited to every day with a third of its sets.
+    const all: PlanDueWorkout[] = read.map((a) => {
+      const pd = a.session.planDay;
+      return { sessionId: a.session.id, routineId: linkedRoutineId(links, a.session.id, a.session.routineId ?? null), startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf), leadExerciseId: leadLiftOf(a), planDay: pd === undefined ? null : { planId: pd.planId, dayIndex: pd.dayIndex, templateRoutineId: pd.templateRoutineId ?? null } };
+    });
     const live = activePin(pin, days, all);
     const workouts = all.filter((w) => toMs(w.startedAtUtc) >= windowFrom);
     const skipped = await skippedThisWeek(p, plan, days);
