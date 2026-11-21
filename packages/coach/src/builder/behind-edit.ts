@@ -1,4 +1,4 @@
-import { behindCoverageGaps } from '@fizz/domain';
+import { BEHIND_GROUP_CAP, behindCoverageGaps } from '@fizz/domain';
 
 /**
  * (Ben, 8 Nov: MS1–MS9, docs/training-guides/missed-sessions.md) Today's `N days behind · Adjust today?` lands on
@@ -29,6 +29,11 @@ export interface BehindEditRules {
   /** The top day's groups nothing else this week covers (`behind.uncovered`). */
   uncovered: readonly string[];
   groupOf: (exerciseId: string) => string | null;
+  /**
+   * (Ben, 21 Nov: MS3 amended) The longer choice, when there is one: the extra minutes it may add (`BEHIND_LONGER`) and
+   * how many exercises the rules picked (`behindLonger`). Used only on the Longer tap.
+   */
+  longer?: { maxAddedMinutes: number; extras: number } | null;
 }
 
 /** MS3: at most this many exercises brought in from other missed days. */
@@ -45,15 +50,35 @@ export function asksBeyondBehind(words: string): boolean {
 
 export type BehindEditVerdict = { kind: 'ok'; notes: string[] } | { kind: 'refuse'; line: string };
 
-export function checkBehindEdit(shape: BehindEditShape, rules: BehindEditRules, opts: { askedMore: boolean; coverageAsked: boolean }): BehindEditVerdict & { coverageAsked: boolean } {
+function directByGroup(slots: readonly BehindSlot[], groupOf: (exerciseId: string) => string | null): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const s of slots) {
+    const g = groupOf(s.exerciseId);
+    if (g !== null && s.sets > 0) out.set(g, (out.get(g) ?? 0) + s.sets);
+  }
+  return out;
+}
+
+/**
+ * `longer`: Ben tapped the offer's Longer choice (21 Nov): up to `rules.longer.maxAddedMinutes` over his usual length
+ * and the rules' extras on top of the 2 swaps; the 8-a-group cap holds (only his explicit yes goes past it).
+ */
+export function checkBehindEdit(shape: BehindEditShape, rules: BehindEditRules, opts: { askedMore: boolean; coverageAsked: boolean; longer?: boolean }): BehindEditVerdict & { coverageAsked: boolean } {
   const problems: string[] = [];
   if (!opts.askedMore) {
-    if (shape.minutesAfter > shape.minutesBefore) problems.push(`his usual length is ${String(shape.minutesBefore)} min`);
+    const longer = opts.longer === true ? (rules.longer ?? null) : null;
+    const most = shape.minutesBefore + (longer?.maxAddedMinutes ?? 0);
+    if (shape.minutesAfter > most) problems.push(longer === null ? `his usual length is ${String(shape.minutesBefore)} min` : `at most ${String(most)} min (his usual ${String(shape.minutesBefore)} + ${String(longer.maxAddedMinutes)})`);
     const main = shape.before.find((s) => s.main);
     if (main !== undefined && !shape.after.some((s) => s.main && s.exerciseId === main.exerciseId && s.sets > 0)) problems.push('keep the day’s main lift');
     const had = new Set(shape.before.map((s) => s.exerciseId));
     const added = new Set(shape.after.filter((s) => !had.has(s.exerciseId) && s.sets > 0).map((s) => s.exerciseId));
-    if (added.size > BEHIND_MAX_SWAPPED_IN) problems.push(`at most ${String(BEHIND_MAX_SWAPPED_IN)} exercises from other days`);
+    const swaps = BEHIND_MAX_SWAPPED_IN + (longer?.extras ?? 0);
+    if (added.size > swaps) problems.push(`at most ${String(swaps)} exercises from other days`);
+    // MS3: ≤ 8 direct sets a group in the session (a day planned past it keeps its own count).
+    const before = directByGroup(shape.before, rules.groupOf);
+    const over = [...directByGroup(shape.after, rules.groupOf)].filter(([g, n]) => n > Math.max(BEHIND_GROUP_CAP, before.get(g) ?? 0)).map(([g]) => g);
+    if (over.length > 0) problems.push(`at most ${String(BEHIND_GROUP_CAP)} direct sets for ${over.join(', ')}`);
   }
   if (problems.length > 0) return { kind: 'refuse', line: `Not proposed: ${problems.join('; ')}. Call again within these.`, coverageAsked: opts.coverageAsked };
   const gaps = rules.uncovered.length === 0 ? [] : behindCoverageGaps(rules.uncovered, shape.after, rules.groupOf);

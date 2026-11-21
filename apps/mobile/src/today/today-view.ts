@@ -1,4 +1,4 @@
-import { BEHIND_COPY, behindOfferShown, clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_PICK_COPY, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type FeedItem, type PlannedLinkChoice, type PlannedLinkState, planDayColourKey, type TodayControls, type TodayDay, type TodayMain, type WeekTile, type WeekTileMark } from '@fizz/domain';
+import { BEHIND_COPY, BEHIND_LONGER_COPY, behindOfferShown, clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_PICK_COPY, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type FeedItem, type PlannedLinkChoice, type PlannedLinkState, planDayColourKey, type TodayControls, type TodayDay, type TodayMain, type WeekTile, type WeekTileMark } from '@fizz/domain';
 
 /**
  * Today (v2)'s screen rules (workout-builder-v3 §2.0, prototypes/today-v2.html), pure so they are tested
@@ -483,9 +483,9 @@ export interface BehindRowInput {
  * the coach can build or the built-in rule has a day other than the card's (else the status only). `picked`: Ben
  * picked the card's day on this visit. `dismissedOn`: this phone's Skip or ✕ date. Pure.
  */
-export function behindRowView(b: BehindRowInput | null, o: { today: string; dismissedOn: string | null; picked: boolean; coach: boolean }): { text: string; adjust: string | null; accessibilityLabel: string } | null {
+export function behindRowView(b: BehindRowInput | null, o: { today: string; dismissedOn: string | null; picked: boolean; coach: boolean; /** (21 Nov) A longer choice exists. */ longer?: boolean }): { text: string; adjust: string | null; accessibilityLabel: string } | null {
   if (b === null || !behindOfferShown(b, { ...b.gate, pickedToday: b.gate.pickedToday || o.picked, today: o.today, dismissedOn: o.dismissedOn })) return null;
-  const adjust = o.coach || b.builtIn !== null ? BEHIND_COPY.adjust : null;
+  const adjust = o.coach || b.builtIn !== null || o.longer === true ? BEHIND_COPY.adjust : null;
   return { text: b.line, adjust, accessibilityLabel: adjust === null ? b.line : `${b.line}. ${adjust}` };
 }
 
@@ -494,4 +494,32 @@ export function behindOfferView(b: BehindRowInput | null, minutes: number | null
   if (b?.builtIn == null) return null;
   const sets = `${String(b.builtIn.sets)} sets`;
   return { title: b.builtIn.name, line: minutes === null ? sets : `${sets} · ~${String(minutes)} min`, label: BEHIND_COPY.builtIn };
+}
+
+/** (Ben, 21 Nov: MS3 amended) One of the offer's two choices. */
+export interface BehindChoiceRow {
+  choice: 'usual' | 'longer';
+  text: string;
+  accessibilityLabel: string;
+}
+
+/**
+ * (Ben, 21 Nov: MS3 amended) The offer's choices: `Usual · ~60 min` (the top missed day as planned) and `Longer · ~78 min
+ * · + incline press, lateral raise` (`behindLonger`'s extras; the full list is in the proposal). With the coach each
+ * is a tap that asks it; with none, a built-in proposal (`Built-in`, Apply / Skip). Usual is left out when it would
+ * change nothing (no coach, and the top day is today's card already). Null: no longer choice (the single offer). Pure.
+ */
+export function behindChoicesView(
+  b: (BehindRowInput & { scores?: readonly { key: string; name: string }[] }) | null,
+  longer: { dayKey: string; usualMinutes: number; minutes: number; extras: readonly { name: string }[] } | null,
+  o: { coach: boolean },
+): { title: string; label: string | null; rows: BehindChoiceRow[] } | null {
+  if (b === null || longer === null) return null;
+  const title = b.builtIn?.name ?? b.scores?.find((x) => x.key === longer.dayKey)?.name ?? '';
+  const usual = BEHIND_LONGER_COPY.usual(longer.usualMinutes);
+  const more = BEHIND_LONGER_COPY.longer(longer.minutes, longer.extras.map((x) => x.name));
+  const rows: BehindChoiceRow[] = [];
+  if (o.coach || b.builtIn !== null) rows.push({ choice: 'usual', text: usual, accessibilityLabel: usual });
+  rows.push({ choice: 'longer', text: more, accessibilityLabel: `Longer, about ${String(longer.minutes)} minutes, adds ${longer.extras.map((x) => x.name).join(', ')}` });
+  return { title, label: o.coach ? null : BEHIND_COPY.builtIn, rows };
 }

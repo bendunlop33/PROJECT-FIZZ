@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BEHIND_COPY, DEFAULT_TODAY_HEALTH_SHOWS, deriveId, discardCommand, discardConfirmation, formatDuration, HISTORY_COPY, reasonsText, scoreText, sessionCheckInForSkip, TODAY_PICK_COPY, TODAY_V2_COPY, todayDayRows, todayRestDay, weekPickRows, toMs, type ResumeRow, type TodayHealthLine, type TodayControls, type TodayMain, type WeekTile } from '@fizz/domain';
+import { BEHIND_COPY, BEHIND_LONGER_COPY, DEFAULT_TODAY_HEALTH_SHOWS, deriveId, discardCommand, discardConfirmation, formatDuration, HISTORY_COPY, reasonsText, scoreText, sessionCheckInForSkip, TODAY_PICK_COPY, TODAY_V2_COPY, todayDayRows, todayRestDay, weekPickRows, toMs, type ResumeRow, type TodayHealthLine, type TodayControls, type TodayMain, type WeekTile } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -23,13 +23,14 @@ import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
 import { MovedByYou } from '../today/MovedByYou';
-import { behindOfferView, behindRowView, daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, followUpNext, hasOwnDraftFor, movedOffToday, plannedDayDetail, plannedOnOf, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { behindChoicesView, behindOfferView, behindRowView, daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, followUpNext, hasOwnDraftFor, movedOffToday, plannedDayDetail, plannedOnOf, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { applyBehindLonger } from '../today/behind-apply';
 import { AppText, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { DaySheetFlow } from './today/DaySheet';
-import { BehindRow, BehindSheet, DoneCard, HealthLine, OfferSheet, RecentList, RestDayCard, SectionLabel, ShowOnTodaySheet, StartDock, TodayCard, TodayHeader, TodayPickSheet, TODAY_SPACING, WeekTiles } from './today/TodaySession';
+import { BehindChoiceSheet, BehindRow, BehindSheet, DoneCard, HealthLine, OfferSheet, RecentList, RestDayCard, SectionLabel, ShowOnTodaySheet, StartDock, TodayCard, TodayHeader, TodayPickSheet, TODAY_SPACING, WeekTiles } from './today/TodaySession';
 import { useDevicePrefs } from '../device/DevicePrefsContext';
 import { LogPastWorkoutSheet } from './workout/LogPastWorkoutSheet';
 import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
@@ -272,35 +273,82 @@ export function TodayScreen() {
 
   // (Ben, 8 Nov: MS1–MS9) `2 days behind · Adjust today?`: the coach builds today from the top missed day (its proposal,
   // Apply/Undo on its card), or with no coach that day whole (`Make next`, Undo).
-  const behindRow = session === null ? null : behindRowView(session.behind, { today: session.localDate, dismissedOn: prefs.behindDismissedOn ?? null, picked: pickedKey.current !== null, coach: reach === 'ok' });
+  // (Ben, 21 Nov: MS3 amended) The longer choice (+15–20 min): `Usual · ~60 min` / `Longer · ~78 min · + …`.
+  const behindLonger = useMemo(() => (session === null ? null : services.todaySession.behindLonger(session)), [services, session]);
+  const behindRow = session === null ? null : behindRowView(session.behind, { today: session.localDate, dismissedOn: prefs.behindDismissedOn ?? null, picked: pickedKey.current !== null, coach: reach === 'ok', longer: behindLonger !== null });
   const behindDay = session?.behind?.builtIn ?? null;
   const behindCard = session === null || behindDay === null || session.initial[behindDay.dayKey] === undefined ? null : services.todaySession.card(session, { dayKey: behindDay.dayKey, controls: session.initial[behindDay.dayKey] as TodayControls });
-  const behindOffer = behindSheet && session !== null ? behindOfferView(session.behind, behindCard?.minutes ?? null) : null;
+  const behindChoices = session === null ? null : behindChoicesView(session.behind, behindLonger, { coach: reach === 'ok' });
+  const behindOffer = behindSheet && session !== null && behindChoices === null ? behindOfferView(session.behind, behindCard?.minutes ?? null) : null;
+  const [behindChoice, setBehindChoice] = useState<'usual' | 'longer'>('usual');
   function dismissBehind() {
     if (session !== null) updatePrefs({ behindDismissedOn: session.localDate });
     setBehindSheet(false);
   }
-  async function adjustBehind() {
-    const b = session?.behind;
-    if (b == null) return;
+  function adjustBehind() {
+    if (session?.behind == null) return;
+    if (behindChoices !== null) {
+      setBehindChoice(behindChoices.rows[0]?.choice ?? 'usual');
+      setBehindSheet(true);
+      return;
+    }
     if (reach === 'ok') {
-      // (Ben, 8 Nov) Today's card becomes Your workout first, so the coach's answer is one Apply / Skip card that
-      // replaces it (`propose_workout_edit`, Undo), never a separate draft to open.
-      // The top missed day (MS4, MS6) when it isn't today's card already, so the coach adjusts that day.
-      const top = b.builtIn === null || session === null ? undefined : session.initial[b.builtIn.dayKey];
-      const pick: TodaySelection | null = b.builtIn !== null && top !== undefined ? { dayKey: b.builtIn.dayKey, controls: top } : selection === null ? null : { dayKey: selection.dayKey, controls: selection.controls };
-      if (session !== null && pick !== null) {
-        const sel: TodaySelection = pick;
-        const key = `behind:${sel.dayKey}:${JSON.stringify(sel.controls)}:${session.gymId ?? '-'}:${session.equipmentVersion}`;
-        const c = await commitCard(sel, session, key).catch(() => null);
-        if (c?.ok === true) startOps.current.delete(key);
-      }
-      askToday(BEHIND_COPY.ask(b.k), false);
+      void askBehind('usual');
       return;
     }
     setBehindSheet(true);
   }
+  /** With the coach: the tap's words say which choice; the longer one carries the extra minutes (the extras ride in its facts). */
+  async function askBehind(choice: 'usual' | 'longer') {
+    const b = session?.behind;
+    if (b == null) return;
+    setBehindSheet(false);
+    // (Ben, 8 Nov) Today's card becomes Your workout first, so the coach's answer is one Apply / Skip card that
+    // replaces it (`propose_workout_edit`, Undo), never a separate draft to open.
+    // The top missed day (MS4, MS6) when it isn't today's card already, so the coach adjusts that day.
+    const top = b.builtIn === null || session === null ? undefined : session.initial[b.builtIn.dayKey];
+    const pick: TodaySelection | null = b.builtIn !== null && top !== undefined ? { dayKey: b.builtIn.dayKey, controls: top } : selection === null ? null : { dayKey: selection.dayKey, controls: selection.controls };
+    if (session !== null && pick !== null) {
+      const sel: TodaySelection = pick;
+      const key = `behind:${sel.dayKey}:${JSON.stringify(sel.controls)}:${session.gymId ?? '-'}:${session.equipmentVersion}`;
+      const c = await commitCard(sel, session, key).catch(() => null);
+      if (c?.ok === true) startOps.current.delete(key);
+    }
+    askToday(choice === 'longer' && behindLonger !== null ? BEHIND_LONGER_COPY.askLonger(b.line, behindLonger.addedMinutes) : BEHIND_COPY.ask(b.k), false);
+  }
+  async function applyBehindLongerTap() {
+    if (session === null || behindLonger === null || behindBusy) return;
+    setBehindBusy(true);
+    try {
+      const r = await applyBehindLonger(services, session, behindLonger, newUuid);
+      setBehindSheet(false);
+      if (!r.ok) {
+        setToast({ text: r.message });
+        reload();
+        return;
+      }
+      changed();
+      reloadSession();
+      setToast({
+        text: TODAY_V2_COPY.applied,
+        action: TODAY_V2_COPY.undo,
+        onAction: () => {
+          setToast(null);
+          void r.undo().then(() => {
+            changed();
+            reloadSession();
+          });
+        },
+      });
+    } finally {
+      setBehindBusy(false);
+    }
+  }
   async function applyBehind() {
+    if (behindChoices !== null && behindChoice === 'longer') {
+      await applyBehindLongerTap();
+      return;
+    }
     const b = session?.behind;
     const day = b?.builtIn ?? null;
     if (session === null || b == null || day === null || session.planVersion === null || behindBusy) return;
@@ -1050,7 +1098,7 @@ export function TodayScreen() {
             </View>
           </Pressable>
         ) : null}
-        {behindRow !== null && view !== null ? <BehindRow row={behindRow} onAdjust={() => void adjustBehind()} onDismiss={dismissBehind} /> : null}
+        {behindRow !== null && view !== null ? <BehindRow row={behindRow} onAdjust={adjustBehind} onDismiss={dismissBehind} /> : null}
         {view !== null && selection !== null ? (
           <>
             {label(todayCardLabel(selection.dayKey, session.status === 'paused' ? null : session.nextKey))}
@@ -1308,6 +1356,22 @@ export function TodayScreen() {
         }}
         onClose={() => {
           setPickSheet(false);
+        }}
+      />
+      <BehindChoiceSheet
+        visible={behindSheet && behindChoices !== null}
+        choices={behindChoices}
+        selected={behindChoice}
+        coach={reach === 'ok'}
+        busy={behindBusy}
+        onChoose={(c) => {
+          if (reach === 'ok') void askBehind(c);
+          else setBehindChoice(c);
+        }}
+        onApply={() => void applyBehind()}
+        onSkip={dismissBehind}
+        onClose={() => {
+          setBehindSheet(false);
         }}
       />
       <BehindSheet

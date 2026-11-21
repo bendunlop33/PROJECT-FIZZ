@@ -10,7 +10,7 @@ import { AppText, BottomCard, Group, Icon, PrimaryButton, SecondaryButton, TextB
 import { WorkoutList } from '../../ui/workout-list';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { markStyle, TILE_LAYOUT, tileStyle } from '../../today/tile-style';
-import { todayCardRows, TODAY_SCREEN_COPY, type LabelValueRow } from '../../today/today-view';
+import { todayCardRows, TODAY_SCREEN_COPY, type BehindChoiceRow, type LabelValueRow } from '../../today/today-view';
 import { PAST_LOG_COPY } from '../../workout/past-log-view';
 
 /**
@@ -516,6 +516,62 @@ export function BehindSheet({ offer, busy, onApply, onSkip, onClose }: { offer: 
           <AppText variant="callout" color="text.secondary">
             {offer.label}
           </AppText>
+        </View>
+      )}
+    </BottomCard>
+  );
+}
+
+/**
+ * (Ben, 21 Nov: MS3 amended) The offer's two choices: `Usual · ~60 min` and `Longer · ~78 min · + …`. With the coach a
+ * row tap asks it (Skip only); with none the rows pick one and Apply / Skip write the built-in proposal (`Built-in`).
+ */
+export function BehindChoiceSheet({ visible, choices, selected, coach, busy, onChoose, onApply, onSkip, onClose }: { visible: boolean; choices: { title: string; label: string | null; rows: readonly BehindChoiceRow[] } | null; selected: 'usual' | 'longer'; coach: boolean; busy: boolean; onChoose: (c: 'usual' | 'longer') => void; onApply: () => void; onSkip: () => void; onClose: () => void }) {
+  const theme = useTheme();
+  return (
+    <BottomCard
+      visible={visible && choices !== null}
+      onClose={onClose}
+      footer={
+        choices === null ? null : (
+          <View style={{ gap: theme.space['2'] }}>
+            {coach ? null : <PrimaryButton label={TODAY_V2_COPY.apply} disabled={busy} onPress={onApply} />}
+            <SecondaryButton label={TODAY_V2_COPY.skip} disabled={busy} onPress={onSkip} />
+          </View>
+        )
+      }
+    >
+      {choices === null ? null : (
+        <View style={{ gap: theme.space['2'] }}>
+          <AppText variant="title2" accessibilityRole="header">
+            {choices.title}
+          </AppText>
+          {choices.rows.map((r) => {
+            const on = !coach && r.choice === selected;
+            return (
+              <Pressable
+                key={r.choice}
+                accessibilityRole={coach ? 'button' : 'radio'}
+                accessibilityState={coach ? { disabled: busy } : { checked: on, disabled: busy }}
+                accessibilityLabel={r.accessibilityLabel}
+                disabled={busy}
+                onPress={() => {
+                  onChoose(r.choice);
+                }}
+                style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.lg, borderWidth: 1, borderColor: on ? theme.colors.accent : theme.colors['border.control'], opacity: pressed ? 0.7 : 1 })}
+              >
+                <AppText variant="body" numeric style={{ flex: 1 }}>
+                  {r.text}
+                </AppText>
+                {on ? <Icon name="checkmark" size={14} color="accent" weight="bold" /> : coach ? <Icon name="chevron.right" size={12} color="text.tertiary" /> : null}
+              </Pressable>
+            );
+          })}
+          {choices.label === null ? null : (
+            <AppText variant="callout" color="text.secondary">
+              {choices.label}
+            </AppText>
+          )}
         </View>
       )}
     </BottomCard>
