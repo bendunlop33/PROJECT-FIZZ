@@ -1,6 +1,6 @@
 import type { CoachTarget, Load, RepRange } from '@fizz/schemas';
 
-import { formatNumber, repRangeText, rirOfRpe } from '../display';
+import { formatNumber, NBSP, repRangeText, rirOfRpe } from '../display';
 
 /**
  * (Ben, 30 Oct; redesign-27oct §E2) One `Next time` change as one line: from → to. Pure presentation of values that
@@ -60,6 +60,23 @@ function unit(load: Load): Num {
   }
 }
 
+/**
+ * (Ben, 21 Nov: `Same · 7×17 kg ea` read as 17 kg) A convention with a word after the unit (`kg ea`, `kg assist`)
+ * keeps the unit beside the load, then the reps: `7 kg ea × 17`. Other loads stay `102.5×5 kg`.
+ */
+function wordedUnit(load: Load): boolean {
+  return load.convention === 'per_hand' || load.convention === 'assistance';
+}
+
+/** A load and its reps as shown: `102.5×5` (the unit follows once, `unitInside` false) or `7 kg ea × 17` (worded unit). */
+function loadReps(n: Num, r: Num, load: Load): { text: string; spoken: string; unitInside: boolean } {
+  if (wordedUnit(load)) {
+    const u = unit(load);
+    return { text: `${n.text}${NBSP}${u.text}${NBSP}×${NBSP}${r.text}`, spoken: `${n.spoken} ${u.spoken} for ${r.spoken}`, unitInside: true };
+  }
+  return { text: `${n.text}×${r.text}`, spoken: `${n.spoken} for ${r.spoken}`, unitInside: false };
+}
+
 function reps(r: RepRange): Num {
   return { text: repRangeText(r), spoken: r.min === r.max ? String(r.min) : `${String(r.min)} to ${String(r.max)}` };
 }
@@ -72,13 +89,14 @@ function sameUnit(a: Load, b: Load): boolean {
   return a.unit === b.unit && a.convention === b.convention;
 }
 
-/** A target on its own: `102.5×5 kg`, `26×10 kg ea`, `12 reps`, `BW`. */
+/** A target on its own: `102.5×5 kg`, `26 kg ea × 10`, `12 reps`, `BW`. */
 function alone(t: CoachTarget, plates: boolean): Num {
   const r = t.reps === null ? null : reps(t.reps);
   if (isBodyweight(t.load) || t.load === null) return r === null ? { text: 'BW', spoken: 'bodyweight' } : { text: `${r.text} reps`, spoken: `${r.spoken} reps` };
   const n = num(t.load, plates);
   const u = unit(t.load);
   if (r === null) return { text: `${n.text} ${u.text}`, spoken: `${n.spoken} ${u.spoken}` };
+  if (wordedUnit(t.load)) return loadReps(n, r, t.load);
   return { text: `${n.text}×${r.text} ${u.text}`, spoken: `${n.spoken} ${u.spoken} for ${r.spoken}` };
 }
 
@@ -133,10 +151,16 @@ export function fromToLine(from: ChangeSide | null, to: ChangeSide): FromToLine 
     const a = num(fl, from.plates === true);
     const b = num(tl, plates);
     const u = unit(tl);
-    const main: Num =
-      repsChanged && f.reps !== null && t.reps !== null
-        ? { text: `${a.text}×${reps(f.reps).text}${ARROW}${b.text}×${reps(t.reps).text} ${u.text}`, spoken: `${a.spoken} for ${reps(f.reps).spoken}${arrowSpoken}${b.spoken} for ${reps(t.reps).spoken} ${u.spoken}` }
-        : { text: `${a.text}${ARROW}${b.text} ${u.text}`, spoken: `${a.spoken} to ${b.spoken} ${u.spoken}` };
+    let main: Num;
+    if (repsChanged && f.reps !== null && t.reps !== null) {
+      const x = loadReps(a, reps(f.reps), fl);
+      const y = loadReps(b, reps(t.reps), tl);
+      main = y.unitInside
+        ? { text: `${x.text}${ARROW}${y.text}`, spoken: `${x.spoken}${arrowSpoken}${y.spoken}` }
+        : { text: `${x.text}${ARROW}${y.text} ${u.text}`, spoken: `${x.spoken}${arrowSpoken}${y.spoken} ${u.spoken}` };
+    } else {
+      main = { text: `${a.text}${ARROW}${b.text} ${u.text}`, spoken: `${a.spoken} to ${b.spoken} ${u.spoken}` };
+    }
     return { ...join([main, setsChanged ? setsPart : null, effort]), same: false };
   }
   if (repsChanged && f.reps !== null && t.reps !== null) {
@@ -191,6 +215,10 @@ export function doneLine(sets: readonly { load: Load | null; reps: number | null
   const top = sets[best];
   if (top?.load == null || top.reps === null) return null;
   const at = num(top.load, plates);
+  if (wordedUnit(top.load)) {
+    const b = loadReps(at, { text: String(top.reps), spoken: String(top.reps) }, top.load);
+    return { text: `${n} sets · best ${b.text}`, spoken: `${n} sets, best ${b.spoken}` };
+  }
   return { text: `${n} sets · best ${at.text}×${String(top.reps)} ${u.text}`, spoken: `${n} sets, best ${at.spoken} ${u.spoken} for ${String(top.reps)}` };
 }
 
@@ -211,9 +239,10 @@ export function topBackoffLine(from: ChangeSide | null, to: ChangeSide, backoff:
   if (f !== null && fl !== null && tl !== null && sameUnit(fl, tl) && f.reps !== null && t.reps !== null) {
     same = fl.value === tl.value && sameReps(f.reps, t.reps);
     const u = unit(tl);
-    const a = { text: `${num(fl, from?.plates === true).text}×${reps(f.reps).text}`, spoken: `${num(fl, from?.plates === true).spoken} for ${reps(f.reps).spoken}` };
-    const b = { text: `${num(tl, plates).text}×${reps(t.reps).text}`, spoken: `${num(tl, plates).spoken} for ${reps(t.reps).spoken}` };
-    top = same ? { text: `${b.text} ${u.text}`, spoken: `${b.spoken} ${u.spoken}` } : { text: `${a.text}${ARROW}${b.text} ${u.text}`, spoken: `${a.spoken} to ${b.spoken} ${u.spoken}` };
+    const a = loadReps(num(fl, from?.plates === true), reps(f.reps), fl);
+    const b = loadReps(num(tl, plates), reps(t.reps), tl);
+    const tailUnit = b.unitInside ? { text: '', spoken: '' } : { text: ` ${u.text}`, spoken: ` ${u.spoken}` };
+    top = same ? { text: `${b.text}${tailUnit.text}`, spoken: `${b.spoken}${tailUnit.spoken}` } : { text: `${a.text}${ARROW}${b.text}${tailUnit.text}`, spoken: `${a.spoken} to ${b.spoken}${tailUnit.spoken}` };
   } else {
     const l = fromToLine(from, to);
     top = { text: l.text, spoken: l.spoken };

@@ -332,6 +332,7 @@ import {
   draftSavedRoutineId,
   shownRationale,
   secondaryMainLifts,
+  mainBlockTest,
   type RuleReps,
   type HistoryLike,
   type HistoryWorkout,
@@ -1740,7 +1741,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const infos = new Map<string, Exercise | null>();
     for (const b of blocks) if (!infos.has(b.decider.exerciseId)) infos.set(b.decider.exerciseId, await repos().exercises.get(b.decider.exerciseId).catch(() => null));
     // A main barbell lift after the workout's main lift reads as a secondary lift, as in the builder (review S3).
-    const secondary = secondaryMainLifts(blocks, (id) => infos.get(id) ?? null);
+    // (Ben, 21 Nov) With a main lift named (plan day, draft, Ben's pick), every other main barbell lift is secondary.
+    const mains = workoutMainLifts(source, await draftMains(p.id, source).catch(() => new Set<string>()));
+    const secondary = secondaryMainLifts(blocks, (id) => infos.get(id) ?? null, mainBlockTest(source, mains));
     // One entry per exercise block: a split exercise reads its deciding part with the
     // block's set count, the same as the Summary's `Next time` (review r2 B1).
     for (const block of blocks) {
@@ -4144,6 +4147,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         coach,
         exerciseInfo,
         gymNames,
+        mainExerciseIds: await draftMains(p.id, aggregate).catch(() => new Set<string>()),
       });
       // An open-ended workout is named from what was in it (`Push`), never a routine it wasn't (audit F5).
       return storedName(aggregate) === null && aggregate.exercises.length > 0 ? { ...summary, title: deriveWorkoutTitle(Object.values(exerciseInfo)) } : summary;

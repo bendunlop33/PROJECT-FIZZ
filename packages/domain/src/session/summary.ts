@@ -19,6 +19,7 @@ import { isPastLog, latestHappenedMs } from './time-shift';
 import { doneLine, type ChangeSide } from './change-line';
 import { nextSessionBases } from '../coach/next-session';
 import { isPlatesAddedKind } from '../plates-added';
+import { mainBlockTest, workoutMainLifts } from './main-swap';
 
 /**
  * `buildWorkoutSummary` (workout-summary.md §6). Pure and local: facts,
@@ -74,6 +75,12 @@ export interface SummaryInput {
    * this workout's own order. Absent: no like-for-like reading.
    */
   musclesOf?: MusclesOf;
+  /**
+   * (Ben, 21 Nov) The coach draft's main slots the workout started with (`workoutMainLifts`); Ben's `Make main lift`
+   * and the plan day's main lift are read from the session. A main barbell lift that isn't the main lift reads as a
+   * secondary lift next time (its reps from his history, not 3–6). Absent: none.
+   */
+  mainExerciseIds?: ReadonlySet<string>;
 }
 
 /** (Ben, 23 Oct) The rule's stall reset, offered on its row: `Reset to 90 kg × 6–8?` and what Apply saves. */
@@ -421,7 +428,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   // as Start plans it (`planRoutineStart`, review S7), so no single target is promised for it here.
   const blocksOf = new Map<string, number>();
   for (const b of targetBlocks) blocksOf.set(b.root.exerciseId, (blocksOf.get(b.root.exerciseId) ?? 0) + 1);
-  const secondary = secondaryMainLifts(targetBlocks, (id) => input.exerciseInfo?.[id] ?? null);
+  const secondary = secondaryMainLifts(targetBlocks, (id) => input.exerciseInfo?.[id] ?? null, mainBlockTest(state, workoutMainLifts(state, input.mainExerciseIds ?? new Set())));
   // (Ben, 30 Oct) What each change is measured from: the coach's basis (today's working target), never recomputed.
   const nextFrom: Record<string, ChangeSide> = {};
   for (const b of imported ? [] : nextSessionBases(state, new Map())) {

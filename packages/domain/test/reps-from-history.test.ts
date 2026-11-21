@@ -393,6 +393,12 @@ describe('review S3: a main barbell lift after the workout’s main lift reads a
     expect([...secondaryMainLifts([block(SHRUG, 'dumbbells')], info)]).toEqual([]);
   });
 
+  it('(Ben, 21 Nov) a main lift named for the workout decides: a row after pull-ups (the main lift) is secondary', () => {
+    const isMain = (main: Exercise) => (b: NextTargetBlock) => b.decider.exerciseId === main.id;
+    expect([...secondaryMainLifts([block(SHRUG, 'dumbbells'), block(ROW, 'barbell')], info, isMain(PULLUP))]).toEqual([ROW.id]);
+    expect([...secondaryMainLifts([block(SQUAT, 'barbell'), block(ROW, 'barbell')], info, isMain(ROW))]).toEqual([SQUAT.id]);
+  });
+
   it('the row after squats: the rule (Summary, Start, get_progression_targets) reads 9–12 like the builder, not 3–6', () => {
     const ROWS_12 = [session(920, 4, bar, 'total', three(80, 12))];
     const req = { ownerId: OWNER, exerciseId: ROW.id, exerciseName: ROW.name, measurement: 'reps' as const, unit: 'kg' as const, convention: 'total' as const, equipment: bar, exercise: ROW, rule: null, workingSets: 3, history: ROWS_12, painFlags: [], sessionPain: { active: false, reportedAtUtc: null } };

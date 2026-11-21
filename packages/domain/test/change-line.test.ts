@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { CoachTarget, Load } from '@fizz/schemas';
 
-import { doneLine, fromToLine, type ChangeSide } from '../src';
+import { doneLine, fromToLine, NBSP, topBackoffLine, type ChangeSide } from '../src';
 
 /** (Ben, 30 Oct) One `Next time` change per line: from → to, units and conventions explicit. */
 
 const kg = (value: number, convention: Load['convention'] = 'total'): Load => ({ value, unit: 'kg', convention });
 const lb = (value: number, convention: Load['convention'] = 'total'): Load => ({ value, unit: 'lb', convention });
 const t = (load: Load | null, min: number | null, max = min, rpe?: number): CoachTarget => ({ load, reps: min === null || max === null ? null : { min, max }, ...(rpe !== undefined ? { rpe } : {}) });
+const plain = (x: string | undefined) => (x ?? '').replaceAll(NBSP, ' ');
 const side = (target: CoachTarget, sets: number | null = 3, plates?: true): ChangeSide => ({ target, sets, ...(plates ? { plates } : {}) });
 
 describe('fromToLine', () => {
@@ -71,7 +72,32 @@ describe('fromToLine', () => {
 
   it('kg → lb (or any convention change) spells both sides in full', () => {
     expect(fromToLine(side(t(kg(100), 5)), side(t(lb(225), 5))).text).toBe('100×5 kg → 225×5 lb');
-    expect(fromToLine(side(t(kg(20, 'per_hand'), 10)), side(t(kg(40, 'total'), 10))).text).toBe('20×10 kg ea → 40×10 kg');
+    expect(plain(fromToLine(side(t(kg(20, 'per_hand'), 10)), side(t(kg(40, 'total'), 10))).text)).toBe('20 kg ea × 10 → 40×10 kg');
+  });
+
+  it('(Ben, 21 Nov) per hand: the load and its unit first, then the reps: `7 kg ea × 17`, never `7×17 kg ea`', () => {
+    const same = fromToLine(side(t(kg(7, 'per_hand'), 17)), side(t(kg(7, 'per_hand'), 17)));
+    expect(same.same).toBe(true);
+    expect(same.text).toBe(`7${NBSP}kg ea${NBSP}×${NBSP}17`);
+    expect(same.spoken).toBe('7 kilograms each for 17');
+    expect(plain(fromToLine(null, side(t(kg(26, 'per_hand'), 8, 10))).text)).toBe('26 kg ea × 8–10');
+    expect(plain(fromToLine(side(t(kg(24, 'per_hand'), 10)), side(t(kg(26, 'per_hand'), 8))).text)).toBe('24 kg ea × 10 → 26 kg ea × 8');
+    expect(plain(fromToLine(side(t(lb(50, 'per_hand'), 12)), side(t(lb(50, 'per_hand'), 12))).text)).toBe('50 lb ea × 12');
+    // Reps only and load only keep their short forms.
+    expect(fromToLine(side(t(kg(7, 'per_hand'), 15)), side(t(kg(7, 'per_hand'), 17))).text).toBe('3×15 → 3×17');
+    expect(fromToLine(side(t(kg(24, 'per_hand'), 10)), side(t(kg(26, 'per_hand'), 10))).text).toBe('24 → 26 kg ea');
+  });
+
+  it('(Ben, 21 Nov) assisted the same way: `30 kg assist × 8`; totals stay `97.5×8 → 100×6–10 kg`', () => {
+    expect(plain(fromToLine(null, side(t(kg(30, 'assistance'), 8))).text)).toBe('30 kg assist × 8');
+    expect(fromToLine(side(t(kg(97.5), 8)), side(t(kg(100), 6, 10))).text).toBe('97.5×8 → 100×6–10 kg');
+  });
+
+  it('(Ben, 21 Nov) a per-hand top set and back-off line: `Top 30 kg ea × 6 → 32 kg ea × 6 · back-off 26`', () => {
+    const l = topBackoffLine(side(t(kg(30, 'per_hand'), 6), null), side(t(kg(32, 'per_hand'), 6), null), { from: kg(25, 'per_hand'), to: kg(26, 'per_hand') });
+    expect(plain(l.text)).toBe('Top 30 kg ea × 6 → 32 kg ea × 6 · back-off 26');
+    const b = topBackoffLine(side(t(kg(100), 5), null), side(t(kg(102.5), 5), null), { from: kg(85), to: kg(87.5) });
+    expect(b.text).toBe('Top 100×5 → 102.5×5 kg · back-off 87.5');
   });
 
   it('nothing different: the target alone, marked same', () => {
@@ -105,7 +131,11 @@ describe('doneLine', () => {
   });
 
   it('assisted: the best is the least assistance', () => {
-    expect(doneLine([set(kg(30, 'assistance'), 8), set(kg(25, 'assistance'), 6)], { direction: 'assistance' })?.text).toBe('2 sets · best 25×6 kg assist');
+    expect(plain(doneLine([set(kg(30, 'assistance'), 8), set(kg(25, 'assistance'), 6)], { direction: 'assistance' })?.text)).toBe('2 sets · best 25 kg assist × 6');
+  });
+
+  it('(Ben, 21 Nov) per hand, loads differ: `best 9 kg ea × 15`', () => {
+    expect(plain(doneLine([set(kg(7, 'per_hand'), 17), set(kg(9, 'per_hand'), 15)], r)?.text)).toBe('2 sets · best 9 kg ea × 15');
   });
 
   it('per hand and lb', () => {
