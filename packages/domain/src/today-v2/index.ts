@@ -7,3 +7,4 @@ export * from './workout-list';
 export * from './week-tiles';
 export * from './day-sheet';
 export * from './behind';
+export * from './behind-longer';
