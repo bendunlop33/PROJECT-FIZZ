@@ -654,16 +654,32 @@ export function planDayTypeKey(d: Pick<PlanDueDay, 'name' | 'bodyParts' | 'routi
 }
 
 /**
+ * (Ben, 31 Oct; 21 Nov) The plan days a workout counts for in `planDaysTypeLastTrained`: a plan workout as
+ * `planDaysCredited` (its own day and the day it mainly trained); any other workout (off-plan, imported) only the
+ * day it mainly trained (`matchSplitDay`, with that day's other templates), the one plan day Today's strip colours
+ * it as. (Ben, 21 Nov, build 576) A push session with a few rows is a push workout: crediting every day with a third
+ * of its sets made pull "trained Fri" and put Legs B (legs two days ago) before Pull B (pull last Monday).
+ */
+function planDaysTypeCredited(days: readonly PlanDueDay[], w: PlanDueWorkout): string[] {
+  if (ownPlanDay(days, w) !== undefined) return planDaysCredited(days, w);
+  const split = planSplit(days);
+  const main = split === null ? null : matchSplitDay(split, w.groups);
+  const day = main === null ? undefined : days.find((d) => d.routineId === main.id);
+  return day === undefined ? [] : sameDayIds(days, day);
+}
+
+/**
  * (Ben, 31 Oct) When each plan day's split type was last trained (local date): every workout in `workouts` (plan,
- * off-plan, imported) counts for each type it trained (the days it is credited with, `planDaysCredited`, by type).
- * A day never trained in the window is absent. Pure.
+ * off-plan, imported) counts for the type(s) it is credited with (`planDaysTypeCredited`: a plan workout its own day
+ * and the day it mainly trained; any other workout the day it mainly trained). A day never trained in the window is
+ * absent. Pure.
  */
 export function planDaysTypeLastTrained(days: readonly PlanDueDay[], workouts: readonly PlanDueWorkout[], tz: string): Map<string, string> {
   const typeOf = new Map(days.map((d) => [d.routineId, planDayTypeKey(d)] as const));
   const lastOfType = new Map<string, number>();
   for (const w of workouts) {
     const ms = toMs(w.startedAtUtc);
-    for (const id of planDaysCredited(days, w)) {
+    for (const id of planDaysTypeCredited(days, w)) {
       const t = typeOf.get(id);
       if (t !== undefined && ms > (lastOfType.get(t) ?? Number.NEGATIVE_INFINITY)) lastOfType.set(t, ms);
     }

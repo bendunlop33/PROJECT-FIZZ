@@ -1238,8 +1238,18 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       offerAtOrBelow: deps.offerAtOrBelow?.() ?? null,
       activities: nudgeActs.map((a) => ({ id: a.id, localDate: a.fields.date, kind: a.fields.kind, effort: a.fields.effort, status: a.fields.status })),
     };
+    // (Ben, 21 Nov) Each plan day's type last trained, as Up next reads it: MS4 puts a day still recovering (its type
+    // trained in the last 2 days) after the others, so the offer agrees with the card.
+    const facts = week.behind !== null && week.behind.k >= 1 ? await deps.port.upNextFacts?.().catch(() => null) : null;
+    const typeLastTrained = new Map<string, string>();
+    for (const d of planDays)
+      for (const t of d.templates) {
+        const on = t.routineId === null ? undefined : facts?.lastTrained.get(t.routineId);
+        if (on !== undefined && on > (typeLastTrained.get(d.key) ?? '')) typeLastTrained.set(d.key, on);
+      }
     // (Ben, 8 Nov: MS1–MS9) Behind this week: the offer's facts, all from logs and the plan (rule 6).
     const behind = todayBehindOf({
+      typeLastTrained,
       week: week.behind,
       planDays,
       today,
@@ -2239,6 +2249,8 @@ export function todayBehindOf(input: {
   sessions: readonly { localDate: string; sets: readonly string[] }[];
   directGroupOf: (exerciseId: string) => string | null;
   setDays: boolean;
+  /** (Ben, 21 Nov) Each plan day's split type last trained (local date, by day key; `upNextFacts`): MS4's recovery check. Absent: none. */
+  typeLastTrained?: ReadonlyMap<string, string>;
 }): TodayBehind | null {
   const b = input.week;
   const plan = input.plan;
@@ -2251,7 +2263,7 @@ export function todayBehindOf(input: {
     const stored: readonly Pick<TodayTemplateSlot, 'exerciseId' | 'workingSets' | 'timed' | 'warmup'>[] = t.slots ?? t.exerciseIds.map((exerciseId) => ({ exerciseId, workingSets: 3 }));
     // Warm-ups and cardio never count (WU1, CW1).
     const slots = stored.flatMap((x) => (x.timed !== undefined || x.warmup !== undefined ? [] : [{ exerciseId: x.exerciseId, sets: x.workingSets }]));
-    return { key, name: d.name, mainLiftIds: t.mainLiftExerciseId === null ? [] : [t.mainLiftExerciseId], slots };
+    return { key, name: d.name, mainLiftIds: t.mainLiftExerciseId === null ? [] : [t.mainLiftExerciseId], slots, typeLastTrained: input.typeLastTrained?.get(key) ?? null };
   };
   const days = behindCandidates(b).flatMap((k) => {
     const d = dayOf(k);
@@ -2278,7 +2290,7 @@ export function todayBehindOf(input: {
     const d = dayOf(k);
     return d === null ? [] : [d];
   });
-  const scores = behindPick({ days, later, facts: { weekDirect, mainTrained, yesterdayDirect }, groupOf: input.directGroupOf });
+  const scores = behindPick({ days, later, facts: { weekDirect, mainTrained, yesterdayDirect, today: input.today }, groupOf: input.directGroupOf });
   const top = behindBuiltInDay(scores, input.cardKey);
   const first = scores[0] === undefined ? undefined : days.find((d) => d.key === scores[0]?.key);
   const longerIn = first === undefined ? null : { top: first, others: scores.slice(1).flatMap((x) => days.filter((d) => d.key === x.key)), later: later(first.key), facts: { weekDirect, mainTrained }, groupOf: input.directGroupOf };

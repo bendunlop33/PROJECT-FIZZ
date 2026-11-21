@@ -81,21 +81,34 @@ async function thursday(): Promise<{ ben: Ben; d: TodaySessionData }> {
   return { ben, d: await todayData(ben.s) };
 }
 
+/** Thursday with Ben's own `Make next` on Push B: Pull A stays missed on Tuesday (the question's case). */
+async function thursdayPushBNext(): Promise<{ ben: Ben }> {
+  const { ben } = await thursday();
+  const ov = await ben.s.plans.overview();
+  const pushB = ov?.days.find((x) => x.name === 'Push B');
+  if (ov == null || pushB === undefined) throw new Error('no plan');
+  const pinned = await ben.s.plans.makeNext({ planId: ov.planId, routineId: pushB.routineId, expectedVersion: ov.planVersion, opId: h.ids() });
+  if (!pinned.ok) throw new Error('not pinned');
+  return { ben };
+}
+
 describe('the coach can explain the schedule (Ben, 11 Nov)', () => {
   it('YOUR DATA week.schedule: Pull A scheduled Tue and missed, Legs moved by Ben, Push A done, how Today’s card was picked', async () => {
     const { ben } = await thursday();
     expect(await ben.s.todaySession.scheduleFact()).toEqual([
       'Push A: done Mon 19 Oct',
-      'Pull A: scheduled Tue 20 Oct · missed: nothing logged that day and no free plan day left this week',
+      // (Ben, 21 Nov) Monday's Push A (started from Today's card) counts as push only, not pull too: pull is the most
+      // rested type, so Pull A (missed Tue) is Up next today and Push B doesn't fit.
+      'Pull A: Thu 22 Oct: Up next (scheduled Tue)',
       'Legs: moved by Ben from Wed to Sat 24 Oct',
-      'Push B: scheduled Thu 22 Oct · Up next',
+      'Push B: scheduled Thu 22 Oct · missed: no free plan day left this week',
       'Pull B: scheduled Fri 23 Oct',
-      "Today's card: Up next = Push B: the day not done this week whose type was trained longest ago, schedule breaks ties (last trained: Pull A 19 Oct, Push B 19 Oct, Pull B 19 Oct); Legs moved later by Ben, so after the others.",
+      "Today's card: Up next = Pull A: the day not done this week whose type was trained longest ago, schedule breaks ties (last trained: Pull A not recently, Push B 19 Oct, Pull B not recently); Legs moved later by Ben, so after the others.",
     ]);
   });
 
   it('"Why did you give me pull on Tuesday?": the model gets the fact and the why rule, at low effort, in one light request (no plan-change nudge, no build view)', async () => {
-    const { ben } = await thursday();
+    const { ben } = await thursdayPushBNext();
     model = new StepModel([() => replyWith('Pull A is on Tuesdays in your plan, and nothing was logged that day.')]);
     const r = await ben.s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: WHY, spoken: false }, turnId: h.ids() });
     expect(r.status).toBe('completed');
@@ -117,7 +130,7 @@ describe('the coach can explain the schedule (Ben, 11 Nov)', () => {
   });
 
   it('a Garmin strength workout on the missed Tuesday: the fact says so and points to Log a past workout', async () => {
-    await thursday();
+    await thursdayPushBNext();
     await h.forceClose();
     const fake = new FakeHealth();
     const { services: s } = await h.launch({ health: { port: fake, buildIncludesHealth: true } });
