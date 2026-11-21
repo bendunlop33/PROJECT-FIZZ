@@ -87,3 +87,13 @@ export function joinsAsSecondary(a: Pick<SessionAggregate, 'exercises' | 'sets'>
   const begun = a.sets.some((x) => x.status === 'completed' && x.setType !== 'warmup');
   return begun || a.exercises.some((e) => e.removed === undefined && e.id !== replacing && (at === null || e.order < at) && input.mainBarbell(e));
 }
+
+/**
+ * (Ben, 21 Nov) For `secondaryMainLifts`: whether a next-target block is the workout's main lift (`isMainLiftRow` on
+ * its first or deciding row, so a swap for the main lift stays it), or null when no main lift is named (`mains` empty:
+ * then the first main barbell lift is the main lift). Pure.
+ */
+export function mainBlockTest(a: Pick<SessionAggregate, 'exercises'>, mains: ReadonlySet<string>): ((block: { root: SessionExercise; decider: SessionExercise }) => boolean) | null {
+  if (mains.size === 0) return null;
+  return (b) => isMainLiftRow(a, b.root.id, mains) || isMainLiftRow(a, b.decider.id, mains);
+}

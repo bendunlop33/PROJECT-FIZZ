@@ -202,19 +202,23 @@ export type NextTargetBlockRequest = Omit<NextTargetRequest, 'exerciseId' | 'exe
 };
 
 /**
- * (Builder-loads review S3) The main barbell lifts in a workout that were secondary lifts: every
- * main barbell block after the first. The first is the workout's main lift (the builder puts it
+ * (Builder-loads review S3) The main barbell lifts in a workout that were secondary lifts. With a main lift
+ * named (`isMain`, non-null), every main barbell block that isn't it; with none, every main barbell block after the
+ * first. The first is the workout's main lift (the builder puts it
  * first); the rest read their built-in rule as a compound lift's (`NextTargetRequest.accessory`),
  * so a barbell row after squats reads the same reps on the Summary, Start and to the coach as in
  * the builder. Pure.
  */
-export function secondaryMainLifts(blocks: readonly NextTargetBlock[], info: (exerciseId: string) => RuleExerciseInfo | null): Set<string> {
+export function secondaryMainLifts(blocks: readonly NextTargetBlock[], info: (exerciseId: string) => RuleExerciseInfo | null, isMain: ((block: NextTargetBlock) => boolean) | null = null): Set<string> {
   const out = new Set<string>();
   let seen = false;
   for (const b of blocks) {
     const ex = b.decider;
     if (ruleCategory(info(ex.exerciseId), b.equipment?.kind ?? null, ex.loadConvention) !== 'main_barbell') continue;
-    if (seen) out.add(ex.exerciseId);
+    // (Ben, 21 Nov: rows at 95 × 10 after pull-ups, next time 100 × 3–6) A main lift named for the workout (the plan
+    // day's, the draft's, Ben's pick; `workoutMainLifts`) decides, as for an exercise joining it (`joinsAsSecondary`):
+    // every other main barbell lift is secondary, even the first one, when the main lift isn't a barbell lift.
+    if (isMain !== null ? !isMain(b) : seen) out.add(ex.exerciseId);
     seen = true;
   }
   return out;
