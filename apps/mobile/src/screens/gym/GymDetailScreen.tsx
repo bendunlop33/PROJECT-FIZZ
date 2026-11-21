@@ -142,6 +142,20 @@ export function GymDetailScreen() {
           ))}
         </View>
       ) : null}
+      {/* (Ben, 21 Nov) Location first on each gym, so it's found. */}
+      {services.gymLocation.available() ? (
+        <Group>
+          {gym.location === undefined ? (
+            <Row title="Use current location" icon="location" disabled={busy} onPress={() => { setLocation(false); }} />
+          ) : (
+            <Row
+              title="Location set"
+              icon="location.fill"
+              trailing={<TextButton label="Clear" disabled={busy} onPress={() => { setLocation(true); }} />}
+            />
+          )}
+        </Group>
+      ) : null}
       <SectionHeader title={`Equipment (${String(equipment.length)})`} />
       {equipment.length === 0 ? (
         <AppText variant="callout" color="text.secondary">
@@ -162,19 +176,6 @@ export function GymDetailScreen() {
           ))}
         </Group>
       )}
-      {services.gymLocation.available() ? (
-        <Group>
-          {gym.location === undefined ? (
-            <Row title="Use current location" icon="location" disabled={busy} onPress={() => { setLocation(false); }} />
-          ) : (
-            <Row
-              title="Location set"
-              icon="location.fill"
-              trailing={<TextButton label="Clear" disabled={busy} onPress={() => { setLocation(true); }} />}
-            />
-          )}
-        </Group>
-      ) : null}
       <Group>
         {makeFull !== null ? <Row title="Make full gym" icon="sparkles" disabled={busy} onPress={makeFullGym} /> : null}
         <Row title="Add equipment" icon="plus" onPress={addEquipment} />
