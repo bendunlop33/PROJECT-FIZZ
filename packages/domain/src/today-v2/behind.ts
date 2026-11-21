@@ -8,6 +8,8 @@
  * - `behindCoverageGaps` (MS5): groups a coach proposal leaves at 0 direct sets this week with none later.
  */
 
+import { addDays } from '../calendar';
+
 /** A not-done plan day as the pick scores it. */
 export interface BehindDay {
   key: string;
@@ -16,6 +18,8 @@ export interface BehindDay {
   mainLiftIds: readonly string[];
   /** Its exercises with their planned working sets (warm-ups and cardio left out). */
   slots: readonly { exerciseId: string; sets: number }[];
+  /** (Ben, 21 Nov) Its split type last trained (local `YYYY-MM-DD`, `planDaysTypeLastTrained`); absent or null: not in the window. */
+  typeLastTrained?: string | null;
 }
 
 /**
@@ -121,6 +125,21 @@ export interface BehindWeekFacts {
   mainTrained: ReadonlySet<string>;
   /** Direct hard sets yesterday by group. */
   yesterdayDirect: ReadonlyMap<string, number>;
+  /** (Ben, 21 Nov) Today (local `YYYY-MM-DD`), for `recovering`; absent: no recovery check. */
+  today?: string;
+}
+
+/**
+ * (Ben, 21 Nov, build 576: "if I missed two sessions it says Legs when I did legs 2 sessions ago and it should be
+ * Pull") A day whose split type was trained in the last this-many days is still recovering: it never comes before a
+ * day that isn't (`behindPick`), as in Up next's own order (`upNextOrder`, longest ago first).
+ */
+export const BEHIND_RECOVERY_DAYS = 2;
+
+/** Whether a day's type was trained within `BEHIND_RECOVERY_DAYS` before `today` (today included). */
+export function behindRecovering(typeLastTrained: string | null | undefined, today: string | undefined): boolean {
+  if (typeLastTrained == null || today === undefined) return false;
+  return typeLastTrained >= addDays(today, -BEHIND_RECOVERY_DAYS);
 }
 
 export interface BehindScore {
@@ -135,6 +154,8 @@ export interface BehindScore {
   yesterday: boolean;
   /** Working sets as planned. */
   sets: number;
+  /** (Ben, 21 Nov) Its type was trained in the last `BEHIND_RECOVERY_DAYS` days: after every day that wasn't. */
+  recovering: boolean;
 }
 
 /** A group gets at most this many direct sets in one session (FQ2/VC3). */
@@ -151,8 +172,9 @@ function groupSets(d: BehindDay, groupOf: (exerciseId: string) => string | null)
 }
 
 /**
- * MS4. Each not-done day (in Up next order) scored as today's base; higher wins, later items only break ties: (1) main
- * lifts, (2) uncovered groups' direct sets, (3) not yesterday's lead groups, (4) Up next order. `later(key)`: the
+ * MS4. Each not-done day (in Up next order) scored as today's base; higher wins, later items only break ties: (0) not
+ * recovering (Ben, 21 Nov: a day whose type was trained in the last 2 days never comes before one that wasn't), (1)
+ * main lifts, (2) uncovered groups' direct sets, (3) not yesterday's lead groups, (4) Up next order. `later(key)`: the
  * days the week still has after the planning day when `key` is today's (Set days: the fitting days after it; Any days:
  * the next slots − 1 in Up next order).
  */
@@ -169,10 +191,11 @@ export function behindPick(input: { days: readonly BehindDay[]; later: (key: str
     const lead = [...mine].filter(([, n]) => n === top && n > 0).map(([g]) => g);
     const yesterday = lead.some((g) => (input.facts.yesterdayDirect.get(g) ?? 0) >= YESTERDAY_HARD);
     const sets = d.slots.reduce((n, s) => n + s.sets, 0);
-    return { i, score: { key: d.key, name: d.name, mainLifts, uncoveredSets, uncoveredGroups: uncovered.map(([g]) => g), yesterday, sets } };
+    const recovering = behindRecovering(d.typeLastTrained, input.facts.today);
+    return { i, score: { key: d.key, name: d.name, mainLifts, uncoveredSets, uncoveredGroups: uncovered.map(([g]) => g), yesterday, sets, recovering } };
   });
   return scored
-    .sort((a, b) => b.score.mainLifts - a.score.mainLifts || b.score.uncoveredSets - a.score.uncoveredSets || Number(a.score.yesterday) - Number(b.score.yesterday) || a.i - b.i)
+    .sort((a, b) => Number(a.score.recovering) - Number(b.score.recovering) || b.score.mainLifts - a.score.mainLifts || b.score.uncoveredSets - a.score.uncoveredSets || Number(a.score.yesterday) - Number(b.score.yesterday) || a.i - b.i)
     .map((x) => x.score);
 }
 
