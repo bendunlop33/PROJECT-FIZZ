@@ -217,7 +217,7 @@ describe('topBackoffLine (decision 1): the main lift’s one line', () => {
   it('the back-off alone changed is a change; per hand keeps ea; lb stays lb', () => {
     expect(topBackoffLine(side(100, 5), side(100, 5), { from: kgL(80), to: kgL(85) }).same).toBe(false);
     const ea = { target: { load: { value: 32, unit: 'kg' as const, convention: 'per_hand' as const }, reps: { min: 8, max: 8 } }, sets: null };
-    expect(topBackoffLine(ea, { ...ea, target: { ...ea.target, load: { ...ea.target.load, value: 34 } } }, { from: null, to: { value: 30, unit: 'kg', convention: 'per_hand' } }).text).toBe('Top 32×8 → 34×8 kg ea · back-off 30');
+    expect(topBackoffLine(ea, { ...ea, target: { ...ea.target, load: { ...ea.target.load, value: 34 } } }, { from: null, to: { value: 30, unit: 'kg', convention: 'per_hand' } }).text.replaceAll('\u00a0', ' ')).toBe('Top 32 kg ea × 8 → 34 kg ea × 8 · back-off 30');
     const lbs = (v: number) => ({ target: { load: { value: v, unit: 'lb' as const, convention: 'total' as const }, reps: { min: 5, max: 5 } }, sets: null });
     expect(topBackoffLine(lbs(225), lbs(230), { from: null, to: { value: 205, unit: 'lb', convention: 'total' } }).text).toBe('Top 225×5 → 230×5 lb · back-off 205');
   });
