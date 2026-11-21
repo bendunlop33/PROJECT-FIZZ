@@ -314,9 +314,10 @@ export function SummaryScreen() {
   const keep = data.value.keep;
   const nextOpen = nextTime !== null || mainLift !== null || keep !== null;
 
+  // (Ben, 21 Nov) The top inset is outside the scroll view, so scrolled content never draws under the status bar.
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + theme.space['3'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
+    <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top }} testID="summary-root">
+      <ScrollView testID="summary-scroll" contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingTop: theme.space['3'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
         {/* (Ben, 27 Oct; redesign §E2) The Saved line and ⋯: the check draws once (premium-feel §6), then the title fades in. */}
         <View style={{ gap: theme.space['1'] }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>

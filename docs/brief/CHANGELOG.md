@@ -1467,3 +1467,9 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **MS3 amended (approved):** "Adjust today?" offers the usual-length catch-up and **a bit longer (+15–20 min)**, adding the most important pieces of the other missed day (main lifts first, then groups with no sets this week and none later). Per-session caps (8 direct sets per group) still apply unless Ben says yes to more; heavy legs stay away from long runs (rule 12); never automatic.
 - **SF1 amended (approved):** earlier work today also counts against the target exercise's **secondary** muscles at half weight (e.g. triceps or front delts worked before bench). Evidence in the guide: Soares 2016.
 - **SA1–SA12 declined:** no sport-specific accessory suggestions; Ben asks the coach when he wants them.
+
+## 2026-11-21: Summary Next time fixes (Ben, 21 Nov, build 576, bug fix)
+
+- **Row after pull-ups read 3–6.** On Pull B · Pull-up the barbell row (3 × 8 at 97.5 kg; 95 × 10 at RIR 2 before) showed `97.5×8 → 100×3–6 kg`. Cause: pull-ups (the plan day's main lift) aren't a barbell lift, so `secondaryMainLifts` took the row, the first main barbell lift, as the main lift and gave it the main barbell range. Fix: with a main lift named (Ben's pick, the draft's main slots, the plan day's), every other main barbell lift is secondary on the Summary, Start next session and the coach's rule read, as `joinsAsSecondary` already did for adds. The row now follows his reps (6–10 around 8–10); a row that is the main lift keeps 3–6. Workouts with no main lift named are unchanged.
+- **Per-hand order.** `Same · 7×17 kg ea` now reads `7 kg ea × 17` (load and unit, then reps); assisted the same (`30 kg assist × 8`), in Next time, best-set and top-set lines. Totals keep `97.5×8 → 100×6–10 kg`.
+- **Status bar.** The Summary's top inset sits outside its scroll view, so scrolled content no longer draws under the status bar. Open: not run on Ben's iPhone. **No migration.**
