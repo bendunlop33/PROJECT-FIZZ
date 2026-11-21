@@ -185,10 +185,18 @@ export interface BehindFacts {
   uncovered: readonly string[];
   directThisWeek: readonly string[];
   yesterday: readonly string[];
+  /**
+   * (Ben, 21 Nov: MS3 amended) Present only when Ben tapped Longer (or asked for more himself): the extra minutes the
+   * rules found room for and their extras, `Overhead Press 3` (main lifts first, then groups with no sets this week).
+   */
+  longer?: { addMinutes: number; add: readonly string[] };
 }
 
 /** (Ben, 8 Nov: MS3, MS5, MS7) The one instruction that comes with `behind`. */
 export const BEHIND_USE_LINE = 'Build today from pickOrder[0] as planned (propose_workout_edit on builderDraft, else propose_workout), his usual length, never two days merged. You may swap its last accessories for at most 2 exercises from other notDone days that cover uncovered groups or a main lift. Keep every uncovered group. Later days stay as they are.';
+
+/** (Ben, 21 Nov: MS3 amended) The instruction when `behind.longer` is there (Ben chose Longer). */
+export const BEHIND_LONGER_USE_LINE = 'Ben chose Longer: build pickOrder[0] as planned plus longer.add (sets as given), up to longer.addMinutes over his usual length; ≤ 8 direct sets a group.';
 
 /** (Q4) The linked watch workout as the coach sees it. */
 export interface LinkedActivityContext {
@@ -740,7 +748,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),
     ...(input.enduranceSwitch === undefined ? {} : { enduranceSwitch: { on: input.enduranceSwitch.on, session: input.enduranceSwitch.session === null ? null : { ...input.enduranceSwitch.session }, rules: input.enduranceSwitch.on ? ('11, 12, 13 in use' as const) : ('11, 12, 13 not in use' as const) } }),
     ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until }, ...(input.plan.inUse.days === undefined ? {} : { days: input.plan.inUse.days.map((d) => ({ name: d.name, exercises: d.exercises.map((e) => ({ ...e })) })) }), ...(input.plan.inUse.muscles === undefined ? {} : { muscles: [...input.plan.inUse.muscles] }), ...(input.plan.inUse.weeks === undefined ? {} : { weeks: input.plan.inUse.weeks }) } } }),
-    ...(input.behind === undefined ? {} : { behind: { ...JSON.parse(JSON.stringify(input.behind)) as BehindFacts, use: BEHIND_USE_LINE } }),
+    ...(input.behind === undefined ? {} : { behind: { ...JSON.parse(JSON.stringify(input.behind)) as BehindFacts, use: input.behind.longer === undefined ? BEHIND_USE_LINE : `${BEHIND_USE_LINE} ${BEHIND_LONGER_USE_LINE}` } }),
     ...(input.notPreferred === undefined || input.notPreferred.length === 0 ? {} : { notPreferred: input.notPreferred.map((e) => ({ catalogueId: e.catalogueId, name: e.name, use: 'never put this in his plan or a workout' as const })) }),
   };
 }

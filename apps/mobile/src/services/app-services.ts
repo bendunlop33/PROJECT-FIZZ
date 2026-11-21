@@ -685,8 +685,13 @@ export function createAppServices(deps: AppServicesDeps) {
     // (Ben, 8 Nov: MS9) Behind this week, as Today reads it (`todaySession` is made below; this runs on a coach turn).
     // A deload or lighter week never counts as behind (LW3, MS2).
     behind: async () => {
-      const b = (await todaySession.load())?.behind ?? null;
-      return b === null || b.gate.lighterWeek || b.gate.paused ? null : b.coach;
+      const d = await todaySession.load();
+      const b = d?.behind ?? null;
+      if (d == null || b === null || b.gate.lighterWeek || b.gate.paused) return null;
+      // (Ben, 21 Nov: MS3 amended) The longer choice's extras, as the rules picked them (the coach service keeps them
+      // only on a Longer tap or Ben's own ask for more).
+      const longer = todaySession.behindLonger(d);
+      return longer === null ? b.coach : { ...b.coach, longer: { addMinutes: longer.addedMinutes, add: longer.extras.map((x) => `${x.name} ${String(x.sets)}`) } };
     },
     muscleGoal: muscleGoalNow,
     planMuscleLines: () => planMuscles.coachLines(),

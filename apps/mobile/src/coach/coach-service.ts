@@ -134,6 +134,7 @@ import {
   type OpenedFrom,
   type TrainingInput,
   type LinkedActivityContext,
+  asksBeyondBehind,
 } from '@fizz/coach';
 import {
   basisSlots,
@@ -253,6 +254,8 @@ import {
   type MuscleGoalInput,
   REPLAN_AFTER,
   asksBehindToday,
+  behindTapChoice,
+  BEHIND_LONGER,
   directMuscleGroup,
   type MusclesOf,
   type HealthStrengthSession,
@@ -686,6 +689,13 @@ export function namedExercises(text: string, session: SessionAggregate | null): 
  */
 export function recentActionsScope(entry: CoachEntry): string | null {
   return isGeneralEntry(entry) ? null : entry.sessionId;
+}
+
+/** (Ben, 21 Nov: MS3 amended) The behind facts without the longer choice's extras (a Usual tap, or his own words). */
+function withoutLonger(b: BehindFacts): BehindFacts {
+  const out = { ...b };
+  delete out.longer;
+  return out;
 }
 
 export function createCoachService(deps: CoachServiceDeps) {
@@ -1498,7 +1508,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     planRequest: { plan: PlanDraft | null; basedOn?: PlanDraft | null } | null = null,
   ): Promise<{ view: BuildContextView; executors: CoachExecutors; inPlay: boolean; behind: BehindFacts | null; groupOf: (exerciseId: string) => string | null } | null> {
     // (Ben, 8 Nov: MS5, MS9) Behind this week and asking about today: the facts, and the coverage check on the build.
-    const behind = planRequest === null && asksBehindToday(said) && deps.behind !== undefined ? await deps.behind().catch(() => null) : null;
+    const behindAll = planRequest === null && asksBehindToday(said) && deps.behind !== undefined ? await deps.behind().catch(() => null) : null;
+    // (Ben, 21 Nov: MS3 amended) The longer choice's extras go to the coach only when Ben tapped Longer or asked for more.
+    const wantsLonger = behindTapChoice(said) === 'longer' || (behindTapChoice(said) === null && asksBeyondBehind(said));
+    const behind = behindAll === null || behindAll.longer === undefined || wantsLonger ? behindAll : withoutLonger(behindAll);
     const inPlay = planRequest !== null || asksForBuild({ turnKind: 'general', text: said, draftInContext: draft !== null, followUp });
     // A follow-up ("yes add it") reads length and focus from Ben's earlier request too; never from the coach's text.
     const text = buildRequestWords(said, followUp);
@@ -2012,7 +2025,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           draft: draftHere !== null && draftSummary !== null ? draftHere : null,
           edit: (r) => builderPorts.edit(r),
           // (Ben, 8 Nov: MS3, MS5) Behind this week: the change to today's draft keeps the behind bounds.
-          behind: build?.behind == null ? null : { uncovered: build.behind.uncovered, groupOf: build.groupOf },
+          behind: build?.behind == null ? null : { uncovered: build.behind.uncovered, groupOf: build.groupOf, longer: build.behind.longer === undefined ? null : { maxAddedMinutes: BEHIND_LONGER.maxMinutes, extras: build.behind.longer.add.length } },
           ...(setupOpen ? { fillSetup: (r: { words: string; opId: string }) => builderPorts.fillSetup(r) } : {}),
         }),
       );

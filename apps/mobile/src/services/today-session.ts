@@ -44,6 +44,11 @@ import {
   behindCandidates,
   behindLaterDays,
   behindLine,
+  behindLonger,
+  makeSlot,
+  settleWarmups,
+  type BehindExtra,
+  type BehindWeekFacts,
   directMuscleGroup,
   RETURN_TO_LOAD_GAP_DAYS,
   type BehindDay,
@@ -1397,6 +1402,54 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return { list, listTarget: workoutListTargetHeader(unit, w.blocks.flatMap((b) => b.slots.map((x) => x.convention))), coachChanges: changes };
   }
 
+  /**
+   * (Ben, 21 Nov: MS3 amended) `workout` with the longer choice's extras added after it, each its own block at the
+   * missed day's planned sets and stored reps, loads from Today's gym inputs (snapped to its kit, rule 4) and warm-ups
+   * as the planner plans them. The workout's own slots are kept exactly. Pure over `data`.
+   */
+  function withBehindExtras(data: TodaySessionData, workout: BuilderWorkout, extras: readonly Pick<BehindExtra, 'exerciseId' | 'sets' | 'dayKey'>[]): BuilderWorkout {
+    const { ctx } = data.internal;
+    const repsOf = (dayKey: string, id: string) => {
+      const d = dayOf(data, dayKey);
+      const t = d === null ? undefined : (d.templates.find((x) => x.mainLiftExerciseId === (data.initial[dayKey]?.mainLiftExerciseId ?? null)) ?? d.templates[0]);
+      return t?.slots?.find((x) => x.exerciseId === id)?.reps ?? null;
+    };
+    const added = extras.map((x) => ({ slots: [makeSlot(x.exerciseId, { main: false, workingSets: x.sets, repRange: repsOf(x.dayKey, x.exerciseId) }, ctx)], auto: false }));
+    const settled = settleWarmups({ ...workout, blocks: [...workout.blocks, ...added] }, ctx);
+    return { ...workout, blocks: [...workout.blocks, ...settled.blocks.slice(workout.blocks.length)] };
+  }
+
+  /**
+   * (Ben, 21 Nov: MS3 amended) `Adjust today?`'s longer choice: the extras `behindLonger` picks on top of today's day
+   * as its card would draft it, timed by the builder's estimate. Null: not behind, or nothing useful fits. Pure.
+   */
+  function behindLongerOf(data: TodaySessionData): TodayBehindLonger | null {
+    const li = data.behind?.longerIn ?? null;
+    if (li === null) return null;
+    const controls = data.initial[li.top.key];
+    const view = controls === undefined ? null : card(data, { dayKey: li.top.key, controls });
+    const base = view?.edited?.workout ?? view?.nudged?.workout ?? view?.draft?.workout ?? null;
+    if (view == null || base === null) return null;
+    const { ctx, info, here, pained, nameOf } = data.internal;
+    const baseS = estimateBuilderSeconds(base, ctx);
+    const r = behindLonger({
+      ...li,
+      groupOf: li.groupOf,
+      held: (id) => pained(id) || !here(id) || info(id) === null,
+      legsOff: data.near !== null,
+      isLegs: (id) => info(id)?.group === 'Legs',
+      addedSeconds: (xs) => estimateBuilderSeconds(withBehindExtras(data, base, xs), ctx) - baseS,
+    });
+    if (r === null) return null;
+    return {
+      dayKey: li.top.key,
+      extras: r.extras.map((x) => ({ exerciseId: x.exerciseId, name: nameOf(x.exerciseId), sets: x.sets, dayKey: x.dayKey, reason: x.reason })),
+      usualMinutes: view.minutes,
+      addedMinutes: r.addedMinutes,
+      minutes: view.minutes + r.addedMinutes,
+    };
+  }
+
   /** `card`: the session card for a day and its controls. Pure over `data`. */
   function card(data: TodaySessionData, sel: TodaySelection, coach: TodayCoachInputs = {}): TodayCardView | null {
     const day = dayOf(data, sel.dayKey);
@@ -1957,6 +2010,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
   return {
     load,
     card,
+    behindLonger: behindLongerOf,
+    withBehindExtras,
     movedLine,
     commit,
     draftFor,
@@ -2132,6 +2187,22 @@ export interface TodayBehind {
   planId: string;
   /** MS9: what the coach is told (numbers from logs; no inference). */
   coach: TodayBehindCoachFacts;
+  /**
+   * (Ben, 21 Nov: MS3 amended) The longer choice's inputs: today's day (MS4's top, whichever it is), the other missed
+   * days best first, the later days and the week's facts. `behindLonger` (the service) times the extras on the card.
+   */
+  longerIn: { top: BehindDay; others: BehindDay[]; later: BehindDay[]; facts: Pick<BehindWeekFacts, 'weekDirect' | 'mainTrained'>; groupOf: (exerciseId: string) => string | null } | null;
+}
+
+/** (Ben, 21 Nov: MS3 amended) The longer choice as Today shows it and Apply writes it. */
+export interface TodayBehindLonger {
+  /** Today's day the extras go on (MS4's top). */
+  dayKey: string;
+  extras: { exerciseId: string; name: string; sets: number; dayKey: string; reason: 'main' | 'uncovered' }[];
+  /** The card's own estimate of the day as planned. */
+  usualMinutes: number;
+  addedMinutes: number;
+  minutes: number;
 }
 
 /** MS9, kept small: the coach request has a size cap. */
@@ -2209,6 +2280,8 @@ export function todayBehindOf(input: {
   });
   const scores = behindPick({ days, later, facts: { weekDirect, mainTrained, yesterdayDirect }, groupOf: input.directGroupOf });
   const top = behindBuiltInDay(scores, input.cardKey);
+  const first = scores[0] === undefined ? undefined : days.find((d) => d.key === scores[0]?.key);
+  const longerIn = first === undefined ? null : { top: first, others: scores.slice(1).flatMap((x) => days.filter((d) => d.key === x.key)), later: later(first.key), facts: { weekDirect, mainTrained }, groupOf: input.directGroupOf };
   const topDay = top === null ? undefined : input.planDays.find((d) => d.key === top.key);
   const topTemplate = topDay === undefined ? undefined : templateOf(topDay);
   // MS2: a day Ben chose himself (a pin not done yet, or a move onto today this week).
@@ -2237,6 +2310,7 @@ export function todayBehindOf(input: {
       directThisWeek: lines(weekDirect),
       yesterday: lines(yesterdayDirect),
     },
+    longerIn,
   };
 }
 

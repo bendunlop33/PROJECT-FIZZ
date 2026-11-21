@@ -1,3 +1,4 @@
+import { behindTapChoice } from '@fizz/domain';
 import type { ActionDetail, ActionRecord } from '@fizz/schemas';
 
 import type { BuilderProposal } from './builder/proposal';
@@ -68,7 +69,9 @@ export function createDraftToolExecutors(deps: DraftToolDeps): CoachExecutors {
           // (Ben, 8 Nov: MS3, MS5) Behind this week: within the usual length, the main lift kept, at most 2 days' worth
           // swapped in (unless his words ask for more); a group nothing else this week covers named, never dropped.
           if (deps.behind != null && made.shape !== undefined) {
-            const v = checkBehindEdit(made.shape, deps.behind, { askedMore: asksBeyondBehind(words), coverageAsked });
+            // (Ben, 21 Nov: MS3 amended) The offer's own taps say which choice; only his own words ask for more.
+            const tap = behindTapChoice(words);
+            const v = checkBehindEdit(made.shape, deps.behind, { askedMore: tap === null && asksBeyondBehind(words), coverageAsked, longer: tap === 'longer' });
             coverageAsked = v.coverageAsked;
             if (v.kind === 'refuse') return { kind: 'refused', line: v.line };
             if (v.notes.length > 0) p = { ...p, warnings: [...p.warnings, ...v.notes] };

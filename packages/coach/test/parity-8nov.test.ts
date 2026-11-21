@@ -122,10 +122,23 @@ describe('behind on the plan: propose_workout_edit keeps MS3/MS5 (8 Nov)', () =>
   it('refuses a longer day, a lost main lift or 3 days’ worth swapped in, unless Ben asked for more', () => {
     const shape = { before, after: [{ exerciseId: 'leg_press', sets: 3, main: true }, { exerciseId: 'a', sets: 2, main: false }, { exerciseId: 'b', sets: 2, main: false }, { exerciseId: 'c', sets: 2, main: false }, { exerciseId: 'curl', sets: 3, main: false }], minutesBefore: 60, minutesAfter: 75 };
     const v = checkBehindEdit(shape, rules, { askedMore: false, coverageAsked: false });
-    expect(v.kind === 'refuse' && v.line).toBe('Not proposed: his usual length is 60 min; keep the day’s main lift; at most 2 exercises from other days. Call again within these.');
+    expect(v.kind === 'refuse' && v.line).toBe('Not proposed: his usual length is 60 min; keep the day’s main lift; at most 2 exercises from other days; at most 8 direct sets for Legs. Call again within these.');
     expect(checkBehindEdit(shape, rules, { askedMore: true, coverageAsked: false }).kind).toBe('ok');
     expect(asksBeyondBehind('2 days behind. Build today\'s workout.')).toBe(false);
     expect(asksBeyondBehind('make it 75 min and do both days')).toBe(true);
+  });
+  it('(21 Nov, MS3 amended) the Longer tap: up to +20 min and the rules’ extras; the 8-a-group cap still holds', () => {
+    const longerRules = { ...rules, longer: { maxAddedMinutes: 20, extras: 2 } };
+    const after = [...before, { exerciseId: 'curl2', sets: 2, main: false }, { exerciseId: 'x', sets: 1, main: false }, { exerciseId: 'y', sets: 1, main: false }];
+    const groupOf = (id: string) => (id.startsWith('curl') ? 'Biceps' : id === 'x' || id === 'y' ? 'Shoulders' : 'Legs');
+    const shape = { before, after, minutesBefore: 60, minutesAfter: 79 };
+    expect(checkBehindEdit(shape, { ...longerRules, groupOf }, { askedMore: false, coverageAsked: false, longer: true }).kind).toBe('ok');
+    // Without the tap, the usual bounds.
+    expect(checkBehindEdit(shape, { ...longerRules, groupOf }, { askedMore: false, coverageAsked: false }).kind).toBe('refuse');
+    const over = checkBehindEdit({ ...shape, minutesAfter: 81 }, { ...longerRules, groupOf }, { askedMore: false, coverageAsked: false, longer: true });
+    expect(over.kind === 'refuse' && over.line).toBe('Not proposed: at most 80 min (his usual 60 + 20). Call again within these.');
+    const nine = checkBehindEdit({ ...shape, after: [...shape.after, { exerciseId: 'w', sets: 2, main: false }] }, { ...longerRules, groupOf }, { askedMore: false, coverageAsked: false, longer: true });
+    expect(nine.kind === 'refuse' && nine.line).toContain('at most 8 direct sets for Legs');
   });
   it('an uncovered group dropped is sent back once, then named on the card', () => {
     const shape = { before, after: before.filter((s) => s.exerciseId !== 'curl'), minutesBefore: 60, minutesAfter: 55 };
