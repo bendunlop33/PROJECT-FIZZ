@@ -145,6 +145,7 @@ export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; r
   const note = (basis: EarlierWorkNote['basis'], ref: ContextExposure | null): EarlierWorkNote => ({
     todayP: today.p ?? 0,
     muscle: today.muscle,
+    muscleRole: today.muscleRole,
     before,
     reference: ref === null ? null : { sessionId: ref.sessionId, performedAtUtc: ref.performedAtUtc, p: ref.context.p ?? 0, sameMuscleSuperset: ref.context.sameMuscleSuperset },
     basis,

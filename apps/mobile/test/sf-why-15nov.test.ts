@@ -88,3 +88,23 @@ describe('Ben’s Push B: was the shoulder press factored into bench?', () => {
     expect(bench?.earlierToday).toMatch(/^before: dumbbell shoulder press 3 \(shoulders direct; chest, triceps secondary\) · P 1\.5 chest · ref 2026-11-15 P 1\.5, like for like · SF3 no$/);
   });
 });
+
+describe('SF1 amended (Ben, 21 Nov): work on bench’s secondary movers counts at ½', () => {
+  it('triceps pushdowns ×3 before bench: P 1.5 set by triceps as a secondary mover; Why? names it', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    // Last time bench came first.
+    await logWorkout(h, s, gymId, [{ exercise: BENCH, sets: [1, 2, 3].map(() => ({ load: 100, reps: 6, rpe: 8 })) }]);
+    h.clockMs += 7 * DAY;
+    const started = await s.workout.start({ gymId, opId: 'push-tri', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error('start');
+    const sessionId = started.aggregate.session.id;
+    await add(s, sessionId, 'Triceps pushdown');
+    const a = await add(s, sessionId, BENCH);
+    const first = benchSets(a)[0];
+    expect(first?.planned.provenance?.earlierWork).toMatchObject({ p: 1.5, muscle: 'Triceps', muscleRole: 'secondary', basis: 'comparable', reference: { p: 0 } });
+    const why = await s.workout.explainTarget(sessionId, first?.id ?? '');
+    const row = why?.rows.find((r) => r.key === 'earlier_today');
+    expect(row?.lines.map((l) => l.replaceAll('\u00a0', ' '))).toEqual(['After triceps pushdown ×3 · triceps · compared with 15 Nov (done first)']);
+  });
+});

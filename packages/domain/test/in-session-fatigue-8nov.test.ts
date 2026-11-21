@@ -91,14 +91,14 @@ function request(history: HistorySession[], today: WorkContext | null | undefine
 const plan = (r: ReturnType<typeof nextTargetsFor>) => r.result.sets.filter((s) => s.setType !== 'warmup').map((s) => [s.load?.value ?? null, s.reps.min, s.reps.max]);
 
 describe('SF1: earlier sets by muscle', () => {
-  it('counts 1 where the muscle was primary and ½ where it helped; P is the highest across its own primaries', () => {
+  it('counts 1 where the muscle was primary and ½ where it helped; P is the highest across its own muscles', () => {
     const by = earlierSetsByMuscle([{ exerciseId: BENCH, sets: 3 }, { exerciseId: ROW, sets: 3 }], musclesOf);
     expect(by.get('Chest')).toEqual({ direct: 3, secondary: 0 });
     expect(by.get('Shoulders')).toEqual({ direct: 3, secondary: 0 });
     expect(by.get('Triceps')).toEqual({ direct: 0, secondary: 3 });
     expect(by.get('Back')).toEqual({ direct: 3, secondary: 0 });
-    // Triceps' 1.5 isn't an incline primary: P = 3.
-    expect(earlierSetsP(musclesOf(INCLINE), by)).toEqual({ p: 3, muscle: 'Chest' });
+    // Triceps' 1.5 is an incline secondary: ½ × 1.5 = 0.75 (SF1 amended 21 Nov), below chest's 3: P = 3.
+    expect(earlierSetsP(musclesOf(INCLINE), by)).toEqual({ p: 3, muscle: 'Chest', muscleRole: 'primary' });
     expect(doneSoFarLines(by)).toEqual(['Back: 3 sets direct', 'Chest: 3 sets direct', 'Shoulders: 3 sets direct', 'Biceps: 3 sets secondary', 'Triceps: 3 sets secondary']);
   });
 
@@ -230,9 +230,9 @@ describe('SF2: like for like', () => {
   });
 
   it('within 2 sets is comparable; 3 apart is not', () => {
-    const near = pickLikeForLike({ p: 2, sameMuscleSuperset: false, muscle: 'Chest' }, [{ sessionId: 'a', performedAtUtc: '2026-11-01T10:00:00.000Z', context: { p: 0, sameMuscleSuperset: false, muscle: null } }]);
+    const near = pickLikeForLike({ p: 2, sameMuscleSuperset: false, muscle: 'Chest', muscleRole: 'primary' }, [{ sessionId: 'a', performedAtUtc: '2026-11-01T10:00:00.000Z', context: { p: 0, sameMuscleSuperset: false, muscle: null, muscleRole: null } }]);
     expect(near.kind).toBe('comparable');
-    const far = pickLikeForLike({ p: 3, sameMuscleSuperset: false, muscle: 'Chest' }, [{ sessionId: 'a', performedAtUtc: '2026-11-01T10:00:00.000Z', context: { p: 0, sameMuscleSuperset: false, muscle: null } }]);
+    const far = pickLikeForLike({ p: 3, sameMuscleSuperset: false, muscle: 'Chest', muscleRole: 'primary' }, [{ sessionId: 'a', performedAtUtc: '2026-11-01T10:00:00.000Z', context: { p: 0, sameMuscleSuperset: false, muscle: null, muscleRole: null } }]);
     expect(far).toMatchObject({ kind: 'other', cushion: 1 });
     expect(cushionReps(5, 0)).toBe(2);
     expect(cushionReps(1, 0)).toBe(0);

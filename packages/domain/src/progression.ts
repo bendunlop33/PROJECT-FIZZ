@@ -414,9 +414,11 @@ export interface NextTargets {
 }
 
 export interface EarlierWorkNote {
-  /** Today's P (earlier hard sets for its most-worked primary muscle) and that muscle. */
+  /** Today's P (SF1: earlier hard sets for its most-worked muscle, its secondary muscles at ½) and that muscle. */
   todayP: number;
   muscle: string | null;
+  /** Whether `muscle` is a primary or secondary mover of this exercise (SF1 amended 21 Nov); null when P is 0. */
+  muscleRole: 'primary' | 'secondary' | null;
   /** (SF7b, 15 Nov) Today's earlier exercises sharing a muscle with this one (`sharedEarlierWork`). */
   before: EarlierOverlap[];
   /** The exposure the target was read from: its P, session and date. */

@@ -2,17 +2,20 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { PlannedSetSchema, type Exercise, type ProgressionRule, type SessionAggregate } from '@fizz/schemas';
+import { PlannedSetSchema, TargetEarlierWorkSchema, type Exercise, type ProgressionRule, type SessionAggregate } from '@fizz/schemas';
 
 import {
   buildAddExerciseCommand,
   builtInDefaultRule,
   earlierWorkFact,
   earlierWorkOf,
+  earlierSetsByMuscle,
+  earlierSetsP,
   earlierWorkWhy,
   explainTarget,
   NBSP,
   nextTargetsFor,
+  otherContextSessions,
   pendingEarlierWork,
   plannedSetsFromTargets,
   replanEntries,
@@ -111,7 +114,7 @@ describe('SF1 on Ben’s Push B: dumbbell shoulder press before bench (catalogue
     expect(MUSCLES.get(BENCH)?.primaryMuscles).toEqual(['chest']);
     expect(MUSCLES.get(DBSP)?.primaryMuscles).toEqual(['front_delts']);
     expect(MUSCLES.get(DBSP)?.secondaryMuscles).toContain('upper_chest');
-    expect(resolveContext(AFTER_DBSP, BENCH, musclesOf)).toEqual({ p: 1.5, sameMuscleSuperset: false, muscle: 'Chest' });
+    expect(resolveContext(AFTER_DBSP, BENCH, musclesOf)).toEqual({ p: 1.5, sameMuscleSuperset: false, muscle: 'Chest', muscleRole: 'primary' });
   });
 
   it('records every shared muscle, how the shoulder press worked it (shoulders direct; chest and triceps secondary)', () => {
@@ -150,6 +153,7 @@ describe('provenance carries SF facts', () => {
     expect(ew).toEqual({
       p: 1.5,
       muscle: 'Chest',
+      muscleRole: 'primary',
       before: [{ name: 'Dumbbell shoulder press', sets: 3, direct: ['Shoulders'], secondary: ['Chest', 'Triceps'] }],
       reference: { sessionId: id(2), performedAt: { utc: new Date(T0_MS - 7 * DAY).toISOString(), tz: TZ }, p: 1.5, sameMuscleSuperset: false },
       basis: 'comparable',
@@ -175,11 +179,20 @@ describe('provenance carries SF facts', () => {
     expect(earlierWorkFact(ew ?? (null as never))).toMatch(/^nothing before it shares its muscles · P 0 · ref \S+ P 0, like for like · SF3 no$/);
   });
 
-  it('earlier work on bench’s secondary muscles only (pushdowns, laterals) is shown to the coach but counts 0 (SF1: own primaries)', () => {
+  it('earlier work on bench’s secondary muscles only (pushdowns, laterals) counts ½ (SF1 amended 21 Nov): triceps 3 × ½ = 1.5 sets P', () => {
     const today = ctx([{ exerciseId: PUSHDOWN, sets: 3 }, { exerciseId: LATERAL, sets: 2 }]);
     const { ew } = provenanceOf([exposure(1, 7, 100, [6, 6, 6], FIRST)], today);
-    expect(ew).toMatchObject({ p: 0, basis: 'comparable', before: [{ name: 'Triceps pushdown', sets: 3, direct: ['Triceps'] }, { name: 'Lateral raise', sets: 2, direct: ['Shoulders'] }] });
-    expect(earlierWorkWhy(ew)).toBeNull();
+    // Triceps 3 × 1 × ½ = 1.5; front/side delts (Shoulders) 2 × 1 × ½ = 1; chest 0.
+    expect(ew).toMatchObject({ p: 1.5, muscle: 'Triceps', muscleRole: 'secondary', basis: 'comparable', before: [{ name: 'Triceps pushdown', sets: 3, direct: ['Triceps'] }, { name: 'Lateral raise', sets: 2, direct: ['Shoulders'] }] });
+    expect(plain(earlierWorkWhy(ew))).toBe('After triceps pushdown ×3, lateral raise ×2 · triceps · compared with 1 Oct (done first)');
+    expect(earlierWorkFact(ew ?? (null as never))).toMatch(/· P 1\.5 triceps \(secondary\) · ref \S+ P 0, like for like · SF3 no$/);
+  });
+
+  it('a lot of secondary-only work with no history like it: SF3 from the halved count (5 pushdowns → P 2.5 vs 0, 1 rep fewer)', () => {
+    const { r, ew } = provenanceOf([exposure(1, 7, 100, [6, 6, 6], FIRST)], ctx([{ exerciseId: PUSHDOWN, sets: 5 }]));
+    expect(ew).toMatchObject({ p: 2.5, muscle: 'Triceps', muscleRole: 'secondary', basis: 'cushion', cushion: { reps: 1, stepDown: false } });
+    expect(r.result.sets.filter((s) => s.setType !== 'warmup').map((s) => [s.load?.value, s.reps.min])).toEqual([0, 1, 2].map(() => [100, 5]));
+    expect(plain(earlierWorkWhy(ew))).toBe('After triceps pushdown ×5 · triceps · no session like it: 1 rep fewer · est.');
   });
 
   it('today fresher than the only reference: no session like it, compared with it', () => {
@@ -247,5 +260,54 @@ describe('SF6 replan keeps the note current', () => {
     const entries = replanEntries({ row: {} as never, sets: sets as never, today: FIRST, workingSets: 3 }, after);
     expect(entries.length).toBe(sets.filter((s) => s.setType !== 'warmup').length);
     expect(entries.every((e) => e.planned.provenance?.earlierWork?.p === 0)).toBe(true);
+  });
+});
+
+describe('SF1 amended (Ben, 21 Nov): the target’s secondary muscles count at ½', () => {
+  it('3 × dumbbell shoulder press before bench: chest 1.5, front delts 1.5, triceps 0.75 → P 1.5 (a tie names the primary)', () => {
+    const by = earlierSetsByMuscle(AFTER_DBSP.earlier, musclesOf);
+    // Chest: the press's secondary (upper chest), bench's primary: 3 × ½.
+    expect(by.get('Chest')).toEqual({ direct: 0, secondary: 3 });
+    // Front delts: the press's primary, bench's secondary: 3 × 1, halved for bench below.
+    expect(by.get('Shoulders')).toEqual({ direct: 3, secondary: 0 });
+    // Triceps: secondary on both: 3 × ½, halved for bench below.
+    expect(by.get('Triceps')).toEqual({ direct: 0, secondary: 3 });
+    expect(earlierSetsP(musclesOf(BENCH), by)).toEqual({ p: 1.5, muscle: 'Chest', muscleRole: 'primary' });
+  });
+
+  it('Soares 2016: 1 set of triceps pushdowns before bench → P 0.5 (was 0), set by triceps as a secondary mover', () => {
+    expect(resolveContext(ctx([{ exerciseId: PUSHDOWN, sets: 1 }]), BENCH, musclesOf)).toEqual({ p: 0.5, sameMuscleSuperset: false, muscle: 'Triceps', muscleRole: 'secondary' });
+  });
+
+  it('secondary work outweighing the primary names the secondary: 4 pushdowns + 1 shoulder press → triceps 4 × ½ + ½ × ½ = 2.25 vs chest 0.5', () => {
+    const r = resolveContext(ctx([{ exerciseId: PUSHDOWN, sets: 4 }, { exerciseId: DBSP, sets: 1 }]), BENCH, musclesOf);
+    expect(r).toMatchObject({ p: 2.25, muscle: 'Triceps', muscleRole: 'secondary' });
+  });
+
+  it('a group that is both primary and secondary for the target counts once, as primary', () => {
+    const info: FatigueMuscles = { primaryMuscles: ['chest'], secondaryMuscles: ['upper_chest', 'triceps'] };
+    const by = earlierSetsByMuscle([{ exerciseId: BENCH, sets: 2 }], musclesOf);
+    expect(earlierSetsP(info, by)).toEqual({ p: 2, muscle: 'Chest', muscleRole: 'primary' });
+  });
+
+  it('exercises with no secondary muscles count only their primaries; cardio and no primaries stay unknown', () => {
+    expect(earlierSetsP({ primaryMuscles: ['triceps'] }, earlierSetsByMuscle(AFTER_DBSP.earlier, musclesOf))).toEqual({ p: 1.5, muscle: 'Triceps', muscleRole: 'primary' });
+    expect(earlierSetsP({ primaryMuscles: ['side_delts'] }, new Map())).toEqual({ p: 0, muscle: null, muscleRole: null });
+    expect(earlierSetsP({ primaryMuscles: [], secondaryMuscles: ['triceps'] }, new Map())).toBeNull();
+    expect(earlierSetsP({ primaryMuscles: ['quads'], measurement: 'cardio' }, new Map())).toBeNull();
+  });
+
+  it('SF2 / SF5: a pushdowns-first bench session is now its own context against a fresh one (P 2.5 vs 0 > 2)', () => {
+    const points = [
+      { sessionId: 'fresh', context: FIRST },
+      { sessionId: 'after-pushdowns', context: ctx([{ exerciseId: PUSHDOWN, sets: 5 }]) },
+    ];
+    expect([...otherContextSessions(points, BENCH, musclesOf)]).toEqual(['fresh']);
+  });
+
+  it('stored provenance from before 21 Nov (no muscleRole) still passes the schema and reads as before', () => {
+    const old = { p: 1.5, muscle: 'Chest', before: [], reference: null, basis: 'comparable' as const };
+    expect(TargetEarlierWorkSchema.parse(old)).toEqual(old);
+    expect(earlierWorkFact(old)).toBe('nothing before it shares its muscles · P 1.5 chest · no ref · SF3 no');
   });
 });

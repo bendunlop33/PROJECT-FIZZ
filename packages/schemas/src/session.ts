@@ -245,9 +245,13 @@ export type TargetStep = z.infer<typeof TargetStepSchema>;
  * same-muscle work, the reference used and whether SF3 changed the target. Muscles are groups (`muscleGroupOf`).
  */
 export const TargetEarlierWorkSchema = z.object({
-  /** SF1's P: earlier hard sets for this exercise's most-worked primary muscle (`muscle`; null when P is 0). */
+  /**
+   * SF1's P: earlier hard sets for this exercise's most-worked muscle (`muscle`; null when P is 0). Its secondary
+   * muscles count at ½ (amended 21 Nov); `muscleRole` says which kind set P (absent: stored before, primary).
+   */
   p: z.number().min(0).max(1000),
   muscle: z.string().min(1).max(60).nullable(),
+  muscleRole: z.enum(['primary', 'secondary']).optional(),
   /** Earlier exercises today sharing a muscle with this one, how they worked it (`direct` = their primary mover). */
   before: z
     .array(

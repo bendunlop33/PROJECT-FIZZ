@@ -505,8 +505,8 @@ export interface SessionExerciseView {
   superset?: string;
   /**
    * (SF7b, Ben 15 Nov) How in-session fatigue (SF1–SF3) read its next built-in target, from the target's provenance:
-   * the earlier exercises today sharing its muscles, P (its own primary muscles only), the reference and whether SF3
-   * changed it. Absent: the target isn't the rule's or SF didn't read it. For answers when Ben asks.
+   * the earlier exercises today sharing its muscles, P (its primary muscles in full, its secondary ones at ½, amended
+   * 21 Nov; `(secondary)` when one of those set it), the reference and whether SF3 changed it. Absent: the target isn't the rule's or SF didn't read it. For answers when Ben asks.
    */
   earlierToday?: string;
   sets: SessionSetView[];

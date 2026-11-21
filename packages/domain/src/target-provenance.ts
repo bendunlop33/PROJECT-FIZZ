@@ -195,6 +195,7 @@ export function earlierWorkProvenance(note: EarlierWorkNote, history: readonly H
   return {
     p: note.todayP,
     muscle: note.muscle,
+    ...(note.muscleRole !== null ? { muscleRole: note.muscleRole } : {}),
     before: note.before.slice(0, 12).map((b) => ({ name: b.name === null ? null : clip(b.name, 120), sets: b.sets, direct: b.direct.slice(0, 12), secondary: b.secondary.slice(0, 12) })),
     reference: ref === null ? null : { sessionId: ref.sessionId, performedAt: { utc: ref.performedAtUtc, tz }, p: ref.p, sameMuscleSuperset: ref.sameMuscleSuperset },
     basis: note.basis,

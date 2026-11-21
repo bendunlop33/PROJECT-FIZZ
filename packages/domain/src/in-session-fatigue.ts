@@ -9,7 +9,8 @@ import { toMs } from './time';
  * - **SF1** `earlierWorkOf` / `earlierSetsByMuscle` / `earlierSetsP`: the hard sets each muscle has already done in
  *   this workout before an exercise (1 per set where the muscle was a primary mover of the earlier exercise, ½ where it
  *   helped). Warm-ups, drop-set drops and cardio never count (SF9). P is the highest value across the exercise's own
- *   primary muscles; no catalogue muscles → P unknown.
+ *   primary muscles and, at ½ weight, its secondary muscles (amended 21 Nov, Ben approved); no catalogue muscles → P
+ *   unknown.
  * - **SF2** `pickLikeForLike`: a past exposure is comparable when its P is within 2 sets of today's and it is the same
  *   kind (same-muscle superset or not, SF8). Exposures with no known order (imports) are used only when no
  *   known-context exposure exists.
@@ -67,11 +68,16 @@ export interface WorkContext {
 export interface ResolvedContext {
   p: number | null;
   sameMuscleSuperset: boolean;
-  /** The primary muscle (group) behind P; null when P is 0 or unknown. */
+  /** The muscle (group) behind P; null when P is 0 or unknown. */
   muscle: string | null;
+  /** Whether `muscle` is one of this exercise's primary or secondary movers (SF1 as amended 21 Nov); null with `muscle`. */
+  muscleRole: MuscleRole | null;
 }
 
-export const UNKNOWN_CONTEXT: ResolvedContext = { p: null, sameMuscleSuperset: false, muscle: null };
+/** How the exercise itself works the muscle behind P: a primary mover (counts in full) or a secondary one (½). */
+export type MuscleRole = 'primary' | 'secondary';
+
+export const UNKNOWN_CONTEXT: ResolvedContext = { p: null, sameMuscleSuperset: false, muscle: null, muscleRole: null };
 
 const COUNTED: ReadonlySet<SetType> = new Set(['working', 'top', 'backoff']);
 
@@ -165,16 +171,29 @@ export function earlierSetsByMuscle(earlier: readonly EarlierWork[], musclesOf: 
   return out;
 }
 
-/** SF1: P for an exercise from the earlier sets by muscle: the highest `direct + ½ secondary` across its primary muscles. */
-export function earlierSetsP(info: FatigueMuscles | null | undefined, byMuscle: ReadonlyMap<string, MuscleSoFar>): { p: number; muscle: string | null } | null {
+/**
+ * SF1 (amended 21 Nov, Ben approved): P for an exercise from the earlier sets by muscle. Each muscle's count is
+ * `direct + ½ secondary`; the exercise's own secondary muscles count at ½ of that. P is the highest across its primary
+ * muscles and its (halved) secondary ones; on a tie a primary muscle names it. A muscle that is both (two muscles in
+ * one group) counts as primary.
+ */
+export function earlierSetsP(info: FatigueMuscles | null | undefined, byMuscle: ReadonlyMap<string, MuscleSoFar>): { p: number; muscle: string | null; muscleRole: MuscleRole | null } | null {
   if (info == null || info.measurement === 'cardio') return null;
   const primaries = [...new Set(info.primaryMuscles.map(groupOf))];
   if (primaries.length === 0) return null;
-  let best: { p: number; muscle: string | null } = { p: 0, muscle: null };
-  for (const m of primaries) {
+  const secondaries = [...new Set((info.secondaryMuscles ?? []).map(groupOf))].filter((m) => !primaries.includes(m));
+  const countOf = (m: string): number => {
     const x = byMuscle.get(m);
-    const p = x === undefined ? 0 : x.direct + x.secondary / 2;
-    if (p > best.p) best = { p, muscle: m };
+    return x === undefined ? 0 : x.direct + x.secondary / 2;
+  };
+  let best: { p: number; muscle: string | null; muscleRole: MuscleRole | null } = { p: 0, muscle: null, muscleRole: null };
+  for (const m of primaries) {
+    const p = countOf(m);
+    if (p > best.p) best = { p, muscle: m, muscleRole: 'primary' };
+  }
+  for (const m of secondaries) {
+    const p = countOf(m) / 2;
+    if (p > best.p) best = { p, muscle: m, muscleRole: 'secondary' };
   }
   return best;
 }
@@ -187,14 +206,14 @@ export function resolveContext(ctx: WorkContext | null | undefined, exerciseId: 
   if (pick === null) return UNKNOWN_CONTEXT;
   const own = new Set((info?.primaryMuscles ?? []).map(groupOf));
   const sameMuscleSuperset = ctx.supersetWith.some((id) => (musclesOf(id)?.primaryMuscles ?? []).some((m) => own.has(groupOf(m))));
-  return { p: pick.p, sameMuscleSuperset, muscle: pick.muscle };
+  return { p: pick.p, sameMuscleSuperset, muscle: pick.muscle, muscleRole: pick.muscleRole };
 }
 
 /**
  * SF7(b): one earlier exercise today that shares a muscle (group) with this one, primary or secondary on either side:
  * its hard sets and the shared muscles, split by how the earlier exercise worked them (`direct`: one of its primary
- * movers; `secondary`: it helped). Only `direct`/`secondary` hits on this exercise's own primary muscles count towards
- * P (SF1); the rest is shown so "was X factored in?" has a factual answer.
+ * movers; `secondary`: it helped). Hits on this exercise's own primary muscles count towards P in full, hits on its
+ * secondary muscles at ½ (SF1, amended 21 Nov).
  */
 export interface EarlierOverlap {
   name: string | null;
