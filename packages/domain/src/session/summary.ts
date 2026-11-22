@@ -12,7 +12,8 @@ import { lastComparableSession } from './active-view';
 import { summaryHighlight } from '../touches';
 import { equipmentOfRow } from './equipment-snapshot';
 import { gymRouteIds, nextTargetBlocks, nextTargetsForBlock, partRootOf, secondaryMainLifts } from './gym-switch';
-import { sessionRecords } from './records';
+import { sessionRecordItems, type SessionRecordItem } from './records';
+import { vsLastTime, workoutVolume, type VsLastRow, type WorkoutVolume } from './summary-v2';
 import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
 import { isPastLog, latestHappenedMs } from './time-shift';
@@ -187,6 +188,12 @@ export interface WorkoutSummary {
   highlight: string | null;
   /** Heaviest-set lines (premium-feel §5.1), one per exercise at most; shown in the Comparison region. */
   records: string[];
+  /** (Ben, 22 Nov; Summary v2) The same records as values, for Highlights (`Heaviest yet · 80 kg × 12`). */
+  recordItems: SessionRecordItem[];
+  /** (Ben, 22 Nov; Summary v2) Load × reps of the loaded working sets (`workoutVolume`). */
+  volume: WorkoutVolume;
+  /** (Ben, 22 Nov; Summary v2) Each exercise's best set against last time (`vsLastTime`); none for an import. */
+  vsLast: VsLastRow[];
   /** Bounds for `Edit times` (`update_session_timing`). */
   timingBounds: { startLatestUtc: string; endEarliestUtc: string; endLatestUtc: string };
   /** (Ben, 25 Oct) The times a move of the whole workout is measured from (`summaryTimeline`): the last set and the latest time that has happened. */
@@ -493,6 +500,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     });
   }
 
+  const recordItems = workingSets === 0 || imported ? [] : sessionRecordItems({ aggregate: state, gymName: input.gymName, ...(input.gymNames ? { gymNames: input.gymNames } : {}), history });
   const ci = input.checkIn && input.checkIn.deletedAtUtc === undefined ? input.checkIn : null;
   const lastDone = completed.map((x) => x.completedAt?.utc ?? '').filter((u) => u !== '').sort().at(-1) ?? null;
   const firstDone = completed.map((x) => x.completedAt?.utc ?? '').filter((u) => u !== '').sort()[0] ?? null;
@@ -534,7 +542,10 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
         : { sourceTag: BUILT_IN_SOURCE_TAG[input.coach], rows, emptyText: rows.length === 0 ? 'Same targets next time' : null },
     empty: workingSets === 0,
     highlight: workingSets === 0 || imported ? null : summaryHighlight(state, history),
-    records: workingSets === 0 || imported ? [] : sessionRecords({ aggregate: state, gymName: input.gymName, ...(input.gymNames ? { gymNames: input.gymNames } : {}), history }),
+    records: recordItems.map((r) => r.text),
+    recordItems,
+    volume: workoutVolume(state),
+    vsLast: workingSets === 0 || imported ? [] : vsLastTime({ aggregate: state, history }),
     timingBounds: {
       startLatestUtc: firstDone ?? (s.endedAt?.utc ?? nowIso),
       endEarliestUtc: lastDone ?? s.startedAt.utc,

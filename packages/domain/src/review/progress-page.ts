@@ -801,6 +801,8 @@ export interface NewBestView {
   /** (Ben, 27 Oct; redesign §E2) The Summary's New best card: the lift's name and the set with its unit (`82.5 kg × 6`). */
   name?: string;
   set?: string;
+  /** (Ben, 22 Nov) The tracked reps the best is at: the Summary's `Best for 8 reps`. */
+  reps?: number;
   /** The best it beat (`80 × 6`) and when (that workout's start, ms); absent where no earlier set is named. */
   last?: { set: string; atMs: number };
 }
@@ -874,6 +876,7 @@ function newBestView(exerciseId: string, name: string, load: number, reps: numbe
     accessibilityLabel: plain(`New best: ${name}, ${nf(load)} ${liftUnitText(unit, convention)} for ${String(reps)} reps`),
     name,
     set: `${nf(load)}${NBSP}${liftUnitText(unit, convention)}${NBSP}×${NBSP}${String(reps)}`,
+    reps,
     ...(last === undefined ? {} : { last }),
   };
 }

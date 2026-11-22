@@ -5,6 +5,7 @@ import { toMs } from '../time';
 import { isSetCountable } from '../exclusions';
 import { convertMass } from '../units';
 import { equipmentOfRow } from './equipment-snapshot';
+import { isPlatesAddedKind } from '../plates-added';
 
 /**
  * The heaviest-set line (premium-feel §5.1), the app's only "PR". Pure.
@@ -90,18 +91,40 @@ export function findSetRecord(input: SetRecordInput): SetRecord | null {
  * (each judged as it was logged, against earlier sets that day too). Only history from before this workout started counts,
  * so an old Summary says what was true then. None for an imported workout.
  */
-export function sessionRecords(input: {
+export function sessionRecords(input: SessionRecordsInput): string[] {
+  return sessionRecordItems(input).map((r) => r.text);
+}
+
+export interface SessionRecordsInput {
   aggregate: SessionAggregate;
   gymName: string | null;
   /** Gym names by ID: a part of a workout done at another gym (gym switch) names its own gym. */
   gymNames?: Readonly<Record<string, string>>;
   /** Finished sessions by exercise ID (this workout is filtered out here). */
   history: Readonly<Record<string, readonly HistorySession[]>>;
-}): string[] {
+}
+
+/** (Ben, 22 Nov) One exercise's record in a workout, as values: the Summary's `Heaviest yet · 80 kg × 12` highlight. */
+export interface SessionRecordItem {
+  exerciseId: string;
+  sessionExerciseId: string;
+  name: string;
+  kind: SetRecord['kind'];
+  /** The record line (`Heaviest bench press set at Main Gym so far`). */
+  text: string;
+  load: Load;
+  reps: number;
+  convention: LoadConvention;
+  /** An `added` load on a plate-loaded machine: the plates. */
+  plates: boolean;
+}
+
+/** `sessionRecords` as values, one per exercise at most, in exercise order. */
+export function sessionRecordItems(input: SessionRecordsInput): SessionRecordItem[] {
   const { aggregate: state } = input;
   if (state.session.source === 'import') return [];
   const startedMs = toMs(state.session.startedAt.utc);
-  const out: string[] = [];
+  const out: SessionRecordItem[] = [];
   for (const ex of [...state.exercises].sort((a, b) => a.order - b.order)) {
     const done = state.sets
       .filter((s) => s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null && s.completedAt !== null)
@@ -112,8 +135,8 @@ export function sessionRecords(input: {
     // Records are per equipment item, so a part at another gym (gym-switch GS6) names that gym.
     const partGym = equipment !== null && (state.session.gymChanges?.length ?? 0) > 0 ? (input.gymNames?.[equipment.gymId] ?? null) : null;
     const earlierToday: HistorySet[] = [];
-    let heaviest: SetRecord | null = null;
-    let mostReps: SetRecord | null = null;
+    let heaviest: { rec: SetRecord; load: Load; reps: number } | null = null;
+    let mostReps: { rec: SetRecord; load: Load; reps: number } | null = null;
     for (const s of done) {
       const actual = s.actual;
       if (actual === null) continue;
@@ -128,12 +151,17 @@ export function sessionRecords(input: {
         earlierToday,
         history,
       });
-      if (rec?.kind === 'heaviest') heaviest = rec;
-      else if (rec !== null) mostReps = rec;
+      // A record always has a load and reps (`findSetRecord`).
+      if (rec !== null && actual.load !== null && actual.reps !== null) {
+        if (rec.kind === 'heaviest') heaviest = { rec, load: actual.load, reps: actual.reps };
+        else mostReps = { rec, load: actual.load, reps: actual.reps };
+      }
       earlierToday.push({ setType: s.setType, side: s.side, load: actual.load, reps: actual.reps, rpe: null, rir: null, ...(s.exclusions ? { exclusions: s.exclusions } : {}) });
     }
     const shown = heaviest ?? mostReps;
-    if (shown !== null) out.push(shown.text);
+    if (shown !== null) {
+      out.push({ exerciseId: ex.exerciseId, sessionExerciseId: ex.id, name: ex.exerciseName, kind: shown.rec.kind, text: shown.rec.text, load: shown.load, reps: shown.reps, convention: ex.loadConvention, plates: isPlatesAddedKind(equipment?.kind) });
+    }
   }
   return out;
 }
