@@ -102,8 +102,8 @@ describe('Progress v3 screens', () => {
   it('Summary lists new PBs (`New best · Bench 100 × 6`), from the service, local only', () => {
     const summary = read('screens', 'workout', 'SummaryScreen.tsx');
     expect(summary).toContain('s.reviews.sessionBests(sessionId).catch(() => [])');
-    // (Ben, 27 Oct; redesign §E2) The New best card reads each best with the one it beat.
-    expect(summary).toContain('accessibilityLabel={[b.accessibilityLabel, last]');
+    // (Ben, 22 Nov; Summary v2) New bests lead the Highlights card (green ring), from the same service.
+    expect(summary).toContain('summaryHighlights({ order: sum.exercises, bests: data.value.newBests');
   });
 
   it('changes: small ones Undo / Redo, offers Apply / Skip with their scope (D2); one op ID per tap; Got it is versioned', () => {
@@ -127,10 +127,9 @@ describe('Progress v3 screens', () => {
     expect(section).toContain('right={view.right}');
   });
 
-  it('the Summary a chip opens shows `n of m planned reps` and what was short or skipped (review progress-v3-design S2)', () => {
+  it('the Summary shows what was short or skipped (review progress-v3-design S2; Summary v2 22 Nov: Highlights, amber ring)', () => {
     const summary = read('screens', 'workout', 'SummaryScreen.tsx');
-    expect(summary).toContain('pvd.reps.text');
-    expect(summary).toContain('pvd.reps.short');
+    expect(summary).toContain('plan: pvd?.rows ?? null');
   });
 
   it('the `at this rate` estimate is always labelled `est.`; minimal copy (no rule labels)', () => {

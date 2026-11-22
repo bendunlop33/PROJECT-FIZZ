@@ -56,7 +56,7 @@ describe('Summary', () => {
     const sessionId = await startPlanDay(h, ben);
     await finishWorkout(h, ben.s, sessionId);
     const dayName = (await ben.s.workout.load(sessionId))?.aggregate.session.routineName ?? 'no day';
-    const r = await renderScreen(h, ben.launched, SummaryScreen, { name: 'Summary', params: { sessionId, justFinished: true } }, (t) => t.includes(dayName) && t.includes('Exercises'));
+    const r = await renderScreen(h, ben.launched, SummaryScreen, { name: 'Summary', params: { sessionId, justFinished: true } }, (t) => t.includes(dayName) && t.includes('How did it feel'));
     expect(r.firstText).not.toContain(dayName);
     expectHealthy(r);
     await r.unmount();
