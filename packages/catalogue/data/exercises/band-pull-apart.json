@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "key": "band-pull-apart",
+  "tier": "rich",
+  "name": "Band pull-apart",
+  "aliases": ["Band pull apart", "Band pull-aparts", "Banded pull-apart", "Resistance band pull-apart", "Pull-aparts"],
+  "family": "rear_delt_fly",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["rear_delts", "upper_back"],
+  "secondaryMuscles": ["traps", "rotator_cuff"],
+  "compatibleEquipment": ["band"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Hold a long band in front at shoulder height",
+      "Hands about shoulder width, palms down",
+      "Arms straight with a soft elbow bend",
+      "Stand tall, ribs down"
+    ],
+    "execution": [
+      "Pull the band apart by moving your hands out",
+      "Squeeze your shoulder blades together",
+      "Bring the band toward your chest",
+      "Return slowly; keep a little tension"
+    ],
+    "faults": [
+      "Don't shrug your shoulders",
+      "Don't arch your lower back",
+      "Don't let the band snap back"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Check the band for nicks or tears before use; a snapping band can hit your face.",
+      "No load is logged. Make it harder with a stronger band or a narrower grip, and note which band you used.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Lighter band or wider grip", "reason": "Less band stretch makes each rep easier." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Stronger band or narrower grip", "reason": "More band stretch for the same movement." },
+      { "key": null, "name": "Pause at the chest", "reason": "A one- or two-second squeeze adds work without a new band." }
+    ],
+    "substitutions": [
+      { "key": "cable-rear-delt-fly", "name": "Cable rear-delt fly", "reason": "Same arc with stack loading you can log." },
+      { "key": "cable-face-pull", "name": "Face pull", "reason": "Rear delts and upper back on a rope." },
+      { "key": "machine-reverse-pec-deck", "name": "Reverse pec deck", "reason": "Same movement seated on a machine." },
+      { "key": "dumbbell-rear-delt-fly", "name": "Dumbbell rear-delt fly", "reason": "Bent over with dumbbells." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at chest height, figure facing the camera holding a long flat band. The band's stretch and the hands moving out to the sides read clearly from the front.",
+    "keyPositions": [
+      {
+        "label": "Together",
+        "describe": "Standing tall, arms straight out in front at shoulder height, hands about shoulder width on the band, palms down, band lightly taut.",
+        "approxAnglesDeg": { "shoulderHorizontalAbduction": 0, "elbowFlexion": 10 }
+      },
+      {
+        "label": "Apart",
+        "describe": "Arms swept out to the sides like a T, band stretched across the chest, shoulder blades squeezed. Shoulders down; lower back not arched.",
+        "approxAnglesDeg": { "shoulderHorizontalAbduction": 85, "elbowFlexion": 10 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the band; band stays a straight line between them", "Torso and feet fixed"],
+    "tempo": { "downMs": 1500, "holdMs": 600, "upMs": 900 },
+    "props": ["long_band"],
+    "emphasise": [
+      "Hands move straight out to the sides",
+      "Shoulder blades squeeze at the end",
+      "Slow return with tension kept"
+    ],
+    "doNotShow": ["Shoulders shrugged", "Lower back arching", "Band snapping back"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/band-pull-apart/",
+      "title": "StrengthLog: Band Pull-Apart",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (rear delts); secondaryMuscles (traps); cues.setup[0]; cues.execution[0,3]; safety.notes[1] (band strength and grip width set the load)"
+    },
+    {
+      "url": "https://www.physitrack.com/exercise-library/how-to-perform-the-band-pull-aparts",
+      "title": "Physitrack: Step-by-step guide to band pull-aparts",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1]; cues.faults[0] (shoulders down and back, no shrug)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "StrengthLog also lists the rotator cuff as primary. It is listed as secondary here (vocabulary word added 23 Oct 2026, expansion research Q1): the rear delts and upper back do the visible work."
+    },
+    {
+      "field": "defaultLoadConvention",
+      "note": "Band tension isn't a weight, so nothing is logged (bodyweight convention, value 0), as with the band pushdown. Band colour or strength would need its own field; none exists yet."
+    },
+    {
+      "field": "guideBrief.tempo",
+      "note": "upMs is the pull apart, downMs the return. Angles are approximate drawing targets."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

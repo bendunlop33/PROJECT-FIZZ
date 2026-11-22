@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-diamond-push-up",
+  "tier": "basic",
+  "name": "Diamond push-up",
+  "aliases": ["Diamond press-up", "Close-grip push-up", "Close-grip press-up", "Triangle push-up", "Diamond pushup"],
+  "family": "push_up",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["triceps", "chest"],
+  "secondaryMuscles": ["front_delts", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-side-bend",
+  "tier": "rich",
+  "name": "Cable side bend",
+  "aliases": ["Cable side bends", "Standing cable side bend", "Cable oblique side bend", "Cable lateral flexion"],
+  "family": "side_bend",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["obliques"],
+  "secondaryMuscles": ["core"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "D-handle on the low pulley",
+      "Stand side-on, a step away from the stack",
+      "Handle in the near hand, arm long"
+    ],
+    "execution": [
+      "Bend sideways away from the cable",
+      "Keep your chest facing forward",
+      "Lean back toward the cable for a stretch",
+      "Finish one side, then turn round"
+    ],
+    "faults": [
+      "Don't lean forward or back",
+      "Don't twist your chest round",
+      "Don't go heavy and jerk the handle"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a moderate weight and a range you can control; there is no need to bend to the extreme each way.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Hold the trunk still against gravity before loading a bend." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Cable side bend with a pause", "reason": "A short hold at the top adds difficulty without more weight." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-side-bend", "name": "Dumbbell side bend", "reason": "Same movement with a dumbbell; load is that dumbbell." },
+      { "key": "bodyweight-side-plank-hip-dip", "name": "Side plank hip dip", "reason": "Side-bending against bodyweight; no equipment." },
+      { "key": "farmers-carry", "name": "Farmer's carry", "reason": "The obliques resist leaning while you walk." },
+      { "key": "cable-woodchop", "name": "Cable woodchop", "reason": "Obliques on the same cable column, with rotation." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at waist height, figure facing the camera with the cable column to one side. The cable line from the low pulley to the hand stays visible.",
+    "keyPositions": [
+      {
+        "label": "Stretch",
+        "describe": "Standing tall side-on to the column, feet hip width. Near arm long holding the handle at the side of the thigh. Trunk bent a little toward the cable.",
+        "approxAnglesDeg": { "trunkSideBend": -15 }
+      },
+      {
+        "label": "Top",
+        "describe": "Trunk bent sideways away from the cable, near arm still long, handle risen up the outside of the thigh. Chest still facing forward, hips level over the feet.",
+        "approxAnglesDeg": { "trunkSideBend": 20 }
+      }
+    ],
+    "ikHints": ["Feet fixed", "Hand fixed to the handle; cable runs straight to the low pulley"],
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 1000 },
+    "props": ["cable_low_anchor", "d_handle"],
+    "emphasise": [
+      "Pure side bend; chest stays facing forward",
+      "Working side is the side away from the cable",
+      "Controlled return to the stretch"
+    ],
+    "doNotShow": ["Forward lean", "Twisting toward the cable", "Bending far past a comfortable range"]
+  },
+  "sources": [
+    {
+      "url": "https://fitnessvolt.com/cable-side-bend/",
+      "title": "Fitness Volt: Cable Side Bend",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0,2]; cues.faults[0,2]; safety.notes[0]; emphasise[1] (working side opposite the handle)"
+    },
+    {
+      "url": "https://www.liftosaur.com/exercises/cable-side-bend",
+      "title": "Liftosaur: Cable Side Bend",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1]; cues.faults[1] (avoid twisting)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

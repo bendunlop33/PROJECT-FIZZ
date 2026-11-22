@@ -1,0 +1,114 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { BuilderWorkoutScreen } from '../../src/screens/builder/BuilderWorkoutScreen';
+import { TodayScreen } from '../../src/screens/TodayScreen';
+import type { Harness } from '../harness';
+import { expectHealthy, renderScreen } from './render-screen';
+import { benWithHistory, doPlanDay, harness, startPlanDay, todayData, withPlan } from './seed';
+
+/**
+ * Today in its three plan states, and Your workout opened from its Edit, rendered over real SQLite (ADR 0037):
+ * the first frame (nothing until the local read) and the loaded one, with no React warning on the way.
+ */
+
+let h: Harness;
+beforeEach(() => {
+  h = harness();
+});
+afterEach(async () => {
+  await h.cleanup();
+});
+
+describe('Today', () => {
+  it('a plan day: Up next with Start', async () => {
+    const ben = await benWithHistory(h);
+    await withPlan(h, ben);
+    // (Ben, 31 Oct) Up next is the least recently trained type of the days left (not always day 1).
+    const data = await todayData(ben.s);
+    const day = data.days.find((d) => d.key === data.nextKey)?.name ?? 'no day';
+    const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Up next') && t.includes(day));
+    expect(r.text()).toContain('Start Plan Workout');
+    expectHealthy(r);
+    await r.unmount();
+  });
+
+  it('a rest day on a Set days plan (Tue, Thu, Sat on a Monday): Rest day and the next day', async () => {
+    const ben = await benWithHistory(h);
+    await withPlan(h, ben, { sessions: 3, split: null, schedule: 'set', days: [1, 3, 5] });
+    const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Rest day'));
+    expect(r.text()).toContain('· Tue');
+    expectHealthy(r);
+    await r.unmount();
+  });
+
+  it('(Ben, 28 Oct) the plan days left this week show as planned rings on the coming tiles, never on a past day', async () => {
+    const ben = await benWithHistory(h);
+    // An Any days 4-day plan applied Monday: Up next today, the other three one a day from Tuesday in plan order.
+    // (Ben, 31 Oct) Up next is Lower A: the history's full-body workouts were mostly upper, so lower was trained longest ago.
+    await withPlan(h, ben);
+    const data = await todayData(ben.s);
+    expect(data.days.find((d) => d.key === data.nextKey)?.name).toBe('Lower A');
+    const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Up next'));
+    const labels = r.all((n) => n.props.accessibilityRole === 'button' && typeof n.props.accessibilityLabel === 'string' && /^(Today, )?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) \d+(: .*)?$/.test(n.props.accessibilityLabel)).map((n) => n.props.accessibilityLabel as string);
+    const tiles = [...new Set(labels)];
+    expect(tiles).toHaveLength(7);
+    expect(tiles[0]).toMatch(/^Today, Monday 19: .+, today's workout$/);
+    expect(tiles.slice(1, 4)).toEqual(['Tuesday 20: Upper A, Planned', 'Wednesday 21: Upper B, Planned', 'Thursday 22: Lower B, Planned']);
+    for (const t of tiles.slice(4)) expect(t).not.toContain('Planned');
+    // Drawn as 7 pt empty rings (transparent, 1.5 pt outline): today's and the three coming days'.
+    const rings = r.all((n) => {
+      const st = n.props.style as { width?: number; borderWidth?: number; backgroundColor?: string } | undefined;
+      return st?.width === 7 && st.borderWidth === 1.5 && st.backgroundColor === 'transparent';
+    });
+    expect(rings).toHaveLength(4);
+    expectHealthy(r);
+    await r.unmount();
+  });
+
+  it('(Ben, 28 Oct) a workout open (Resume): the week still shows, today ringed and the Set days still to come planned', async () => {
+    const ben = await benWithHistory(h);
+    // Set days Mon, Tue, Thu, Fri; Monday's plan day started.
+    await withPlan(h, ben, { sessions: 4, schedule: 'set', days: [0, 1, 3, 4] });
+    await startPlanDay(h, ben);
+    const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Resume') && t.includes('This week'));
+    const labels = r.all((n) => n.props.accessibilityRole === 'button' && typeof n.props.accessibilityLabel === 'string' && /^(Today, )?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) \d+(: .*)?$/.test(n.props.accessibilityLabel)).map((n) => n.props.accessibilityLabel as string);
+    const tiles = [...new Set(labels)];
+    expect(tiles).toHaveLength(7);
+    expect(tiles[0]).toMatch(/^Today, Monday 19: .+, today's workout$/);
+    expect(tiles[1]).toMatch(/^Tuesday 20: .+, Planned$/);
+    expect(tiles[2]).toBe('Wednesday 21');
+    expect(tiles[3]).toMatch(/^Thursday 22: .+, Planned$/);
+    expect(tiles[4]).toMatch(/^Friday 23: .+, Planned$/);
+    expect(r.text()).toContain('Plan week 1 of');
+    expectHealthy(r);
+    await r.unmount();
+  });
+
+  it('done for today: the workout with its Summary link', async () => {
+    const ben = await benWithHistory(h);
+    await withPlan(h, ben);
+    await doPlanDay(h, ben);
+    const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Summary ›'));
+    expect(r.text()).not.toContain('Up next');
+    expectHealthy(r);
+    await r.unmount();
+  });
+});
+
+describe('Your workout', () => {
+  it('opened from Today’s Edit: the plan day’s exercises, Time and Start', async () => {
+    const ben = await benWithHistory(h);
+    await withPlan(h, ben);
+    const data = await todayData(ben.s);
+    const key = data.nextKey;
+    const controls = key === null ? undefined : data.initial[key];
+    if (key === null || controls === undefined) throw new Error('no plan day');
+    const c = await ben.s.todaySession.commit(data, { dayKey: key, controls }, h.ids());
+    if (!c.ok) throw new Error(c.message);
+    const day = data.days.find((d) => d.key === key)?.name ?? 'no day';
+    const r = await renderScreen(h, ben.launched, BuilderWorkoutScreen, { name: 'BuilderWorkout', params: { draftId: c.draftId, back: 'Today' } }, (t) => t.includes(day) && t.includes('＋ Add exercise'));
+    expect(r.text()).toContain('Start');
+    expectHealthy(r);
+    await r.unmount();
+  });
+});

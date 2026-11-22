@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>GymSmarter · Progress v1.0</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Direction D (Premium), dark. Values from apps/mobile/src/theme/tokens.ts PREMIUM_DIRECTION + STATUS_DARK. No new colour values. SF only.
+   Chart aliases (design-system §2.1): line/point = text.primary, grid = border.divider, axis text = text.secondary, bar = text.secondary, track = bg.raised. */
+:root{
+  --bg-canvas:#0D0C0B; --bg-surface:#181615; --bg-raised:#23201E;
+  --border-divider:#302C29; --border-control:#75706A;
+  --text-primary:#F3EEE8; --text-secondary:#B5ADA5; --text-tertiary:#948C84;
+  --accent:#EDE5DA; --accent-subtle:#2B2724; --on-accent:#0D0C0B;
+  --status-warning:#F2B84B;
+  --radius-sm:8px; --radius-md:14px; --radius-lg:20px; --radius-pill:999px;
+  --margin:20px;
+  --sf:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#2a2725;font-family:var(--sf);color:var(--text-primary);padding:40px 24px 64px;-webkit-font-smoothing:antialiased}
+h1.page{font:600 20px/1.3 var(--sf);color:#e9e3dc;margin:0 auto 6px;max-width:1760px}
+p.lede{font:400 15px/1.45 var(--sf);color:#bdb5ad;margin:0 auto 32px;max-width:1760px}
+p.lede code,.notes code{color:#e9e3dc}
+.frames{display:flex;gap:48px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+.frame-wrap{width:390px}
+.frame-title{font:600 13px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:#cfc7bf;margin-bottom:12px;min-height:32px}
+.notes{margin-top:14px;font:400 13px/1.5 var(--sf);color:#bdb5ad}
+.notes p{margin-bottom:6px}
+
+.phone{position:relative;width:390px;height:844px;background:var(--bg-canvas);border-radius:48px;overflow:hidden;
+  box-shadow:0 0 0 10px #050505,0 0 0 11px #3a3633,0 30px 80px rgba(0,0,0,.55)}
+.num{font-variant-numeric:tabular-nums}
+.label{font:600 12px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-tertiary)}
+
+.sb{height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 34px 8px 40px;font:600 17px/22px var(--sf);font-variant-numeric:tabular-nums}
+.sb .island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000}
+
+.body{position:absolute;top:54px;left:0;right:0;bottom:83px;overflow:hidden;padding:0 var(--margin)}
+.bigtitle{font:600 34px/41px var(--sf);letter-spacing:-0.6px;margin-top:6px}
+.navbar{height:44px;display:flex;align-items:center;justify-content:space-between;margin:0 -8px}
+.navbar .back{display:flex;align-items:center;gap:4px;height:44px;padding:0 8px;font:400 17px/22px var(--sf);color:var(--text-primary)}
+.navbar .ttl{font:600 17px/22px var(--sf);position:absolute;left:50%;transform:translateX(-50%)}
+.navbar .spacer{width:44px}
+
+.seg{display:flex;height:44px;border-radius:var(--radius-pill);border:1px solid var(--border-control);padding:3px;margin-top:12px}
+.seg div{flex:1;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-pill);font:500 15px/20px var(--sf);color:var(--text-secondary);white-space:nowrap}
+.seg div.on{background:var(--accent-subtle);color:var(--text-primary);box-shadow:inset 0 0 0 2px var(--accent)}
+.seg.sm div{font-size:15px}
+.dates{font:400 16px/22px var(--sf);color:var(--text-secondary);margin-top:8px}
+
+.card{display:block;margin-top:14px;background:var(--bg-surface);border-radius:var(--radius-lg);padding:4px 16px 14px;position:relative}
+.card .chev{position:absolute;right:14px;top:16px}
+.stats{display:grid;grid-template-columns:0.8fr 1.35fr 1fr;border-bottom:1px solid var(--border-divider)}
+.stat{padding:10px 0 10px}
+.stat + .stat{padding-left:12px;border-left:1px solid var(--border-divider)}
+.stat .v{font:300 30px/34px var(--sf);letter-spacing:-0.6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .v small{font:400 15px/20px var(--sf);color:var(--text-secondary);letter-spacing:0;margin:0 3px 0 2px}
+.stat .v .ap{color:var(--text-secondary);margin-right:1px}
+.stat .label{margin-top:3px}
+.cmp{font:400 16px/22px var(--sf);color:var(--text-secondary);margin-top:8px}
+.foot{display:flex;align-items:center;gap:6px;min-height:44px;font:400 16px/22px var(--sf);color:var(--text-secondary)}
+.foot u{text-underline-offset:3px}
+
+.sechead{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
+.sechead .l{display:flex;align-items:center;gap:6px}
+.colheads{display:grid;grid-template-columns:1fr 74px 52px;margin-top:12px;padding-bottom:4px}
+.colheads.three{grid-template-columns:1fr 70px 46px 70px}
+.colheads span{text-align:right}
+.frow{display:grid;grid-template-columns:1fr 74px 52px;align-items:center;min-height:46px;border-top:1px solid var(--border-divider);padding:6px 0}
+.frow.three{grid-template-columns:1fr 70px 46px 70px}
+.frow .nm{font:400 17px/22px var(--sf)}
+.frow .n{font:400 17px/22px var(--sf);text-align:right;font-variant-numeric:tabular-nums}
+.frow.zero .n,.frow.zero .nm{color:var(--text-tertiary)}
+.track{height:6px;border-radius:3px;background:var(--bg-raised);margin-top:6px;max-width:190px}
+.track i{display:block;height:6px;border-radius:3px;background:var(--text-secondary)}
+.frow .chv{position:absolute;right:0}
+.contrib{grid-column:1 / -1;margin-top:6px}
+.contrib div{display:flex;justify-content:space-between;font:400 16px/24px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.contrib .last{color:var(--text-secondary);margin-bottom:2px}
+
+.rec{border-top:1px solid var(--border-divider);padding:10px 0;display:grid;grid-template-columns:1fr auto;align-items:center;min-height:60px}
+.rec .t{font:600 17px/22px var(--sf)}
+.rec .d{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums;margin-top:2px}
+.linkrow{border-top:1px solid var(--border-divider);border-bottom:1px solid var(--border-divider);min-height:52px;display:flex;align-items:center;justify-content:space-between;font:600 17px/22px var(--sf);margin-top:14px}
+
+.pillbtn{height:36px;padding:0 14px;border:1px solid var(--border-control);border-radius:var(--radius-pill);display:inline-flex;align-items:center;gap:6px;font:500 16px/20px var(--sf);white-space:nowrap}
+.chips{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.chip{height:36px;padding:0 14px;border:1px solid var(--border-control);border-radius:var(--radius-pill);display:flex;align-items:center;font:500 15px/20px var(--sf);color:var(--text-secondary);white-space:nowrap}
+.chip.on{background:var(--accent-subtle);color:var(--text-primary);border:2px solid var(--accent)}
+.chartcap{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
+.kv{display:grid;grid-template-columns:72px 1fr;row-gap:2px;font:400 16px/22px var(--sf);font-variant-numeric:tabular-nums;margin-top:2px}
+.kv dt{font:600 12px/22px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-tertiary)}
+.kv dd .s{color:var(--text-secondary)}
+.ulink{font:500 16px/22px var(--sf);text-decoration:underline;text-underline-offset:3px;display:inline-flex;align-items:center;min-height:44px}
+.rt{width:100%;border-collapse:collapse;margin-top:6px;font:400 17px/22px var(--sf);font-variant-numeric:tabular-nums}
+.rt th{font:600 12px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-tertiary);text-align:left;padding:4px 0 6px}
+.rt td{border-top:1px solid var(--border-divider);height:44px}
+.rt td.r,.rt th.r{text-align:right}
+.rt td.dt{color:var(--text-secondary);text-align:right}
+
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:83px;background:rgba(24,22,21,.96);border-top:1px solid var(--border-divider);display:flex;justify-content:space-around;padding-top:7px;z-index:5}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;font:500 10px/12px var(--sf);color:var(--text-tertiary);width:80px}
+.tab.on{color:var(--text-primary)}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--text-primary);opacity:.9;z-index:6}
+.ask{position:absolute;right:20px;bottom:97px;height:44px;padding:0 16px;border-radius:var(--radius-pill);background:var(--bg-raised);border:1px solid var(--border-control);display:flex;align-items:center;gap:6px;font:500 16px/20px var(--sf);z-index:4}
+
+.empty{margin-top:28px;background:var(--bg-surface);border-radius:var(--radius-lg);padding:22px 18px 18px}
+.empty h2{font:600 22px/28px var(--sf)}
+.empty p{font:400 17px/24px var(--sf);color:var(--text-secondary);margin-top:8px}
+.primary{margin-top:20px;height:56px;border-radius:var(--radius-pill);background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font:600 17px/22px var(--sf)}
+.secondary{margin-top:10px;height:52px;border-radius:var(--radius-pill);border:1px solid var(--border-control);display:flex;align-items:center;justify-content:center;font:500 17px/22px var(--sf)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="info" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 6.2v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="4" r=".85" fill="currentColor"/></symbol>
+    <symbol id="chevr" viewBox="0 0 8 14"><path d="M1.5 1.5L6.5 7l-5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="chevd" viewBox="0 0 14 8"><path d="M1.5 1.5L7 6.5l5.5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="back" viewBox="0 0 12 20"><path d="M10 2L2 10l8 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="caret" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="bubble" viewBox="0 0 14 13"><path d="M2 1.5h10a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 12 9.5H6L3 12V9.5H2A1.5 1.5 0 0 1 .5 8V3A1.5 1.5 0 0 1 2 1.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+    <symbol id="up" viewBox="0 0 9 11"><path d="M4.5 10V1.5M1 5l3.5-3.5L8 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="sig" viewBox="0 0 44 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="#F3EEE8"/><rect x="5" y="5" width="3" height="7" rx="1" fill="#F3EEE8"/><rect x="10" y="2.5" width="3" height="9.5" rx="1" fill="#F3EEE8"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#F3EEE8"/><rect x="18.5" y=".5" width="22" height="11" rx="3" fill="none" stroke="#F3EEE8" opacity=".5"/><rect x="20" y="2" width="16" height="8" rx="2" fill="#F3EEE8"/></symbol>
+    <symbol id="t-today" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="t-prog" viewBox="0 0 24 24"><path d="M4 20V13M10 20V7M16 20v-9M22 20H2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="t-prof" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 21c1.2-4 4.4-6 8-6s6.8 2 8 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<h1 class="page">Progress v1.0 · Direction D dark</h1>
+<p class="lede">Ben's four asks: sessions over 7/14/30/60 days, time in gym, muscle frequency (body parts or push/pull/legs) and exercise progress (Est. 1RM, best reps at each weight, records). 390 × 844. Spec: <code>docs/design/progress.md</code> v1.0. Tokens: <code>design-system.md</code> §2.1, §4.1, §9.65, §9.69–9.73. Every number is from the logs; estimates carry ≈ and Est.</p>
+
+<div class="frames">
+
+<!-- ===================== FRAME 1: HOME ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">1 · Home · 30 days · body parts (slice A)</div>
+  <div class="phone">
+    <div class="sb"><span>18:40</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="body">
+      <div class="bigtitle">Progress</div>
+      <div class="seg" role="tablist" aria-label="Progress view"><div class="on">Overview</div><div>Calendar</div></div>
+      <div class="seg sm" role="radiogroup" aria-label="Window"><div>7 days</div><div>14 days</div><div class="on">30 days</div><div>60 days</div></div>
+      <div class="dates num">12 Sep – 11 Oct</div>
+
+      <a class="card" aria-label="9 sessions. Time in gym 6 hours 39 minutes. Average 57 minutes per session. Sessions per week: from 12 September 1, 14 September 2, 21 September 2, 28 September 2, 5 October 2. Previous 30 days 7 sessions, 6 hours 50 minutes. Opens calendar.">
+        <span class="chev" style="color:#948C84"><svg width="8" height="14"><use href="#chevr"/></svg></span>
+        <div class="stats">
+          <div class="stat"><div class="v">9</div><div class="label">Sessions</div></div>
+          <div class="stat"><div class="v">6<small>h</small>39<small>min</small></div><div class="label">Time</div></div>
+          <div class="stat"><div class="v">57<small>min</small></div><div class="label">Avg</div></div>
+        </div>
+        <!-- WeekBars: chart.weekBars 64pt plot, scale 0..max(3, largest); counts above each bar -->
+        <svg width="318" height="104" viewBox="0 0 318 104" style="display:block;margin-top:8px" aria-hidden="true">
+          <g font-family="-apple-system,BlinkMacSystemFont,Helvetica,Arial" font-size="15" fill="#F3EEE8" text-anchor="middle" style="font-variant-numeric:tabular-nums">
+            <text x="22" y="58">1</text><text x="90" y="36">2</text><text x="158" y="36">2</text><text x="226" y="36">2</text><text x="294" y="36">2</text>
+          </g>
+          <g fill="#B5ADA5">
+            <path d="M8 84V68a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v16z"/>
+            <path d="M76 84V46a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v38z"/>
+            <path d="M144 84V46a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v38z"/>
+            <path d="M212 84V46a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v38z"/>
+            <path d="M280 84V46a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v38z"/>
+          </g>
+          <line x1="0" y1="84.5" x2="318" y2="84.5" stroke="#302C29"/>
+          <g font-family="-apple-system,BlinkMacSystemFont,Helvetica,Arial" font-size="13" fill="#B5ADA5" text-anchor="middle">
+            <text x="22" y="101">12 Sep</text><text x="90" y="101">14 Sep</text><text x="158" y="101">21 Sep</text><text x="226" y="101">28 Sep</text><text x="294" y="101">5 Oct</text>
+          </g>
+        </svg>
+        <div class="cmp num">Previous 30 days: 7 sessions · 6 h 50 min</div>
+      </a>
+      <div class="foot" role="button" aria-label="Time from 7 of 9 sessions. Shows what was left out."><svg width="15" height="15"><use href="#info"/></svg><u>Time from 7 of 9 sessions</u></div>
+
+      <div class="sechead"><span class="l"><span class="label">Muscles</span><span style="color:#948C84;display:flex;width:44px;height:28px;align-items:center"><svg width="15" height="15"><use href="#info"/></svg></span></span></div>
+      <div class="seg sm" style="margin-top:6px"><div class="on">Body parts</div><div>Push/Pull/Legs</div></div>
+      <div class="colheads"><span></span><span class="label">Sessions</span><span class="label">Sets</span></div>
+      <div class="frow"><div><div class="nm">Chest</div><div class="track"><i style="width:93%"></i></div></div><div class="n">3</div><div class="n">14</div></div>
+      <div class="frow"><div><div class="nm">Back</div><div class="track"><i style="width:100%"></i></div></div><div class="n">3</div><div class="n">15</div></div>
+      <div class="frow"><div><div class="nm">Shoulders</div><div class="track"><i style="width:70%"></i></div></div><div class="n">4</div><div class="n">10½</div></div>
+      <div class="frow"><div><div class="nm">Biceps</div><div class="track"><i style="width:40%"></i></div></div><div class="n">2</div><div class="n">6</div></div>
+      <div class="frow"><div><div class="nm">Triceps</div><div class="track"><i style="width:57%"></i></div></div><div class="n">3</div><div class="n">8½</div></div>
+      <div class="frow"><div><div class="nm">Quads</div><div class="track"><i style="width:60%"></i></div></div><div class="n">2</div><div class="n">9</div></div>
+    </div>
+    <div class="ask"><svg width="14" height="13"><use href="#bubble"/></svg>Ask</div>
+    <div class="tabbar"><div class="tab"><svg width="24" height="24"><use href="#t-today"/></svg>Today</div><div class="tab on"><svg width="24" height="24"><use href="#t-prog"/></svg>Progress</div><div class="tab"><svg width="24" height="24"><use href="#t-prof"/></svg>Profile</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>One window drives every card (PG3). The Activity card is one button to Calendar. The bars add up to <code>9</code>; the first bar covers Sat–Sun 12–13 Sep only, so it's labelled with its first date.</p>
+    <p><code>Time from 7 of 9 sessions</code>: one FitNotes import (no times) and one 5 h 12 min workout over the 4 h cap are left out until Ben taps <code>Count it</code> or edits the times.</p>
+    <p>Body parts lists all 11 groups in fixed order. Scrolling on: Hamstrings 2 · 4, Glutes 2 · 7½, Calves 0 · 0 (tertiary), Core 1 · 3, Forearms 0 · 0, then Records and Exercises.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 2: MUSCLES · PPL ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">2 · Muscles · push/pull/legs, Push expanded (slice A)</div>
+  <div class="phone">
+    <div class="sb"><span>18:41</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="body">
+      <div class="navbar"><div class="back"><svg width="12" height="20"><use href="#back"/></svg>Progress</div><div class="ttl">Muscles</div><div class="spacer"></div></div>
+      <div class="seg sm" style="margin-top:4px"><div>7 days</div><div>14 days</div><div class="on">30 days</div><div>60 days</div></div>
+      <div class="seg sm" style="margin-top:8px"><div>Body parts</div><div class="on">Push/Pull/Legs</div></div>
+      <div class="dates num">12 Sep – 11 Oct</div>
+      <div class="colheads three"><span></span><span class="label">Sessions</span><span class="label">Sets</span><span class="label">Per wk</span></div>
+
+      <div class="frow three" style="position:relative" aria-label="Push, 4 sessions, 38 sets, 8.9 a week. Expanded.">
+        <div><div class="nm">Push</div><div class="track"><i style="width:100%"></i></div></div><div class="n">4</div><div class="n">38</div><div class="n">8.9</div>
+        <div class="contrib">
+          <div class="last"><span>Last trained 8 Oct</span><span style="color:#948C84"><svg width="14" height="8"><use href="#chevd"/></svg></span></div>
+          <div><span>Bench press</span><span>12 sets</span></div>
+          <div><span>Overhead press</span><span>9 sets</span></div>
+          <div><span>Incline dumbbell press</span><span>8 sets</span></div>
+          <div><span>Triceps pushdown</span><span>6 sets</span></div>
+          <div><span>Lateral raise</span><span>3 sets</span></div>
+        </div>
+      </div>
+      <div class="frow three"><div><div class="nm">Pull</div><div class="track"><i style="width:79%"></i></div></div><div class="n">3</div><div class="n">30</div><div class="n">7.0</div></div>
+      <div class="frow three"><div><div class="nm">Legs</div><div class="track"><i style="width:63%"></i></div></div><div class="n">2</div><div class="n">24</div><div class="n">5.6</div></div>
+      <div class="frow three" style="border-bottom:1px solid var(--border-divider)"><div><div class="nm">Core</div><div class="track"><i style="width:16%"></i></div></div><div class="n">1</div><div class="n">6</div><div class="n">1.4</div></div>
+
+      <div class="label" style="margin-top:20px">Not counted</div>
+      <div class="cmp num" style="margin-top:6px;color:var(--text-primary)">22 warm-up sets · 2 rated under RPE 6</div>
+      <div class="cmp num">3 sets you marked (spotted) are counted here.</div>
+      <div class="ulink">How this is counted</div>
+    </div>
+    <div class="ask"><svg width="14" height="13"><use href="#bubble"/></svg>Ask</div>
+    <div class="tabbar"><div class="tab"><svg width="24" height="24"><use href="#t-today"/></svg>Today</div><div class="tab on"><svg width="24" height="24"><use href="#t-prog"/></svg>Progress</div><div class="tab"><svg width="24" height="24"><use href="#t-prof"/></svg>Profile</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>PPL: each exercise belongs to one group and each set counts 1 there (PG27), so Push + Pull + Legs + Core = every hard set. Sessions 4 + 3 + 2 = the 9 sessions; Core was in one of them.</p>
+    <p><code>Per wk</code> = sets ÷ (30 ÷ 7), shown for windows of 14 days or more. The window and grouping are shared with Home.</p>
+    <p>In Body parts the expanded lines show the factor: <code>Dip  4 sets × ½ = 2</code>.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 3: EXERCISE DETAIL ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">3 · Exercise detail · Est. 1RM and best reps (slice B)</div>
+  <div class="phone">
+    <div class="sb"><span>18:42</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="body">
+      <div class="navbar"><div class="back"><svg width="12" height="20"><use href="#back"/></svg>Exercises</div><div class="ttl">Bench press</div><div class="spacer"></div></div>
+      <div class="pillbtn" style="margin-top:2px">Main Gym · barbell <svg width="10" height="6" style="color:#B5ADA5"><use href="#caret"/></svg></div>
+      <div class="stats" style="margin-top:10px;border-top:1px solid var(--border-divider)" aria-label="Best estimated one-rep max about 126.5 kilograms. Best set 105 kilograms by 3. 24 sessions.">
+        <div class="stat"><div class="v"><span class="ap">≈</span>126.5<small>kg</small></div><div class="label">Est. 1RM</div></div>
+        <div class="stat"><div class="v">105<small>×</small>3</div><div class="label">Best set</div></div>
+        <div class="stat"><div class="v">24</div><div class="label">Sessions</div></div>
+      </div>
+      <div class="chips"><div class="chip on">Est. 1RM</div><div class="chip">Top set</div><div class="chip">Volume</div></div>
+      <div class="chips" style="margin-top:8px"><div class="chip">3 mo</div><div class="chip on">6 mo</div><div class="chip">1 yr</div><div class="chip">All</div></div>
+      <div class="chartcap"><span class="label" style="color:var(--text-secondary)">Est. 1RM · 9 Apr – 8 Oct</span><span style="color:#948C84;display:flex"><svg width="15" height="15"><use href="#info"/></svg></span></div>
+
+      <!-- TrendChart: y = 170 - (v - 112) * 10 ; x = 36 + days * 1.681 -->
+      <svg width="350" height="214" viewBox="0 0 350 214" style="display:block;margin-top:2px" role="img" aria-label="Estimated one-rep max, an estimate, Bench press on Main Gym barbell, 9 April to 8 October. 14 sessions. Lowest about 115.5 kilograms on 1 October, highest about 126.5 on 24 September, latest about 123 on 8 October. One gap of 24 days in July and August.">
+        <g stroke="#302C29" stroke-width="1"><line x1="36" y1="40.5" x2="350" y2="40.5"/><line x1="36" y1="90.5" x2="350" y2="90.5"/><line x1="36" y1="140.5" x2="350" y2="140.5"/></g>
+        <g font-family="-apple-system,BlinkMacSystemFont,Helvetica,Arial" font-size="13" fill="#B5ADA5" style="font-variant-numeric:tabular-nums">
+          <text x="0" y="12">kg</text><text x="0" y="45">125</text><text x="0" y="95">120</text><text x="0" y="145">115</text>
+        </g>
+        <path d="M36 120L59.5 105L83.1 100L106.6 85L130.2 75L153.7 65L177.2 80L200.8 55" fill="none" stroke="#F3EEE8" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M241.1 90L264.7 70L301.6 55L318.5 25L330.2 135L342 60" fill="none" stroke="#F3EEE8" stroke-width="2" stroke-linejoin="round"/>
+        <g fill="#F3EEE8">
+          <circle cx="36" cy="120" r="3"/><circle cx="59.5" cy="105" r="3"/><circle cx="83.1" cy="100" r="3"/><circle cx="106.6" cy="85" r="3"/><circle cx="130.2" cy="75" r="3"/><circle cx="153.7" cy="65" r="3"/><circle cx="177.2" cy="80" r="3"/><circle cx="200.8" cy="55" r="3"/>
+          <circle cx="241.1" cy="90" r="3"/><circle cx="264.7" cy="70" r="3"/><circle cx="301.6" cy="55" r="3"/><circle cx="318.5" cy="25" r="3"/><circle cx="330.2" cy="135" r="3"/><circle cx="342" cy="60" r="3"/>
+        </g>
+        <line x1="36" y1="170.5" x2="350" y2="170.5" stroke="#302C29"/>
+        <g font-family="-apple-system,BlinkMacSystemFont,Helvetica,Arial" font-size="13" fill="#B5ADA5" text-anchor="middle">
+          <text x="73" y="187">May</text><text x="125" y="187">Jun</text><text x="175.5" y="187">Jul</text><text x="227.7" y="187">Aug</text><text x="279.8" y="187">Sep</text><text x="330" y="187">Oct</text>
+        </g>
+        <g font-family="-apple-system,BlinkMacSystemFont,Helvetica,Arial" font-size="13" fill="#B5ADA5">
+          <text x="221" y="208" text-anchor="middle">⋯ Gap 24 days</text>
+          <path d="M313 200l6-6 2 2-6 6h-2z" fill="none" stroke="#B5ADA5" stroke-width="1.2"/>
+        </g>
+      </svg>
+
+      <dl class="kv">
+        <dt>Latest</dt><dd><span class="s">≈</span>123 kg <span class="s">· 8 Oct</span></dd>
+        <dt>Best</dt><dd><span class="s">≈</span>126.5 kg <span class="s">· 24 Sep (100 × 8)</span></dd>
+        <dt>Change</dt><dd><svg width="9" height="11" style="color:#B5ADA5"><use href="#up"/></svg> Up <span class="s">≈</span>6 kg <span class="s">since 9 Apr</span></dd>
+      </dl>
+      <div class="ulink">Show as table</div>
+
+      <div class="sechead" style="margin-top:4px"><span class="label">Best reps</span></div>
+      <div class="seg sm" style="margin-top:6px"><div class="on">By weight</div><div>By reps</div></div>
+      <table class="rt">
+        <tr><th>Weight</th><th class="r">Reps</th><th class="r">Date</th></tr>
+        <tr><td>105 kg</td><td class="r">3</td><td class="dt">1 Oct</td></tr>
+        <tr><td>102.5 kg</td><td class="r">6</td><td class="dt">8 Oct</td></tr>
+        <tr><td>100 kg</td><td class="r">8</td><td class="dt">24 Sep</td></tr>
+        <tr><td>97.5 kg</td><td class="r">8</td><td class="dt">14 Sep</td></tr>
+        <tr><td>95 kg</td><td class="r">10</td><td class="dt">2 Aug</td></tr>
+      </table>
+    </div>
+    <div class="ask"><svg width="14" height="13"><use href="#bubble"/></svg>Ask</div>
+    <div class="tabbar"><div class="tab"><svg width="24" height="24"><use href="#t-today"/></svg>Today</div><div class="tab on"><svg width="24" height="24"><use href="#t-prog"/></svg>Progress</div><div class="tab"><svg width="24" height="24"><use href="#t-prof"/></svg>Profile</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>One series per chart (Main Gym barbell). One Est. 1RM per session from its best set of 1–10 reps, never smoothed: the 1 Oct heavy triple (105 × 3) really is a lower estimate, so the dip is shown, not hidden. The line breaks at the 24-day gap; <code>✎</code> marks an edited session.</p>
+    <p><code>By weight</code> answers "max reps per weight", actual sets only. <code>By reps</code> gives rep records with <code>from 6 reps</code> where a bigger set supersedes. Scrolling on: Records, then History.</p>
+    <p>D's accent is almost the line colour, so a selected point is shown by size, ring and guide line, and the panel text changes in place.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 4: EMPTY ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">4 · Empty · new user, no workouts or imports</div>
+  <div class="phone">
+    <div class="sb"><span>09:12</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="body">
+      <div class="bigtitle">Progress</div>
+      <div class="seg" role="tablist"><div class="on">Overview</div><div>Calendar</div></div>
+      <div class="empty">
+        <h2>Nothing to show yet</h2>
+        <p>Log a workout or import your FitNotes history.</p>
+        <div class="primary">Go to Today</div>
+        <div class="secondary">Import FitNotes history</div>
+      </div>
+    </div>
+    <div class="ask"><svg width="14" height="13"><use href="#bubble"/></svg>Ask</div>
+    <div class="tabbar"><div class="tab"><svg width="24" height="24"><use href="#t-today"/></svg>Today</div><div class="tab on"><svg width="24" height="24"><use href="#t-prog"/></svg>Progress</div><div class="tab"><svg width="24" height="24"><use href="#t-prof"/></svg>Profile</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>No window picker, axes, zero bars or empty headings until there is one finished workout (logged or imported). One accent-filled button.</p>
+    <p>With a first workout in progress, the Resume bar sits above the tab bar and <code>Go to Today</code> becomes an outline button, so Resume is the only filled one.</p>
+    <p>After a FitNotes import alone, Home fills at once: sessions and muscles count imported workouts, time shows <code>—</code> with <code>No times for imported workouts</code>, and records stay empty until 3 workouts are logged in the app.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

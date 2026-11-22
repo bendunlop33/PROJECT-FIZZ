@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>GymSmarter · Session picker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Direction D (Premium), dark. Values from apps/mobile/src/theme/tokens.ts PREMIUM_DIRECTION + STATUS_DARK. No new colour values. SF only. */
+:root{
+  --bg-canvas:#0D0C0B; --bg-surface:#181615; --bg-raised:#23201E;
+  --border-divider:#302C29; --border-control:#75706A;
+  --text-primary:#F3EEE8; --text-secondary:#B5ADA5; --text-tertiary:#948C84;
+  --accent:#EDE5DA; --accent-subtle:#2B2724; --on-accent:#0D0C0B;
+  --status-warning:#F2B84B; --status-done:#5CC98A;
+  --scrim:rgba(0,0,0,0.55);
+  --radius-sm:8px; --radius-md:14px; --radius-lg:20px; --radius-pill:999px;
+  --margin:20px;
+  --sf:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#2a2725;font-family:var(--sf);color:var(--text-primary);padding:40px 24px 64px;-webkit-font-smoothing:antialiased}
+h1.page{font:600 20px/1.3 var(--sf);color:#e9e3dc;margin:0 auto 6px;max-width:1760px}
+p.lede{font:400 15px/1.45 var(--sf);color:#bdb5ad;margin:0 auto 32px;max-width:1760px}
+.frames{display:flex;gap:48px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+.frame-wrap{width:390px}
+.frame-title{font:600 13px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:#cfc7bf;margin-bottom:12px;min-height:32px}
+.notes{margin-top:14px;font:400 13px/1.5 var(--sf);color:#bdb5ad}
+.notes p{margin-bottom:6px}
+.notes code{color:#e9e3dc}
+
+.phone{position:relative;width:390px;height:844px;background:var(--bg-canvas);border-radius:48px;overflow:hidden;
+  box-shadow:0 0 0 10px #050505,0 0 0 11px #3a3633,0 30px 80px rgba(0,0,0,.55)}
+.label{font:600 12px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-tertiary)}
+.sb{height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 34px 8px 40px;font:600 17px/22px var(--sf);font-variant-numeric:tabular-nums}
+.sb .island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--text-primary);opacity:.9;z-index:9}
+u, .link{text-decoration:underline;text-underline-offset:3px}
+
+/* Today */
+.today{padding:0 var(--margin)}
+.thead{height:52px;display:flex;align-items:center;justify-content:space-between}
+.gymchip{height:34px;padding:0 14px;border:1px solid var(--border-control);border-radius:var(--radius-pill);display:flex;align-items:center;gap:6px;font:500 16px/20px var(--sf)}
+.eyerow{display:flex;justify-content:space-between;align-items:center;height:44px;margin-top:6px}
+.eyerow .link{font:400 16px/22px var(--sf);color:var(--text-primary);height:44px;display:flex;align-items:center}
+.hero{font:600 40px/46px var(--sf);letter-spacing:-0.8px}
+.meta{font:400 16px/22px var(--sf);color:var(--text-secondary);margin-top:4px}
+.basis{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.start{height:60px;border-radius:var(--radius-pill);background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font:600 17px/22px var(--sf)}
+.hero-start{margin-top:18px}
+.drow{padding:8px 0;min-height:48px}
+.drow .n{font:400 17px/22px var(--sf)}
+.drow .t{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.more{font:400 16px/22px var(--sf);height:44px;display:flex;align-items:center}
+.alts{display:flex;gap:28px;font:400 16px/22px var(--sf);height:44px;align-items:center}
+.sep{border-top:1px solid var(--border-divider);margin:8px 0 12px}
+.srow{display:flex;justify-content:space-between;align-items:center;min-height:52px;border-bottom:1px solid var(--border-divider);font:400 17px/22px var(--sf)}
+.srow .r{display:flex;gap:10px;align-items:center;color:var(--text-secondary);font:400 16px/22px var(--sf);font-variant-numeric:tabular-nums}
+.chevr{color:var(--text-tertiary);font-size:20px}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:84px;border-top:1px solid var(--border-divider);background:var(--bg-canvas);display:flex;justify-content:space-around;padding-top:12px;font:500 11px/14px var(--sf);color:var(--text-tertiary);letter-spacing:.6px;z-index:5}
+.tabbar .on{color:var(--text-primary)}
+
+/* Sheet */
+.dim{position:absolute;inset:0;background:var(--scrim);z-index:6}
+.sheet{position:absolute;left:0;right:0;bottom:0;top:118px;background:var(--bg-surface);border-radius:var(--radius-lg) var(--radius-lg) 0 0;z-index:7;padding:0 var(--margin)}
+.grabber{width:36px;height:5px;border-radius:3px;background:var(--border-control);margin:8px auto 0}
+.shead{display:flex;justify-content:space-between;align-items:center;height:56px}
+.shead .t{font:600 22px/28px var(--sf)}
+.shead .c{font:400 17px/22px var(--sf);height:44px;display:flex;align-items:center}
+.prow{display:grid;grid-template-columns:24px 1fr;column-gap:6px;min-height:64px;padding:10px 0;border-bottom:1px solid var(--border-divider);align-items:start}
+.prow .nm{font:600 17px/22px var(--sf);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.prow .sub{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums;margin-top:2px}
+.prow .ck{padding-top:4px;color:var(--text-primary)}
+.tag{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 7px;border-radius:var(--radius-sm);background:var(--bg-raised);color:var(--text-secondary);font:600 12px/16px var(--sf);letter-spacing:1.2px;text-transform:uppercase}
+.olderlabel{margin-top:18px;padding-bottom:4px}
+.slinks{margin-top:10px}
+.slinks div{height:44px;display:flex;align-items:center;font:400 17px/22px var(--sf)}
+
+/* Overview (from workout-overview.html) */
+.topbar{position:relative;z-index:3;height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 8px;background:var(--bg-canvas)}
+.iconbtn{width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+.topbar .right{display:flex;align-items:center;gap:4px}
+.body{position:absolute;top:102px;left:0;right:0;bottom:0;overflow:hidden;padding:0 var(--margin)}
+.eyebrow{margin-top:10px}
+.title{font:600 40px/46px var(--sf);letter-spacing:-0.8px;margin-top:6px;display:inline-flex;align-items:center;gap:10px;min-height:48px}
+.title svg{margin-top:6px}
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:12px;border-top:1px solid var(--border-divider);border-bottom:1px solid var(--border-divider)}
+.stat{padding:10px 0}
+.stat + .stat{padding-left:14px;border-left:1px solid var(--border-divider)}
+.stat .v{font:300 32px/36px var(--sf);letter-spacing:-0.6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .v small{font:400 16px/20px var(--sf);color:var(--text-secondary);letter-spacing:0;margin-left:3px}
+.stat .v .ap{color:var(--text-secondary);margin-right:2px}
+.stat .label{margin-top:2px}
+.muscles{margin-top:12px;font:400 16px/22px var(--sf);color:var(--text-secondary)}
+.muscles b{font-weight:500;color:var(--text-primary)}
+.listhead{display:flex;justify-content:space-between;margin-top:18px;padding-bottom:8px}
+.rows{list-style:none}
+.row{position:relative;display:grid;grid-template-columns:30px 1fr auto;column-gap:6px;padding:10px 0;border-top:1px solid var(--border-divider);min-height:64px}
+.row.last{border-bottom:1px solid var(--border-divider)}
+.idx{font:500 16px/22px var(--sf);color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.name{font:600 17px/22px var(--sf)}
+.detail{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums;margin-top:3px;white-space:nowrap}
+.rc{text-align:right;display:flex;flex-direction:column;align-items:flex-end}
+.mark{font:600 12px/22px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-secondary);display:flex;align-items:center;gap:5px;white-space:nowrap}
+.load{font:500 22px/26px var(--sf);letter-spacing:-0.3px;font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:2px}
+.load small{font:400 16px/20px var(--sf);color:var(--text-secondary);letter-spacing:0}
+.load.none{color:var(--text-tertiary)}
+.bar{position:absolute;left:0;right:0;bottom:0;padding:0 var(--margin) 34px;background:var(--bg-canvas);z-index:2}
+.bar::before{content:"";position:absolute;left:0;right:0;top:-14px;height:14px;background:linear-gradient(to bottom,rgba(13,12,11,0),var(--bg-canvas))}
+.bar .start{margin-top:12px}
+.menu{position:absolute;right:16px;top:100px;width:230px;background:var(--bg-raised);border-radius:var(--radius-md);z-index:8;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.menu div{height:48px;display:flex;align-items:center;padding:0 16px;font:400 17px/22px var(--sf);border-bottom:1px solid var(--border-divider)}
+.menu div:last-child{border-bottom:none}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="up" viewBox="0 0 9 11"><path d="M4.5 10V1.5M1 5l3.5-3.5L8 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="check" viewBox="0 0 12 10"><path d="M1 5l3.5 3.5L11 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="next" viewBox="0 0 12 12"><path d="M10.5 6A4.5 4.5 0 1 1 8.6 2.3M8.8 .8v2.6H6.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="chev" viewBox="0 0 20 12"><path d="M2 2l8 8 8-8" fill="none" stroke="#F3EEE8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="caret" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="#B5ADA5" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="tcaret" viewBox="0 0 18 11"><path d="M2 2l7 7 7-7" fill="none" stroke="#B5ADA5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="more" viewBox="0 0 20 4"><circle cx="2" cy="2" r="2" fill="#F3EEE8"/><circle cx="10" cy="2" r="2" fill="#F3EEE8"/><circle cx="18" cy="2" r="2" fill="#F3EEE8"/></symbol>
+    <symbol id="sig" viewBox="0 0 44 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="#F3EEE8"/><rect x="5" y="5" width="3" height="7" rx="1" fill="#F3EEE8"/><rect x="10" y="2.5" width="3" height="9.5" rx="1" fill="#F3EEE8"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#F3EEE8"/><rect x="18.5" y=".5" width="22" height="11" rx="3" fill="none" stroke="#F3EEE8" opacity=".5"/><rect x="20" y="2" width="16" height="8" rx="2" fill="#F3EEE8"/></symbol>
+  </defs>
+</svg>
+
+<h1 class="page">Session picker</h1>
+<p class="lede">Choose today's session and still get a recommendation. Direction D dark, 390 × 844. Fixture: body-part split imported from FitNotes (grouped by Category), today Sun 11 Oct. Spec: <code>docs/design/session-picker.md</code>.</p>
+
+<div class="frames">
+
+<!-- ===================== FRAME 1: TODAY ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">1 · Today: Up next with Change, Sessions list</div>
+  <div class="phone">
+    <div class="sb"><span>17:42</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="today">
+      <div class="thead"><span class="label">Sunday 11 October</span><span class="gymchip">Main gym <svg width="10" height="6"><use href="#caret"/></svg></span></div>
+      <div class="eyerow"><span class="label">Up next</span><span class="link" role="button" aria-label="Change session">Change</span></div>
+      <div class="hero">Legs</div>
+      <div class="meta">Quads · Hamstrings · Glutes · 15 sets</div>
+      <div class="basis">Last done Mon 5 Oct · 6 days ago</div>
+      <div class="start hero-start">Start workout</div>
+      <div style="margin-top:10px">
+        <div class="drow"><div class="n">Back squat</div><div class="t">Target 120 kg × 5–8 · 3 sets</div></div>
+        <div class="drow"><div class="n">Romanian deadlift</div><div class="t">Target 100 kg × 8–10 · 3 sets</div></div>
+        <div class="more link">+3 more</div>
+      </div>
+      <div class="alts"><span class="link">Empty workout</span><span class="link">Past workouts</span></div>
+      <div class="sep"></div>
+      <div class="label" style="padding-bottom:4px">Sessions</div>
+      <div class="srow"><span>Shoulders</span><span class="r">4 days ago <span class="chevr">›</span></span></div>
+      <div class="srow"><span>Back</span><span class="r">3 days ago <span class="chevr">›</span></span></div>
+      <div class="srow"><span>Chest</span><span class="r">2 days ago <span class="chevr">›</span></span></div>
+      <div class="srow" style="border-bottom:none"><span>All sessions</span><span class="r"><span class="chevr">›</span></span></div>
+    </div>
+    <div class="tabbar"><span class="on">TODAY</span><span>PROGRESS</span><span>PROFILE</span></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p><code>Change</code> sits on the Up next eyebrow row (16 pt underlined, 44 pt hit). Start is still the only filled pill and is one tap away.</p>
+    <p><code>SESSIONS</code> replaces <code>YOUR ROUTINES</code>. It shows up to 3 types (Up next excluded), longest gap first. A row opens that session's overview: 3 taps to the first set, the same as Up next.</p>
+    <p>The basis line is an actual and is the whole reason. No rule name.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 2: PICKER ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">2 · Picker sheet (from the overview title)</div>
+  <div class="phone">
+    <div class="sb"><span>17:43</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar">
+      <div class="iconbtn"><svg width="20" height="12"><use href="#chev"/></svg></div>
+      <div class="right"><div class="gymchip">Main gym <svg width="10" height="6"><use href="#caret"/></svg></div><div class="iconbtn"><svg width="20" height="4"><use href="#more"/></svg></div></div>
+    </div>
+    <div class="body"><div class="label eyebrow">Up next · Last done Mon 5 Oct</div><div class="title">Legs <svg width="18" height="11"><use href="#tcaret"/></svg></div></div>
+    <div class="dim"></div>
+    <div class="sheet" role="dialog" aria-label="Choose session">
+      <div class="grabber"></div>
+      <div class="shead"><span class="t">Choose session</span><span class="c">Close</span></div>
+      <div class="prow" aria-label="Legs, up next, last done 6 days ago, 5 exercises, selected">
+        <span class="ck"><svg width="14" height="12"><use href="#check"/></svg></span>
+        <div><div class="nm">Legs <span class="tag"><svg width="11" height="11"><use href="#next"/></svg>Up next</span></div><div class="sub">6 days ago · 5 exercises</div></div>
+      </div>
+      <div class="prow"><span></span><div><div class="nm">Shoulders</div><div class="sub">4 days ago · 5 exercises · Edited</div></div></div>
+      <div class="prow"><span></span><div><div class="nm">Back</div><div class="sub">3 days ago · 6 exercises</div></div></div>
+      <div class="prow"><span></span><div><div class="nm">Chest</div><div class="sub">2 days ago · 5 exercises</div></div></div>
+      <div class="prow"><span></span><div><div class="nm">Arms</div><div class="sub">New · 4 exercises</div></div></div>
+      <div class="label olderlabel">Older</div>
+      <div class="prow"><span></span><div><div class="nm">Full body</div><div class="sub">14 Aug · 6 exercises</div></div></div>
+      <div class="slinks"><div class="link">Empty workout</div><div class="link">Past workouts</div></div>
+    </div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>Order: Up next, then longest since done. Never-done routines are last (<code>New</code>). Types not done for 42 days go under <code>OLDER</code>.</p>
+    <p>The sheet shows no targets and no coach content. Picking from Today opens the overview. Picking here reloads the overview in place.</p>
+    <p><code>Edited</code>: Shoulders has today's edits from earlier. Switching never discards them.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 3: OVERVIEW AFTER PICK ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">3 · Overview after picking Shoulders (not Up next)</div>
+  <div class="phone">
+    <div class="sb"><span>17:43</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar">
+      <div class="iconbtn" aria-label="Close"><svg width="20" height="12"><use href="#chev"/></svg></div>
+      <div class="right"><div class="gymchip">Main gym <svg width="10" height="6"><use href="#caret"/></svg></div><div class="iconbtn" aria-label="More"><svg width="20" height="4"><use href="#more"/></svg></div></div>
+    </div>
+    <div class="body">
+      <div class="label eyebrow">Last done Wed 7 Oct</div>
+      <div class="title" role="button" aria-label="Shoulders. Change session.">Shoulders <svg width="18" height="11"><use href="#tcaret"/></svg></div>
+      <div class="stats">
+        <div class="stat"><div class="v"><span class="ap">≈</span>50<small>min</small></div><div class="label">Time</div></div>
+        <div class="stat"><div class="v"><span class="ap">≈</span>18:35</div><div class="label">Done by</div></div>
+        <div class="stat"><div class="v">15</div><div class="label">Sets</div></div>
+      </div>
+      <div class="muscles"><b>Shoulders</b> · Triceps · Upper back</div>
+      <div class="listhead"><span class="label">5 exercises</span><span class="label">Target</span></div>
+      <ul class="rows">
+        <li class="row"><span class="idx">01</span><div><div class="name">Overhead press</div><div class="detail">3 × 5–8 · 3 warm-ups</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Up</span><span class="load">52.5 <small>kg</small></span></div></li>
+        <li class="row"><span class="idx">02</span><div><div class="name">Seated DB press</div><div class="detail">3 × 8–10</div></div>
+          <div class="rc"><span class="mark">Same</span><span class="load">22.5 <small>kg each</small></span></div></li>
+        <li class="row"><span class="idx">03</span><div><div class="name">Lateral raise</div><div class="detail">3 × 12–15</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Reps</span><span class="load">10 <small>kg each</small></span></div></li>
+        <li class="row"><span class="idx">04</span><div><div class="name">Reverse pec deck</div><div class="detail">3 × 12–15</div></div>
+          <div class="rc"><span class="mark">Same</span><span class="load">40 <small>kg</small></span></div></li>
+        <li class="row last"><span class="idx">05</span><div><div class="name">Rope pushdown</div><div class="detail">3 × 10–12</div></div>
+          <div class="rc"><span class="mark">Same</span><span class="load">27.5 <small>kg</small></span></div></li>
+      </ul>
+    </div>
+    <div class="menu" aria-label="More">
+      <div>Save as routine</div><div>Empty workout</div><div>Reorder</div>
+    </div>
+    <div class="bar"><div class="start">Start workout</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>The basis is the most recent Shoulders session (Wed 7 Oct, imported). Exercises and set counts come from it. Targets come from the built-in rule (or a stored D21 coach target) and are fitted to Main gym. The rows equal what Start creates.</p>
+    <p>The title is the switch (<code>Shoulders ▾</code>). <code>⋯</code> (open here) has <code>Save as routine</code> instead of <code>Other routine</code>. The check-in score and gym carry over a switch.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 4: NO HISTORY ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">4 · No-history session (new routine Arms)</div>
+  <div class="phone">
+    <div class="sb"><span>17:44</span><span class="island"></span><span><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar">
+      <div class="iconbtn" aria-label="Close"><svg width="20" height="12"><use href="#chev"/></svg></div>
+      <div class="right"><div class="gymchip">Main gym <svg width="10" height="6"><use href="#caret"/></svg></div><div class="iconbtn" aria-label="More"><svg width="20" height="4"><use href="#more"/></svg></div></div>
+    </div>
+    <div class="body">
+      <div class="label eyebrow">New routine</div>
+      <div class="title" role="button" aria-label="Arms. Change session.">Arms <svg width="18" height="11"><use href="#tcaret"/></svg></div>
+      <div class="stats">
+        <div class="stat"><div class="v"><span class="ap">≈</span>40<small>min</small></div><div class="label">Time</div></div>
+        <div class="stat"><div class="v"><span class="ap">≈</span>18:25</div><div class="label">Done by</div></div>
+        <div class="stat"><div class="v">12</div><div class="label">Sets</div></div>
+      </div>
+      <div class="muscles"><b>Biceps</b> · Triceps · Forearms</div>
+      <div class="listhead"><span class="label">4 exercises</span><span class="label">Target</span></div>
+      <ul class="rows">
+        <li class="row"><span class="idx">01</span><div><div class="name">EZ-bar curl</div><div class="detail">3 × 8–12</div></div>
+          <div class="rc"><span class="mark">New</span><span class="load none" aria-label="no target load">—</span></div></li>
+        <li class="row"><span class="idx">02</span><div><div class="name">Close-grip bench</div><div class="detail">3 × 6–10</div></div>
+          <div class="rc"><span class="mark">New</span><span class="load none">—</span></div></li>
+        <li class="row"><span class="idx">03</span><div><div class="name">Hammer curl</div><div class="detail">3 × 10–12</div></div>
+          <div class="rc"><span class="mark">New</span><span class="load">12.5 <small>kg each</small></span></div></li>
+        <li class="row last"><span class="idx">04</span><div><div class="name">Overhead extension</div><div class="detail">3 × 10–15</div></div>
+          <div class="rc"><span class="mark">New</span><span class="load none">—</span></div></li>
+      </ul>
+    </div>
+    <div class="bar"><div class="start">Start workout</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>No history means no invented numbers. <code>Auto</code> loads show <code>—</code>, and the first set card asks for the load. Hammer curl has a fixed load in the routine, so it shows. Every row is marked <code>NEW</code>.</p>
+    <p><code>TIME</code> uses the default pace and keeps <code>≈</code>. There is no explanation line.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "key": "ez-bar-overhead-triceps-extension",
+  "tier": "rich",
+  "name": "EZ-bar overhead triceps extension",
+  "aliases": ["EZ-bar French press", "EZ bar overhead tricep extension", "Overhead EZ-bar extension", "Seated EZ-bar French press", "EZ-bar overhead extension"],
+  "family": "triceps_extension",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["triceps"],
+  "secondaryMuscles": ["core"],
+  "compatibleEquipment": ["ez_bar"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Sit on an upright bench or stand tall",
+      "Narrow grip on the inner bends",
+      "Press the bar overhead to straight arms"
+    ],
+    "execution": [
+      "Bend your elbows to lower it behind your head",
+      "Keep your upper arms close to your head",
+      "Go to a deep stretch you can control",
+      "Straighten your arms back overhead"
+    ],
+    "faults": [
+      "Don't let your elbows flare wide",
+      "Don't arch your lower back",
+      "Don't poke your head forward"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use light to moderate weight and warm up; the deep stretch loads the elbows.",
+      "Seated with back support makes it easier to keep the lower back from arching.",
+      "Get the bar overhead and back down to your lap or the floor in a controlled way, ideally from a seated start.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-overhead-triceps-extension", "name": "Dumbbell overhead triceps extension", "reason": "One dumbbell held in both hands; easier to get into position." },
+      { "key": "cable-overhead-triceps-extension", "name": "Overhead cable triceps extension", "reason": "The cable takes the weight overhead for you." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Overhead extension with a pause in the stretch", "reason": "A short hold at the bottom adds difficulty." }
+    ],
+    "substitutions": [
+      { "key": "cable-overhead-triceps-extension", "name": "Overhead cable triceps extension", "reason": "Same overhead arm position on a cable." },
+      { "key": "dumbbell-overhead-triceps-extension", "name": "Dumbbell overhead triceps extension", "reason": "Same position with one dumbbell." },
+      { "key": "ez-bar-skull-crusher", "name": "Skull crusher", "reason": "Same bar, lying down." },
+      { "key": "cable-triceps-pushdown", "name": "Triceps pushdown", "reason": "Arms by the sides; less stretch, easier on the elbows for some." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at head height, figure seated on an upright bench facing right. The bar dropping behind the head while the upper arms stay up must be clear.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Seated tall, back on the pad, feet flat. EZ bar held overhead on the inner grips, arms straight, upper arms beside the ears.",
+        "approxAnglesDeg": { "shoulderFlexion": 170, "elbowFlexion": 5 }
+      },
+      {
+        "label": "Stretch",
+        "describe": "Elbows bent well past 90°, bar lowered behind the head toward the upper back. Upper arms still close to the head and pointing up; ribs down.",
+        "approxAnglesDeg": { "shoulderFlexion": 165, "elbowFlexion": 130 }
+      }
+    ],
+    "ikHints": ["Upper arms stay nearly fixed", "Back stays on the pad"],
+    "barPath": "An arc from overhead down behind the head and back",
+    "tempo": { "downMs": 2000, "holdMs": 300, "upMs": 1000 },
+    "props": ["ez_bar", "bench_upright"],
+    "emphasise": [
+      "Upper arms stay by the head",
+      "Deep, controlled stretch behind the head",
+      "Lower back stays on the pad"
+    ],
+    "doNotShow": ["Elbows flared wide", "Lower back arched", "Bar hitting the head"]
+  },
+  "sources": [
+    {
+      "url": "https://fitbod.me/exercises/ez-bar-overhead-tricep-extension",
+      "title": "Fitbod: EZ-Bar Overhead Tricep Extension",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-1,3]; cues.faults[1]; primaryMuscles",
+      "note": "Commercial app library."
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/35819335/",
+      "title": "Maeo et al. 2023, Eur J Sport Sci 23(7): Triceps hypertrophy greater after overhead vs neutral-arm elbow extension training",
+      "checkedOn": "2026-10-23",
+      "supports": "Why the overhead position is worth an entry: 21 adults, 12 weeks of cable extensions; the overhead arm grew more in every triceps head despite lighter loads.",
+      "note": "Abstract only, read through Europe PMC. Cable extensions, mostly untrained participants; not this exact exercise."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "Core is listed for the standing version's bracing; seated with back support it does little."
+    },
+    {
+      "field": "requiresStation",
+      "note": "None listed: it can be done seated (needs an upright bench) or standing."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

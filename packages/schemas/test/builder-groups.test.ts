@@ -1,0 +1,232 @@
+import { describe, expect, it } from 'vitest';
+import {
+  BUILDER_FOCI,
+  BUILDER_GROUP_PARTS,
+  BUILDER_GROUPS,
+  builderFocusCounts,
+  builderFocusOf,
+  builderFocusSections,
+  builderGroupOf,
+  builderGroupOfKey,
+  builderGroupOfMuscleGroup,
+  builderGroupOfPart,
+  builderGroupOfParts,
+  isBrowseOnlyFocus,
+  isBuilderAutoPick,
+  isBuilderStrength,
+  MUSCLE_GROUPS,
+  MUSCLE_TO_GROUP,
+  SPLIT_BODY_PARTS,
+  SplitBodyPartSchema,
+  worksLine,
+  type BuilderMuscleInfo,
+  type BuilderFocus,
+  type Measurement,
+} from '../src/index';
+
+const ex = (primaryMuscles: string[], secondaryMuscles: string[] = [], movementPattern?: string, measurement?: Measurement): BuilderMuscleInfo => ({
+  primaryMuscles,
+  secondaryMuscles,
+  movementPattern,
+  measurement,
+});
+
+describe('BuilderGroup (display only, §4.7, §9 Q8)', () => {
+  it('D5 (Ben, 22–23 Oct): six broad groups; Legs = Quads + Hamstrings + Glutes + Calves; Arms = Biceps + Triceps', () => {
+    expect(BUILDER_GROUPS).toEqual(['Chest', 'Back', 'Shoulders', 'Legs', 'Arms', 'Core']);
+    expect(BUILDER_GROUP_PARTS.Legs).toEqual(['Quads', 'Hamstrings', 'Glutes', 'Calves']);
+    expect(BUILDER_GROUP_PARTS.Arms).toEqual(['Biceps', 'Triceps']);
+    expect(BUILDER_GROUP_PARTS.Core).toEqual(['Core']);
+    for (const p of ['Quads', 'Hamstrings', 'Glutes', 'Calves'] as const) expect(builderGroupOfPart(p)).toBe('Legs');
+    expect(builderGroupOfPart('Biceps')).toBe('Arms');
+    expect(builderGroupOfPart('Triceps')).toBe('Arms');
+    expect(builderGroupOfPart('Core')).toBe('Core');
+    expect(builderGroupOfMuscleGroup('Forearms')).toBeNull();
+  });
+
+  it('every stored split body part belongs to exactly one builder group, and the parts table agrees', () => {
+    const listed = BUILDER_GROUPS.flatMap((g) => BUILDER_GROUP_PARTS[g].map((p) => [p, g] as const));
+    expect(listed.map(([p]) => p).sort()).toEqual([...SPLIT_BODY_PARTS].sort());
+    for (const [p, g] of listed) expect(builderGroupOfPart(p)).toBe(g);
+    // The parts it stores are always SplitBodyPart names (stored data unchanged).
+    for (const g of BUILDER_GROUPS) for (const p of BUILDER_GROUP_PARTS[g]) expect(SplitBodyPartSchema.safeParse(p).success).toBe(true);
+  });
+
+  it('every muscle group but Forearms has a builder group', () => {
+    for (const g of MUSCLE_GROUPS) expect(builderGroupOfMuscleGroup(g) === null).toBe(g === 'Forearms');
+  });
+
+  it('a stored parts list reads back as one group, else null', () => {
+    expect(builderGroupOfParts(['Quads', 'Calves'])).toBe('Legs');
+    expect(builderGroupOfParts(['Core'])).toBe('Core');
+    expect(builderGroupOfParts(['Triceps'])).toBe('Arms');
+    expect(builderGroupOfParts(['Biceps', 'Triceps'])).toBe('Arms');
+    expect(builderGroupOfParts(['Chest', 'Triceps'])).toBeNull();
+    expect(builderGroupOfParts([])).toBeNull();
+  });
+});
+
+describe('builderGroupOf (catalogue exercise)', () => {
+  it('from the first primary muscle that has a builder group', () => {
+    expect(builderGroupOf(ex(['chest'], ['front_delts', 'triceps']))).toBe('Chest');
+    expect(builderGroupOf(ex(['hamstrings', 'glutes']))).toBe('Legs');
+    expect(builderGroupOf(ex(['obliques', 'core']))).toBe('Core');
+    expect(builderGroupOf(ex(['brachialis', 'biceps']))).toBe('Arms');
+    expect(builderGroupOf(ex(['triceps']))).toBe('Arms');
+    // Grip has no builder group, so traps (Back) leads.
+    expect(builderGroupOf(ex(['grip', 'traps'], [], 'pull'))).toBe('Back');
+  });
+  it('rear delts are Back (§9 Q13)', () => {
+    expect(builderGroupOf(ex(['rear_delts'], ['upper_back', 'traps']))).toBe('Back');
+    expect(builderGroupOf(ex(['rear_delts', 'upper_back'], ['traps', 'side_delts']))).toBe('Back');
+  });
+  it('null for conditioning, carries and cardio; timed or distance strength work stays in', () => {
+    // Treadmill run, battle ropes, farmer carry, ski-erg.
+    expect(builderGroupOf(ex(['quads', 'hamstrings', 'glutes', 'calves'], [], 'conditioning', 'cardio'))).toBeNull();
+    expect(builderGroupOf(ex(['front_delts'], ['core'], 'conditioning', 'duration'))).toBeNull();
+    expect(builderGroupOf(ex(['grip', 'traps'], ['core'], 'carry', 'distance'))).toBeNull();
+    expect(builderGroupOf(ex(['lats', 'abs'], [], undefined, 'cardio'))).toBeNull();
+    expect(builderFocusOf(ex(['quads', 'glutes'], [], 'conditioning', 'reps'))).toBeNull();
+    expect(builderFocusSections([ex(['quads'], [], 'conditioning', 'cardio'), ex(['quads'], [], 'squat', 'reps')], (i) => i, 'Legs')).toEqual([
+      { focus: 'Quads', items: [ex(['quads'], [], 'squat', 'reps')] },
+    ]);
+    // Plank and walking lunge are strength.
+    expect(builderGroupOf(ex(['abs', 'core'], [], 'core', 'duration'))).toBe('Core');
+    expect(builderGroupOf(ex(['quads', 'glutes'], [], 'lunge', 'distance'))).toBe('Legs');
+    expect(isBuilderStrength(ex(['quads'], [], 'squat', 'reps'))).toBe(true);
+    expect(isBuilderStrength(ex(['quads'], [], 'conditioning', 'reps'))).toBe(false);
+  });
+  it('null for no muscles or words outside the vocabulary', () => {
+    expect(builderGroupOf(ex([]))).toBeNull();
+    expect(builderGroupOf(ex(['rhomboids']))).toBeNull();
+  });
+  it('forearm-only exercises are found under the arms group (D5), browse only and uncounted', () => {
+    expect(builderGroupOf(ex(['forearms']))).toBe('Arms');
+    expect(builderGroupOf(ex(['grip'], ['forearms']))).toBe('Arms');
+    expect(builderFocusOf(ex(['forearms']))).toBe('Forearms');
+    expect(isBuilderAutoPick(ex(['forearms']))).toBe(false);
+    expect(builderFocusCounts('Forearms')).toBe(false);
+    // A counted muscle still leads: the reverse curl is a biceps exercise (brachialis), auto-pickable.
+    expect(builderFocusOf(ex(['forearms', 'brachialis']))).toBe('Biceps');
+    expect(isBuilderAutoPick(ex(['forearms', 'brachialis']))).toBe(true);
+    // Forearms still count in no group (Progress, plan weekly sets).
+    expect(builderGroupOfMuscleGroup('Forearms')).toBeNull();
+  });
+  it('the 23 Oct words map to their broad groups and foci; prehab foci are Swap / Add only', () => {
+    expect([builderGroupOf(ex(['hip_flexors'])), builderFocusOf(ex(['hip_flexors']))]).toEqual(['Core', 'Abs']);
+    expect([builderGroupOf(ex(['rotator_cuff'])), builderFocusOf(ex(['rotator_cuff']))]).toEqual(['Shoulders', 'Rotator cuff']);
+    expect([builderGroupOf(ex(['serratus'])), builderFocusOf(ex(['serratus']))]).toEqual(['Chest', 'Serratus']);
+    expect([builderGroupOf(ex(['tibialis'])), builderFocusOf(ex(['tibialis']))]).toEqual(['Legs', 'Shins']);
+    expect([builderGroupOf(ex(['neck'])), builderFocusOf(ex(['neck']))]).toEqual(['Back', 'Neck']);
+    for (const m of ['rotator_cuff', 'serratus', 'tibialis', 'neck', 'forearms']) expect(isBuilderAutoPick(ex([m])), m).toBe(false);
+    for (const m of ['hip_flexors', 'calves', 'rear_delts', 'chest']) expect(isBuilderAutoPick(ex([m])), m).toBe(true);
+    for (const f of ['Rotator cuff', 'Serratus', 'Shins', 'Neck']) expect(builderFocusCounts(f as BuilderFocus), f).toBe(true);
+    expect(isBrowseOnlyFocus('Shins')).toBe(true);
+    expect(isBrowseOnlyFocus('Calves')).toBe(false);
+    expect(worksLine(ex(['abs', 'hip_flexors'], ['obliques']))).toBe('Abs, hip flexors, obliques');
+    expect(worksLine(ex(['rotator_cuff'], ['rear_delts']))).toBe('Rotator cuff, rear delts');
+    expect(worksLine(ex(['tibialis']))).toBe('Shins');
+    expect(worksLine(ex(['neck']))).toBe('Neck');
+    expect(worksLine(ex(['serratus']))).toBe('Serratus');
+  });
+  it('Swap / Add: forearm work is its own heading under the arms group', () => {
+    const items = [ex(['biceps']), ex(['forearms']), ex(['forearms', 'brachialis'])];
+    expect(builderFocusSections(items, (e) => e, 'Arms').map((s) => [s.focus, s.items.length])).toEqual([
+      ['Biceps', 2],
+      ['Forearms', 1],
+    ]);
+  });
+});
+
+describe('builderFocusOf (Swap focus headings, §2.5)', () => {
+  it('every focus lies in its exercise’s group, for every vocabulary muscle as the lead', () => {
+    for (const m of Object.keys(MUSCLE_TO_GROUP)) {
+      for (const pattern of [undefined, 'horizontal_pull', 'vertical_pull']) {
+        const e = ex([m], [], pattern);
+        const g = builderGroupOf(e);
+        const f = builderFocusOf(e);
+        if (g === null) expect(f).toBeNull();
+        else expect(BUILDER_FOCI[g] as readonly BuilderFocus[]).toContain(f);
+      }
+    }
+  });
+  it('Upper chest / Mid chest', () => {
+    expect(builderFocusOf(ex(['upper_chest', 'front_delts'], ['chest', 'triceps'], 'horizontal_push'))).toBe('Upper chest');
+    expect(builderFocusOf(ex(['chest', 'upper_chest'], [], 'horizontal_push'))).toBe('Upper chest');
+    expect(builderFocusOf(ex(['chest'], ['front_delts', 'triceps'], 'horizontal_push'))).toBe('Mid chest');
+  });
+  it('Lats / Mid-back / Rear delts: rows are Mid-back whichever back muscle is listed first', () => {
+    expect(builderFocusOf(ex(['lats'], ['upper_back', 'biceps'], 'vertical_pull'))).toBe('Lats');
+    expect(builderFocusOf(ex(['lats', 'upper_back'], ['rear_delts'], 'horizontal_pull'))).toBe('Mid-back');
+    expect(builderFocusOf(ex(['upper_back', 'lats'], ['rear_delts'], 'horizontal_pull'))).toBe('Mid-back');
+    expect(builderFocusOf(ex(['rear_delts', 'upper_back'], ['traps'], 'horizontal_pull'))).toBe('Rear delts');
+    expect(builderFocusOf(ex(['spinal_erectors', 'glutes'], ['hamstrings'], 'hinge'))).toBe('Lower back');
+  });
+  it('Front delts / Side delts; Quads / Hamstrings & glutes / Calves', () => {
+    expect(builderFocusOf(ex(['front_delts'], ['side_delts', 'triceps']))).toBe('Front delts');
+    expect(builderFocusOf(ex(['side_delts'], ['front_delts']))).toBe('Side delts');
+    expect(builderFocusOf(ex(['quads', 'glutes']))).toBe('Quads');
+    expect(builderFocusOf(ex(['glutes'], ['hamstrings']))).toBe('Hamstrings & glutes');
+    expect(builderFocusOf(ex(['hamstrings', 'glutes']))).toBe('Hamstrings & glutes');
+    expect(builderFocusOf(ex(['calves']))).toBe('Calves');
+  });
+});
+
+describe('pre-D5 group keys (stored carry-overs, older drafts)', () => {
+  it('read as today’s groups; anything else is null', () => {
+    expect(builderGroupOfKey('Biceps')).toBe('Arms');
+    expect(builderGroupOfKey('Triceps')).toBe('Arms');
+    expect(builderGroupOfKey('Abs')).toBe('Core');
+    for (const g of BUILDER_GROUPS) expect(builderGroupOfKey(g)).toBe(g);
+    expect(builderGroupOfKey('Forearms')).toBeNull();
+    expect(builderGroupOfKey(3)).toBeNull();
+  });
+});
+
+describe('builderFocusSections', () => {
+  const items = [
+    { id: 'fly', info: ex(['chest'], ['front_delts']) },
+    { id: 'incline', info: ex(['upper_chest', 'front_delts'], ['chest', 'triceps']) },
+    { id: 'press', info: ex(['chest'], ['front_delts', 'triceps']) },
+    { id: 'pushdown', info: ex(['triceps']) },
+  ];
+  it('the group’s exercises under headings in display order, input order kept, others left out', () => {
+    expect(builderFocusSections(items, (i) => i.info, 'Chest').map((s) => [s.focus, s.items.map((i) => i.id)])).toEqual([
+      ['Upper chest', ['incline']],
+      ['Mid chest', ['fly', 'press']],
+    ]);
+    expect(builderFocusSections(items, (i) => i.info, 'Arms').map((s) => s.focus)).toEqual(['Triceps']);
+    expect(builderFocusSections(items, (i) => i.info, 'Back')).toEqual([]);
+  });
+});
+
+describe('worksLine (§2.4, §2.5)', () => {
+  it('primaries then helpers, short gym words, first capitalised', () => {
+    expect(worksLine(ex(['chest'], ['front_delts', 'triceps']))).toBe('Chest, front delts, triceps');
+    expect(worksLine(ex(['upper_chest', 'front_delts'], ['chest', 'triceps']))).toBe('Upper chest, front delts, triceps');
+    expect(worksLine(ex(['hamstrings', 'glutes'], ['spinal_erectors', 'adductors', 'upper_back', 'grip']))).toBe('Hamstrings, glutes, lower back');
+    expect(worksLine(ex(['rear_delts', 'upper_back'], ['traps', 'side_delts']))).toBe('Rear delts, upper back, traps');
+  });
+  it('at most 3 by default; core and grip only when primary; chest left out beside upper chest', () => {
+    expect(worksLine(ex(['quads', 'glutes'], ['adductors', 'hamstrings', 'spinal_erectors', 'core']))).toBe('Quads, glutes, adductors');
+    expect(worksLine(ex(['abs'], ['obliques', 'grip']))).toBe('Abs, obliques');
+    expect(worksLine(ex(['abs', 'core'], ['obliques']))).toBe('Abs, core, obliques');
+    expect(worksLine(ex(['triceps'], ['core', 'grip']))).toBe('Triceps');
+    expect(worksLine(ex(['chest', 'upper_chest']))).toBe('Upper chest');
+    expect(worksLine(ex(['lats'], ['upper_back', 'biceps', 'brachialis']), 4)).toBe('Lats, upper back, biceps');
+  });
+  it('brachialis reads as biceps, once; forearms only when primary', () => {
+    expect(worksLine(ex(['biceps'], ['brachialis', 'forearms']))).toBe('Biceps');
+    expect(worksLine(ex(['brachialis', 'biceps'], ['forearms']))).toBe('Biceps');
+    expect(worksLine(ex(['traps'], ['forearms', 'spinal_erectors']))).toBe('Traps, lower back');
+    expect(worksLine(ex(['forearms'], ['biceps']))).toBe('Forearms, biceps');
+  });
+  it('max below 1 still shows one word', () => {
+    expect(worksLine(ex(['chest'], ['front_delts']), 0)).toBe('Chest');
+  });
+  it('unknown words skipped; nothing left is null', () => {
+    expect(worksLine(ex(['rhomboids', 'lats']))).toBe('Lats');
+    expect(worksLine(ex([]))).toBeNull();
+    expect(worksLine(ex(['rhomboids']))).toBeNull();
+  });
+});

@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "key": "band-lateral-walk",
+  "tier": "rich",
+  "name": "Lateral band walk",
+  "aliases": ["Lateral band walks", "Band lateral walk", "Banded lateral walk", "Banded side step", "Band side step", "Lateral walk with band", "Band walk"],
+  "family": "hip_abduction",
+  "movementPattern": "lunge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abductors", "glutes"],
+  "secondaryMuscles": ["quads"],
+  "compatibleEquipment": ["band"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Mini-band around your ankles or above your knees",
+      "Feet hip-width, band lightly stretched",
+      "Sit into a quarter squat, chest up",
+      "Toes pointing forward"
+    ],
+    "execution": [
+      "Step sideways with the lead foot",
+      "Bring the other foot in; keep the band taut",
+      "Stay low and level as you step",
+      "Step back the same number the other way"
+    ],
+    "faults": [
+      "Don't let your knees cave inward",
+      "Don't bob up and down",
+      "Don't rock your body side to side",
+      "Don't let the band go slack"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Band position changes the feel: lower on the legs (ankles or feet) is usually harder than above the knees. Note where the band sat so sessions compare.",
+      "Check the band isn't torn and lies flat, so it doesn't roll or pinch.",
+      "Clear a straight path to the side before you start.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Band above the knees", "reason": "Shorter lever, so the same band feels easier." },
+      { "key": null, "name": "Taller stance", "reason": "A smaller knee bend is easier to hold." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Band at the ankles or forefoot", "reason": "Longer lever; one small study found more glute activity this way." },
+      { "key": null, "name": "Stronger band", "reason": "More resistance for the same steps." }
+    ],
+    "substitutions": [
+      { "key": "machine-hip-abduction", "name": "Hip abduction machine", "reason": "Same outer-hip work, seated, with stack loading." },
+      { "key": "bodyweight-glute-bridge", "name": "Glute bridge", "reason": "Glute work lying down when there's no room to walk." },
+      { "key": "dumbbell-step-up", "name": "Dumbbell step-up", "reason": "Single-leg work where the hip must stay level." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at hip height, figure facing the camera in a quarter squat with a mini-band at the ankles. The figure steps sideways in place (no floor scroll); the band must visibly stay taut.",
+    "keyPositions": [
+      {
+        "label": "Wide",
+        "describe": "Quarter squat, chest up, hands on hips. Lead foot has stepped out to the side so the feet are wider than the hips; band stretched. Knees over the toes, not caving in.",
+        "approxAnglesDeg": { "hipFlexion": 30, "kneeFlexion": 30, "stanceWidthHipWidths": 1.6 }
+      },
+      {
+        "label": "Narrow",
+        "describe": "Trailing foot has followed in to hip-width; band still lightly stretched. Same squat height; torso level.",
+        "approxAnglesDeg": { "hipFlexion": 30, "kneeFlexion": 30, "stanceWidthHipWidths": 1 }
+      }
+    ],
+    "ikHints": ["Hip height constant in every frame", "Knees stay in line with the toes"],
+    "tempo": { "stepMs": 800, "stepsPerCycle": 2 },
+    "props": ["mini_band"],
+    "emphasise": [
+      "Stays low and level",
+      "Knees push out against the band",
+      "Band never goes slack"
+    ],
+    "doNotShow": ["Knees caving inward", "Bobbing up between steps", "Feet clicking together"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/lateral-walk-with-band/",
+      "title": "StrengthLog: Lateral Walk With Band",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (abductors, glutes); cues.setup[0]; cues.execution[0-1,3]"
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/22464817/",
+      "title": "Cambridge EDJ et al. (2012) Progressive hip rehabilitation: the effects of resistance band placement on gluteal activation during two common exercises. Clin Biomech 27(7):719-724",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[0]; variations.progressions[0] (glute med activity rose as the band moved from the knees to the ankles or feet; 9 healthy men)",
+      "note": "Abstract-level only, seen through a search-result summary. Small, all-male sample; EMG activity, not training outcomes."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "There is no hip-abduction or prehab pattern. lunge matches the hip abduction machine entry."
+    },
+    {
+      "field": "measurement",
+      "note": "Reps are steps, usually counted per direction; the entry doesn't fix whether a rep is one step or one step each way. Band position (knees, ankles, feet) is proposed as a set modifier and has nowhere to go yet."
+    },
+    {
+      "field": "secondaryMuscles",
+      "note": "quads reflects holding the quarter squat, reasoned from the position rather than measured."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. stanceWidthHipWidths is stance width in hip widths."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

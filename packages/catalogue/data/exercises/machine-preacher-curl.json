@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-preacher-curl",
+  "tier": "rich",
+  "name": "Machine preacher curl",
+  "aliases": ["Preacher curl machine", "Machine biceps curl", "Machine bicep curl", "Biceps curl machine", "Bicep curl machine", "Seated machine curl"],
+  "family": "curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["biceps", "brachialis"],
+  "secondaryMuscles": ["forearms"],
+  "compatibleEquipment": ["weight_stack", "plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Set the seat so your armpits reach the top of the pad",
+      "Line your elbows up with the machine's pivot",
+      "Backs of your arms flat on the pad",
+      "Underhand grip on the handles"
+    ],
+    "execution": [
+      "Curl the handles toward your shoulders",
+      "Squeeze at the top for a moment",
+      "Lower slowly until your arms are nearly straight",
+      "Keep your upper arms on the pad"
+    ],
+    "faults": [
+      "Don't lift your elbows off the pad",
+      "Don't let the stack crash at the bottom",
+      "Don't lean back to finish the rep"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Line your elbows up with the machine's pivot (often marked with a dot) so the resistance feels smooth through the curl.",
+      "Lower under control into the bottom position; don't let the stack pull your arms straight.",
+      "Stack numbers vary between machines and brands; compare only on the same machine.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [],
+    "progressions": [
+      { "key": "ez-bar-preacher-curl", "name": "Preacher curl", "reason": "Free bar on a preacher bench; balance and grip matter more." }
+    ],
+    "substitutions": [
+      { "key": "ez-bar-preacher-curl", "name": "Preacher curl", "reason": "Same arm-on-pad curl with an EZ bar." },
+      { "key": "cable-curl", "name": "Cable curl", "reason": "Steady cable tension, standing." },
+      { "key": "dumbbell-curl", "name": "Dumbbell curl", "reason": "Free-weight curl; no machine needed." },
+      { "key": "ez-bar-curl", "name": "EZ-bar curl", "reason": "Standing curl with a bar." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at seated shoulder height, figure facing right. Machine drawn simply: seat, angled arm pad and a handle on a lever whose pivot sits level with the elbows. The stack can be left out.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Seated, armpits at the top of the pad, upper arms along it, elbows in line with the pivot. Arms nearly straight, hands on the handles.",
+        "approxAnglesDeg": { "padAngleFromVertical": 45, "elbowFlexion": 15 }
+      },
+      {
+        "label": "Top",
+        "describe": "Handles curled toward the shoulders, forearms about vertical. Upper arms still on the pad; torso unchanged.",
+        "approxAnglesDeg": { "padAngleFromVertical": 45, "elbowFlexion": 120 }
+      }
+    ],
+    "ikHints": ["Upper arms fixed on the pad", "Handle moves on an arc centred on the pivot, which sits at the elbow"],
+    "tempo": { "downMs": 2000, "holdMs": 400, "upMs": 1000 },
+    "props": ["preacher_curl_machine"],
+    "emphasise": [
+      "Elbows level with the machine's pivot",
+      "Upper arms stay on the pad",
+      "Slow lowering"
+    ],
+    "doNotShow": ["Elbows lifting off the pad", "Stack slamming", "Leaning back"]
+  },
+  "sources": [
+    {
+      "url": "https://exrx.net/WeightExercises/Brachialis/LVPreacherCurl",
+      "title": "ExRx.net: Lever Preacher Curl",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (brachialis target; biceps synergist); cues.setup[1-3] (elbows aligned with the lever's pivot; backs of arms on the pad)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    },
+    {
+      "url": "https://exercises.virtuagym.com/exercise/preacher-curl-machine/",
+      "title": "Virtuagym: Preacher curl machine",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0,2-3]; cues.execution[0,2]",
+      "note": "Seen only through a search-result summary. Commercial app library."
+    },
+    {
+      "url": "https://www.uwo.ca/campusrec/orientation/equipment_guides/biceps_and_triceps.html",
+      "title": "Western University Campus Rec: Biceps and triceps equipment guide",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0] (seat so the arms rest comfortably on the pad, feet planted)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "\"Seated Machine Curl\" (FitNotes' default) and \"Machine biceps curl\" are aliases because most selectorised biceps machines are preacher-style. A machine without an arm pad would be a different exercise; Ben should confirm at import."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Machine designs vary."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

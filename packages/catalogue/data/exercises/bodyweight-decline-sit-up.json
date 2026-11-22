@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-decline-sit-up",
+  "tier": "rich",
+  "name": "Decline sit-up",
+  "aliases": ["Decline sit-ups", "Decline situp", "Decline sit up", "Decline bench sit-up"],
+  "family": "sit_up",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs", "hip_flexors"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Start with the bench at a slight decline",
+      "Hook your feet under the pads",
+      "Arms across your chest or hands by your head"
+    ],
+    "execution": [
+      "Curl your chin and chest up first",
+      "Keep curling until your torso is upright",
+      "Lower slowly, rounding back down",
+      "Breathe out on the way up"
+    ],
+    "faults": [
+      "Don't yank yourself up with your arms",
+      "Don't jerk up with a flat, arched back",
+      "Don't drop back onto the pad"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "The hip muscles do much of the work in a full sit-up. Curling the chest up first keeps more of it on the abs.",
+      "Lying head-down makes some people light-headed. Sit up slowly between sets and stop if you feel dizzy.",
+      "Coaching sources differ on how much full sit-up volume is wise. Keep it moderate and build up gradually.",
+      "To add load, hold a plate on your chest and log it as added weight. Sit up fully before you unhook your feet.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-decline-crunch", "name": "Decline crunch", "reason": "Shorter range on the same bench; the hips don't bend." },
+      { "key": null, "name": "Sit-up on a flat bench or the floor", "reason": "No decline, so less body weight to lift." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Steeper decline", "reason": "Raise the angle a notch at a time." },
+      { "key": null, "name": "Weighted decline sit-up", "reason": "A plate held on the chest; log it as added weight." }
+    ],
+    "substitutions": [
+      { "key": "machine-ab-crunch", "name": "Ab crunch machine", "reason": "Loaded ab curl with stack steps." },
+      { "key": "cable-crunch", "name": "Cable crunch", "reason": "Loaded ab curl kneeling at a cable column." },
+      { "key": "bodyweight-captains-chair-knee-raise", "name": "Captain's chair knee raise", "reason": "Also trains hip bending with the abs, from the legs up." },
+      { "key": "bodyweight-hanging-knee-raise", "name": "Hanging knee raise", "reason": "Hip bending with the abs while hanging; adds grip." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height. Decline bench with the head end low on the left and the foot rollers high on the right, at a shallow angle (about 20-30°).",
+    "keyPositions": [
+      {
+        "label": "Down",
+        "describe": "Lying back on the decline bench, feet hooked under the rollers, knees bent. Back flat on the pad, arms crossed on the chest.",
+        "approxAnglesDeg": { "benchDecline": 25, "trunkFlexion": 0, "hipFlexion": 60, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Curling",
+        "describe": "Chin, chest and upper back curled up off the pad; lower back still touching. The curl leads before the hips start to bend.",
+        "approxAnglesDeg": { "benchDecline": 25, "trunkFlexion": 35, "hipFlexion": 70, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Up",
+        "describe": "Torso lifted off the pad to roughly upright, back still gently rounded, arms crossed on the chest. Feet still hooked.",
+        "approxAnglesDeg": { "benchDecline": 25, "trunkFlexion": 30, "hipFlexion": 120, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Feet fixed under the rollers", "Pelvis stays on the seat end of the bench"],
+    "tempo": { "downMs": 1800, "holdMs": 300, "upMs": 1300 },
+    "props": ["decline_bench", "leg_rollers"],
+    "emphasise": [
+      "The chest curls up first, then the hips bend",
+      "Slow, rounded lowering back to the pad"
+    ],
+    "doNotShow": ["Arms swinging to throw the body up", "Flat-backed jerk from the hips", "Steep, near-vertical bench"]
+  },
+  "sources": [
+    {
+      "url": "https://exrx.net/WeightExercises/HipFlexors/WtDeclineSitup",
+      "title": "ExRx.net: Weighted Decline Sit-up",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[0] (hip flexors are the target; the abs work dynamically only if the waist actually flexes); variations.progressions[0-1] (decline angle and added weight)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    },
+    {
+      "url": "https://fitnessvolt.com/decline-sit-up/",
+      "title": "Fitness Volt: Decline sit-up guide",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0] (start at a small decline); cues.execution[0] (tilt the pelvis and curl so the abs, not only the hip flexors, drive it)",
+      "note": "Seen only through a search-result summary. Commercial fitness site."
+    },
+    {
+      "url": "https://bretcontreras.com/wp-content/uploads/To-Crunch-or-Not-to-Crunch-An-Evidence-Based-Examination-of-Spinal-Flexion-Exercises-Their-Potential-Risks-and-Their-Applicability-to-Program-Design.pdf",
+      "title": "Contreras B, Schoenfeld B (2011) To crunch or not to crunch. Strength Cond J 33(4):8-18",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[2]",
+      "note": "Narrative review; cited through the expansion research file, not re-read in full."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "ExRx files this exercise under the hip flexors (iliopsoas target) with the abs as stabilisers unless the waist curls. The abs are listed first because the cues ask for the curl; hip_flexors is a primary too (vocabulary word added 23 Oct 2026, expansion research Q1). How the work splits between them depends on how much the waist curls."
+    },
+    {
+      "field": "requiresStation",
+      "note": "A decline or ab bench has no station value. specific_machine is the nearest; the domain doesn't check it."
+    },
+    {
+      "field": "mechanic",
+      "note": "Spine and hips both move, so this could be called compound. Kept as isolation to match the other ab-curl and leg-raise entries."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

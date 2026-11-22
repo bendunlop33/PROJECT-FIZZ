@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-leg-press-calf-raise",
+  "tier": "rich",
+  "name": "Leg-press calf raise",
+  "aliases": ["Leg press calf raise", "Leg press calf raises", "Calf press", "Leg press calf press", "Calf press on leg press", "Sled calf press", "Calf raise on leg press"],
+  "family": "calf_raise",
+  "movementPattern": "calves",
+  "mechanic": "isolation",
+  "primaryMuscles": ["calves"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["plate_loaded_machine", "weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Sit in the leg press, back flat on the pad",
+      "Balls of your feet on the platform's bottom edge",
+      "Heels hanging off; knees straight but not locked",
+      "Keep the safety catches in place if it allows"
+    ],
+    "execution": [
+      "Push through the balls of your feet",
+      "Point your toes as far as you can and pause",
+      "Lower slowly into a calf stretch",
+      "Keep your knees still the whole time"
+    ],
+    "faults": [
+      "Don't bend your knees to help push",
+      "Don't bounce out of the stretch",
+      "Don't lock your knees hard"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Your feet are near the platform's edge. If they slip, the platform can come down toward you, so start light, wear shoes with grip, and use the machine's safety catches or stops if it has them.",
+      "Keep your knees soft but still; only the ankles move.",
+      "The logged load is the plates added (or the stack reading on a stack leg press). It isn't comparable with a standing calf raise or another machine.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-calf-raise", "name": "Calf raise (bodyweight)", "reason": "Learn the full range standing, with no machine." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Single-leg leg-press calf raise", "reason": "One foot at a time with a much lighter load." }
+    ],
+    "substitutions": [
+      { "key": "machine-standing-calf-raise", "name": "Standing calf raise", "reason": "Same straight-knee calf work standing on a machine." },
+      { "key": "machine-seated-calf-raise", "name": "Seated calf raise", "reason": "Bent knees shift more work to the lower calf." },
+      { "key": "barbell-standing-calf-raise", "name": "Standing barbell calf raise", "reason": "Free-bar version in a rack." },
+      { "key": "bodyweight-single-leg-calf-raise", "name": "Single-leg calf raise", "reason": "One leg on a step; no machine needed." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view of a 45° leg press at hip height, figure's head on the left. Feet on the lower edge of the platform with the heels hanging off; the ankle must be large and clear in frame.",
+    "keyPositions": [
+      {
+        "label": "Stretch",
+        "describe": "Seated in the leg press, back on the pad, legs nearly straight. Balls of the feet on the platform's bottom edge, heels dropped below it, ankles bent for a calf stretch.",
+        "approxAnglesDeg": { "kneeFlexion": 5, "ankleDorsiflexion": 15 }
+      },
+      {
+        "label": "Pointed",
+        "describe": "Ankles extended, toes pushing the platform away. Knees unchanged; only the platform and feet have moved.",
+        "approxAnglesDeg": { "kneeFlexion": 5, "ankleDorsiflexion": -30 }
+      }
+    ],
+    "ikHints": ["Hips and back fixed on the seat", "Balls of the feet fixed on the platform edge; platform moves along its rails"],
+    "tempo": { "downMs": 1600, "holdMs": 600, "upMs": 900 },
+    "props": ["leg_press_45", "platform_edge"],
+    "emphasise": [
+      "Only the ankles move; knees stay still",
+      "Heels drop below the edge, then the toes point",
+      "Pause at both ends"
+    ],
+    "doNotShow": ["Knees bending to push", "Feet slipping off the edge", "Safety catches removed"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/calf-raise-in-leg-press/",
+      "title": "StrengthLog: Calf Raise in Leg Press",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-2]; cues.execution[0-2]; cues.faults[2]"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/Gastrocnemius/SL45CalfPress",
+      "title": "ExRx.net: Sled 45° Calf Press",
+      "checkedOn": "2026-10-23",
+      "supports": "aliases[5] (sled calf press); primaryMuscles; cues.execution[3] (knees straight or only slightly bent)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "Added (plates) by default, matching the 45° leg press entry. On a seated stack leg press it's a stack reading; an import or Ben picks which."
+    },
+    {
+      "field": "cues.setup[3]",
+      "note": "Neither source mentions safety catches. Whether the catches can stay engaged depends on the machine; the safety note is reasoned from the foot position, not sourced."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Calf press\" can also mean a dedicated seated calf-press machine. It is the same movement, so it stays an alias, but loads aren't comparable between machines."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Negative ankleDorsiflexion means the ankle is pointed."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

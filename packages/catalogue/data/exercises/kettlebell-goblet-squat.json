@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "kettlebell-goblet-squat",
+  "tier": "basic",
+  "name": "Kettlebell goblet squat",
+  "aliases": ["KB goblet squat", "Kettlebell squat", "KB squat"],
+  "family": "goblet_squat",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "upper_back", "core"],
+  "compatibleEquipment": ["kettlebell"],
+  "defaultLoadConvention": "per_hand",
+  "implements": 1,
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-squat-jump",
+  "tier": "rich",
+  "name": "Squat jump",
+  "aliases": ["Jump squat", "Jump squats", "Squat jumps", "Bodyweight jump squat", "Jumping squat"],
+  "family": "jump",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["calves", "hamstrings", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Feet about shoulder-width",
+      "Hands at your chest or by your sides",
+      "Stand tall and brace"
+    ],
+    "execution": [
+      "Dip into a quarter to half squat",
+      "Drive up and jump as high as you can",
+      "Land softly on the balls of your feet",
+      "Sink into the landing, then reset"
+    ],
+    "faults": [
+      "Don't land with straight legs",
+      "Don't let your knees cave in",
+      "Don't keep going when the jumps slow down"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Jump on a non-slip surface with clear space and enough headroom.",
+      "Keep sets short (about 3–5 jumps) and rest fully, so each jump is fast.",
+      "Practise landing quietly with knees in line with the toes before jumping for height.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the knee, shin or ankle on landing",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-squat", "name": "Bodyweight squat", "reason": "Same squat pattern with no jump." },
+      { "key": null, "name": "Squat jump with a reset", "reason": "Stand still between jumps to land and set up each one." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Continuous squat jumps", "reason": "Jumps linked without a reset; more conditioning." },
+      { "key": null, "name": "Dumbbell squat jump", "reason": "Light dumbbells at the sides add load; logged with the dumbbell weight." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-box-jump", "name": "Box jump", "reason": "Same jump with a lower-impact landing on a box." },
+      { "key": "bodyweight-broad-jump", "name": "Broad jump", "reason": "Horizontal instead of vertical jump." },
+      { "key": "kettlebell-swing", "name": "Kettlebell swing", "reason": "Explosive hip drive with no landing." },
+      { "key": "bodyweight-pogo-jump", "name": "Pogo jumps", "reason": "Lighter, ankle-led jumping." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right, with headroom above for the jump.",
+    "keyPositions": [
+      {
+        "label": "Dip",
+        "describe": "Hips back and knees bent into about a half squat, chest up, hands at the chest. Heels down.",
+        "approxAnglesDeg": { "hipFlexion": 70, "kneeFlexion": 80, "trunkLeanFromVertical": 30 }
+      },
+      {
+        "label": "Air",
+        "describe": "Hips, knees and ankles fully straightened, feet off the floor, toes pointed down, body upright.",
+        "approxAnglesDeg": { "hipFlexion": 0, "kneeFlexion": 0, "trunkLeanFromVertical": 0, "ankleDorsiflexion": -30 }
+      },
+      {
+        "label": "Landing",
+        "describe": "Landing on the balls of the feet and rolling to the whole foot, hips back, knees bent and in line with the toes.",
+        "approxAnglesDeg": { "hipFlexion": 60, "kneeFlexion": 70, "trunkLeanFromVertical": 25 }
+      }
+    ],
+    "ikHints": ["Feet return to the same spot", "Knees track over the toes on landing"],
+    "tempo": { "downMs": 500, "holdMs": 800, "upMs": 400 },
+    "props": [],
+    "emphasise": [
+      "Fast dip and full extension",
+      "Soft landing with bent knees",
+      "Knees in line with the toes"
+    ],
+    "doNotShow": ["Stiff-legged landing", "Knees caving in", "Leaning far forward"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/jump-squat/",
+      "title": "StrengthLog: Jump Squat",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0]; cues.execution[0-3]"
+    },
+    {
+      "url": "https://www.catalystathletics.com/exercise/555/Squat-Vertical-Jump/",
+      "title": "Catalyst Athletics exercise library: Squat Vertical Jump",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[1] (3–5 reps per set); cues.execution[1]",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'conditioning' (like Box jump); the proposed 'power' pattern isn't in the vocabulary."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative ankleDorsiflexion means the ankle is pointed."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

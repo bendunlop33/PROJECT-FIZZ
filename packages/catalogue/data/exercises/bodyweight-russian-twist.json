@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-russian-twist",
+  "tier": "rich",
+  "name": "Russian twist",
+  "aliases": ["Russian twists", "Seated Russian twist", "Seated torso twist"],
+  "family": "rotation",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["obliques", "abs"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["bodyweight_station", "medicine_ball"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Sit with knees bent and heels on the floor",
+      "Lean back a little with a long, straight back",
+      "Hands together or a light weight at your chest"
+    ],
+    "execution": [
+      "Turn your ribs and shoulders to one side",
+      "Come back through the middle, then turn the other way",
+      "Keep your hips and knees still",
+      "Move slowly and stay tall"
+    ],
+    "faults": [
+      "Don't slump and round your lower back",
+      "Don't just swing your arms side to side",
+      "Don't twist fast with a heavy weight"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Some coaches advise against twisting while the spine is rounded and loaded. Keep the back long, the heels down, the weight light and the turn controlled.",
+      "Turn only as far as you can while the hips stay still; a bigger swing isn't better.",
+      "If you'd rather not twist, the Pallof press and cable woodchop train the obliques with less spine movement.",
+      "Holding a plate or medicine ball? Log it as added weight.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Russian twist with no weight", "reason": "Hands together at the chest; learn the turn first." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Resists the twist instead of making it; easier to control." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Light plate or medicine ball", "reason": "A little load once the back stays long; log it as added weight." },
+      { "key": null, "name": "Feet-up Russian twist", "reason": "Lifting the heels adds a balance challenge; only once the back stays long." }
+    ],
+    "substitutions": [
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Obliques with the spine still; coaches' usual swap." },
+      { "key": "cable-woodchop", "name": "Cable woodchop", "reason": "Loaded, controlled rotation standing." },
+      { "key": "bodyweight-bicycle-crunch", "name": "Bicycle crunch", "reason": "Lying rotation with the back supported." },
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Side-of-waist work with no twisting." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at seated chest height, figure facing the camera, sitting on a mat with knees bent and heels down. The turn reads as the shoulders and hands moving to each side while the knees stay pointing at the camera.",
+    "keyPositions": [
+      {
+        "label": "Centre",
+        "describe": "Seated, leaning back slightly with a long, straight back. Knees bent, heels on the mat. Hands together in front of the chest.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 35, "trunkRotation": 0, "hipFlexion": 70, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Turn right",
+        "describe": "Ribs and shoulders turned to the figure's right, hands beside the right hip. Back still long; knees and feet unchanged.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 35, "trunkRotation": 40, "hipFlexion": 70, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Turn left",
+        "describe": "Mirror of Turn right: shoulders turned to the left, hands beside the left hip.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 35, "trunkRotation": -40, "hipFlexion": 70, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Pelvis, knees and heels fixed in every frame", "Hands stay together in front of the chest"],
+    "tempo": { "stepMs": 1400, "stepsPerCycle": 2 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Long back; the turn comes from the ribs",
+      "Knees keep pointing forward",
+      "Slow, controlled side to side"
+    ],
+    "doNotShow": ["Slumped, rounded lower back", "Heavy weight swung fast", "Knees rocking side to side"]
+  },
+  "sources": [
+    {
+      "url": "https://www.lesmills.com/uk/articles/the-ab-exercise-to-avoid",
+      "title": "Les Mills: The ab exercise to avoid",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[0,2] (coaching concern about loaded, rounded twisting; feet grounded, neutral back, turn through the chest); variations.substitutions[3]",
+      "note": "Coaching opinion from a fitness-class company, not research."
+    },
+    {
+      "url": "https://www.physitrack.com/exercise-library/how-to-perform-the-russian-twist-exercise",
+      "title": "Physitrack: Step-by-step guide to the Russian twist",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (mainly obliques, with the abs); cues.execution[2]; cues.faults[0]; safety.notes[1]",
+      "note": "The page is inconsistent about whether the feet stay down; this entry keeps them down by default."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "safety.notes[0]",
+      "note": "Coaches dispute combined loaded flexion and rotation (expansion research [LM]). Evidence either way is weak; the entry stays cautious and offers non-twisting swaps rather than making a claim."
+    },
+    {
+      "field": "compatibleEquipment",
+      "note": "Done with no load, a plate, a dumbbell or a medicine ball. Default is bodyweight, with any held weight logged as added. Plates and dumbbells aren't listed as kinds so the exercise isn't treated as a per-dumbbell lift."
+    },
+    {
+      "field": "measurement",
+      "note": "Reps are usually counted as total turns (both sides). Some people count one per pair; the entry doesn't fix which."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Uses a stride tempo for the side-to-side rhythm."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

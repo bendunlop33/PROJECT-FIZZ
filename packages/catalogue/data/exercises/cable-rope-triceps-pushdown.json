@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-rope-triceps-pushdown",
+  "tier": "basic",
+  "name": "Rope triceps pushdown",
+  "aliases": ["Rope pushdown", "Tricep rope pushdown", "Triceps rope pushdown", "Rope pressdown", "Cable rope pushdown", "Rope push down"],
+  "family": "triceps_pushdown",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["triceps"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

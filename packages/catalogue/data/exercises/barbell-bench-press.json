@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-bench-press",
+  "tier": "rich",
+  "name": "Bench press",
+  "aliases": ["Barbell bench press", "Flat bench press", "Flat bench", "BB bench", "BB bench press", "Flat barbell bench press"],
+  "family": "bench_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["front_delts", "triceps"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["bench", "rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 180,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Lie with your eyes under the bar",
+      "Feet flat, glutes and upper back on the bench",
+      "Grip a little wider than your shoulders",
+      "Pull your shoulder blades back and down"
+    ],
+    "execution": [
+      "Unrack and set the bar over your shoulders",
+      "Lower to your lower chest, forearms vertical",
+      "Touch lightly, then press",
+      "Press up and back to over your shoulders"
+    ],
+    "faults": [
+      "Don't bounce the bar off your chest",
+      "Don't lift your hips off the bench",
+      "Don't let your shoulders roll forward at lockout",
+      "Don't let your wrists bend far back"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Bench in a rack or bench station with safety arms set just below your chest at the bottom of the rep, or with a spotter. Don't bench heavy alone without either.",
+      "A bar trapped on the chest or neck is rare but has caused deaths. Safety arms or a spotter prevent it.",
+      "Wrap your thumbs around the bar. Avoid a thumbless grip.",
+      "If you use a spotter, agree the lift-off, the rep count and the help signal before the set.",
+      "Very wide grips raised modelled shoulder load in one small study. A grip a little wider than the shoulders is a sensible default.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "Same pressing pattern, scalable, with no bar to get stuck under." },
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "Guided path; safe to train hard alone." }
+    ],
+    "progressions": [
+      { "key": "barbell-paused-bench-press", "name": "Paused bench press", "reason": "A short pause on the chest builds control and strength off the chest." },
+      { "key": "barbell-close-grip-bench-press", "name": "Close-grip bench press", "reason": "A narrower grip shifts more work to the triceps." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-bench-press", "name": "Dumbbell bench press", "reason": "Same pattern; each arm works on its own and the weights can be lowered to the sides. Load is each dumbbell." },
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "Guided path; no spotter needed. Stack numbers are not comparable." },
+      { "key": "smith-machine-bench-press", "name": "Smith machine bench press", "reason": "Fixed path with built-in catches." },
+      { "key": "barbell-incline-bench-press", "name": "Incline bench press", "reason": "Same bar and grip; more upper chest and front shoulder." },
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "No equipment needed." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view, head on the left, bench along the floor line, camera at bench height. Uprights optional, drawn behind the figure.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Lying on a flat bench with head, upper back and glutes on the pad and a small upper-back arch. Feet flat on the floor, knees bent about 90°. Arms straight and vertical, bar directly over the shoulder joints.",
+        "approxAnglesDeg": { "shoulderFlexion": 90, "elbowFlexion": 0, "hipFlexion": -15, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Bar halfway down, drifting slightly toward the lower chest. Elbows bending, forearms close to vertical under the bar.",
+        "approxAnglesDeg": { "shoulderFlexion": 45, "elbowFlexion": 50, "hipFlexion": -15, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Chest touch",
+        "describe": "Bar lightly touching the lower chest, around the nipple line or just below. Forearms close to vertical, wrists stacked over the elbows. Elbows slightly below the torso line. Upper back, glutes and feet still planted.",
+        "approxAnglesDeg": { "shoulderFlexion": -10, "elbowFlexion": 90, "hipFlexion": -15, "kneeFlexion": 90 }
+      }
+    ],
+    "barPath": "Slight diagonal from over the shoulders down to the lower chest and back; horizontal travel roughly 4–8% of body height",
+    "tempo": { "downMs": 1400, "holdMs": 150, "upMs": 1000 },
+    "props": ["barbell_loaded", "bench_flat", "rack_uprights_optional"],
+    "emphasise": [
+      "Bar touches the lower chest and finishes over the shoulders",
+      "Forearms near vertical at the bottom",
+      "Feet, glutes and upper back stay planted"
+    ],
+    "doNotShow": ["Bounce off the chest", "Hips lifting off the bench", "Exaggerated arch", "Thumbless grip", "Spotter"]
+  },
+  "sources": [
+    {
+      "url": "https://acefitness.org/resources/everyone/exercise-library/5/chest-press",
+      "title": "ACE Exercise Library: Chest Press (barbell, bench)",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[1-2]; cues.execution[1,3]; guideBrief.keyPositions[2] (elbows just below bench level)"
+    },
+    {
+      "url": "https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2024.1393235/full",
+      "title": "Noteboom L et al. (2024) Effects of bench press technique variations on musculoskeletal shoulder loads and potential injury risk. Front Physiol 15:1393235",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[3] (shoulder blades back); safety.notes[4] (grip width)"
+    },
+    {
+      "url": "https://europepmc.org/abstract/MED/17456099",
+      "title": "Jumbelic MI (2007) Traumatic asphyxia in weightlifters. J Forensic Sci 52(3):702-705",
+      "checkedOn": "2026-10-09",
+      "supports": "safety.notes[0-1]",
+      "note": "Abstract read through the Europe PMC API. Supports the trapped-bar risk; spotter and safety-arm advice is standard practice."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.barPath",
+      "note": "The horizontal bar travel (4–8% of height) is an estimate, not from a cited measurement. Touch point varies with grip and arch."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Shoulder angles are the side-view projection; the elbows also move out to the side, which a side view can't show."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

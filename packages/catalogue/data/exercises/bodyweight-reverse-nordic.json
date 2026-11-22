@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-reverse-nordic",
+  "tier": "rich",
+  "name": "Reverse Nordic",
+  "aliases": ["Reverse Nordic curl", "Reverse Nordics", "Reverse Nordic curls", "Kneeling quad lean-back"],
+  "family": "reverse_nordic",
+  "movementPattern": "squat",
+  "mechanic": "isolation",
+  "primaryMuscles": ["quads"],
+  "secondaryMuscles": ["core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Kneel on a pad, knees hip-width",
+      "Tuck your toes or point them back",
+      "Body straight from knees to head",
+      "Squeeze your glutes"
+    ],
+    "execution": [
+      "Lean back slowly as one straight line",
+      "Go only as far as you can control",
+      "Pull yourself back up with your thighs",
+      "Keep your hips straight the whole time"
+    ],
+    "faults": [
+      "Don't bend at the hips",
+      "Don't arch your lower back",
+      "Don't drop into the bottom"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a thick pad under the knees.",
+      "Start with a small lean and increase the range over weeks; the front of the thigh is very stretched at the bottom.",
+      "Have a way back up: a band anchored in front to hold, or hands ready to catch on the floor behind.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the knee or front of the thigh that builds",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Partial-range reverse Nordic", "reason": "Lean back only a short way while strength builds." },
+      { "key": null, "name": "Band-assisted reverse Nordic", "reason": "Hold a band anchored in front so it takes some of the load." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Full-range reverse Nordic", "reason": "Lean back further under control." },
+      { "key": null, "name": "Reverse Nordic with a pause", "reason": "Hold briefly at the deepest point you control." }
+    ],
+    "substitutions": [
+      { "key": "machine-leg-extension", "name": "Leg extension", "reason": "Quad isolation on a stack; easy to load in small steps." },
+      { "key": null, "name": "Sissy squat", "reason": "Similar long-thigh quad work standing up." },
+      { "key": "dumbbell-bulgarian-split-squat", "name": "Bulgarian split squat", "reason": "Loaded quad work with a stretch on the rear leg." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, figure kneeling facing right. Shows the straight line from knees to head and how far the body leans back.",
+    "keyPositions": [
+      {
+        "label": "Kneeling",
+        "describe": "Kneeling upright on a pad, knees hip-width, shins flat on the floor. Body in a straight line from knees to head. Arms crossed on the chest or held forward.",
+        "approxAnglesDeg": { "kneeFlexion": 90, "hipFlexion": 0, "trunkLeanFromVertical": 0 }
+      },
+      {
+        "label": "Lean back",
+        "describe": "Body leaning back as one straight line from knees to head, hips still straight. Knees more bent. The lean is moderate, not lying back.",
+        "approxAnglesDeg": { "kneeFlexion": 135, "hipFlexion": 0, "trunkLeanFromVertical": -45 }
+      }
+    ],
+    "ikHints": ["Knees and shins fixed on the pad", "Hip angle stays straight in every frame"],
+    "tempo": { "downMs": 3000, "holdMs": 300, "upMs": 1500 },
+    "props": ["floor_pad"],
+    "emphasise": [
+      "Straight line from knees to head",
+      "Movement only at the knees",
+      "Slow lean back"
+    ],
+    "doNotShow": ["Bending at the hips", "Arched lower back", "Collapsing to the floor"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/reverse-nordic/",
+      "title": "StrengthLog: Reverse Nordic",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0,2]; cues.execution[0-3]"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11676464/",
+      "title": "2024 study of a reverse Nordic programme in youth karate athletes (J Funct Morphol Kinesiol)",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (described as an eccentric quadriceps exercise); cues.execution[0] (slow, controlled lean)",
+      "note": "Seen through a search listing only; results not read."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'squat' (knee-dominant), matching how Leg extension is tagged; no knee-extension isolation pattern exists."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative trunkLeanFromVertical means leaning back."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

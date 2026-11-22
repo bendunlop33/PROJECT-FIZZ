@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-meadows-row",
+  "tier": "rich",
+  "name": "Meadows row",
+  "aliases": ["Meadows rows", "Landmine Meadows row", "Single-arm landmine row", "One-arm landmine row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back", "rear_delts"],
+  "secondaryMuscles": ["biceps", "brachialis", "grip", "spinal_erectors"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Bar end in a landmine or a padded corner",
+      "Stand side-on, front foot nearest the bar",
+      "Hinge until your torso is near flat",
+      "Free forearm on your front thigh"
+    ],
+    "execution": [
+      "Grip the bar just behind the plates",
+      "Pull your elbow back toward your hip",
+      "Keep your chest square to the floor",
+      "Lower slowly to a full stretch"
+    ],
+    "faults": [
+      "Don't stand up tall to pull",
+      "Don't twist your torso to lift",
+      "Don't shrug toward your ear"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Hold a flat back through the hinge; your free arm on your thigh is the only support for your upper body.",
+      "Use small plates (or straps) if grip on the thick bar end fails before your back does.",
+      "Make sure the landmine or corner is secure so the bar can't slide.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-one-arm-row", "name": "One-arm dumbbell row", "reason": "Bench support takes load off the lower back." },
+      { "key": "cable-single-arm-row", "name": "Single-arm cable row", "reason": "Seated one-arm row on a stack." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Meadows row with a pause", "reason": "A hold at the top adds difficulty without more weight." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-one-arm-row", "name": "One-arm dumbbell row", "reason": "One-arm row; load is the dumbbell." },
+      { "key": "dumbbell-three-point-row", "name": "Three-point dumbbell row", "reason": "Similar staggered, hinged one-arm row." },
+      { "key": "cable-single-arm-row", "name": "Single-arm cable row", "reason": "No hinge needed." },
+      { "key": "machine-chest-supported-t-bar-row", "name": "Chest-supported T-bar row machine", "reason": "Plate-loaded row with full chest support." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, landmine anchor on the floor to the left, bar rising to the right. Figure standing beside the bar end, working arm nearest the camera.",
+    "keyPositions": [
+      {
+        "label": "Stretch",
+        "describe": "Staggered stance side-on to the bar, front foot nearest it. Hips hinged so the torso is close to parallel with the floor, back flat. Free forearm on the front thigh. Working arm hanging long, gripping the bar just behind the plates, shoulder blade reaching down.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 75, "nearShoulderFlexion": 80, "nearElbowFlexion": 5, "hipFlexion": 80 }
+      },
+      {
+        "label": "Top",
+        "describe": "Elbow pulled up and back toward the hip, bar end beside the lower ribs. Torso still hinged and square to the floor; no twist.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 75, "nearShoulderFlexion": -10, "nearElbowFlexion": 100, "hipFlexion": 80 }
+      }
+    ],
+    "ikHints": ["Bar's far end fixed in the landmine", "Free forearm rests on the front thigh"],
+    "barPath": "Bar end travels in a short arc up and back toward the hip",
+    "tempo": { "downMs": 1800, "holdMs": 300, "upMs": 1000 },
+    "props": ["landmine", "barbell_loaded"],
+    "emphasise": [
+      "Hinged torso near horizontal",
+      "Elbow travels toward the hip",
+      "Full stretch at the bottom"
+    ],
+    "doNotShow": ["Standing up to pull", "Torso twisting", "Rounded back"]
+  },
+  "sources": [
+    {
+      "url": "https://learn.athleanx.com/articles/back-for-men/how-to-do-the-meadows-row",
+      "title": "ATHLEAN-X: How to Do the Meadows Row",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-3]; cues.execution[0-1,3]; cues.faults[0-2]"
+    },
+    {
+      "url": "https://powerliftingtechnique.com/meadows-row/",
+      "title": "PowerliftingTechnique.com: Meadows Row",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles (grip demand); cues.execution[0]",
+      "note": "Returned HTTP 403 to the fetcher; content seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "defaultLoadConvention",
+      "note": "Logged as plates added (added), matching Landmine press; the landmine load convention is still open (expansion research Q3)."
+    },
+    {
+      "field": "requiresStation",
+      "note": "No landmine station value exists yet (expansion research Q2), so none is listed."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

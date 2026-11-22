@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-suitcase-carry",
+  "tier": "rich",
+  "name": "Suitcase carry",
+  "aliases": ["Suitcase walk", "Suitcase carries", "Dumbbell suitcase carry", "Kettlebell suitcase carry", "Single-arm farmer's carry", "One-arm farmer's walk", "Single-arm carry"],
+  "family": "carry",
+  "movementPattern": "carry",
+  "mechanic": "compound",
+  "primaryMuscles": ["obliques", "core", "grip"],
+  "secondaryMuscles": ["traps", "abductors"],
+  "compatibleEquipment": ["dumbbells", "kettlebell"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "distance",
+  "laterality": "unilateral",
+  "implements": 1,
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Hinge down and pick up the weight on one side",
+      "Stand tall with your shoulders level",
+      "Arm long, weight just clear of your leg"
+    ],
+    "execution": [
+      "Brace and walk with short, steady steps",
+      "Stay tall; don't lean either way",
+      "Keep both shoulders level",
+      "Swap hands and walk back"
+    ],
+    "faults": [
+      "Don't lean away from or into the weight",
+      "Don't shrug the loaded shoulder",
+      "Don't rest the weight against your leg",
+      "Don't rush"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Pick the weight up and put it down with a hinge: flat back, weight close to your body.",
+      "Clear the walkway first, and set the weight down rather than drop it.",
+      "Grip usually gives out first. Put the weight down before it slips.",
+      "The logged load is the one dumbbell or kettlebell. Carry the same distance with each hand.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Lighter weight, shorter distance", "reason": "Learn to walk tall without leaning before adding load." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Heavier weight or longer distance", "reason": "Add one at a time while the posture stays level." }
+    ],
+    "substitutions": [
+      { "key": "farmers-carry", "name": "Farmer's carry", "reason": "A weight in each hand; more total load, less sideways challenge." },
+      { "key": "kettlebell-front-rack-carry", "name": "Kettlebell front-rack carry", "reason": "Loaded walk with the bells held at the chest." },
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Same side-of-waist work as a static hold." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Trunk work that resists twisting, when there's no room to walk." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at waist height so any sideways lean shows. The figure walks in place toward the camera (no floor scroll); one dumbbell in the right hand, left arm relaxed.",
+    "keyPositions": [
+      {
+        "label": "Right step",
+        "describe": "Standing tall, shoulders level, right arm long with the dumbbell just clear of the thigh. Right foot stepping forward a short step. Torso vertical; no lean toward or away from the weight.",
+        "approxAnglesDeg": { "trunkSideBend": 0, "rightHipFlexion": 25, "leftHipFlexion": 0 }
+      },
+      {
+        "label": "Left step",
+        "describe": "Same tall, level posture with the left foot stepping forward. Dumbbell and right arm unchanged.",
+        "approxAnglesDeg": { "trunkSideBend": 0, "rightHipFlexion": 0, "leftHipFlexion": 25 }
+      }
+    ],
+    "ikHints": ["Shoulders and hips stay level in every frame", "Dumbbell hangs straight down from the shoulder, clear of the leg"],
+    "tempo": { "stepMs": 700, "stepsPerCycle": 2 },
+    "props": ["dumbbell_single"],
+    "emphasise": [
+      "Torso stays vertical; shoulders level",
+      "Weight held just clear of the leg",
+      "Short, steady steps"
+    ],
+    "doNotShow": ["Leaning away from the weight", "Shrugged loaded shoulder", "Weight bumping against the leg"]
+  },
+  "sources": [
+    {
+      "url": "https://nfpt.com/suitcase-carries-how-to-do/",
+      "title": "NFPT: Suitcase carries: how to do them and why",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-2]; cues.faults[0-3]; primaryMuscles; secondaryMuscles (hip stabilisers, mapped to abductors)"
+    },
+    {
+      "url": "https://www.nsca.com/education/articles/nsca-coach/increase-hip-and-trunk-stability-with-loaded-carries/",
+      "title": "NSCA Coach: Increase hip and trunk stability with loaded carries",
+      "checkedOn": "2026-10-23",
+      "supports": "movementPattern; primaryMuscles (trunk resists bending sideways under a one-sided load)",
+      "note": "The page returned 403 to the fetcher on 23 Oct 2026; relied on the expansion research file's 22 Oct check. Supporting source only."
+    },
+    {
+      "url": "https://tonygentilcore.com/tag/martin-rooney/",
+      "title": "Tony Gentilcore: offset carries (Martin Rooney tag page)",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1-2] (no lean, tall chest); primaryMuscles (opposite-side obliques and quadratus lumborum brace)",
+      "note": "Coach's blog seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "NFPT names hip stabilisers. abductors (outer hips) is the nearest catalogue word; it isn't measured. Quadratus lumborum has no word and is covered by core."
+    },
+    {
+      "field": "guideBrief.tempo",
+      "note": "Stride tempo, slowed for readability. Walking in place in front view is a drawing choice; real carries move forward."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

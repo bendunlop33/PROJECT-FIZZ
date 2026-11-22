@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-glute-kickback",
+  "tier": "basic",
+  "name": "Cable glute kickback",
+  "aliases": ["Cable kickback", "Glute kickback", "Cable hip extension", "Standing cable kickback"],
+  "family": "glute_kickback",
+  "movementPattern": "hinge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["glutes"],
+  "secondaryMuscles": ["hamstrings"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

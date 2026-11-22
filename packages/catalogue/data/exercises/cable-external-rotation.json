@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-external-rotation",
+  "tier": "rich",
+  "name": "Cable external rotation",
+  "aliases": ["Cable ER", "Standing cable external rotation", "Cable shoulder external rotation", "Cable external shoulder rotation", "Cable rotator cuff external rotation"],
+  "family": "external_rotation",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["rotator_cuff"],
+  "secondaryMuscles": ["rear_delts"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Pulley at elbow height, single handle",
+      "Stand side-on; hold it with the far hand",
+      "Elbow bent 90°, upper arm against your side",
+      "A rolled towel under the elbow helps"
+    ],
+    "execution": [
+      "Turn your forearm out, away from your body",
+      "Keep your elbow pinned to your side",
+      "Turn only as far as feels smooth",
+      "Return slowly toward your stomach"
+    ],
+    "faults": [
+      "Don't let your elbow drift away from your side",
+      "Don't twist your body to move the handle",
+      "Don't go heavy; it should feel easy to control"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use the lightest pin or small add-on weights. This is a small-muscle exercise, and heavy loads turn it into a body twist.",
+      "If the stack's smallest jump is too big, a band does the same job.",
+      "Do the same reps on both sides.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "band-external-rotation", "name": "Band external rotation", "reason": "Same turn with a light band; good for warm-ups and travel." }
+    ],
+    "progressions": [
+      { "key": null, "name": "90/90 cable external rotation", "reason": "Upper arm raised to shoulder height; a harder position." }
+    ],
+    "substitutions": [
+      { "key": "cable-face-pull", "name": "Face pull", "reason": "Row that finishes with the arms turned out; a common pairing." },
+      { "key": "band-pull-apart", "name": "Band pull-apart", "reason": "Light upper-back and rear-shoulder warm-up with a band." },
+      { "key": "dumbbell-rear-delt-fly", "name": "Dumbbell rear-delt fly", "reason": "Back-of-shoulder work with dumbbells." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at chest height, figure facing the camera, cable column on the figure's left. The working (right) forearm swings out from across the stomach to pointing out to the side, elbow fixed at the waist.",
+    "keyPositions": [
+      {
+        "label": "In",
+        "describe": "Standing side-on to the column, right hand on the handle, elbow bent 90° and tucked against the side with a small towel. Forearm across the stomach.",
+        "approxAnglesDeg": { "shoulderExternalRotation": -40, "elbowFlexion": 90, "shoulderAbduction": 5 }
+      },
+      {
+        "label": "Out",
+        "describe": "Forearm turned out away from the body, pointing forward and out to the side. Elbow still at 90° and against the side; torso square to the camera.",
+        "approxAnglesDeg": { "shoulderExternalRotation": 45, "elbowFlexion": 90, "shoulderAbduction": 5 }
+      }
+    ],
+    "ikHints": ["Elbow fixed at the waist in every frame", "Cable runs straight from the pulley to the hand", "Torso doesn't rotate"],
+    "tempo": { "downMs": 1800, "holdMs": 300, "upMs": 1000 },
+    "props": ["cable_mid_anchor", "d_handle", "rolled_towel"],
+    "emphasise": [
+      "Elbow stays pinned to the side",
+      "Only the forearm swings, like a gate",
+      "Slow return"
+    ],
+    "doNotShow": ["Elbow lifting away from the body", "Torso twisting", "Heavy stack"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/cable-external-shoulder-rotation/",
+      "title": "StrengthLog: Cable External Shoulder Rotation",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-1,3]; cues.faults[2]; safety.notes[0]; muscles (infraspinatus, supraspinatus, teres minor)"
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/15296366/",
+      "title": "Reinold MM et al. (2004) Electromyographic analysis of the rotator cuff and deltoid musculature during common shoulder external rotation exercises. J Orthop Sports Phys Ther 34(7):385-394",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (posterior deltoid measured alongside the cuff during external rotation); cues.setup[3] (towel roll)",
+      "note": "Abstract-level only, seen through a search-result summary. Results per exercise not read; no injury or rehab claims are made from it."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "The muscles this mainly trains are the rotator cuff (infraspinatus, teres minor), the catalogue's rotator_cuff word (added 23 Oct 2026, expansion research Q1; rear_delts was the stand-in before). The rear deltoid assists [Reinold 2004], so it is secondary."
+    },
+    {
+      "field": "movementPattern",
+      "note": "There is no rotation-of-the-arm or prehab pattern. horizontal_pull matches the face pull and rear-delt entries."
+    },
+    {
+      "field": "cues.setup[3]",
+      "note": "StrengthLog doesn't mention a towel; it's common practice and appears in the EMG literature, but it's optional."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. upMs is the outward turn (stack rises)."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

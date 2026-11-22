@@ -1,0 +1,123 @@
+<title>Plan Muscle Overview</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{
+  color-scheme: dark;
+  --page:#050505; --canvas:#0D0C0B; --surface:#181615; --raised:#23201E; --divider:#302C29; --control:#75706A;
+  --t1:#F3EEE8; --t2:#B5ADA5; --t3:#948C84; --accent:#EDE5DA; --on-accent:#0D0C0B;
+  --done:#5CC98A; --done-s:#15301F; --warn:#F2B84B; --warn-s:#33280F; --band:#2C3A30;
+  --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter, Roboto, system-ui, sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--t1);font-family:var(--font);padding-block:20px 40px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));overflow-x:hidden}
+.intro{max-width:1000px;margin:0 auto 20px;display:flex;flex-direction:column;gap:6px}
+.intro h1{font-size:22px;line-height:28px;margin:0;font-weight:600}
+.intro p{margin:0;color:var(--t2);font-size:15px;line-height:21px;max-width:70ch}
+.frames{max-width:1000px;margin:0 auto;display:flex;flex-wrap:wrap;gap:28px;justify-content:center}
+.frame{display:flex;flex-direction:column;gap:10px;width:100%;max-width:390px;min-width:0}
+.cap{font-size:13px;letter-spacing:1.2px;text-transform:uppercase;color:var(--t3);font-weight:600}
+.cap b{display:block;color:var(--t1);letter-spacing:0;text-transform:none;font-size:15px;margin-top:2px}
+.phone{width:100%;background:var(--canvas);border-radius:44px;border:10px solid #1d1d1f;box-shadow:0 0 0 1px #333;overflow:hidden;display:flex;flex-direction:column;min-height:800px}
+.sb{height:46px}
+.navbar{height:44px;display:flex;align-items:center;padding:0 12px;position:relative}
+.navbar .back{color:var(--accent);font-size:17px}
+.navbar .ttl{position:absolute;left:90px;right:90px;text-align:center;font-size:17px;font-weight:600}
+.scroll{flex:1;padding:8px 18px 24px;display:flex;flex-direction:column;gap:18px}
+.sec{font-size:13px;line-height:18px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--t3)}
+.card{background:var(--surface);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.t1{font-size:30px;line-height:36px;font-weight:600}
+.seg{display:flex;background:var(--surface);border-radius:12px;padding:3px}
+.seg span{flex:1;text-align:center;font-size:15px;padding:7px 0;border-radius:9px;color:var(--t2)}
+.seg span.on{background:var(--raised);color:var(--t1);font-weight:600}
+.row{display:flex;align-items:center;gap:10px}
+.mus{display:grid;grid-template-columns:86px 1fr 34px;gap:10px;align-items:center}
+.mus .n{font-size:15px}
+.mus .v{font-size:15px;text-align:right;font-variant-numeric:tabular-nums}
+.track{position:relative;height:12px;border-radius:6px;background:var(--raised)}
+.track .band{position:absolute;top:0;bottom:0;background:var(--band);border-radius:6px}
+.track .fill{position:absolute;left:0;top:2px;bottom:2px;border-radius:5px;background:var(--done)}
+.track .fill.lo{background:var(--warn)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--t3)}
+.legend i{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.flag{background:var(--warn-s);color:var(--warn);border-radius:14px;padding:10px 12px;font-size:14px;line-height:19px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.flag b{color:var(--t1);font-weight:600}
+.btn{font-size:14px;font-weight:600;color:var(--on-accent);background:var(--accent);border-radius:999px;padding:7px 14px;white-space:nowrap}
+.days{display:flex;flex-direction:column;gap:8px}
+.day{display:grid;grid-template-columns:70px 1fr;gap:10px;align-items:center;font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chips span{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--raised);color:var(--t2)}
+.chips span.m{color:var(--t1)}
+.summary{display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--divider);font-size:15px}
+.ok{color:var(--done);font-weight:600}.wr{color:var(--warn);font-weight:600}.c3{color:var(--t3)}
+.tabbar{border-top:1px solid var(--divider);display:flex;height:49px;align-items:center}
+.tabbar span{flex:1;text-align:center;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--t3)}
+.tabbar span.on{color:var(--t1);font-weight:600}
+.note{max-width:1000px;margin:24px auto 0;color:var(--t2);font-size:14px;line-height:20px;max-width:90ch}
+.note b{color:var(--t1)}
+</style>
+
+<div class="intro">
+  <h1>Plan muscle overview, mockup</h1>
+  <p>What your plan will train each week, by muscle, before you do it. Example numbers for a 6-day Push/Pull/Legs A/B plan.</p>
+</div>
+
+<div class="frames">
+  <div class="frame">
+    <div class="cap">1 · Library › Plan<b>One line in the plan card</b></div>
+    <div class="phone">
+      <div class="sb"></div>
+      <div class="scroll">
+        <div class="t1">Library</div>
+        <div class="seg"><span class="on">Plan</span><span>Workouts</span><span>Exercises</span></div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between"><span style="font-size:18px;font-weight:600">Muscle · 6 days</span><span class="c3">⋯</span></div>
+          <span style="color:var(--t2);font-size:15px">Goal: Muscle · 6 days a week · 45 min</span>
+          <div class="summary"><span><span class="ok">5 lifts up</span> <span class="c3">·</span> <span class="wr">1 stalled</span></span><span class="c3">›</span></div>
+          <div class="summary"><span>Muscles <span class="c3">·</span> <span class="wr">Biceps low</span></span><span class="c3">›</span></div>
+        </div>
+        <div class="card" style="min-height:260px;justify-content:center"><span class="c3" style="font-size:14px">… This week, unchanged</span></div>
+      </div>
+      <div class="tabbar"><span>Today</span><span class="on">Library</span><span>Progress</span><span>Profile</span></div>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="cap">2 · Plan › Muscles<b>Sets per week, planned vs done</b></div>
+    <div class="phone">
+      <div class="sb"></div>
+      <div class="navbar"><span class="back">‹ Plan</span><span class="ttl">Muscles</span></div>
+      <div class="scroll">
+        <div class="seg"><span class="on">Planned</span><span>This week done</span></div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between"><span class="sec">Sets per week</span><span class="c3" style="font-size:13px">Goal range shaded</span></div>
+          <div class="mus"><span class="n">Chest</span><div class="track"><div class="band" style="left:33%;width:47%"></div><div class="fill" style="width:60%"></div></div><span class="v">12</span></div>
+          <div class="mus"><span class="n">Back</span><div class="track"><div class="band" style="left:33%;width:47%"></div><div class="fill" style="width:70%"></div></div><span class="v">14</span></div>
+          <div class="mus"><span class="n">Shoulders</span><div class="track"><div class="band" style="left:33%;width:47%"></div><div class="fill" style="width:55%"></div></div><span class="v">11</span></div>
+          <div class="mus"><span class="n">Quads</span><div class="track"><div class="band" style="left:33%;width:47%"></div><div class="fill" style="width:50%"></div></div><span class="v">10</span></div>
+          <div class="mus"><span class="n">Hamstrings</span><div class="track"><div class="band" style="left:33%;width:47%"></div><div class="fill" style="width:40%"></div></div><span class="v">8</span></div>
+          <div class="mus"><span class="n">Glutes</span><div class="track"><div class="band" style="left:33%;width:47%"></div><div class="fill" style="width:45%"></div></div><span class="v">9</span></div>
+          <div class="mus"><span class="n">Triceps</span><div class="track"><div class="band" style="left:20%;width:40%"></div><div class="fill" style="width:30%"></div></div><span class="v">6</span></div>
+          <div class="mus"><span class="n">Biceps</span><div class="track"><div class="band" style="left:20%;width:40%"></div><div class="fill lo" style="width:10%"></div></div><span class="v">2</span></div>
+          <div class="mus"><span class="n">Calves</span><div class="track"><div class="band" style="left:20%;width:40%"></div><div class="fill" style="width:30%"></div></div><span class="v">6</span></div>
+          <div class="mus"><span class="n">Abs</span><div class="track"><div class="band" style="left:20%;width:40%"></div><div class="fill" style="width:35%"></div></div><span class="v">7</span></div>
+          <div class="legend"><span><i style="background:var(--band)"></i>Goal range</span><span><i style="background:var(--done)"></i>In range</span><span><i style="background:var(--warn)"></i>Low or high</span></div>
+        </div>
+        <div class="flag"><span><b>Biceps 2 sets</b> · below 4–8 for your goal</span><span class="btn">Fix</span></div>
+        <div class="card">
+          <span class="sec">By day</span>
+          <div class="days">
+            <div class="day"><span>Push A</span><div class="chips"><span class="m">Chest 5</span><span>Shoulders 3</span><span>Triceps 3</span></div></div>
+            <div class="day"><span>Pull A</span><div class="chips"><span class="m">Back 7</span><span>Rear delts 2</span><span>Biceps 1</span></div></div>
+            <div class="day"><span>Legs</span><div class="chips"><span class="m">Quads 6</span><span>Glutes 4</span><span>Calves 3</span></div></div>
+            <div class="day"><span>Push B</span><div class="chips"><span class="m">Shoulders 5</span><span>Chest 4</span><span>Triceps 3</span></div></div>
+            <div class="day"><span>Pull B</span><div class="chips"><span class="m">Back 7</span><span>Biceps 1</span></div></div>
+            <div class="day"><span>Legs B</span><div class="chips"><span class="m">Hamstrings 6</span><span>Glutes 5</span><span>Quads 4</span></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar"><span>Today</span><span class="on">Library</span><span>Progress</span><span>Profile</span></div>
+    </div>
+  </div>
+</div>
+
+<p class="note"><b>How it counts:</b> working sets per week, by each exercise's main muscle (warm-ups never count). The shaded range comes from your goal and the approved playbook; bars inside it are green, outside amber. <b>Fix</b> opens one plan change as a card (e.g. "Add curls to Pull A and Pull B · 2 sets"), Apply / Undo, the same as the coach's plan cards. "This week done" shows the same bars from what you actually logged.</p>

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-deficit-romanian-deadlift",
+  "tier": "basic",
+  "name": "Deficit Romanian deadlift",
+  "aliases": ["Deficit RDL", "Deficit Romanian DL", "Barbell deficit RDL", "Elevated-stance RDL"],
+  "family": "romanian_deadlift",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["hamstrings", "glutes"],
+  "secondaryMuscles": ["spinal_erectors", "adductors", "upper_back", "grip"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 150,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

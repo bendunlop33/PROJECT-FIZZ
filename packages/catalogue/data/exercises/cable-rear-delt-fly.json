@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-rear-delt-fly",
+  "tier": "rich",
+  "name": "Cable rear-delt fly",
+  "aliases": ["Cable rear delt fly", "Cable reverse fly", "Cable reverse flye", "Reverse cable fly", "Rear delt cable fly", "Reverse cable crossover", "Standing cable reverse fly"],
+  "family": "rear_delt_fly",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["rear_delts", "upper_back"],
+  "secondaryMuscles": ["traps"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Pulleys at shoulder height or a little above",
+      "Cross the cables: each hand takes the far one",
+      "Stand centred, arms straight out in front",
+      "Keep a soft bend in your elbows"
+    ],
+    "execution": [
+      "Sweep your arms out and back in a wide arc",
+      "Stop when your arms line up with your body",
+      "Keep the elbow bend the same throughout",
+      "Return slowly until your hands nearly meet"
+    ],
+    "faults": [
+      "Don't bend your elbows into a row",
+      "Don't arch your back to finish",
+      "Don't shrug toward your ears",
+      "Don't go heavy and swing"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use light weights. The rear delts are small, and the movement should stay slow and controlled.",
+      "Each arm pulls its own stack. Log the reading on one stack and set both the same.",
+      "Check both handles are clipped on firmly and the space around you is clear.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-reverse-pec-deck", "name": "Reverse pec deck", "reason": "Seated with a fixed path; easier to learn." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Single-arm cable rear-delt fly", "reason": "One side at a time, with more range across the body." }
+    ],
+    "substitutions": [
+      { "key": "machine-reverse-pec-deck", "name": "Reverse pec deck", "reason": "Same movement on a machine." },
+      { "key": "dumbbell-rear-delt-fly", "name": "Dumbbell rear-delt fly", "reason": "Bent over with dumbbells; no cables needed." },
+      { "key": "cable-face-pull", "name": "Face pull", "reason": "Rear delts and upper back with a rope, elbows bending." },
+      { "key": "band-pull-apart", "name": "Band pull-apart", "reason": "Same arc with a band; good for warm-ups." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at shoulder height, figure centred between two cable columns, pulleys at about shoulder height. Cable lines from each pulley cross in front of the figure to the opposite hand.",
+    "keyPositions": [
+      {
+        "label": "Crossed",
+        "describe": "Standing tall between the columns. Arms reaching straight forward at shoulder height, hands close together in front of the chest, cables crossed. Elbows softly bent.",
+        "approxAnglesDeg": { "shoulderHorizontalAbduction": 0, "elbowFlexion": 15 }
+      },
+      {
+        "label": "Open",
+        "describe": "Arms swept out to the sides at shoulder height, in line with the body, like a T. Elbow bend unchanged; shoulders down; no backward lean.",
+        "approxAnglesDeg": { "shoulderHorizontalAbduction": 90, "elbowFlexion": 15 }
+      }
+    ],
+    "ikHints": ["Feet and torso fixed", "Each cable runs straight from its pulley to the opposite hand", "Elbow angle constant"],
+    "tempo": { "downMs": 1800, "holdMs": 400, "upMs": 1000 },
+    "props": ["cable_columns_pair", "d_handles"],
+    "emphasise": [
+      "Wide arc at shoulder height",
+      "Elbow bend stays the same",
+      "Slow return with the cables crossing"
+    ],
+    "doNotShow": ["Elbows bending into a row", "Arching the back", "Shoulders shrugged"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/reverse-cable-fly/",
+      "title": "StrengthLog: Reverse Cable Flyes",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (rear delts); secondaryMuscles (traps); cues.setup[1-3]; cues.execution[0-1,3]; cues.faults[1,3]; safety.notes[0]"
+    },
+    {
+      "url": "https://barbend.com/best-cable-exercises/",
+      "title": "BarBend: Best cable exercises (Cable Reverse Flye)",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1-2]; cues.execution[0-1]; primaryMuscles (posterior deltoid)"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/DeltoidPosterior/CBSeatedRearDeltPull",
+      "title": "ExRx.net: Cable Seated Reverse Fly",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (posterior deltoid target; middle traps and rhomboids, mapped to upper_back); cues.execution[0] (upper arms stay at shoulder height)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary. Seated version."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "StrengthLog also lists the rotator cuff as primary. The catalogue has no rotator_cuff word (expansion research Q1), so it is left out."
+    },
+    {
+      "field": "cues.setup[0]",
+      "note": "Sources differ on pulley height: StrengthLog uses the top pulleys; many coaches set them at shoulder height. Both are common."
+    },
+    {
+      "field": "guideBrief.tempo",
+      "note": "upMs is the outward sweep (the stacks rise), downMs the return. Angles are approximate drawing targets."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

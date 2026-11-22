@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-pogo-jump",
+  "tier": "rich",
+  "name": "Pogo jumps",
+  "aliases": ["Pogo jump", "Pogos", "Pogo hops", "Ankle hops", "Ankle bounces"],
+  "family": "jump",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["calves"],
+  "secondaryMuscles": ["quads", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Stand tall, feet hip-width",
+      "Weight on the balls of your feet",
+      "Arms relaxed or hands on hips"
+    ],
+    "execution": [
+      "Bounce off the floor from your ankles",
+      "Touch down and spring straight back up",
+      "Knees nearly straight, heels off the floor",
+      "Quick, light, quiet contacts"
+    ],
+    "faults": [
+      "Don't sink into each landing",
+      "Don't let your heels hit the floor",
+      "Don't bend your knees to jump higher"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Jump on a flat, forgiving surface in supportive shoes.",
+      "Start with low hops and a small number of contacts; build volume over weeks. The calves and Achilles area need time to adapt.",
+      "Stop the set when contacts get slow or heavy.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the shin, ankle or heel that builds",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Low pogo jumps", "reason": "Tiny, quick hops that barely leave the floor." },
+      { "key": "jump-rope", "name": "Jump rope", "reason": "Similar small bounces at a steady rhythm." }
+    ],
+    "progressions": [
+      { "key": null, "name": "High pogo jumps", "reason": "More height per hop with the same short contacts." },
+      { "key": null, "name": "Single-leg hop", "reason": "One leg at a time; much higher load per leg." },
+      { "key": null, "name": "Pogos forward or side to side", "reason": "Adds travel and direction changes." }
+    ],
+    "substitutions": [
+      { "key": "jump-rope", "name": "Jump rope", "reason": "Similar ankle work in longer rounds." },
+      { "key": "bodyweight-calf-raise", "name": "Calf raise (bodyweight)", "reason": "Calf strength without impact." },
+      { "key": "bodyweight-squat-jump", "name": "Squat jump", "reason": "Jump with more knee and hip bend." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at knee height, figure facing right, so the ankle bounce and the small knee bend are clear.",
+    "keyPositions": [
+      {
+        "label": "Contact",
+        "describe": "Balls of the feet on the floor, heels just off it, knees almost straight, body upright and stiff like a spring.",
+        "approxAnglesDeg": { "kneeFlexion": 10, "ankleDorsiflexion": 0, "hipFlexion": 5 }
+      },
+      {
+        "label": "Air",
+        "describe": "A few centimetres off the floor, toes pointed down, legs nearly straight, body upright.",
+        "approxAnglesDeg": { "kneeFlexion": 5, "ankleDorsiflexion": -35, "hipFlexion": 0 }
+      }
+    ],
+    "tempo": { "downMs": 200, "holdMs": 50, "upMs": 200 },
+    "props": [],
+    "emphasise": [
+      "Bounce comes from the ankles",
+      "Very short ground contact",
+      "Heels stay off the floor"
+    ],
+    "doNotShow": ["Deep knee bend on landing", "Heels hitting the floor", "Leaning forward"]
+  },
+  "sources": [
+    {
+      "url": "https://www.nifs.org/blog/warming-up-for-vertical-and-broad-jumps-with-pogo-jumps",
+      "title": "NIFS: Warming up for vertical and broad jumps with pogo jumps",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (calves and shins); cues.execution[0-3] (short contacts, little knee bend, heels up); variations.regressions[0]; variations.progressions[0]",
+      "note": "Coaching blog; seen through a search listing."
+    },
+    {
+      "url": "https://ie.physitrack.com/home-exercise-video/pogo-jumps",
+      "title": "Physitrack: Pogo jumps",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1] (two-footed jumps with as little ground contact as possible)",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://hrcak.srce.hr/clanak/447258",
+      "title": "Plyometrics and running economy (research file [DB])",
+      "checkedOn": "2026-10-23",
+      "supports": "Context only: plyometrics with strength training may improve running economy (tentative). No claim made in this entry.",
+      "note": "Cited from the research file; not re-read in this pass."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "measurement",
+      "note": "Logged as reps (ground contacts). Some people log time; research said 'contacts or time'."
+    },
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'conditioning' (like Box jump); the proposed 'power' pattern isn't in the vocabulary."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative ankleDorsiflexion means the ankle is pointed."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

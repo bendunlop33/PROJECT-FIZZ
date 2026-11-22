@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "key": "medicine-ball-rotational-throw",
+  "tier": "rich",
+  "name": "Medicine ball rotational throw",
+  "aliases": ["Med ball rotational throw", "Rotational med ball throw", "Med ball scoop toss", "Rotational scoop toss", "Med ball side throw", "Medicine ball side throw"],
+  "family": "medicine_ball_throw",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["obliques", "glutes"],
+  "secondaryMuscles": ["abs", "core", "adductors", "front_delts"],
+  "compatibleEquipment": ["medicine_ball"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Stand side-on to a solid wall",
+      "Far enough away for the ball to come back",
+      "Feet wider than hips, knees soft",
+      "Ball at hip height on the back side"
+    ],
+    "execution": [
+      "Load your back hip",
+      "Turn hips first, then chest, then arms",
+      "Throw the ball hard into the wall",
+      "Catch it and reset before the next throw"
+    ],
+    "faults": [
+      "Don't throw with your arms alone",
+      "Don't twist from your lower back",
+      "Don't rush the next rep"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Throw only at a wall built for it, such as a solid concrete or padded wall, never at glass, mirrors or plasterboard. Check the area is clear.",
+      "Use a soft, light medicine ball (about 2–5 kg) so speed stays high and the rebound is easy to catch.",
+      "Each throw is a maximal effort. Keep sets short and rest fully.",
+      "Reps are per side.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain in the lower back or side that builds",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Half-kneeling rotational throw", "reason": "Kneeling removes the legs, so the trunk turn is easier to learn." },
+      { "key": null, "name": "Lighter ball, slower throws", "reason": "Groove the hips-first order before adding speed." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Step-in rotational throw", "reason": "A step toward the wall adds more drive from the legs." }
+    ],
+    "substitutions": [
+      { "key": "cable-woodchop", "name": "Cable woodchop", "reason": "Controlled rotation on a cable when no throwing wall is available." },
+      { "key": "barbell-landmine-rotation", "name": "Landmine rotation", "reason": "Loaded rotation on a landmine." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Trains the trunk to resist rotation instead." },
+      { "key": "medicine-ball-slam", "name": "Medicine ball slam", "reason": "Medicine-ball power work with no wall needed." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at hip height, figure side-on to a wall on the right of the frame, so the hip and chest turn toward the wall and the ball's flight are clear.",
+    "keyPositions": [
+      {
+        "label": "Load",
+        "describe": "Feet wider than hips, knees soft. Hips and chest turned away from the wall, weight on the back leg, ball held at hip height on the back side with both hands.",
+        "approxAnglesDeg": { "trunkRotation": -60, "kneeFlexion": 25 }
+      },
+      {
+        "label": "Release",
+        "describe": "Hips have turned toward the wall first, chest following, arms swinging through. Back heel lifted and pivoting on the ball of the foot. Ball leaving the hands toward the wall.",
+        "approxAnglesDeg": { "trunkRotation": 30, "kneeFlexion": 15 }
+      },
+      {
+        "label": "Catch",
+        "describe": "Facing the wall side-on again, catching the rebound at hip height and turning back into the load position.",
+        "approxAnglesDeg": { "trunkRotation": 0, "kneeFlexion": 20 }
+      }
+    ],
+    "ikHints": ["Front foot planted", "Back foot pivots on the ball of the foot during the throw"],
+    "tempo": { "downMs": 800, "holdMs": 200, "upMs": 400 },
+    "props": ["medicine_ball", "wall"],
+    "emphasise": [
+      "Hips turn first, then chest, then arms",
+      "Back foot pivots",
+      "Ball thrown hard to the wall"
+    ],
+    "doNotShow": ["Arms-only throw", "Rounded or bent-over trunk", "Throwing at glass"]
+  },
+  "sources": [
+    {
+      "url": "https://simplifaster.com/articles/donatucci-medicine-ball-rotational-throw/",
+      "title": "SimpliFaster: Medicine ball rotational throw, the David Donatucci method",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[0-2] (hips, then torso, then arms, then the ball); primaryMuscles",
+      "note": "Coaching article; seen through a search listing and the research file [SF]."
+    },
+    {
+      "url": "https://ericcressey.com/3-coaching-cues-strength-and-conditioning-programs-13/",
+      "title": "Eric Cressey: Coaching cues, installment 13 (scoop toss)",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.faults[0] (avoid wristy, arms-only throws)",
+      "note": "Coaching blog; seen through a search listing."
+    },
+    {
+      "url": "https://us.physitrack.com/home-exercise-video/medicine-ball-side-throw",
+      "title": "Physitrack: Medicine ball side throw",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1]; variations.regressions[1] (start slowly, then accelerate)",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "requiresStation",
+      "note": "Needs a solid wall that can take throws. 'wall_target' means a wall-ball target, so it isn't listed; many gyms have no suitable wall (research note)."
+    },
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'conditioning'; the proposed 'power' pattern (research Q2) isn't in the vocabulary. 'core' would also fit."
+    },
+    {
+      "field": "safety.notes[1]",
+      "note": "The 2–5 kg range is a common coaching choice, not from a cited study."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. trunkRotation is hips-and-chest turn relative to side-on; negative is away from the wall."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

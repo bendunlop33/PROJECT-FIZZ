@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "dumbbell-bulgarian-split-squat",
+  "format": "fizz-figure-guide@1",
+  "rig": "adult-v1",
+  "view": "side",
+  "durationMs": 2800,
+  "keyframes": 7,
+  "renderFps": 30,
+  "frames": 84,
+  "guideBytes": 2947,
+  "attribution": "Original figure animation made for Fizz; no third-party media.",
+  "reviewStatus": "draft",
+  "check": {
+    "status": "pass",
+    "failed": [],
+    "warnings": []
+  },
+  "focus": [
+    {
+      "muscle": "quads",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "glutes",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "adductors",
+      "level": "soft",
+      "shown": false
+    },
+    {
+      "muscle": "hamstrings",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "abductors",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "core",
+      "level": "soft",
+      "shown": false
+    },
+    {
+      "muscle": "grip",
+      "level": "soft",
+      "shown": true
+    }
+  ],
+  "faintGroups": [
+    "chest",
+    "lowerBack",
+    "lats",
+    "upperBack",
+    "deltoid",
+    "frontArm",
+    "triceps",
+    "calves"
+  ]
+}

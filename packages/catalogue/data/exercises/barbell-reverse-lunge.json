@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-reverse-lunge",
+  "tier": "rich",
+  "name": "Barbell reverse lunge",
+  "aliases": ["BB reverse lunge", "Reverse barbell lunge", "Barbell back lunge", "Barbell step-back lunge"],
+  "family": "lunge",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings", "core"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Unrack the bar onto your upper back",
+      "Walk out and stand with feet hip-width",
+      "Brace before each step"
+    ],
+    "execution": [
+      "Step straight back, land on the ball of the foot",
+      "Drop the back knee toward the floor",
+      "Front shin stays fairly upright",
+      "Push through the front foot to step back in"
+    ],
+    "faults": [
+      "Don't step back onto a tightrope line",
+      "Don't slam the back knee into the floor",
+      "Don't let the front knee cave in",
+      "Don't lean forward to start the rep"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Unrack and rerack in a rack with the safety arms set. The lunges happen outside the rack where nothing catches the bar, so keep loads well within control and the space behind you clear.",
+      "Balance is the limit before strength is. Learn the movement with dumbbells or no load before adding a bar.",
+      "If you lose balance, step the back foot down wide and stand up; don't fight to save the rep.",
+      "Log the bar and plates together (total). Reps are per leg.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-reverse-lunge", "name": "Dumbbell reverse lunge", "reason": "Same step-back pattern with the load at your sides; easier to drop if balance goes." },
+      { "key": "bodyweight-split-squat", "name": "Split squat", "reason": "Both feet stay planted, so there is no step to control." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Deficit barbell reverse lunge", "reason": "Front foot on a low plate adds range. A modifier (Deficit), not a separate entry." },
+      { "key": "barbell-bulgarian-split-squat", "name": "Barbell Bulgarian split squat", "reason": "Rear foot on a bench puts more load on the front leg." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-reverse-lunge", "name": "Dumbbell reverse lunge", "reason": "Same movement; load is each dumbbell, so numbers aren't comparable." },
+      { "key": "dumbbell-walking-lunge", "name": "Dumbbell walking lunge", "reason": "Single-leg work when there is floor space." },
+      { "key": "dumbbell-bulgarian-split-squat", "name": "Bulgarian split squat", "reason": "Single-leg strength with the rear foot raised." },
+      { "key": "dumbbell-step-up", "name": "Dumbbell step-up", "reason": "Single-leg drive on a bench with no backward step." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right. The near leg steps back so both legs are visible. Bar seen end-on on the upper back.",
+    "keyPositions": [
+      {
+        "label": "Standing",
+        "describe": "Standing tall with feet hip-width, bar on the upper back, hands just outside the shoulders.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "frontKneeFlexion": 0, "backKneeFlexion": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Near leg has stepped back about a stride; back knee just above the floor, on the ball of the back foot. Front shin fairly upright, front knee over the mid-foot. Torso upright or slightly forward.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 10, "frontKneeFlexion": 90, "backKneeFlexion": 90, "frontHipFlexion": 80 }
+      },
+      {
+        "label": "Return",
+        "describe": "Driving up through the front foot, back foot returning beside it. Ends in the standing position.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 5, "frontKneeFlexion": 40, "backKneeFlexion": 30 }
+      }
+    ],
+    "ikHints": ["Front foot planted flat throughout", "Bar stays over the middle of the front foot"],
+    "barPath": "Mostly straight down and up; drifts slightly back with the step",
+    "tempo": { "downMs": 1400, "holdMs": 200, "upMs": 1100 },
+    "props": ["barbell_loaded"],
+    "emphasise": [
+      "Back knee drops straight down toward the floor",
+      "Front shin stays fairly upright",
+      "Stance stays hip-width, not on one line"
+    ],
+    "doNotShow": ["Back knee hitting the floor", "Front knee caving in", "Bar on the neck"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/reverse-barbell-lunge/",
+      "title": "StrengthLog: Reverse Barbell Lunge",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-1]; cues.execution[0-1,3]"
+    },
+    {
+      "url": "https://catalystathletics.com/exercise/735/Reverse-Lunge/",
+      "title": "Catalyst Athletics exercise library: Reverse Lunge",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (a little more quad emphasis than a forward lunge); safety.notes[1]; reps per leg",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "Plain 'Barbell lunge' is deliberately not an alias: it can mean a forward, reverse or walking lunge. An import should ask."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

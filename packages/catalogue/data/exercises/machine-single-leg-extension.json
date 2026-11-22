@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-single-leg-extension",
+  "tier": "rich",
+  "name": "Single-leg leg extension",
+  "aliases": ["One-leg leg extension", "One-legged leg extension", "Single leg extension", "Unilateral leg extension", "Single-leg extension"],
+  "family": "leg_extension",
+  "movementPattern": "squat",
+  "mechanic": "isolation",
+  "primaryMuscles": ["quads"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Line your knee up with the machine's pivot",
+      "Pad on the front of the ankle",
+      "Back against the seat, hold the handles",
+      "Pick a lighter pin than for both legs"
+    ],
+    "execution": [
+      "Straighten the working leg fully",
+      "Squeeze the thigh for a moment at the top",
+      "Lower slowly until the weights nearly touch",
+      "Other leg stays relaxed"
+    ],
+    "faults": [
+      "Don't kick the weight up",
+      "Don't lift your hips off the seat",
+      "Don't drop the stack between reps"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Set the seat so the knee lines up with the machine's pivot; a misaligned knee makes the pad slide and the movement awkward.",
+      "Start with your weaker side and match the reps on the other side.",
+      "The stack number is the selector reading, not the true resistance, and it isn't half of a two-leg set.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the front of the knee that builds during the set",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-leg-extension", "name": "Leg extension", "reason": "Both legs together; simpler to load and set up." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Pause at the top", "reason": "A 1–2 second hold at full extension adds work without more weight." }
+    ],
+    "substitutions": [
+      { "key": "machine-leg-extension", "name": "Leg extension", "reason": "Same machine, both legs. Stack numbers aren't comparable." },
+      { "key": "machine-single-leg-press", "name": "Single-leg press", "reason": "One-leg quad work as a compound movement." },
+      { "key": "dumbbell-bulgarian-split-squat", "name": "Bulgarian split squat", "reason": "Free-weight single-leg work when the machine is busy." },
+      { "key": null, "name": "Reverse Nordic", "reason": "Bodyweight quad work with no machine." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at seat height, figure facing right, working leg nearest the camera. The far leg rests behind the pad.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Seated, back on the pad, hands on the handles. Near knee bent to about 90°, ankle pad on the lower shin. Far leg relaxed.",
+        "approxAnglesDeg": { "hipFlexion": 90, "nearKneeFlexion": 90, "farKneeFlexion": 90 }
+      },
+      {
+        "label": "Top",
+        "describe": "Near leg straight, thigh still on the seat, hips down. Far leg unchanged.",
+        "approxAnglesDeg": { "hipFlexion": 90, "nearKneeFlexion": 0, "farKneeFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Ankle pad stays on the near shin", "Thighs stay on the seat"],
+    "tempo": { "downMs": 1800, "holdMs": 500, "upMs": 1000 },
+    "props": ["leg_extension_machine"],
+    "emphasise": [
+      "Only the working knee moves",
+      "Full straightening with a short squeeze",
+      "Slow lowering"
+    ],
+    "doNotShow": ["Hips lifting off the seat", "Swinging the weight up", "Both legs moving"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/one-legged-leg-extension/",
+      "title": "StrengthLog: One-Legged Leg Extension",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-2]; cues.execution[0-2]"
+    },
+    {
+      "url": "https://www.muscleandstrength.com/exercises/single-leg-extension.html",
+      "title": "Muscle & Strength: Single Leg Extension",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0]; safety.notes[0] (knee in line with the machine's pivot); cues.execution[1-2]",
+      "note": "Seen through a search listing. Commercial site."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'squat' to match the two-leg Leg extension entry; the vocabulary has no knee-extension isolation pattern."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-crunch",
+  "tier": "basic",
+  "name": "Cable crunch",
+  "aliases": ["Kneeling cable crunch", "Rope crunch", "Cable ab crunch", "Kneeling rope crunch"],
+  "family": "crunch",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

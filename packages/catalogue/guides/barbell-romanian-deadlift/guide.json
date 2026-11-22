@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "barbell-romanian-deadlift",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 3000,
+  "loop": "cycle",
+  "motion": "phases",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "props": [
+    { "id": "bar", "type": "barbell", "plates": "large", "anchor": { "kind": "hang", "x": 0.035, "elbowDeg": 13 } }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Stand tall, soft knees, bar against the thighs",
+      "root": { "x": -0.0406, "y": 0.5241, "pelvisDeg": 0 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": 0 },
+      "ik": {
+        "footNear": { "x": 0, "y": 0, "planted": true },
+        "footFar": { "x": -0.012, "y": 0, "planted": true },
+        "handNear": { "prop": "bar", "bend": "cw" },
+        "handFar": { "prop": "bar", "bend": "cw" }
+      },
+      "ease": "smooth"
+    },
+    { "t": 0.1641, "pass": true, "root": { "x": -0.0499, "y": 0.5223, "pelvisDeg": 22.9 }, "joints": { "neck": -1.6 }, "ease": "smooth" },
+    {
+      "t": 0.268, "pass": true, "label": "Knee level", "caption": "Hips back, bar slides down the thighs",
+      "root": { "x": -0.0698, "y": 0.5186, "pelvisDeg": 48 },
+      "joints": { "neck": -3 },
+      "ease": "smooth"
+    },
+    { "t": 0.3489, "pass": true, "root": { "x": -0.0856, "y": 0.5154, "pelvisDeg": 60.9 }, "joints": { "neck": -4.3 }, "ease": "smooth" },
+    {
+      "t": 0.5333, "label": "Bottom", "caption": "Back flat, bar just below the knees",
+      "root": { "x": -0.0983, "y": 0.5124, "pelvisDeg": 70 },
+      "joints": { "neck": -5 },
+      "holdMs": 200, "ease": "smooth"
+    },
+    { "t": 0.7383, "sameAs": 3, "ease": "smooth" },
+    { "t": 0.7989, "sameAs": 2, "caption": "Drive the hips forward to stand", "ease": "smooth" },
+    { "t": 0.8769, "sameAs": 1, "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0.5333, "to": 1 }] },
+  "checks": { "barDriftMax": 0.03, "barProp": "bar", "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view, facing right. Bar held in straight arms against the thighs. Push the hips back with the knees softly bent and the back flat, sliding the bar down the legs to just below the knees, then drive the hips forward to stand tall. The bar stays over mid-foot."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
+}

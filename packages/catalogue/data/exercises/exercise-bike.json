@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "exercise-bike",
+  "tier": "basic",
+  "name": "Exercise bike",
+  "aliases": ["Stationary bike", "Upright bike", "Spin bike", "Indoor bike", "Recumbent bike", "Cycling machine"],
+  "family": "bike",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["hamstrings", "calves"],
+  "compatibleEquipment": ["erg"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "cardio",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-19" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

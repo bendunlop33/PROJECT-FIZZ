@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-ab-crunch",
+  "tier": "rich",
+  "name": "Ab crunch machine",
+  "aliases": ["Crunch machine", "Machine crunch", "Machine ab crunch", "Abdominal crunch machine", "Seated ab crunch machine", "Seated machine crunch"],
+  "family": "crunch",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Set the seat so the pads meet your chest or shoulders",
+      "Hook your feet under the rollers if there are any",
+      "Hold the handles lightly; your arms just hold on"
+    ],
+    "execution": [
+      "Breathe out and curl your ribs toward your hips",
+      "Round your upper back; keep your hips still",
+      "Squeeze for a moment at the bottom",
+      "Come back up slowly; keep the stack off its rest"
+    ],
+    "faults": [
+      "Don't pull the handles down with your arms",
+      "Don't hinge at the hips instead of curling",
+      "Don't let the stack crash between reps",
+      "Don't jerk the weight with momentum"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Machines differ: some have a chest pad, others arm pads or handles overhead. Read the machine's label and set the seat before you load it.",
+      "Return under control each rep so the stack never slams down.",
+      "Coaching sources differ on how much loaded crunching is wise. A common middle ground is moderate volume, built up gradually.",
+      "Stack numbers vary between machines and brands; compare only on the same machine.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-crunch", "name": "Crunch", "reason": "Same curl with no added load; learn to curl the ribs down first." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Ab crunch machine with a pause", "reason": "A one-second squeeze in the curled position adds difficulty without more weight." }
+    ],
+    "substitutions": [
+      { "key": "cable-crunch", "name": "Cable crunch", "reason": "Same loaded curl kneeling at a cable column. Stack numbers aren't comparable." },
+      { "key": "bodyweight-decline-crunch", "name": "Decline crunch", "reason": "Curl against gravity on a bench; add a plate to load it." },
+      { "key": "bodyweight-captains-chair-knee-raise", "name": "Captain's chair knee raise", "reason": "Trains the abs by curling the pelvis up instead; no stack needed." },
+      { "key": "bodyweight-ab-wheel-rollout", "name": "Ab-wheel rollout", "reason": "Hard ab work that resists arching rather than curling." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at seated chest height. Draw the seat, back pad and chest pad simply, with no brand detail; the weight stack can be left out. The hips must stay visibly fixed on the seat.",
+    "keyPositions": [
+      {
+        "label": "Upright",
+        "describe": "Seated tall, back against the pad, pads at the chest, hands resting on the handles, feet hooked under the rollers. Torso upright.",
+        "approxAnglesDeg": { "trunkFlexion": 0, "hipFlexion": 90, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Curled",
+        "describe": "Upper and middle back rounded forward, ribs pulled toward the hips, chin slightly tucked. Hips and thighs unchanged on the seat; the bend comes from the spine, not a hip hinge.",
+        "approxAnglesDeg": { "trunkFlexion": 40, "hipFlexion": 95, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": [
+      "Pelvis and thighs fixed to the seat in every frame",
+      "Chest stays in contact with the pads as they travel"
+    ],
+    "tempo": { "downMs": 1000, "holdMs": 500, "upMs": 1800 },
+    "props": ["ab_crunch_machine", "chest_pads"],
+    "emphasise": [
+      "The upper back rounds; the hips stay put",
+      "Short squeeze in the curled position",
+      "Slow return to upright"
+    ],
+    "doNotShow": ["Arms pulling the handles", "Hinging forward from the hips with a flat back", "Stack slamming"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/machine-crunch/",
+      "title": "StrengthLog: Machine Crunch",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles; cues.setup[0]; cues.execution[0-1,3]"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/RectusAbdominis/LVSeatedCrunch",
+      "title": "ExRx.net: Lever Seated Crunch (and its arm-pad and chest-pad variants)",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (rectus abdominis target, obliques synergist); cues.execution[1] (hips stay still while the torso curls); safety.notes[0] (chest-pad and arm-pad designs)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    },
+    {
+      "url": "https://bretcontreras.com/wp-content/uploads/To-Crunch-or-Not-to-Crunch-An-Evidence-Based-Examination-of-Spinal-Flexion-Exercises-Their-Potential-Risks-and-Their-Applicability-to-Program-Design.pdf",
+      "title": "Contreras B, Schoenfeld B (2011) To crunch or not to crunch. Strength Cond J 33(4):8-18",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[2] (moderate flexion volume as a reasonable middle ground)",
+      "note": "Narrative review; cited through the expansion research file, not re-read in full."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Machine designs differ (chest pad, arm pads or overhead handles); the guide shows a generic chest-pad machine."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Crunch machine\" is FitNotes' default name and maps here. \"Ab machine\" is deliberately not an alias: it can also mean a rotary torso machine or other ab equipment."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

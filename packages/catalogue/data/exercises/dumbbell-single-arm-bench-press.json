@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-single-arm-bench-press",
+  "tier": "rich",
+  "name": "Single-arm dumbbell bench press",
+  "aliases": ["One-arm dumbbell bench press", "Single-arm DB bench press", "One-arm DB bench press", "Single-arm dumbbell chest press", "One-arm dumbbell chest press"],
+  "family": "bench_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["triceps", "front_delts", "obliques", "core"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "implements": 1,
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on a flat bench, one dumbbell",
+      "Feet wide and flat on the floor",
+      "Free hand on the bench or held up"
+    ],
+    "execution": [
+      "Brace so your body doesn't tip",
+      "Lower to chest level, elbow about 45°",
+      "Press up over your shoulder",
+      "Finish the side, then switch"
+    ],
+    "faults": [
+      "Don't let your hips or torso roll",
+      "Don't flare your elbow out wide",
+      "Don't let the weight drift to the floor"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Start lighter than your two-dumbbell press: the trunk has to stop you rolling off the bench.",
+      "Set the dumbbell down by bringing it to your chest and sitting up, not by dropping it to the side.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-bench-press", "name": "Dumbbell bench press", "reason": "Two dumbbells balance each other, so there's no rotation to resist." },
+      { "key": "dumbbell-floor-press", "name": "Dumbbell floor press", "reason": "Floor support and a shorter range." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Single-arm press with feet off the floor", "reason": "Removes the foot base so the trunk works harder." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-bench-press", "name": "Dumbbell bench press", "reason": "Both arms at once; heavier total load." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Anti-rotation core work without the press." },
+      { "key": "barbell-landmine-press", "name": "Landmine press", "reason": "One-arm press standing; also trains the trunk." },
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "Supported pressing; can be done one arm at a time." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "End-on view from the foot of the bench, camera slightly raised, so the level shoulders and hips (no tipping toward the loaded side) are clear.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Lying on a flat bench, feet wide. One dumbbell held over the shoulder with the arm straight; free hand gripping the bench edge. Shoulders and hips level.",
+        "approxAnglesDeg": { "elbowFlexion": 5, "trunkRotation": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Dumbbell lowered to chest level beside the chest, elbow about 45° from the body and below the bench line. Torso still flat; no roll toward the loaded side.",
+        "approxAnglesDeg": { "elbowFlexion": 95, "trunkRotation": 0 }
+      }
+    ],
+    "ikHints": ["Back and hips stay on the bench", "Feet fixed on the floor"],
+    "barPath": "Dumbbell moves up and down over the shoulder in a slight arc",
+    "tempo": { "downMs": 1500, "holdMs": 200, "upMs": 1000 },
+    "props": ["bench_flat", "dumbbell"],
+    "emphasise": [
+      "Torso stays level against the one-sided load",
+      "Elbow at about 45°",
+      "Wide, planted feet"
+    ],
+    "doNotShow": ["Body rolling toward the dumbbell", "Elbow flared to 90°", "Dumbbell dropped to the side"]
+  },
+  "sources": [
+    {
+      "url": "https://www.nasm.org/resource-center/exercise-library/single-arm-dumbbell-chest-press",
+      "title": "NASM Exercise Library: Single-Arm Dumbbell Chest Press",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1]; cues.execution[0-3]; primaryMuscles; secondaryMuscles (core)"
+    },
+    {
+      "url": "https://robertsontrainingsystems.com/?p=4999",
+      "title": "Robertson Training Systems: Build Your Abs AND Upper Body with the Single-Arm Dumbbell Bench Press",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[0]; safety.notes[0] (trunk resists the one-sided load)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

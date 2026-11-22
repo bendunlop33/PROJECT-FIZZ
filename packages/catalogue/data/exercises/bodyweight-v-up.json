@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-v-up",
+  "tier": "rich",
+  "name": "V-up",
+  "aliases": ["V-ups", "V up", "V ups", "Jackknife sit-up", "Jackknife crunch"],
+  "family": "v_up",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs", "hip_flexors"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie flat on a mat, arms overhead",
+      "Legs straight and together",
+      "Press your lower back down"
+    ],
+    "execution": [
+      "Lift arms and legs at the same time",
+      "Reach your hands toward your shins",
+      "Balance on your hips at the top",
+      "Lower slowly to a hover"
+    ],
+    "faults": [
+      "Don't throw your arms to get up",
+      "Don't arch your back as you lower",
+      "Don't let your legs crash down"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "If your lower back arches as you lower, shorten the range or use the tuck version.",
+      "Lower under control; dropping the legs makes the back arch at the bottom.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-hollow-body-hold", "name": "Hollow body hold", "reason": "Hold the bottom shape before adding the fold." },
+      { "key": null, "name": "Tuck-up", "reason": "Knees bend toward the chest; a shorter lever." },
+      { "key": null, "name": "Single-leg V-up", "reason": "One leg at a time halves the load." }
+    ],
+    "progressions": [
+      { "key": "bodyweight-toes-to-bar", "name": "Toes-to-bar", "reason": "Same fold while hanging from a bar." },
+      { "key": null, "name": "Weighted V-up", "reason": "A light plate or medicine ball in the hands." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-hanging-leg-raise", "name": "Hanging leg raise", "reason": "Leg-raising with the hips folding, from a bar." },
+      { "key": "cable-crunch", "name": "Cable crunch", "reason": "Loaded trunk flexion on a stack." },
+      { "key": "bodyweight-reverse-crunch", "name": "Reverse crunch", "reason": "Lower-body-first curl on the floor; easier to control." },
+      { "key": "bodyweight-hanging-knee-raise", "name": "Hanging knee raise", "reason": "Bent-knee version on a bar." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, head on the left, mat along the floor line, so the V shape and the hips as the pivot are clear.",
+    "keyPositions": [
+      {
+        "label": "Hover",
+        "describe": "Lying on the back, arms overhead and legs straight, both just off the mat. Lower back pressed down.",
+        "approxAnglesDeg": { "shoulderFlexion": 170, "hipFlexion": 10, "trunkCurl": 10 }
+      },
+      {
+        "label": "Top",
+        "describe": "Balanced on the hips and lower back in a V. Straight legs raised about 60–70°, torso raised to meet them, hands reaching beside the shins.",
+        "approxAnglesDeg": { "shoulderFlexion": 120, "hipFlexion": 110, "trunkCurl": 45, "kneeFlexion": 5 }
+      }
+    ],
+    "ikHints": ["Hips stay on the mat as the pivot", "Legs stay straight and together"],
+    "tempo": { "downMs": 1800, "holdMs": 300, "upMs": 900 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Arms and legs rise together and meet over the hips",
+      "Slow lowering back to the hover",
+      "Lower back stays down at the bottom"
+    ],
+    "doNotShow": ["Arms swinging for momentum", "Back arched at the bottom", "Legs dropping to the floor"]
+  },
+  "sources": [
+    {
+      "url": "https://www.physitrack.com/exercise-library/how-to-perform-the-v-ups-exercise",
+      "title": "Physitrack: Step-by-step guide to the V-ups exercise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[1]; primaryMuscles; variations.regressions[2]",
+      "note": "Physitrack shows a single-leg, cross-body version; the both-legs version here is the common gym form."
+    },
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/242/v-ups/",
+      "title": "ACE Exercise Library: V-Ups",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[0] (control speed and watch the low back); variations.regressions (staged progressions from one leg to both)",
+      "note": "ACE describes a seated, bent-knee progression series rather than the full lying V-up."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "The hip flexors do much of the leg lift, so they are listed as primary with the abs (vocabulary word added 23 Oct 2026, expansion research Q1)."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Jackknife sit-up\" and \"Jackknife crunch\" are commonly used for this movement, but some sources use them for a bent-knee version."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

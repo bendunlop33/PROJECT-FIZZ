@@ -1,0 +1,117 @@
+{
+  "specVersion": 1,
+  "file": {
+    "delimiter": ",",
+    "headerLine": 1,
+    "decimal": "."
+  },
+  "layout": {
+    "kind": "row_per_set",
+    "setOrder": {
+      "header": "set_index",
+      "index": 7
+    }
+  },
+  "workoutKey": [],
+  "date": {
+    "column": {
+      "header": "start_time",
+      "index": 1
+    },
+    "format": "D MMM YYYY, HH:mm"
+  },
+  "exercise": {
+    "header": "exercise_title",
+    "index": 4
+  },
+  "load": {
+    "column": {
+      "header": "weight_kg",
+      "index": 9
+    },
+    "unit": {
+      "kind": "header_token",
+      "column": {
+        "header": "weight_kg",
+        "index": 9
+      },
+      "token": "kg"
+    }
+  },
+  "reps": {
+    "header": "reps",
+    "index": 10
+  },
+  "setType": {
+    "column": {
+      "header": "set_type",
+      "index": 8
+    },
+    "values": [
+      {
+        "cell": "normal",
+        "meaning": "working"
+      }
+    ]
+  },
+  "rpe": {
+    "header": "rpe",
+    "index": 13
+  },
+  "notes": [
+    {
+      "header": "description",
+      "index": 3
+    },
+    {
+      "header": "exercise_notes",
+      "index": 6
+    }
+  ],
+  "unmapped": [
+    {
+      "header": "title",
+      "index": 0
+    },
+    {
+      "header": "end_time",
+      "index": 2
+    },
+    {
+      "header": "superset_id",
+      "index": 5
+    },
+    {
+      "header": "distance_km",
+      "index": 11
+    },
+    {
+      "header": "duration_seconds",
+      "index": 12
+    }
+  ],
+  "selfCheck": [
+    {
+      "line": 2,
+      "date": "2026-01-05",
+      "exercise": "Pull Up (Assisted)",
+      "load": 20,
+      "reps": 8
+    },
+    {
+      "line": 4,
+      "date": "2026-01-05",
+      "exercise": "Gravitron Thing",
+      "load": 25,
+      "reps": 10
+    },
+    {
+      "line": 6,
+      "date": "2026-01-08",
+      "exercise": "Pull Up (Assisted)",
+      "load": 15,
+      "reps": 8
+    }
+  ],
+  "unsupported": null
+}

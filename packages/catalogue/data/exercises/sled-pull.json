@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "sled-pull",
+  "tier": "basic",
+  "name": "Sled pull",
+  "aliases": ["HYROX sled pull", "Rope sled pull", "Sled rope pull", "Hand-over-hand sled pull"],
+  "family": "sled",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back"],
+  "secondaryMuscles": ["biceps", "rear_delts", "grip", "glutes", "hamstrings", "core"],
+  "compatibleEquipment": ["sled"],
+  "requiresStation": ["sled_track"],
+  "defaultLoadConvention": "added",
+  "measurement": "distance",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

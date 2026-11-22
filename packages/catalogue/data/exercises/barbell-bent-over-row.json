@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-bent-over-row",
+  "tier": "basic",
+  "name": "Barbell row",
+  "aliases": ["Bent-over row", "Bent over row", "Bent-over barbell row", "Barbell bent-over row", "BB row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back"],
+  "secondaryMuscles": ["rear_delts", "traps", "biceps", "brachialis", "spinal_erectors", "hamstrings", "grip"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

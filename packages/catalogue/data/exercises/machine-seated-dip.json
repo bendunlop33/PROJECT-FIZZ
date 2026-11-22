@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-seated-dip",
+  "tier": "rich",
+  "name": "Seated dip machine",
+  "aliases": ["Seated dip", "Machine dip", "Dip machine", "Triceps dip machine", "Tricep dip machine", "Seated triceps dip", "Machine triceps dip"],
+  "family": "dip",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["triceps"],
+  "secondaryMuscles": ["chest", "front_delts"],
+  "compatibleEquipment": ["weight_stack", "plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Sit tall, back and shoulders against the pad",
+      "Fasten the thigh pad or belt if there is one",
+      "Grip the handles, elbows bent to about 90°"
+    ],
+    "execution": [
+      "Push the handles down until your arms are straight",
+      "Keep your elbows tucked close to your sides",
+      "Pause briefly at the bottom",
+      "Let the handles rise slowly to the start"
+    ],
+    "faults": [
+      "Don't shrug your shoulders up at the top",
+      "Don't flare your elbows wide",
+      "Don't lean far forward to push"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Let the handles come up only as far as your shoulders feel comfortable; a light stretch is enough.",
+      "This is a weight-stack machine: the number is load you push, not help. A larger number is harder, unlike the assisted dip.",
+      "Machines differ. Read the label for seat and handle settings before you load it.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "cable-triceps-pushdown", "name": "Triceps pushdown", "reason": "Lighter, simpler triceps pressing at a cable column." }
+    ],
+    "progressions": [
+      { "key": "machine-assisted-dip", "name": "Assisted dip", "reason": "Free dip on bars with counterweight help; more shoulder and balance work." },
+      { "key": "bodyweight-dip", "name": "Dip", "reason": "Full bodyweight dip on parallel bars." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-dip", "name": "Dip", "reason": "Same pressing-down pattern on bars." },
+      { "key": "cable-triceps-pushdown", "name": "Triceps pushdown", "reason": "Triceps isolation at a cable column." },
+      { "key": "barbell-close-grip-bench-press", "name": "Close-grip bench press", "reason": "Heavy triceps pressing lying down." },
+      { "key": "ez-bar-skull-crusher", "name": "Skull crusher", "reason": "Triceps-only work lying on a bench." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at seated shoulder height, figure facing right. Machine drawn simply: seat, back pad and a handle on each side beside the torso. The stack can be left out.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Seated upright, back on the pad. Hands on the handles beside the lower chest, elbows bent about 90° and pointing back, shoulders down.",
+        "approxAnglesDeg": { "elbowFlexion": 90, "shoulderExtension": 30, "trunkLeanFromVertical": 5 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Arms straight, handles pushed down beside the hips. Elbows close to the sides; torso upright.",
+        "approxAnglesDeg": { "elbowFlexion": 5, "shoulderExtension": 0, "trunkLeanFromVertical": 5 }
+      }
+    ],
+    "ikHints": ["Back and hips fixed on the seat and pad", "Hands fixed to the handles, which travel down beside the body"],
+    "tempo": { "downMs": 1000, "holdMs": 300, "upMs": 1800 },
+    "props": ["seated_dip_machine"],
+    "emphasise": [
+      "Elbows stay tucked close to the body",
+      "Full arm straightening at the bottom",
+      "Slow return to the start"
+    ],
+    "doNotShow": ["Shoulders shrugged to the ears", "Elbows flaring wide", "Stack slamming"]
+  },
+  "sources": [
+    {
+      "url": "https://fitbod.me/exercises/machine-tricep-dip",
+      "title": "Fitbod: Machine Tricep Dip",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0,2]; cues.execution[0-1,3]; cues.faults[2] (leaning forward shifts work to the chest)",
+      "note": "Commercial app library."
+    },
+    {
+      "url": "https://us.physitrack.com/home-exercise-video/seated-triceps-dip-machine",
+      "title": "Physitrack: Seated triceps dip machine",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[2]; cues.execution[0,2-3]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "Neither source lists secondary muscles. chest and front_delts are reasoned from the dip pattern, not measured."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Dip machine\" and \"Triceps dip machine\" now match this weight-stack entry, never the assisted dip (an assisted name still needs an assist word). Some gyms' \"dip machine\" is the assisted one; Ben should confirm at import."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Machine designs vary."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

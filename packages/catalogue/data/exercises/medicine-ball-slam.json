@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "key": "medicine-ball-slam",
+  "tier": "rich",
+  "name": "Medicine ball slam",
+  "aliases": ["Ball slam", "Ball slams", "Med ball slam", "Slam ball slam", "Overhead ball slam", "Medicine ball slams"],
+  "family": "medicine_ball_throw",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "abs"],
+  "secondaryMuscles": ["core", "triceps", "glutes", "front_delts"],
+  "compatibleEquipment": ["medicine_ball"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Use a slam ball that won't bounce",
+      "Feet about shoulder-width",
+      "Ball held at your chest"
+    ],
+    "execution": [
+      "Reach the ball high overhead, up on your toes",
+      "Slam it down hard just in front of your feet",
+      "Bend hips and knees as you follow through",
+      "Squat to pick it up, then go again"
+    ],
+    "faults": [
+      "Don't throw it with arms alone",
+      "Don't round your back to pick it up",
+      "Don't slam it onto your toes"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a dead-bounce slam ball. A bouncy medicine ball can rebound up into your face.",
+      "Slam onto a solid floor with a clear area around you.",
+      "Pick the ball up with a squat and a flat back, especially when tired.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Chest pain, faintness or unusual breathlessness",
+      "Dizziness"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Lighter slam ball", "reason": "Learn the reach-and-slam rhythm before adding weight." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Rotational slam", "reason": "Slam to one side of the feet with a twist; adds oblique work." },
+      { "key": null, "name": "Timed slam intervals", "reason": "More reps in a set time for conditioning." }
+    ],
+    "substitutions": [
+      { "key": "wall-ball", "name": "Wall ball", "reason": "Medicine-ball conditioning with a squat and throw." },
+      { "key": "battle-ropes", "name": "Battle ropes", "reason": "High-rate upper-body conditioning." },
+      { "key": "cable-straight-arm-pulldown", "name": "Straight-arm pulldown", "reason": "Controlled lat work without the throw." },
+      { "key": "kettlebell-swing", "name": "Kettlebell swing", "reason": "Explosive full-body conditioning." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right, with a clear patch of floor just in front of the feet where the ball lands.",
+    "keyPositions": [
+      {
+        "label": "Reach",
+        "describe": "Standing tall on the toes, arms straight overhead holding the ball, body in a long line, hips slightly forward.",
+        "approxAnglesDeg": { "shoulderFlexion": 170, "hipFlexion": 0, "kneeFlexion": 0, "trunkLeanFromVertical": -5 }
+      },
+      {
+        "label": "Slam",
+        "describe": "Arms driven down, ball released and hitting the floor just in front of the feet. Hips back and knees bent, flat back, eyes down at the ball.",
+        "approxAnglesDeg": { "shoulderFlexion": 20, "hipFlexion": 70, "kneeFlexion": 60, "trunkLeanFromVertical": 50 }
+      },
+      {
+        "label": "Pick up",
+        "describe": "Squatting with a flat back to lift the ball from the floor back to the chest.",
+        "approxAnglesDeg": { "shoulderFlexion": 30, "hipFlexion": 100, "kneeFlexion": 110, "trunkLeanFromVertical": 40 }
+      }
+    ],
+    "ikHints": ["Ball leaves the hands at the end of the slam and lands on the floor", "Feet fixed"],
+    "tempo": { "downMs": 400, "holdMs": 300, "upMs": 1000 },
+    "props": ["slam_ball"],
+    "emphasise": [
+      "Full reach overhead on the toes",
+      "Whole body drives the slam",
+      "Flat back on the pick-up"
+    ],
+    "doNotShow": ["Ball bouncing back up", "Rounded back on the pick-up", "Ball hitting the feet"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/ball-slams/",
+      "title": "StrengthLog: Ball Slams",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[1-2]; cues.execution[0-3]"
+    },
+    {
+      "url": "https://acefitness.org/education-and-resources/lifestyle/exercise-library/287/rotational-slam",
+      "title": "ACE exercise library: Rotational Slam",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.progressions[0]",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://fitbod.me/exercises/medicine-ball-slam",
+      "title": "Fitbod: Medicine Ball Slam",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[0-1]; cues.faults[0]",
+      "note": "Commercial app library; seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "Lats and abs follow the research table; muscle use in slams is reasoned from the movement, not measured."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative trunkLeanFromVertical means a slight lean back at full reach."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

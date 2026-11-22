@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-bench-press",
+  "tier": "basic",
+  "name": "Dumbbell bench press",
+  "aliases": ["DB bench press", "DB bench", "Flat dumbbell bench press", "Flat dumbbell press", "Flat DB press", "Dumbbell chest press"],
+  "family": "bench_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["front_delts", "triceps"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "implements": 2,
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

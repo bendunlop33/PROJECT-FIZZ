@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "key": "sled-push",
+  "tier": "rich",
+  "name": "Sled push",
+  "aliases": ["HYROX sled push", "Prowler push", "Sled drive", "Push sled"],
+  "family": "sled",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["calves", "hamstrings", "core", "triceps"],
+  "compatibleEquipment": ["sled"],
+  "requiresStation": ["sled_track"],
+  "defaultLoadConvention": "added",
+  "measurement": "distance",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Load the sled and clear the lane ahead",
+      "Hands on the poles at chest height",
+      "Arms nearly straight and locked in place",
+      "Lean in with a long, straight body line"
+    ],
+    "execution": [
+      "Drive with short, powerful steps",
+      "Push the floor back with the balls of your feet",
+      "Keep your hips low and your back flat",
+      "Breathe steadily and keep the sled moving"
+    ],
+    "faults": [
+      "Don't stand too upright",
+      "Don't take long, lunging strides",
+      "Don't start so fast that you stall",
+      "Don't let your hips pike up or your back round"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Push on a surface meant for sleds, in shoes with good grip.",
+      "Keep the lane clear of people and kit before you start.",
+      "Heavy pushes raise breathing and heart rate fast. Rest until your breathing settles before the next length.",
+      "The logged load is the plates added. The sled's own weight and floor friction aren't counted, so loads aren't comparable between sleds or gyms. HYROX race weights include the sled.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Chest pain, faintness or unusual breathlessness",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Lighter sled or shorter lengths", "reason": "Learn the body angle and step rhythm before adding weight." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Race-weight pushes on carpet", "reason": "Practise at HYROX weight and on a high-friction surface before race day." },
+      { "key": null, "name": "Run, sled push, run", "reason": "Practises pushing on tired legs, as in a HYROX race." }
+    ],
+    "substitutions": [
+      { "key": "machine-leg-press", "name": "Leg press", "reason": "Leg drive when there's no sled track. Not a conditioning match." },
+      { "key": "dumbbell-walking-lunge", "name": "Dumbbell walking lunge", "reason": "Loaded single-leg drive over a distance." },
+      { "key": "bodyweight-wall-drive", "name": "Wall drive", "reason": "Drills the leaning body angle and short steps with no equipment." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view, figure facing right, camera at hip height. Locomotion: the floor scrolls left while the figure and sled stay centred (ground.scrollPerCycle about 0.55 of body height for two steps). Sled with upright poles in front of the figure.",
+    "keyPositions": [
+      {
+        "label": "Near-leg drive",
+        "describe": "Body leaning about 45° from vertical in a straight line from the rear ankle through hip and shoulder to head. Near leg extended behind, pushing off the ball of the foot with the heel up. Far leg forward with the knee under the hip and the foot about to land. Arms nearly straight, hands on the poles at about chest height. Head neutral, eyes down and ahead.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 45, "nearHipFlexion": 0, "nearKneeFlexion": 15, "farHipFlexion": 80, "farKneeFlexion": 90, "shoulderFlexion": 120, "elbowFlexion": 20 }
+      },
+      {
+        "label": "Switch",
+        "describe": "Mid-stride, feet passing under the hips. Body angle and hip height unchanged. Arms unchanged. Sled has moved forward by about one short step.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 45, "nearHipFlexion": 40, "nearKneeFlexion": 60, "farHipFlexion": 40, "farKneeFlexion": 40, "shoulderFlexion": 120, "elbowFlexion": 20 }
+      },
+      {
+        "label": "Far-leg drive",
+        "describe": "Mirror of Near-leg drive: far leg extended behind pushing off the ball of the foot, near leg forward with the knee under the hip.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 45, "nearHipFlexion": 80, "nearKneeFlexion": 90, "farHipFlexion": 0, "farKneeFlexion": 15, "shoulderFlexion": 120, "elbowFlexion": 20 }
+      }
+    ],
+    "ikHints": [
+      "Hands fixed to the sled poles in every frame",
+      "Stance foot planted on its forefoot while the floor scrolls under it",
+      "Hip height constant within about ±2% of body height"
+    ],
+    "barPath": "Not applicable. The sled moves horizontally at a steady speed; shown by floor scroll",
+    "tempo": { "stepMs": 1050, "stepsPerCycle": 2 },
+    "props": ["floor_sled_with_poles", "floor_line_scrolling"],
+    "emphasise": [
+      "Steady forward lean with a straight body line",
+      "Short steps, pushing off the balls of the feet",
+      "Arms stay fixed; the legs do the work"
+    ],
+    "doNotShow": ["Upright standing push", "Long lunging strides", "Rounded back", "Feet slipping"]
+  },
+  "sources": [
+    {
+      "url": "https://maintain.hyrox.com/rulebooks/HYROX_RulebookSingles_EN.pdf",
+      "title": "HYROX Rulebook Single, Season 26/27, §8.2 Sled Push",
+      "checkedOn": "2026-10-09",
+      "supports": "safety.notes[3] (race weights 102/152/202 kg include the sled); variations.progressions[0]; 50 m as 4 × 12.5 m lengths"
+    },
+    {
+      "url": "https://centr.com/blogs/thewarmup/hyrox-sled-push",
+      "title": "Centr: HYROX station guides: Sled push (Centr Team, 10 Jul 2025)",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[2-3]; cues.execution[0-3]; cues.faults[0-2]; guideBrief.keyPositions[0] (forward lean, heels up)",
+      "note": "Commercial source; Centr supplies HYROX race sleds. Practical coaching guidance, not research."
+    },
+    {
+      "url": "https://lida.sport-iat.de/ta/Record/4053457",
+      "title": "Cahill MJ et al. (2019) Sled pushing and pulling to enhance speed capability. Strength Cond J 41(4):94-104",
+      "checkedOn": "2026-10-09",
+      "supports": "primaryMuscles (leg drive and horizontal force); context that research on sled pushing is limited",
+      "note": "Abstract only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "measurement",
+      "note": "'distance' is a proposed addition (research §4.4). The current MeasurementSchema only allows reps and duration. Needs the schema change and ADR before this entry validates."
+    },
+    {
+      "field": "compatibleEquipment",
+      "note": "'sled' is a proposed EquipmentKind (research §4.4). It is not in packages/schemas yet."
+    },
+    {
+      "field": "secondaryMuscles",
+      "note": "Little research on muscle use in sled pushing. Secondary muscles are reasoned from the movement, not measured."
+    },
+    {
+      "field": "guideBrief.tempo",
+      "note": "Uses a stride tempo (stepMs, stepsPerCycle) instead of down/hold/up, which doesn't fit locomotion. The step time is slowed for readability; real heavy pushes may step faster. Step length and scroll distance are estimates."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Body lean and hand height vary with sled pole height and load."
+    },
+    {
+      "field": "cues.setup[1-2]",
+      "note": "Hand and arm position varies. Centr suggests forearms on the poles; many athletes push with straight arms on high or low handles. The entry shows nearly straight arms at chest height as one reasonable default."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

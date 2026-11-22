@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>GymSmarter · Workout overview (final)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Direction D (Premium), dark. Values from apps/mobile/src/theme/tokens.ts PREMIUM_DIRECTION + STATUS_DARK. No new colour values. SF only. */
+:root{
+  --bg-canvas:#0D0C0B; --bg-surface:#181615; --bg-raised:#23201E;
+  --border-divider:#302C29; --border-control:#75706A;
+  --text-primary:#F3EEE8; --text-secondary:#B5ADA5; --text-tertiary:#948C84;
+  --accent:#EDE5DA; --accent-subtle:#2B2724; --on-accent:#0D0C0B;
+  --status-warning:#F2B84B;
+  --radius-sm:8px; --radius-md:14px; --radius-lg:20px; --radius-pill:999px;
+  --margin:20px;
+  --sf:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#2a2725;font-family:var(--sf);color:var(--text-primary);padding:40px 24px 64px;-webkit-font-smoothing:antialiased}
+h1.page{font:600 20px/1.3 var(--sf);color:#e9e3dc;margin:0 auto 6px;max-width:1760px}
+p.lede{font:400 15px/1.45 var(--sf);color:#bdb5ad;margin:0 auto 32px;max-width:1760px}
+.frames{display:flex;gap:48px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+.frame-wrap{width:390px}
+.frame-title{font:600 13px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:#cfc7bf;margin-bottom:12px;min-height:32px}
+.notes{margin-top:14px;font:400 13px/1.5 var(--sf);color:#bdb5ad}
+.notes p{margin-bottom:6px}
+.notes code{color:#e9e3dc}
+
+.phone{position:relative;width:390px;height:844px;background:var(--bg-canvas);border-radius:48px;overflow:hidden;
+  box-shadow:0 0 0 10px #050505,0 0 0 11px #3a3633,0 30px 80px rgba(0,0,0,.55)}
+.label{font:600 12px/16px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-tertiary)}
+
+.sb{height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 34px 8px 40px;font:600 17px/22px var(--sf);font-variant-numeric:tabular-nums}
+.sb .island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000}
+.sb .right{display:flex;gap:6px;align-items:center}
+
+.topbar{position:relative;z-index:3;height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 8px;background:var(--bg-canvas)}
+.iconbtn{width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+.topbar .right{display:flex;align-items:center;gap:4px}
+.gymchip{height:34px;padding:0 14px;border:1px solid var(--border-control);border-radius:var(--radius-pill);display:flex;align-items:center;gap:6px;font:500 16px/20px var(--sf)}
+
+.body{position:absolute;top:102px;left:0;right:0;bottom:0;overflow:hidden;padding:0 var(--margin)}
+.eyebrow{margin-top:10px}
+.title{font:600 40px/46px var(--sf);letter-spacing:-0.8px;margin-top:6px}
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:16px;border-top:1px solid var(--border-divider);border-bottom:1px solid var(--border-divider)}
+.stat{padding:10px 0}
+.stat + .stat{padding-left:14px;border-left:1px solid var(--border-divider)}
+.stat .v{font:300 32px/36px var(--sf);letter-spacing:-0.6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .v small{font:400 16px/20px var(--sf);color:var(--text-secondary);letter-spacing:0;margin-left:3px}
+.stat .v .ap{color:var(--text-secondary);margin-right:2px}
+.stat .label{margin-top:2px}
+.muscles{margin-top:12px;font:400 16px/22px var(--sf);color:var(--text-secondary)}
+.muscles b{font-weight:500;color:var(--text-primary)}
+.listhead{display:flex;justify-content:space-between;margin-top:18px;padding-bottom:8px}
+
+.rows{list-style:none}
+.row{position:relative;display:grid;grid-template-columns:30px 1fr auto;column-gap:6px;padding:10px 0;border-top:1px solid var(--border-divider);min-height:64px}
+.row.last{border-bottom:1px solid var(--border-divider)}
+.idx{font:500 16px/22px var(--sf);color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.name{font:600 17px/22px var(--sf)}
+.name.ss{padding-left:0}
+.detail{font:400 16px/22px var(--sf);color:var(--text-secondary);font-variant-numeric:tabular-nums;margin-top:3px;white-space:nowrap}
+.rc{text-align:right;display:flex;flex-direction:column;align-items:flex-end}
+.mark{font:600 12px/22px var(--sf);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-secondary);display:flex;align-items:center;gap:5px;white-space:nowrap}
+.mark.warn{color:var(--status-warning)}
+.load{font:500 22px/26px var(--sf);letter-spacing:-0.3px;font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:2px;display:flex;align-items:center;gap:5px}
+.load small{font:400 16px/20px var(--sf);color:var(--text-secondary);letter-spacing:0}
+.load.none{color:var(--text-tertiary)}
+.tag{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 7px;border-radius:var(--radius-sm);background:var(--bg-raised);color:var(--text-secondary);font:600 12px/16px var(--sf);letter-spacing:1.2px;text-transform:uppercase}
+
+.ssgroup{position:relative}
+.ssgroup .sslabel{padding:10px 0 2px 30px;border-top:1px solid var(--border-divider)}
+.ssgroup .row:first-of-type{border-top:none}
+.ssgroup .bracket{position:absolute;left:4px;top:34px;bottom:14px;width:3px;border-radius:2px;background:var(--text-tertiary)}
+
+.panel{grid-column:2 / 4;margin-top:12px;background:var(--bg-surface);border-radius:var(--radius-md);padding:12px 14px 14px}
+.kv{display:grid;grid-template-columns:80px 1fr;column-gap:10px;row-gap:6px;font:400 16px/22px var(--sf)}
+.kv dt{color:var(--text-tertiary);font:600 12px/22px var(--sf);letter-spacing:1.4px;text-transform:uppercase}
+.kv dd{font-variant-numeric:tabular-nums}
+.kv dd.w{color:var(--status-warning);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.kv dd.q{color:var(--text-secondary)}
+.kv a{color:var(--text-primary);text-decoration:underline;text-underline-offset:3px}
+.pills{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.pill{height:44px;padding:0 16px;border:1px solid var(--border-control);border-radius:var(--radius-pill);display:flex;align-items:center;font:500 16px/20px var(--sf);white-space:nowrap}
+
+.bar{position:absolute;left:0;right:0;bottom:0;padding:0 var(--margin) 34px;background:var(--bg-canvas);z-index:2}
+.bar::before{content:"";position:absolute;left:0;right:0;top:-14px;height:14px;background:linear-gradient(to bottom,rgba(13,12,11,0),var(--bg-canvas))}
+.checkin{display:flex;align-items:center;justify-content:space-between;padding-top:8px}
+.tiles{display:flex;gap:6px}
+.tile{width:50px;height:52px;border-radius:var(--radius-pill);border:1px solid var(--border-control);display:flex;align-items:center;justify-content:center;gap:3px;
+  font:500 18px/22px var(--sf);font-variant-numeric:tabular-nums}
+.tile.sel{background:var(--accent-subtle);border:2px solid var(--accent)}
+.start{margin-top:20px;height:60px;border-radius:var(--radius-pill);background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font:600 17px/22px var(--sf)}
+.bar.nochk .start{margin-top:12px}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--text-primary);opacity:.9;z-index:4}
+.toast{position:absolute;left:var(--margin);right:var(--margin);bottom:124px;z-index:3;height:52px;border-radius:var(--radius-md);background:var(--bg-raised);
+  display:flex;align-items:center;justify-content:space-between;padding:0 6px 0 16px;font:400 16px/22px var(--sf)}
+.toast u{font-weight:600;text-underline-offset:3px;padding:0 12px;height:44px;display:flex;align-items:center}
+.future{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;background:#3a3633;color:#e9e3dc;font-size:11px;letter-spacing:1px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="up" viewBox="0 0 9 11"><path d="M4.5 10V1.5M1 5l3.5-3.5L8 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="down" viewBox="0 0 9 11"><path d="M4.5 1v8.5M1 6l3.5 3.5L8 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="warn" viewBox="0 0 13 12"><path d="M6.5 1L12 11H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6.5 4.6v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="6.5" cy="9.3" r=".8" fill="currentColor"/></symbol>
+    <symbol id="info" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 6.2v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="4" r=".85" fill="currentColor"/></symbol>
+    <symbol id="check" viewBox="0 0 12 10"><path d="M1 5l3.5 3.5L11 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="bubble" viewBox="0 0 14 13"><path d="M2 1.5h10a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 12 9.5H6L3 12V9.5H2A1.5 1.5 0 0 1 .5 8V3A1.5 1.5 0 0 1 2 1.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+    <symbol id="chev" viewBox="0 0 20 12"><path d="M2 2l8 8 8-8" fill="none" stroke="#F3EEE8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="caret" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="#B5ADA5" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="more" viewBox="0 0 20 4"><circle cx="2" cy="2" r="2" fill="#F3EEE8"/><circle cx="10" cy="2" r="2" fill="#F3EEE8"/><circle cx="18" cy="2" r="2" fill="#F3EEE8"/></symbol>
+    <symbol id="sig" viewBox="0 0 44 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="#F3EEE8"/><rect x="5" y="5" width="3" height="7" rx="1" fill="#F3EEE8"/><rect x="10" y="2.5" width="3" height="9.5" rx="1" fill="#F3EEE8"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#F3EEE8"/><rect x="18.5" y=".5" width="22" height="11" rx="3" fill="none" stroke="#F3EEE8" opacity=".5"/><rect x="20" y="2" width="16" height="8" rx="2" fill="#F3EEE8"/></symbol>
+  </defs>
+</svg>
+
+<h1 class="page">Workout overview · final</h1>
+<p class="lede">The page between Today's Up next and the first set. It slides up as a full-screen modal and creates nothing until Start. Direction D dark, 390 × 844. Spec: <code>docs/design/workout-overview.md</code>.</p>
+
+<div class="frames">
+
+<!-- ===================== FRAME 1: MAIN ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">1 · Main: built-in targets, check-in due, no coach</div>
+  <div class="phone">
+    <div class="sb"><span>18:10</span><span class="island"></span><span class="right"><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar">
+      <div class="iconbtn" aria-label="Close"><svg width="20" height="12"><use href="#chev"/></svg></div>
+      <div class="right"><div class="gymchip">Main gym <svg width="10" height="6"><use href="#caret"/></svg></div><div class="iconbtn" aria-label="More"><svg width="20" height="4"><use href="#more"/></svg></div></div>
+    </div>
+    <div class="body">
+      <div class="label eyebrow">After Pull A · Thu 8 Oct</div>
+      <div class="title">Push A</div>
+      <div class="stats" aria-label="About 55 minutes, done about 19:05, 15 working sets">
+        <div class="stat"><div class="v"><span class="ap">≈</span>55<small>min</small></div><div class="label">Time</div></div>
+        <div class="stat"><div class="v"><span class="ap">≈</span>19:05</div><div class="label">Done by</div></div>
+        <div class="stat"><div class="v">15</div><div class="label">Sets</div></div>
+      </div>
+      <div class="muscles"><b>Chest</b> · Shoulders · Triceps</div>
+      <div class="listhead"><span class="label">5 exercises</span><span class="label">Target</span></div>
+      <ol class="rows">
+        <li class="row"><span class="idx">01</span><div><div class="name">Bench press</div><div class="detail">3 × 6–8 · 3 warm-ups</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Up</span><span class="load">100<small>kg</small></span></div></li>
+        <li class="row"><span class="idx">02</span><div><div class="name">Incline dumbbell press</div><div class="detail">3 × 8–10</div></div>
+          <div class="rc"><span class="mark">Same</span><span class="load">32<small>kg each</small></span></div></li>
+        <li class="row"><span class="idx">03</span><div><div class="name">Cable fly</div><div class="detail">3 × 12–15</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Up</span><span class="load">17.5<small>kg</small><svg width="14" height="14" style="color:#948C84" aria-label="Rounded to this stack"><use href="#info"/></svg></span></div></li>
+      </ol>
+      <div class="ssgroup">
+        <div class="label sslabel">Superset</div>
+        <span class="bracket"></span>
+        <ol class="rows">
+          <li class="row"><span class="idx">04</span><div><div class="name">Lateral raise</div><div class="detail">3 × 12–15</div></div>
+            <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Reps</span><span class="load">10<small>kg each</small></span></div></li>
+          <li class="row last"><span class="idx">05</span><div><div class="name">Triceps pushdown</div><div class="detail">3 × 10–12</div></div>
+            <div class="rc"><span class="mark">New</span><span class="load">25<small>kg</small></span></div></li>
+        </ol>
+      </div>
+    </div>
+    <div class="bar">
+      <div class="checkin"><span class="label">Check-in</span>
+        <div class="tiles"><span class="tile">1</span><span class="tile">2</span><span class="tile">3</span><span class="tile">4</span><span class="tile">5</span></div></div>
+      <div class="start">Start workout</div>
+    </div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>Today's <code>Start workout</code> opens this page. Taps to the first set: Start → Start → Log = 3. With the check-in ignored it is still 3 and is saved as <code>skipped</code>.</p>
+    <p>The <code>TARGET</code> header labels every load. Change markers: Up · Down · Reps · Sets · Same · New · Held · No load. The info glyph means rounded or capped to this gym. The reason is behind the row tap.</p>
+    <p>The superset bracket is a shape, never colour alone. Rows 04–05 scroll under the fixed bar.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 2: PAIN FLAG ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">2 · Pain flag, row opened, check-in answered</div>
+  <div class="phone">
+    <div class="sb"><span>18:12</span><span class="island"></span><span class="right"><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar">
+      <div class="iconbtn"><svg width="20" height="12"><use href="#chev"/></svg></div>
+      <div class="right"><div class="gymchip">Main gym <svg width="10" height="6"><use href="#caret"/></svg></div><div class="iconbtn"><svg width="20" height="4"><use href="#more"/></svg></div></div>
+    </div>
+    <div class="body">
+      <div class="label eyebrow">After Pull A · Thu 8 Oct</div>
+      <div class="title">Push A</div>
+      <div class="stats">
+        <div class="stat"><div class="v"><span class="ap">≈</span>55<small>min</small></div><div class="label">Time</div></div>
+        <div class="stat"><div class="v"><span class="ap">≈</span>19:10</div><div class="label">Done by</div></div>
+        <div class="stat"><div class="v">15</div><div class="label">Sets</div></div>
+      </div>
+      <div class="muscles"><b>Chest</b> · Shoulders · Triceps</div>
+      <div class="listhead"><span class="label">5 exercises</span><span class="label">Target</span></div>
+      <ol class="rows">
+        <li class="row"><span class="idx">01</span><div><div class="name">Bench press</div><div class="detail">3 × 6–8 · 3 warm-ups</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Up</span><span class="load">100<small>kg</small></span></div></li>
+        <li class="row"><span class="idx">02</span><div><div class="name">Incline dumbbell press</div><div class="detail">3 × 8–10</div></div>
+          <div class="rc"><span class="mark warn"><svg width="13" height="12"><use href="#warn"/></svg>Held</span><span class="load">32<small>kg each</small></span></div>
+          <div class="panel">
+            <dl class="kv">
+              <dt>Last</dt><dd>32 kg each × 10, 9, 8 · 1 Oct</dd>
+              <dt>Flag</dt><dd class="w"><svg width="13" height="12"><use href="#warn"/></svg>Shoulder · 24 Sep · <a>Still hurts?</a></dd>
+            </dl>
+            <div class="pills"><span class="pill">Why?</span><span class="pill">How to</span><span class="pill">History</span></div>
+          </div></li>
+        <li class="row"><span class="idx">03</span><div><div class="name">Cable fly</div><div class="detail">3 × 12–15</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Up</span><span class="load">17.5<small>kg</small><svg width="14" height="14" style="color:#948C84"><use href="#info"/></svg></span></div></li>
+      </ol>
+    </div>
+    <div class="bar">
+      <div class="checkin"><span class="label">Check-in</span>
+        <div class="tiles"><span class="tile">1</span><span class="tile">2</span><span class="tile sel"><svg width="12" height="10" style="color:#EDE5DA"><use href="#check"/></svg>3</span><span class="tile">4</span><span class="tile">5</span></div></div>
+      <div class="start">Start workout</div>
+    </div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p><code>HELD</code> is an icon plus a word in <code>status.warning</code>. The load is never above last time (rule 9). <code>Still hurts?</code> shows because the 14-day check is due, and it opens the existing pain flag sheet.</p>
+    <p>The selected tile uses <code>accent.subtle</code>, a 2 pt accent border and a check, never an accent fill, so Start stays the only filled pill. A score at or below the What's up? setting opens check-in Step 2 over this page. Every exit from it returns here.</p>
+    <p>Swap and Skip today are deferred (they need a pre-start draft and an ADR).</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 3: COACH (FUTURE) ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">3 · Coach change stored (D21) <span class="future">AFTER COACH V1</span></div>
+  <div class="phone">
+    <div class="sb"><span>18:10</span><span class="island"></span><span class="right"><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar">
+      <div class="iconbtn"><svg width="20" height="12"><use href="#chev"/></svg></div>
+      <div class="right"><div class="gymchip">Main gym <svg width="10" height="6"><use href="#caret"/></svg></div><div class="iconbtn"><svg width="20" height="4"><use href="#more"/></svg></div></div>
+    </div>
+    <div class="body">
+      <div class="label eyebrow">After Pull A · Thu 8 Oct</div>
+      <div class="title">Push A</div>
+      <div class="stats">
+        <div class="stat"><div class="v"><span class="ap">≈</span>55<small>min</small></div><div class="label">Time</div></div>
+        <div class="stat"><div class="v"><span class="ap">≈</span>19:05</div><div class="label">Done by</div></div>
+        <div class="stat"><div class="v">15</div><div class="label">Sets</div></div>
+      </div>
+      <div class="muscles"><b>Chest</b> · Shoulders · Triceps</div>
+      <div class="listhead"><span class="label">5 exercises</span><span class="label">Target</span></div>
+      <ol class="rows">
+        <li class="row"><span class="idx">01</span><div><div class="name">Bench press</div><div class="detail">3 × 6–8 · 3 warm-ups</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Up</span><span class="load">100<small>kg</small></span></div></li>
+        <li class="row"><span class="idx">02</span><div><div class="name">Incline dumbbell press</div><div class="detail">3 × 8–10</div></div>
+          <div class="rc"><span class="mark"><span class="tag"><svg width="13" height="12"><use href="#bubble"/></svg>Coach</span><svg width="9" height="11"><use href="#down"/></svg>Down</span><span class="load">30<small>kg each</small></span></div>
+          <div class="panel">
+            <dl class="kv">
+              <dt>Change</dt><dd>↓ 2 kg each · vs 1 Oct</dd>
+              <dt>Last</dt><dd>32 kg each × 8, 7, 6 · 1 Oct</dd>
+              <dt>Coach</dt><dd class="q">“Reps dropped every set. One dumbbell lighter, own the 10s.”</dd>
+            </dl>
+            <div class="pills"><span class="pill">Undo</span><span class="pill">Why?</span><span class="pill">How to</span></div>
+          </div></li>
+        <li class="row"><span class="idx">03</span><div><div class="name">Cable fly</div><div class="detail">3 × 12–15</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Up</span><span class="load">17.5<small>kg</small><svg width="14" height="14" style="color:#948C84"><use href="#info"/></svg></span></div></li>
+      </ol>
+    </div>
+    <div class="bar nochk"><div class="start">Start workout</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>This frame only applies once coach v1 is merged. Until then, and whenever no coach is configured, nothing coach-related renders (test OV8). When the coach is offline, the page doesn't change.</p>
+    <p><code>Undo</code> calls the same versioned command as the Summary's Next time row. The row returns to the built-in rule, with the toast <code>Incline dumbbell press · built-in rule</code> [Undo] and a <code>Use coach target</code> option. Opening this page makes no AI call.</p>
+    <p>Check-in not due: the tiles are absent and Start sits alone.</p>
+  </div>
+</div>
+
+<!-- ===================== FRAME 4: GYM SWITCH + MAIN LIFT ===================== -->
+<div class="frame-wrap">
+  <div class="frame-title">4 · Switched to Hotel gym, scrolled, first lift opened</div>
+  <div class="phone">
+    <div class="sb"><span>18:11</span><span class="island"></span><span class="right"><svg width="44" height="12"><use href="#sig"/></svg></span></div>
+    <div class="topbar">
+      <div class="iconbtn"><svg width="20" height="12"><use href="#chev"/></svg></div>
+      <div class="right"><div class="gymchip">Hotel gym <svg width="10" height="6"><use href="#caret"/></svg></div><div class="iconbtn"><svg width="20" height="4"><use href="#more"/></svg></div></div>
+    </div>
+    <div class="body" style="top:102px">
+      <div class="listhead" style="margin-top:4px"><span class="label">5 exercises</span><span class="label">Target</span></div>
+      <ol class="rows">
+        <li class="row"><span class="idx">01</span><div><div class="name">Bench press</div><div class="detail">3 × 6–8 · 3 warm-ups</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Up</span><span class="load">100<small>kg</small></span></div>
+          <div class="panel">
+            <dl class="kv">
+              <dt>Change</dt><dd>↑ 2.5 kg · vs 1 Oct</dd>
+              <dt>Last</dt><dd>97.5 kg × 8, 8, 8 · 1 Oct</dd>
+              <dt>Warm-up</dt><dd>20 × 10 · 60 × 5 · 80 × 3</dd>
+              <dt>Plates</dt><dd>25 · 10 · 5 a side · 20 kg bar</dd>
+              <dt>Best</dt><dd>102.5 kg × 5 · 12 Sep</dd>
+            </dl>
+            <div class="pills"><span class="pill">Why?</span><span class="pill">How to</span><span class="pill">History</span></div>
+          </div></li>
+        <li class="row"><span class="idx">02</span><div><div class="name">Incline dumbbell press</div><div class="detail">3 × 8–10</div></div>
+          <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#down"/></svg>Down</span><span class="load">30<small>kg each</small><svg width="14" height="14" style="color:#948C84" aria-label="Capped at this rack's max"><use href="#info"/></svg></span></div></li>
+        <li class="row"><span class="idx">03</span><div><div class="name">Cable fly</div><div class="detail">3 × 12–15</div></div>
+          <div class="rc"><span class="mark warn"><svg width="13" height="12"><use href="#warn"/></svg>No load</span><span class="load none">—</span></div></li>
+      </ol>
+      <div class="ssgroup">
+        <div class="label sslabel">Superset</div>
+        <span class="bracket"></span>
+        <ol class="rows">
+          <li class="row"><span class="idx">04</span><div><div class="name">Lateral raise</div><div class="detail">3 × 12–15</div></div>
+            <div class="rc"><span class="mark"><svg width="9" height="11"><use href="#up"/></svg>Reps</span><span class="load">10<small>kg each</small></span></div></li>
+        </ol>
+      </div>
+    </div>
+    <div class="toast"><span>Hotel gym · 2 targets changed</span><u>Undo</u></div>
+    <div class="bar nochk"><div class="start">Start workout</div></div>
+    <div class="home"></div>
+  </div>
+  <div class="notes">
+    <p>Switching gym is a selection only, because no session exists yet. Every row re-snaps and re-marks, and Undo restores the previous gym. The rack tops out at 30 kg, so Incline shows <code>DOWN</code> and the info glyph. With no cable stack here, Cable fly is <code>NO LOAD</code> with reps kept.</p>
+    <p>Only the first barbell lift's panel adds the warm-up ramp, plates per side (gyms with a plate inventory) and Best, an actual set, never e1RM.</p>
+    <p>If the routine, gym, flags or coach targets change after the page opened, Start creates nothing and the rows re-render with the toast <code>Targets updated</code> (previewKey, rule 5).</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

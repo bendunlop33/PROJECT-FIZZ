@@ -1,0 +1,154 @@
+<title>Plan Summary Mockup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --canvas:#F6F3EF;--surface:#FFFFFF;--raised:#EEE9E3;--divider:#DDD6CE;--control:#857D75;
+  --t1:#15120F;--t2:#57504A;--t3:#6B645D;--accent:#15120F;--onaccent:#F6F3EF;--done:#1E7F45;--warn:#8A5A00;
+  --page:#E9E4DD;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --canvas:#0D0C0B;--surface:#181615;--raised:#23201E;--divider:#302C29;--control:#75706A;
+  --t1:#F3EEE8;--t2:#B5ADA5;--t3:#948C84;--accent:#EDE5DA;--onaccent:#0D0C0B;--done:#5CC98A;--warn:#F2B84B;
+  --page:#060505;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#0D0C0B;--surface:#181615;--raised:#23201E;--divider:#302C29;--control:#75706A;
+  --t1:#F3EEE8;--t2:#B5ADA5;--t3:#948C84;--accent:#EDE5DA;--onaccent:#0D0C0B;--done:#5CC98A;--warn:#F2B84B;
+  --page:#060505;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--t1);font-family:Inter,-apple-system,"SF Pro Text",system-ui,sans-serif;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-wrap:wrap;gap:32px;justify-content:center;align-items:flex-start}
+.phone{width:390px;max-width:100%;background:var(--canvas);border-radius:44px;padding:18px 20px 28px;border:1px solid var(--divider);
+  box-shadow:0 30px 60px -30px rgba(0,0,0,.5)}
+.status{display:flex;justify-content:space-between;font-size:15px;font-weight:600;padding:4px 10px 14px;font-variant-numeric:tabular-nums}
+.nav{display:flex;justify-content:space-between;align-items:center;height:36px}
+.link{color:var(--t1);text-decoration:underline;text-underline-offset:3px;font-size:17px}
+.link.sec{color:var(--t2)}
+h1{font-size:34px;line-height:1.1;font-weight:700;letter-spacing:-.02em;margin:18px 0 4px;text-wrap:balance}
+.sub{color:var(--t2);font-size:15px;margin:0 0 20px;font-variant-numeric:tabular-nums}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);font-weight:600;margin:26px 0 10px;display:flex;justify-content:space-between;align-items:baseline}
+.eyebrow span{letter-spacing:0;text-transform:none;font-weight:400;font-size:13px;color:var(--t2)}
+.weeks{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.wk{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--t3);font-variant-numeric:tabular-nums}
+.bar{height:8px;width:100%;border-radius:4px;background:var(--raised)}
+.wk.done .bar{background:var(--t2)}
+.wk.now .bar{background:var(--accent)}
+.wk.now{color:var(--t1);font-weight:600}
+.wk.deload .bar{background:transparent;border:1px dashed var(--control)}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-radius:20px;margin-top:16px}
+.fact{padding:14px 12px;text-align:center}
+.fact+.fact{border-left:1px solid var(--divider)}
+.fact b{display:block;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.fact small{font-size:13px;color:var(--t2)}
+.card{background:var(--surface);border-radius:20px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:13px 16px;min-height:52px}
+.row+.row{border-top:1px solid var(--divider)}
+.row .main{flex:1;min-width:0}
+.row .name{font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .meta{font-size:13px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .val{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--t1)}
+.row .val .arrow{color:var(--t3)}
+.row .val em{font-style:normal;color:var(--t3);font-size:13px}
+.chev{color:var(--t3);font-size:18px}
+.day-tag{font-size:12px;color:var(--t3);width:30px;flex-shrink:0;font-variant-numeric:tabular-nums}
+.dot{width:6px;height:6px;border-radius:3px;background:var(--done);display:inline-block;margin-right:6px;vertical-align:middle}
+.next{font-size:12px;color:var(--onaccent);background:var(--accent);border-radius:999px;padding:2px 8px;font-weight:600}
+.musc{display:grid;grid-template-columns:96px 1fr 44px;align-items:center;gap:10px;padding:9px 16px;font-size:15px}
+.musc+.musc{border-top:1px solid var(--divider)}
+.track{position:relative;height:6px;border-radius:3px;background:var(--raised)}
+.range{position:absolute;top:0;bottom:0;border-radius:3px;background:color-mix(in srgb,var(--done) 22%,transparent)}
+.fill{position:absolute;top:-2px;width:3px;height:10px;border-radius:2px;background:var(--t1)}
+.musc .n{text-align:right;color:var(--t2);font-variant-numeric:tabular-nums}
+.musc.low .fill{background:var(--warn)}
+.musc.low .n{color:var(--warn)}
+.btns{display:flex;gap:10px;margin-top:26px}
+.btn{flex:1;height:52px;border-radius:999px;font:600 17px/52px Inter,system-ui,sans-serif;text-align:center;border:1px solid var(--control);color:var(--t1)}
+.btn.primary{background:var(--accent);color:var(--onaccent);border:none}
+.notes{width:380px;max-width:100%;display:flex;flex-direction:column;gap:14px;font-size:15px;line-height:1.55;color:var(--t1)}
+.notes h2{font-size:22px;margin:8px 0 0;letter-spacing:-.01em}
+.notes h3{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin:12px 0 0}
+.notes p,.notes ul{margin:0;color:var(--t2)}
+.notes ul{padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.notes b{color:var(--t1);font-weight:600}
+.pill{display:inline-block;font-size:12px;border:1px solid var(--divider);border-radius:999px;padding:1px 8px;color:var(--t2)}
+</style>
+
+<div class="wrap">
+  <div class="phone" aria-label="Mockup: Your plan summary">
+    <div class="status"><span>14:07</span><span>●●● ▮</span></div>
+    <div class="nav"><span class="link">‹ Progress</span><span class="link sec">Edit</span></div>
+
+    <h1>Balanced · 6 weeks</h1>
+    <p class="sub">Week 3 of 6 · ends Sun 6 Dec</p>
+
+    <div class="weeks" role="img" aria-label="Weeks 1 and 2 done, week 3 now, week 6 deload">
+      <div class="wk done"><div class="bar"></div>1</div>
+      <div class="wk done"><div class="bar"></div>2</div>
+      <div class="wk now"><div class="bar"></div>3</div>
+      <div class="wk"><div class="bar"></div>4</div>
+      <div class="wk"><div class="bar"></div>5</div>
+      <div class="wk deload"><div class="bar"></div>6 ↓</div>
+    </div>
+
+    <div class="facts">
+      <div class="fact"><b>4</b><small>days / week</small></div>
+      <div class="fact"><b>~60</b><small>min</small></div>
+      <div class="fact"><b>Standard</b><small>effort</small></div>
+    </div>
+
+    <div class="eyebrow">Days <span>Any days</span></div>
+    <div class="card">
+      <div class="row"><span class="day-tag"><span class="dot"></span></span><div class="main"><div class="name">Push A</div><div class="meta">Bench press · 5 exercises</div></div><span class="chev">›</span></div>
+      <div class="row"><span class="day-tag"><span class="dot"></span></span><div class="main"><div class="name">Pull A</div><div class="meta">Barbell row · 5 exercises</div></div><span class="chev">›</span></div>
+      <div class="row"><span class="day-tag"></span><div class="main"><div class="name">Legs A</div><div class="meta">Back squat · 5 exercises</div></div><span class="next">Next</span><span class="chev">›</span></div>
+      <div class="row"><span class="day-tag"></span><div class="main"><div class="name">Upper B</div><div class="meta">Overhead press · 6 exercises</div></div><span class="chev">›</span></div>
+    </div>
+
+    <div class="eyebrow">Main lifts <span>Now → week 6</span></div>
+    <div class="card">
+      <div class="row"><div class="main"><div class="name">Bench press</div></div><span class="val">80 <span class="arrow">→</span> 85 kg × 6 <em>est.</em></span></div>
+      <div class="row"><div class="main"><div class="name">Back squat</div></div><span class="val">100 <span class="arrow">→</span> 107.5 kg × 6 <em>est.</em></span></div>
+      <div class="row"><div class="main"><div class="name">Barbell row</div></div><span class="val">70 <span class="arrow">→</span> 75 kg × 8 <em>est.</em></span></div>
+      <div class="row"><div class="main"><div class="name">Overhead press</div></div><span class="val">50 <span class="arrow">→</span> 52.5 kg × 6 <em>est.</em></span></div>
+    </div>
+
+    <div class="eyebrow">Sets per week <span>Muscles ›</span></div>
+    <div class="card">
+      <div class="musc"><span>Chest</span><div class="track"><div class="range" style="left:30%;width:20%"></div><div class="fill" style="left:42%"></div></div><span class="n">9</span></div>
+      <div class="musc"><span>Back</span><div class="track"><div class="range" style="left:30%;width:20%"></div><div class="fill" style="left:47%"></div></div><span class="n">10</span></div>
+      <div class="musc"><span>Legs</span><div class="track"><div class="range" style="left:30%;width:20%"></div><div class="fill" style="left:45%"></div></div><span class="n">10</span></div>
+      <div class="musc"><span>Shoulders</span><div class="track"><div class="range" style="left:30%;width:20%"></div><div class="fill" style="left:35%"></div></div><span class="n">7</span></div>
+      <div class="musc low"><span>Arms</span><div class="track"><div class="range" style="left:30%;width:20%"></div><div class="fill" style="left:22%"></div></div><span class="n">5</span></div>
+    </div>
+
+    <div class="btns"><span class="btn">Edit plan</span></div>
+  </div>
+
+  <div class="notes">
+    <h2>Your plan, at a glance</h2>
+    <p>Tap the plan in Progress and you get this instead of the setup questions. Edit (top right, or the button at the bottom) opens Gym goals.</p>
+
+    <h3>What's on it</h3>
+    <ul>
+      <li><b>Title:</b> focus · length. <b>Line under it:</b> the week you're in and the end date.</li>
+      <li><b>Week strip:</b> finished weeks are filled and this week is bright. The deload week is dashed with a ↓.</li>
+      <li><b>Three numbers:</b> days a week, typical minutes, effort.</li>
+      <li><b>Days:</b> each day's main lift and how many exercises. Green dot = done this week, <span class="pill">Next</span> = what Today starts. Tap a day to open it.</li>
+      <li><b>Main lifts:</b> where you are now and the week 6 estimate, marked <b>est.</b></li>
+      <li><b>Sets per week:</b> the same ranges as Plan › Muscles; amber = below range. Tap through to Rebalance.</li>
+    </ul>
+
+    <h3>Left off on purpose</h3>
+    <ul>
+      <li>No explanations of the rules and no ticks. A "Why?" only appears where you can already tap for one.</li>
+      <li>No priorities or likes and dislikes. Those stay in Edit.</li>
+    </ul>
+
+    <h3>Your call</h3>
+    <ul>
+      <li>Is Main lifts (now → week 6) worth keeping, or is it too much?</li>
+      <li>Sets per week as bars, or just the numbers?</li>
+    </ul>
+  </div>
+</div>

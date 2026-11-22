@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "dowel-hip-hinge",
+  "tier": "basic",
+  "name": "Dowel hip hinge",
+  "aliases": ["Hip hinge drill", "Dowel hinge", "PVC hip hinge", "Stick hip hinge", "Broomstick hinge"],
+  "family": "hip_hinge",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["hamstrings", "glutes"],
+  "secondaryMuscles": ["spinal_erectors", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

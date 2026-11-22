@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-scapular-pull-up",
+  "tier": "rich",
+  "name": "Scapular pull-up",
+  "aliases": ["Scap pull-up", "Scap pull-ups", "Scapular pull-ups", "Scap pullup", "Scapula pull-up", "Hanging scap pull"],
+  "family": "pull_up",
+  "movementPattern": "vertical_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["lats", "traps"],
+  "secondaryMuscles": ["grip", "upper_back"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["pullup_bar"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Hang from the bar, overhand grip",
+      "Hands just outside shoulder-width",
+      "Let your shoulders rise toward your ears"
+    ],
+    "execution": [
+      "Pull your shoulder blades down",
+      "Arms stay straight the whole time",
+      "Your body rises a few centimetres",
+      "Lower slowly back to a full hang"
+    ],
+    "faults": [
+      "Don't bend your elbows",
+      "Don't swing or kick",
+      "Don't drop into the hang"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "The movement is small; only the shoulder blades move.",
+      "Step down onto a box or bench rather than dropping from the bar.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain in the shoulder that builds during the set",
+      "Numbness or tingling in the hands"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Feet-supported scap pull-up", "reason": "Feet on a box take some bodyweight." },
+      { "key": "machine-assisted-pull-up", "name": "Assisted pull-up", "reason": "Do the same shoulder-blade pull with machine assistance." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Hold at the top", "reason": "A 5–10 second hold with the shoulder blades down." },
+      { "key": "bodyweight-pull-up", "name": "Pull-up", "reason": "Continue from the shoulder-blade pull into a full pull-up." }
+    ],
+    "substitutions": [
+      { "key": "cable-straight-arm-pulldown", "name": "Straight-arm pulldown", "reason": "Lats with straight arms on a cable; loadable." },
+      { "key": "cable-lat-pulldown", "name": "Lat pulldown", "reason": "Start each rep by drawing the shoulders down before bending the elbows." },
+      { "key": "bodyweight-dead-hang", "name": "Dead hang", "reason": "Hold a hang for grip and shoulder position." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at shoulder height, figure facing right, hanging from a bar. The change is small, so frame the upper body large enough that the shoulders and the body's rise are clear.",
+    "keyPositions": [
+      {
+        "label": "Hang",
+        "describe": "Hanging from the bar with straight arms, shoulders shrugged up toward the ears, body relaxed and still.",
+        "approxAnglesDeg": { "shoulderFlexion": 175, "elbowFlexion": 0 }
+      },
+      {
+        "label": "Pulled down",
+        "describe": "Arms still straight. Shoulders drawn down away from the ears and slightly back; the body has risen a few centimetres. Chest slightly lifted.",
+        "approxAnglesDeg": { "shoulderFlexion": 165, "elbowFlexion": 0 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the bar", "Elbows stay straight in every frame"],
+    "tempo": { "downMs": 1500, "holdMs": 800, "upMs": 900 },
+    "props": ["pullup_bar"],
+    "emphasise": [
+      "Arms stay straight",
+      "Shoulders move down away from the ears",
+      "Body rises only a little"
+    ],
+    "doNotShow": ["Elbows bending", "Swinging legs", "Dropping into the hang"]
+  },
+  "sources": [
+    {
+      "url": "https://catalystathletics.com/exercise/918/Scap-Pull-Up/",
+      "title": "Catalyst Athletics exercise library: Scap Pull-Up",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0,2]; cues.execution[0-1,3]; variations.progressions[0]; warm-up use",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://www.strengthlog.com/scap-pull-up/",
+      "title": "StrengthLog: Scap Pull-Up",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.execution[2]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "The movement is mainly shoulder-blade depression (lower traps and lats). The vocabulary's 'traps' reads as the top of the shoulders, which is the opposite job here."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

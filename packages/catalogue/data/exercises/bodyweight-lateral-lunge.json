@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-lateral-lunge",
+  "tier": "rich",
+  "name": "Lateral lunge",
+  "aliases": ["Side lunge", "Side lunges", "Lateral lunges", "Bodyweight lateral lunge", "Bodyweight side lunge"],
+  "family": "lunge",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["adductors", "quads", "glutes"],
+  "secondaryMuscles": ["hamstrings", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Stand tall, feet hip-width apart",
+      "Hands together at your chest",
+      "Clear space to one side"
+    ],
+    "execution": [
+      "Step wide to the side, toes forward",
+      "Sit your hips back over that foot",
+      "Keep the other leg long and straight",
+      "Push off the bent leg to step back in"
+    ],
+    "faults": [
+      "Don't let the bent knee cave in",
+      "Don't lift the heel of the bent leg",
+      "Don't step so wide that you can't push back"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Choose a step width where the bent knee tracks over the foot. Stepping too wide pulls the knee out of line; shorten the step if it does.",
+      "Go only as deep as your inner thigh allows with a flat back.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "A sharp pull in the groin",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Shallow lateral lunge", "reason": "A shorter step and less depth while range and balance build." },
+      { "key": null, "name": "Lateral lunge holding a support", "reason": "A hand on a rack or bench helps balance." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Goblet lateral lunge", "reason": "One dumbbell or kettlebell held at the chest adds load. Logged with the weight held." },
+      { "key": null, "name": "Cossack squat", "reason": "Deeper side-to-side squat with the straight leg's toes up; needs more hip range." }
+    ],
+    "substitutions": [
+      { "key": "machine-hip-adduction", "name": "Hip adduction machine", "reason": "Inner-thigh work on a stack, no balance needed." },
+      { "key": "bodyweight-copenhagen-plank", "name": "Copenhagen plank", "reason": "Inner-thigh strength as a hold." },
+      { "key": "dumbbell-reverse-lunge", "name": "Dumbbell reverse lunge", "reason": "Single-leg work in a forward-back line instead of side to side." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at hip height so the side step, the bent knee over the foot and the straight trailing leg are all visible.",
+    "keyPositions": [
+      {
+        "label": "Standing",
+        "describe": "Standing tall, feet hip-width, hands together at the chest.",
+        "approxAnglesDeg": { "leftKneeFlexion": 0, "rightKneeFlexion": 0, "trunkLeanFromVertical": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "One foot has stepped wide to the side, toes forward, heel down. That knee bent over the foot, hips sitting back over it, chest up with a slight forward lean. The other leg straight, foot flat.",
+        "approxAnglesDeg": { "leftKneeFlexion": 90, "rightKneeFlexion": 0, "trunkLeanFromVertical": 30 }
+      }
+    ],
+    "ikHints": ["Both feet flat on the floor at the bottom", "Bent knee stays over the second toe"],
+    "tempo": { "downMs": 1300, "holdMs": 200, "upMs": 1100 },
+    "props": [],
+    "emphasise": [
+      "Hips sit back over the stepping foot",
+      "Bent knee in line with the foot",
+      "Trailing leg long and straight"
+    ],
+    "doNotShow": ["Knee caving in", "Heel lifting", "Rounded back"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/side-lunges-bodyweight/",
+      "title": "StrengthLog: Side Lunges (Bodyweight)",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0]; cues.execution[0-3]"
+    },
+    {
+      "url": "https://acefitness.org/education-and-resources/lifestyle/exercise-library/364/lateral-lunge",
+      "title": "ACE exercise library: Lateral Lunge",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[0-1]; safety.notes[0] (too wide a step pulls the knee out of line); variations.progressions[0]",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "compatibleEquipment",
+      "note": "Bodyweight only. A goblet or dumbbell lateral lunge logs a held weight, so it would need its own entry or a load decision; it is listed as a progression with no key."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "kettlebell-clean",
+  "tier": "basic",
+  "name": "Kettlebell clean",
+  "aliases": ["KB clean", "Single-arm kettlebell clean", "One-arm kettlebell clean", "KB clean to rack"],
+  "family": "kettlebell_clean",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "hamstrings"],
+  "secondaryMuscles": ["spinal_erectors", "traps", "core", "forearms", "grip"],
+  "compatibleEquipment": ["kettlebell"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "implements": 1,
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

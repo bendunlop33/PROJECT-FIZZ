@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-broad-jump",
+  "tier": "rich",
+  "name": "Broad jump",
+  "aliases": ["Standing broad jump", "Standing long jump", "Broad jumps", "Standing broad jumps"],
+  "family": "jump",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "quads"],
+  "secondaryMuscles": ["hamstrings", "calves", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Feet hip-width, toes behind a line",
+      "Clear landing space in front",
+      "Brace and stand tall"
+    ],
+    "execution": [
+      "Swing your arms back as you dip",
+      "Throw your arms forward and jump out",
+      "Land softly, hips back, knees bent",
+      "Stick the landing before you stand"
+    ],
+    "faults": [
+      "Don't land with straight legs",
+      "Don't let your knees cave in on landing",
+      "Don't fall forward onto your hands"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Jump on a non-slip surface with a clear landing zone.",
+      "Each jump is a maximal effort. Keep reps low (about 3–5 a set) and rest fully so every jump is fast.",
+      "Learn to land before jumping far: practise sticking short jumps first.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the knee, shin or ankle on landing",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Short broad jump with stuck landing", "reason": "Low distance while landings get solid." },
+      { "key": null, "name": "Snap-down", "reason": "Practises the landing position on the spot." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Consecutive broad jumps", "reason": "Several jumps in a row with short contacts." },
+      { "key": null, "name": "Single-leg broad jump", "reason": "One leg at a time; much higher demand." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-box-jump", "name": "Box jump", "reason": "Vertical jump with a soft landing on a box." },
+      { "key": "bodyweight-squat-jump", "name": "Squat jump", "reason": "Vertical jump on the spot; needs less space." },
+      { "key": "kettlebell-swing", "name": "Kettlebell swing", "reason": "Explosive hip drive with no landing." },
+      { "key": "bodyweight-burpee-broad-jump", "name": "Burpee broad jump", "reason": "Conditioning version for HYROX." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right, with enough room to the right for the jump distance. The figure travels across the frame; the camera stays fixed.",
+    "keyPositions": [
+      {
+        "label": "Load",
+        "describe": "Hips back, knees bent, torso leaning forward, arms swung back behind the hips. Heels down.",
+        "approxAnglesDeg": { "hipFlexion": 80, "kneeFlexion": 70, "shoulderFlexion": -40, "trunkLeanFromVertical": 45 }
+      },
+      {
+        "label": "Take-off",
+        "describe": "Hips, knees and ankles fully straightened, body angled forward about 45°, arms thrown forward and up.",
+        "approxAnglesDeg": { "hipFlexion": 0, "kneeFlexion": 0, "shoulderFlexion": 150, "trunkLeanFromVertical": 45 }
+      },
+      {
+        "label": "Landing",
+        "describe": "Landed on both feet about a body-length forward. Hips back, knees bent and in line with the toes, arms forward for balance. Held still.",
+        "approxAnglesDeg": { "hipFlexion": 80, "kneeFlexion": 75, "shoulderFlexion": 60, "trunkLeanFromVertical": 40 }
+      }
+    ],
+    "ikHints": ["Feet together through the flight", "Landing feet flat with knees over toes"],
+    "tempo": { "downMs": 500, "holdMs": 1000, "upMs": 600 },
+    "props": ["floor_line"],
+    "emphasise": [
+      "Big arm swing",
+      "Full extension at take-off",
+      "Soft, stuck landing"
+    ],
+    "doNotShow": ["Stiff-legged landing", "Knees caving on landing", "Falling forward"]
+  },
+  "sources": [
+    {
+      "url": "https://catalystathletics.com/exercise/549/Broad-Jump",
+      "title": "Catalyst Athletics exercise library: Broad Jump",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0,2]; cues.execution[0-2]; safety.notes[1] (about 3–5 reps per set); variations.progressions[1]",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://sport.herts.ac.uk/news-exercise-of-the-month-1257",
+      "title": "University of Hertfordshire Sport: What is a broad jump?",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; use as a simple self-test of horizontal power",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'conditioning' (like Box jump); the proposed 'power' pattern isn't in the vocabulary."
+    },
+    {
+      "field": "measurement",
+      "note": "Logged as reps. Jump distance can't be recorded on a reps set; if Ben wants it as a self-test, distance would need its own field."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative shoulderFlexion means the arms are swung behind the body."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-single-arm-pulldown",
+  "tier": "basic",
+  "name": "Single-arm pulldown",
+  "aliases": ["One-arm pulldown", "Single-arm lat pulldown", "One-arm lat pulldown", "Single-arm cable pulldown"],
+  "family": "pulldown",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats"],
+  "secondaryMuscles": ["upper_back", "biceps", "brachialis", "rear_delts", "obliques"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,136 @@
+<title>Workout Summary Mockup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one phone (after) beside the current screen (before) and notes; Premium dark, single look. */
+:root{
+  --canvas:#0D0C0B;--surface:#181615;--raised:#23201E;--divider:#302C29;--control:#75706A;
+  --t1:#F3EEE8;--t2:#B5ADA5;--t3:#948C84;--accent:#EDE5DA;--onaccent:#0D0C0B;--done:#5CC98A;--warn:#F2B84B;--page:#060505;
+  --font:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--t1);font-family:var(--font);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-wrap:wrap;gap:32px;justify-content:center;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;width:390px;max-width:100%}
+.col>h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);margin:0 4px;font-weight:600}
+.phone{width:100%;background:var(--canvas);border-radius:44px;padding:18px 20px 26px;border:1px solid var(--divider)}
+.status{display:flex;justify-content:space-between;font-size:15px;font-weight:600;padding:4px 10px 10px;font-variant-numeric:tabular-nums}
+h1{font-size:32px;font-weight:700;letter-spacing:-.02em;margin:10px 0 2px}
+.sub{color:var(--t2);font-size:15px;margin:0;font-variant-numeric:tabular-nums}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-radius:20px;margin-top:16px}
+.stat{padding:14px 10px;text-align:center}
+.stat+.stat{border-left:1px solid var(--divider)}
+.stat b{display:block;font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat small{font-size:13px;color:var(--t2)}
+.up{color:var(--done);font-size:13px;font-weight:600}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);font-weight:600;margin:22px 2px 10px;display:flex;justify-content:space-between}
+.eyebrow span{letter-spacing:0;text-transform:none;font-weight:400;font-size:14px;color:var(--t2)}
+.card{background:var(--surface);border-radius:20px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:13px 16px;min-height:52px}
+.row+.row{border-top:1px solid var(--divider)}
+.main{flex:1;min-width:0}
+.name{font-size:17px}
+.meta{font-size:13px;color:var(--t2);font-variant-numeric:tabular-nums}
+.val{font-size:15px;color:var(--t2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.val b{color:var(--t1);font-weight:600}
+.ring{width:30px;height:30px;border-radius:50%;border:2px solid var(--done);display:grid;place-items:center;flex:none}
+.ring i{width:8px;height:8px;border-radius:50%;background:var(--done)}
+.part{width:30px;height:30px;border-radius:50%;border:2px dashed var(--warn);flex:none}
+.more{color:var(--t2);font-size:15px;text-decoration:underline;text-underline-offset:3px;padding:12px 16px;display:block}
+.chips{display:flex;gap:10px;margin-top:6px}
+.chip{flex:1;text-align:center;border:1px solid var(--control);border-radius:999px;padding:10px 0;font-size:16px}
+.btn{display:block;text-align:center;height:56px;line-height:56px;border-radius:999px;background:var(--accent);color:var(--onaccent);font-weight:600;font-size:18px;margin-top:18px}
+.before{opacity:.92}
+.before .row{min-height:44px;padding:10px 16px}
+.notes{width:340px;max-width:100%;display:flex;flex-direction:column;gap:10px;font-size:15px;line-height:1.55;color:var(--t2)}
+.notes h2{font-size:22px;color:var(--t1);margin:0}
+.notes h3{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin:10px 0 0}
+.notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.notes b{color:var(--t1)}
+</style>
+
+<div class="wrap">
+  <div class="col">
+    <h2>Proposed</h2>
+    <div class="phone" aria-label="Mockup: workout summary, proposed">
+      <div class="status"><span>18:13</span><span>●●● ▮</span></div>
+      <h1>Pull B done</h1>
+      <p class="sub">Sat 21 Nov · 17:21–18:13</p>
+      <p class="sub" style="margin-top:4px">Week 4 of 6 · 4 of 5 days done</p>
+
+      <div class="stats">
+        <div class="stat"><b>52</b><small>min</small></div>
+        <div class="stat"><b>20</b><small>sets</small></div>
+        <div class="stat"><b>6.4 t</b><small>volume <span class="up">↑ 6%</span></small></div>
+      </div>
+      <div class="row" style="background:var(--surface);border-radius:16px;margin-top:10px;min-height:44px"><div class="main"><div class="meta">Garmin</div></div><span class="val">avg <b>128 bpm</b> · <b>410 kcal</b></span></div>
+
+      <div class="eyebrow">Highlights</div>
+      <div class="card">
+        <div class="row"><span class="ring"><i></i></span><div class="main"><div class="name">Barbell row</div><div class="meta">Best for 8 reps</div></div><span class="val"><b>97.5 kg × 8</b></span></div>
+        <div class="row"><span class="ring"><i></i></span><div class="main"><div class="name">Cable crunch</div><div class="meta">Heaviest yet</div></div><span class="val"><b>80 kg × 12</b></span></div>
+        <div class="row"><span class="part"></span><div class="main"><div class="name">Pull-up</div><div class="meta">Cut short</div></div><span class="val">1 of 3 sets</span></div>
+      </div>
+
+      <div class="eyebrow">Vs last time</div>
+      <div class="card">
+        <div class="row"><div class="main"><div class="name">Barbell row</div><div class="meta">Last: 95 × 10 · Mon 9 Nov</div></div><span class="val"><b>97.5 × 8</b> <span class="meta">↑ 2.5 kg · 2 fewer reps</span></span></div>
+        <div class="row"><div class="main"><div class="name">Lateral raise</div><div class="meta">Last: 10 kg ea × 12</div></div><span class="val"><b>10 kg ea × 13</b> <span class="up">↑ +1</span></span></div>
+        <div class="row"><div class="main"><div class="name">Rear-delt fly</div><div class="meta">Last: 7 kg ea × 17</div></div><span class="val"><b>7 kg ea × 17</b> <span class="meta">=</span></span></div>
+        <div class="row"><div class="main"><div class="name">Pull-up</div><div class="meta">Last: BW × 9</div></div><span class="val"><b>BW × 8</b> <span style="color:var(--warn);font-size:13px;font-weight:600">↓ 1</span></span></div>
+        <span class="more">+2 more</span>
+      </div>
+
+      <div class="eyebrow">Next time</div>
+      <div class="card">
+        <div class="row"><div class="main"><div class="name">Cable crunch</div></div><span class="val">80 → <b>85 kg</b></span><span class="meta" style="text-decoration:underline">Undo</span></div>
+        <div class="row"><div class="main"><div class="name">Lateral raise</div></div><span class="val">3×10–13 → <b>3×14</b></span><span class="meta" style="text-decoration:underline">Undo</span></div>
+        <div class="row"><div class="main"><div class="name">45° back extension</div></div><span class="val">2×8–12 → <b>2×13</b></span><span class="meta" style="text-decoration:underline">Undo</span></div>
+        <span class="more">+3 unchanged</span>
+      </div>
+
+      <div class="eyebrow">How did it feel?</div>
+      <div class="chips"><span class="chip">Easy</span><span class="chip">Good</span><span class="chip">Hard</span></div>
+      <span class="btn">Done</span>
+    </div>
+  </div>
+
+  <div class="col before">
+    <h2>Now (build 576)</h2>
+    <div class="phone" aria-label="Current workout summary">
+      <div class="status"><span>18:13</span><span>●●● ▮</span></div>
+      <div class="eyebrow">Exercises · done</div>
+      <div class="card">
+        <div class="row"><div class="main"><div class="name">Rowing machine</div></div></div>
+        <div class="row"><div class="main"><div class="name">Pull-up</div></div><span class="val">1×8 1/3</span></div>
+        <div class="row"><div class="main"><div class="name">Barbell row</div></div><span class="val">3×8 @ 97.5 kg</span></div>
+        <span class="more">4 more</span>
+      </div>
+      <div class="eyebrow">Next time · Pull B</div>
+      <div class="card">
+        <div class="row"><div class="main"><div class="name">Pull-up</div></div><span class="val">Top 8 → 6–10 reps</span></div>
+        <div class="row"><div class="main"><div class="name">Barbell row</div></div><span class="val">97.5×8 → 100×3–6</span></div>
+        <div class="row"><div class="main"><div class="name">Rear-delt fly</div></div><span class="val">Same · 7×17 kg ea</span></div>
+        <div class="row"><div class="main"><div class="name">Lateral raise</div></div><span class="val">3×10–13 → 3×14</span></div>
+        <div class="row"><div class="main"><div class="name">Cable crunch</div></div><span class="val">80 → 85 kg</span></div>
+        <div class="row"><div class="main"><div class="name">45° back extension</div></div><span class="val">2×8–12 → 2×13</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>What changes</h2>
+    <ul>
+      <li><b>Three numbers on top:</b> time, sets, volume with a small arrow vs last time.</li>
+      <li><b>Highlights:</b> new bests get the same green ring as Progress; anything cut short gets a dashed amber ring. Nothing else is listed here.</li>
+      <li><b>Vs last time:</b> each exercise's best set today against the last time you did it: green ↑ better, = same, amber ↓ less. Two-line rows; the rest fold under <b>+N more</b>.</li>
+      <li><b>Next time</b> shows only what changes, with the new value bold. "Same" rows fold into <b>+3 unchanged</b>.</li>
+      <li>The full exercise list moves behind the workout itself (tap the title), not on this screen.</li>
+      <li>Why? stays inside each row's tap, never shown by default.</li>
+    </ul>
+    <h3>Your call</h3>
+    <ul>
+      <li>Keep volume (tonnes), or swap it for something else, e.g. "4 new bests"?</li>
+      <li>Should the full list of what you did stay on this screen, folded?</li>
+    </ul>
+  </div>
+</div>

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-rack-pull",
+  "tier": "rich",
+  "name": "Rack pull",
+  "aliases": ["Rack pulls", "Barbell rack pull", "Rack deadlift", "Pin pull", "Block pull"],
+  "family": "deadlift",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "spinal_erectors", "upper_back", "traps"],
+  "secondaryMuscles": ["hamstrings", "adductors", "grip"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 180,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Set the pins or blocks so the bar sits near your knees",
+      "Mid-foot under the bar, feet hip-width",
+      "Hinge and grip just outside your legs",
+      "Chest up, back flat, arms straight"
+    ],
+    "execution": [
+      "Breathe in and brace before each pull",
+      "Push the floor away and drive your hips forward",
+      "Keep the bar close to your thighs",
+      "Lower under control back to the pins"
+    ],
+    "faults": [
+      "Don't round your back to reach the bar",
+      "Don't lean back hard at the top",
+      "Don't slam or bounce the bar on the pins"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Set both pins at the same height and check they're locked before loading. Blocks or stacked plates are gentler on the bar and rack than steel pins.",
+      "Rack pulls usually allow more weight than a deadlift. Add load gradually, and end the set when your back can't stay flat.",
+      "Straps are fine when grip gives out before your back and legs.",
+      "Bar height changes the lift. Note it (for example below or above the knee) so sessions compare like with like.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "barbell-romanian-deadlift", "name": "Romanian deadlift", "reason": "Lighter hinge that teaches the same flat back and hip drive." },
+      { "key": "trap-bar-deadlift", "name": "Trap-bar deadlift", "reason": "Handles at the sides and a more upright torso." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Lower pin height", "reason": "Starting the bar lower lengthens the pull a step at a time." },
+      { "key": "barbell-deadlift", "name": "Deadlift", "reason": "The full pull from the floor." }
+    ],
+    "substitutions": [
+      { "key": "barbell-deadlift", "name": "Deadlift", "reason": "Full-range pull; less weight, more legs." },
+      { "key": "trap-bar-deadlift", "name": "Trap-bar deadlift", "reason": "Heavy pull with less lower-back demand." },
+      { "key": "barbell-shrug", "name": "Barbell shrug", "reason": "Heavy top-of-the-pull work for the traps only." },
+      { "key": "barbell-romanian-deadlift", "name": "Romanian deadlift", "reason": "Hinge from the top down, with more hamstring work." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right. Draw a power-rack upright behind the figure with the pins at knee height, the bar resting on them.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Bar on the pins at about knee height, over mid-foot. Hips hinged back, knees slightly bent, shins near vertical. Back flat, chest up, arms straight.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 40, "hipFlexion": 70, "kneeFlexion": 25, "ankleDorsiflexion": 5 }
+      },
+      {
+        "label": "Lockout",
+        "describe": "Standing tall, hips and knees straight, shoulders over the hips. Bar at the upper thighs, arms straight. No backward lean.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "hipFlexion": 0, "kneeFlexion": 0, "ankleDorsiflexion": 0 }
+      }
+    ],
+    "ikHints": ["Feet fixed", "Bar stays in contact with or close to the thighs"],
+    "barPath": "Vertical over mid-foot, from the pins to the upper thigh",
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 1000 },
+    "props": ["barbell_loaded", "rack_pins"],
+    "emphasise": [
+      "Flat back from start to finish",
+      "Hips drive forward to stand tall",
+      "Controlled return to the pins"
+    ],
+    "doNotShow": ["Rounded back", "Leaning far back at lockout", "Bar dropped onto the pins"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/rack-pull/",
+      "title": "StrengthLog: Rack Pull",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (glutes, lower back); secondaryMuscles (hamstrings, adductors, traps, forearms); cues.setup[0-3]; cues.execution[0-3]; safety.notes[0-2]"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/ErectorSpinae/BBRackPull",
+      "title": "ExRx.net: Barbell Rack Pull",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (erector spinae target); cues.setup[0] (bar on the rack's safety bars); safety.notes[1] (heavier loads with less leg drive); aliases[4] (block pull used interchangeably)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "Sources differ. StrengthLog lists glutes and lower back as primary; the expansion review chose upper_back, traps, spinal_erectors and glutes for an above-knee pull. Emphasis shifts with bar height."
+    },
+    {
+      "field": "safety.notes[3]",
+      "note": "Pull height is proposed as a set modifier (expansion research section 4); until that exists, the height can only go in a note."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-nordic-curl",
+  "tier": "basic",
+  "name": "Nordic curl",
+  "aliases": ["Nordic hamstring curl", "Nordic ham curl", "NHC", "Nordics", "Nordic hamstring exercise"],
+  "family": "leg_curl",
+  "movementPattern": "hinge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["hamstrings"],
+  "secondaryMuscles": ["calves", "glutes"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

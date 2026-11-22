@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-seated-leg-curl",
+  "tier": "basic",
+  "name": "Seated leg curl",
+  "aliases": ["Leg curl", "Machine seated leg curl", "Seated hamstring curl", "Seated leg curl machine"],
+  "family": "leg_curl",
+  "movementPattern": "hinge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["hamstrings"],
+  "secondaryMuscles": ["calves"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

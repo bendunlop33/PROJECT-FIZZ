@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-glute-bridge",
+  "tier": "rich",
+  "name": "Barbell glute bridge",
+  "aliases": ["BB glute bridge", "Barbell hip bridge", "Barbell bridge", "Floor barbell glute bridge"],
+  "family": "hip_thrust",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes"],
+  "secondaryMuscles": ["hamstrings", "adductors", "core"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Use large plates so you can roll under",
+      "Pad the bar, set it over your hip crease",
+      "Lie back, knees bent, feet flat",
+      "Hold the bar just outside your hips"
+    ],
+    "execution": [
+      "Tuck your ribs down",
+      "Drive your hips up through your heels",
+      "Squeeze your glutes hard at the top",
+      "Lower until the plates touch lightly"
+    ],
+    "faults": [
+      "Don't arch your lower back to finish",
+      "Don't push through your toes",
+      "Don't bounce the plates off the floor"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use full-size plates so the bar sits high enough to slide under, and a thick pad across the hips.",
+      "The range is short; the top should be a glute squeeze with ribs down, not a back arch.",
+      "To get out, lower the bar to the floor and roll it down your thighs, or sit up and lift it off.",
+      "Log the bar and plates together (total).",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-glute-bridge", "name": "Glute bridge", "reason": "Same movement with no bar." }
+    ],
+    "progressions": [
+      { "key": "barbell-hip-thrust", "name": "Hip thrust", "reason": "Shoulders on a bench give a longer range and allow more load." },
+      { "key": null, "name": "Pause at the top", "reason": "A 1–2 second hold at lockout adds work without more weight." }
+    ],
+    "substitutions": [
+      { "key": "barbell-hip-thrust", "name": "Hip thrust", "reason": "Same bar with a bench; bigger range." },
+      { "key": "machine-hip-thrust", "name": "Hip thrust machine", "reason": "Quicker setup; machine loading isn't comparable." },
+      { "key": "smith-machine-hip-thrust", "name": "Smith machine hip thrust", "reason": "Bar on a fixed track with a bench." },
+      { "key": "bodyweight-single-leg-glute-bridge", "name": "Single-leg glute bridge", "reason": "No equipment; one side at a time." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, figure lying face up with the head to the left. Bar end-on over the hips with a large plate drawn as a circle.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Lying on the back, knees bent, feet flat about hip-width, hips on the floor. Bar on a pad across the hip crease, hands holding it.",
+        "approxAnglesDeg": { "hipFlexion": 45, "kneeFlexion": 100 }
+      },
+      {
+        "label": "Top",
+        "describe": "Hips raised so the body is straight from shoulders to knees; upper back and shoulders still on the floor. Ribs down, glutes squeezed.",
+        "approxAnglesDeg": { "hipFlexion": 0, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Shoulders and feet fixed on the floor", "Bar stays on the hip crease"],
+    "tempo": { "downMs": 1300, "holdMs": 600, "upMs": 900 },
+    "props": ["barbell_loaded", "bar_pad", "floor_mat"],
+    "emphasise": [
+      "Hips rise to a straight line from shoulders to knees",
+      "Ribs stay down at the top",
+      "Squeeze at the top"
+    ],
+    "doNotShow": ["Arched lower back", "Heels lifting", "Plates bouncing"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/glute-bridge/",
+      "title": "StrengthLog: Glute Bridge",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.execution[1-3]; cues.setup[2]"
+    },
+    {
+      "url": "https://barbend.com/glute-bridge-vs-hip-thrust/",
+      "title": "BarBend: Glute bridge vs hip thrust",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1] (bar across the hip crease); variations.progressions[0] (hip thrust uses a bench for the upper back)",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://addi.ehu.eus/handle/10810/29833",
+      "title": "Biomechanical effects of hip thrust and glute bridge on hip extensors (University of the Basque Country, 2018)",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.substitutions[0] (hip thrust has the larger range; the bridge allows more force near lockout)",
+      "note": "Thesis abstract only; 10 trained participants."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "cues",
+      "note": "No barbell-specific step-by-step coaching page was checked; cues follow the bodyweight glute bridge and the barbell hip thrust."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "cable-triceps-pushdown",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2600,
+  "loop": "cycle",
+  "motion": "phases",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "props": [
+    { "id": "cable", "type": "cable_stack", "x": 0.35, "pulleyY": 1.12, "hand": "near", "handle": "rope", "restLength": 0.45 }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Elbows at your sides, hands at chest height",
+      "root": { "x": -0.03, "y": 0.5274, "pelvisDeg": 12 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": -6, "shoulderNear": 12, "elbowNear": 110, "shoulderFar": 12, "elbowFar": 110 },
+      "ik": {
+        "footNear": { "x": 0, "y": 0, "planted": true },
+        "footFar": { "x": -0.012, "y": 0, "planted": true }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.1755, "pass": true, "label": "Halfway", "caption": "Only the forearms move",
+      "joints": { "elbowNear": 55, "elbowFar": 55 },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.3462, "label": "Bottom", "caption": "Arms straight, elbows still pinned",
+      "joints": { "elbowNear": 3, "elbowFar": 3 },
+      "holdMs": 300, "ease": "smooth"
+    },
+    { "t": 0.7271, "sameAs": 1, "caption": "Let the hands rise slowly", "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "cable", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0, "to": 0.3462 }] },
+  "checks": { "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view, facing a high cable with a rope. Standing with soft knees and a slight forward lean, elbows pinned at the sides. Push the rope down until the arms are straight, pause, then let the hands rise slowly back to chest height. Only the forearms move."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
+}

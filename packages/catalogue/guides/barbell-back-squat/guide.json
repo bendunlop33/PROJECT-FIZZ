@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "barbell-back-squat",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2800,
+  "loop": "cycle",
+  "motion": "phases",
+  "drive": { "joint": "legNear", "solves": "root.xy" },
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "projection": { "armNear": 0.8, "armFar": 0.8, "forearmNear": 0.68, "forearmFar": 0.68 },
+  "props": [
+    { "id": "bar", "type": "barbell", "plates": "large", "anchor": { "kind": "segment", "segment": "thorax", "at": 0.97, "front": -0.06 } }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Stand tall and brace, bar over mid-foot",
+      "root": { "x": 0.0627, "y": 0.5238, "pelvisDeg": 6 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": -4 },
+      "ik": {
+        "footNear": { "x": 0, "y": 0, "planted": true },
+        "footFar": { "x": -0.006, "y": 0, "planted": true },
+        "handNear": { "prop": "bar" },
+        "handFar": { "prop": "bar" }
+      },
+      "ease": "smooth"
+    },
+    { "t": 0.12, "pass": true, "root": { "x": 0.0269, "y": 0.5191, "pelvisDeg": 9.1 }, "joints": { "neck": -6.22 }, "ease": "smooth" },
+    { "t": 0.2, "pass": true, "root": { "x": -0.0427, "y": 0.4826, "pelvisDeg": 21.51 }, "joints": { "neck": -10.84 }, "ease": "smooth" },
+    {
+      "t": 0.28, "pass": true, "label": "Halfway", "caption": "Hips back and down, knees over toes",
+      "root": { "x": -0.0953, "y": 0.4135, "pelvisDeg": 31.81 },
+      "joints": { "neck": -15.52 },
+      "ease": "smooth"
+    },
+    { "t": 0.38, "pass": true, "root": { "x": -0.1203, "y": 0.3173, "pelvisDeg": 36.33 }, "joints": { "neck": -20.37 }, "ease": "smooth" },
+    {
+      "t": 0.5714, "label": "Bottom", "caption": "Hips just below knees, heels down",
+      "root": { "x": -0.1151, "y": 0.2372, "pelvisDeg": 39.9 },
+      "joints": { "neck": -24 },
+      "holdMs": 200, "ease": "smooth"
+    },
+    { "t": 0.7625, "pass": true, "root": { "x": -0.1205, "y": 0.3133, "pelvisDeg": 36.91 }, "joints": { "neck": -20.56 }, "ease": "smooth" },
+    {
+      "t": 0.825, "pass": true, "caption": "Hips and chest rise together",
+      "root": { "x": -0.0981, "y": 0.4075, "pelvisDeg": 31.44 },
+      "joints": { "neck": -15.86 },
+      "ease": "smooth"
+    },
+    { "t": 0.875, "pass": true, "root": { "x": -0.0473, "y": 0.4785, "pelvisDeg": 21.84 }, "joints": { "neck": -11.19 }, "ease": "smooth" },
+    { "t": 0.925, "pass": true, "root": { "x": 0.0235, "y": 0.5182, "pelvisDeg": 9.9 }, "joints": { "neck": -6.43 }, "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0.6428, "to": 1 }] },
+  "checks": { "barDriftMax": 0.03, "barProp": "bar", "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view, facing right. Bar on the upper back. Sit down and back until the hips are just below the knees, heels flat, then stand up with hips and chest rising together. The bar stays over mid-foot."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
+}

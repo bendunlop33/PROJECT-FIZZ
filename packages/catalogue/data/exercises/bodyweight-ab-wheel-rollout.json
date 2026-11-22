@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-ab-wheel-rollout",
+  "tier": "basic",
+  "name": "Ab-wheel rollout",
+  "aliases": ["Ab wheel rollout", "Ab rollout", "Ab wheel", "Ab roller", "Wheel rollout", "Kneeling ab-wheel rollout"],
+  "family": "ab_rollout",
+  "movementPattern": "core",
+  "mechanic": "compound",
+  "primaryMuscles": ["abs", "core"],
+  "secondaryMuscles": ["obliques", "lats", "front_delts"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

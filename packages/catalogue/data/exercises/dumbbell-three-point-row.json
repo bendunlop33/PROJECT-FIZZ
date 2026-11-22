@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-three-point-row",
+  "tier": "basic",
+  "name": "Three-point dumbbell row",
+  "aliases": ["Three-point row", "3-point row", "3-point dumbbell row", "Three-point DB row", "Staggered-stance dumbbell row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back"],
+  "secondaryMuscles": ["rear_delts", "biceps", "brachialis", "core", "grip"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "implements": 1,
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

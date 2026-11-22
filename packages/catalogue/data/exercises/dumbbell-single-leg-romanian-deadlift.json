@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-single-leg-romanian-deadlift",
+  "tier": "basic",
+  "name": "Single-leg Romanian deadlift",
+  "aliases": ["Single-leg RDL", "SL RDL", "One-leg Romanian deadlift", "Single-leg DB RDL", "Dumbbell single-leg RDL"],
+  "family": "romanian_deadlift",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["hamstrings", "glutes"],
+  "secondaryMuscles": ["abductors", "adductors", "spinal_erectors", "core", "grip"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

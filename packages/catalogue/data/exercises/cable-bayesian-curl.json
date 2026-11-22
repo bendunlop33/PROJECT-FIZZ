@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-bayesian-curl",
+  "tier": "rich",
+  "name": "Bayesian cable curl",
+  "aliases": ["Bayesian curl", "Bayesian curls", "Face-away cable curl", "Behind-the-body cable curl", "Single-arm Bayesian curl"],
+  "family": "curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["biceps"],
+  "secondaryMuscles": ["brachialis", "forearms"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "D-handle on a low pulley",
+      "Face away from the stack, handle behind you",
+      "Step forward until the cable is taut",
+      "Staggered stance, slight forward lean"
+    ],
+    "execution": [
+      "Start with the arm long behind your hip",
+      "Curl the handle forward and up",
+      "Keep the upper arm still",
+      "Lower slowly back to the stretch"
+    ],
+    "faults": [
+      "Don't let your elbow swing forward",
+      "Don't twist your body to help",
+      "Don't let the cable snap your arm back"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "The start stretches the front of the shoulder; ease into it with a light weight and control the return.",
+      "If the stretched position is uncomfortable, shorten it by standing closer to the stack.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "cable-curl", "name": "Cable curl", "reason": "Facing the stack; less stretch at the shoulder." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Bayesian curl with a pause in the stretch", "reason": "A short hold at the bottom adds time under tension." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-incline-curl", "name": "Incline dumbbell curl", "reason": "Also curls with the arm behind the body." },
+      { "key": "cable-curl", "name": "Cable curl", "reason": "Same cable, standard stance." },
+      { "key": "dumbbell-curl", "name": "Dumbbell curl", "reason": "No cable needed; load is each dumbbell." },
+      { "key": "ez-bar-preacher-curl", "name": "Preacher curl", "reason": "Arm in front of the body; a trial found similar growth to the Bayesian curl." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at chest height, cable column behind the figure on the left, working arm nearest the camera. The cable line from the low pulley to the hand must stay visible.",
+    "keyPositions": [
+      {
+        "label": "Stretch",
+        "describe": "Standing a step or two in front of the column, facing away, staggered stance, slight forward lean. Near arm straight and drawn back behind the hip by the cable, palm forward.",
+        "approxAnglesDeg": { "nearShoulderFlexion": -30, "nearElbowFlexion": 5, "trunkLeanFromVertical": 10 }
+      },
+      {
+        "label": "Top",
+        "describe": "Elbow bent and the handle curled up near the shoulder. Upper arm still angled slightly behind the body; it hasn't swung forward.",
+        "approxAnglesDeg": { "nearShoulderFlexion": -15, "nearElbowFlexion": 130, "trunkLeanFromVertical": 10 }
+      }
+    ],
+    "ikHints": ["Feet fixed", "Hand fixed to the handle; cable runs back to the low pulley"],
+    "tempo": { "downMs": 2000, "holdMs": 300, "upMs": 1000 },
+    "props": ["cable_low_anchor", "d_handle"],
+    "emphasise": [
+      "Arm starts behind the body",
+      "Upper arm stays put",
+      "Slow return to the stretch"
+    ],
+    "doNotShow": ["Elbow swinging forward", "Torso twisting", "Arm yanked back by the cable"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/bayesian-curl/",
+      "title": "StrengthLog: Bayesian Curl",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-3]; cues.execution[0-3]; primaryMuscles; secondaryMuscles (forearms)"
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/40082069/",
+      "title": "Attarieh et al. 2025, Eur J Sport Sci 25(4): Preacher versus Bayesian cable curls",
+      "checkedOn": "2026-10-23",
+      "supports": "secondaryMuscles (brachialis); variations.substitutions[3] (15 young men, 10 weeks: no significant difference in biceps or brachialis growth, or strength, between the two curls)",
+      "note": "Abstract only, read through Europe PMC (PubMed needed cookies). Small within-subject study."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "variations.substitutions",
+      "note": "The idea that training the biceps in a stretched position grows it more is popular, but the one trial checked found no difference against the preacher curl. No growth advantage is claimed."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Negative shoulder flexion means the arm is behind the body."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-woodchop",
+  "tier": "basic",
+  "name": "Cable woodchop",
+  "aliases": ["Woodchop", "Wood chop", "Cable chop", "Cable wood chop", "Woodchopper"],
+  "family": "rotation",
+  "movementPattern": "core",
+  "mechanic": "compound",
+  "primaryMuscles": ["obliques"],
+  "secondaryMuscles": ["abs", "core", "glutes", "front_delts"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

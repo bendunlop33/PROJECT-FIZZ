@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "key": "smith-machine-hip-thrust",
+  "tier": "rich",
+  "name": "Smith machine hip thrust",
+  "aliases": ["Smith hip thrust", "Smith machine hip thrusts", "Smith hip thrusts", "Smith machine glute thrust"],
+  "family": "hip_thrust",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes"],
+  "secondaryMuscles": ["hamstrings", "quads", "adductors"],
+  "compatibleEquipment": ["smith_machine"],
+  "requiresStation": ["specific_machine", "bench"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Bench side-on, square to the bar",
+      "Pad the bar, sit with it over your hips",
+      "Upper back on the bench edge",
+      "Feet flat, about hip-width"
+    ],
+    "execution": [
+      "Unhook the bar at the bottom",
+      "Tuck your chin and ribs down",
+      "Drive your hips up through your heels",
+      "Squeeze at the top, lower under control"
+    ],
+    "faults": [
+      "Don't arch your lower back at the top",
+      "Don't let the bench slide",
+      "Don't push through your toes"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Set the safety stops just below the bar's lowest point so it can't land on your hips. Rehook the bar at the end of the set.",
+      "Wedge the bench against the machine frame or use a heavy bench so it can't slide back.",
+      "Use a bar pad or folded mat across the hips.",
+      "Smith bars differ in weight and some are counterbalanced. Log the plates added; numbers aren't comparable between gyms or with a barbell hip thrust.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-glute-bridge", "name": "Glute bridge", "reason": "Same hip drive from the floor with no load." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Pause at the top", "reason": "A 1–2 second hold at lockout adds work without more weight." }
+    ],
+    "substitutions": [
+      { "key": "barbell-hip-thrust", "name": "Hip thrust", "reason": "Free bar; load is total bar weight." },
+      { "key": "machine-hip-thrust", "name": "Hip thrust machine", "reason": "Dedicated machine with a quicker setup." },
+      { "key": "barbell-glute-bridge", "name": "Barbell glute bridge", "reason": "Floor version; no bench or Smith needed." },
+      { "key": "cable-pull-through", "name": "Cable pull-through", "reason": "Standing hip extension on a cable." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right, upper back on a bench placed side-on behind it. Smith uprights drawn lightly so the vertical bar track is clear.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Upper back on the bench edge, hips low, bar resting across the hip crease on a pad. Knees bent, feet flat. Chin tucked.",
+        "approxAnglesDeg": { "hipFlexion": 90, "kneeFlexion": 110, "trunkLeanFromVertical": 60 }
+      },
+      {
+        "label": "Top",
+        "describe": "Hips driven up until the body is level from knees to shoulders. Shins about vertical, ribs down, bar still over the hips.",
+        "approxAnglesDeg": { "hipFlexion": 0, "kneeFlexion": 90, "trunkLeanFromVertical": 90 }
+      }
+    ],
+    "ikHints": ["Upper back pivots on the bench edge", "Bar stays on the hip crease", "Feet fixed on the floor"],
+    "barPath": "Vertical, fixed by the Smith track",
+    "tempo": { "downMs": 1500, "holdMs": 600, "upMs": 1000 },
+    "props": ["smith_machine", "flat_bench", "bar_pad"],
+    "emphasise": [
+      "Hips rise to a level line, ribs down",
+      "Bar moves straight up on its track",
+      "Squeeze at the top"
+    ],
+    "doNotShow": ["Arched lower back at the top", "Bench sliding", "Bar on the stomach"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/smith-machine-hip-thrust/",
+      "title": "StrengthLog: Smith Machine Hip Thrust",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-3]; cues.execution[0-3]"
+    },
+    {
+      "url": "https://www.majorfitness.com/blogs/wiki/how-to-set-up-hip-thrust-on-smith-machine-a-step-by-step-guide",
+      "title": "Major Fitness: How to set up a hip thrust on a Smith machine",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1]; safety.notes[1-2] (stable bench, pad the bar)",
+      "note": "Commercial equipment-seller blog; seen through a search listing. Weaker source."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "sources",
+      "note": "The second source is a commercial blog. No independent coaching source specific to the Smith version was found in this pass."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. trunkLeanFromVertical 90 means the torso is horizontal."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

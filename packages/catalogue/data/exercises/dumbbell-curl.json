@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-curl",
+  "tier": "basic",
+  "name": "Dumbbell curl",
+  "aliases": ["DB curl", "Dumbbell biceps curl", "Biceps curl", "Bicep curl", "Alternating dumbbell curl", "Standing dumbbell curl"],
+  "family": "curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["biceps"],
+  "secondaryMuscles": ["brachialis", "forearms"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "implements": 2,
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

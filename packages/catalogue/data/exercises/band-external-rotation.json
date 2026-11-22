@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "key": "band-external-rotation",
+  "tier": "rich",
+  "name": "Band external rotation",
+  "aliases": ["Banded external rotation", "Resistance band external rotation", "Band ER", "Band shoulder external rotation", "Standing band external rotation"],
+  "family": "shoulder_external_rotation",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["rotator_cuff"],
+  "secondaryMuscles": ["rear_delts", "upper_back"],
+  "compatibleEquipment": ["band"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Anchor the band at elbow height",
+      "Stand side-on, band in the far hand",
+      "Elbow bent to 90°, tucked at your side",
+      "A rolled towel under the arm helps"
+    ],
+    "execution": [
+      "Rotate your forearm out away from you",
+      "Keep the elbow pinned to your side",
+      "Pause, then return slowly",
+      "Shoulder stays down and back"
+    ],
+    "faults": [
+      "Don't let the elbow drift away",
+      "Don't twist your body to help",
+      "Don't shrug"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a light band. This is a small, controlled movement; go only as far as you can without the elbow leaving your side.",
+      "Check the band and anchor for wear before use, and anchor it to something that won't move.",
+      "Band tension isn't logged as a weight. Note the band colour if you want to track it.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain in the shoulder that builds during the set",
+      "Numbness or tingling in the arm"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Lighter band", "reason": "Less tension while you learn to keep the elbow still." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Heavier band", "reason": "More tension once the full range is smooth." },
+      { "key": null, "name": "90/90 band external rotation", "reason": "Same rotation with the upper arm raised to shoulder height." }
+    ],
+    "substitutions": [
+      { "key": null, "name": "Cable external rotation", "reason": "Same movement on a stack, easier to load in small steps." },
+      { "key": "dumbbell-side-lying-external-rotation", "name": "Side-lying dumbbell external rotation", "reason": "Lying on your side with a light dumbbell; no anchor needed." },
+      { "key": "cable-face-pull", "name": "Face pull", "reason": "Upper-back and rear-shoulder pull that ends with the hands rotating back." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at chest height so the forearm swinging outward and the elbow staying at the side are clear. Band anchor drawn at the figure's side at elbow height.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Standing side-on to the anchor, working elbow bent to 90° and tucked at the side, forearm across the stomach holding the band.",
+        "approxAnglesDeg": { "elbowFlexion": 90, "shoulderExternalRotation": -30 }
+      },
+      {
+        "label": "End",
+        "describe": "Forearm rotated outward, pointing forward-and-out, elbow still at the side and bent to 90°. Shoulder down.",
+        "approxAnglesDeg": { "elbowFlexion": 90, "shoulderExternalRotation": 45 }
+      }
+    ],
+    "ikHints": ["Elbow fixed against the side of the body", "Band line runs from the anchor to the hand"],
+    "tempo": { "downMs": 1500, "holdMs": 400, "upMs": 1000 },
+    "props": ["resistance_band_long", "band_anchor"],
+    "emphasise": [
+      "Elbow stays pinned to the side",
+      "Only the forearm swings",
+      "Slow return"
+    ],
+    "doNotShow": ["Elbow drifting away from the body", "Trunk twisting", "Shrugged shoulder"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/band-external-shoulder-rotation/",
+      "title": "StrengthLog: Band External Shoulder Rotation",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-2]"
+    },
+    {
+      "url": "https://www.physitrack.com/exercise-library/how-to-perform-the-external-rotation-band-exercise",
+      "title": "Physitrack: External rotation band exercise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[3] (towel under the arm); cues.faults[0-1]",
+      "note": "Cited from the research file (exercise-catalogue-expansion [PT]); not re-read in this pass."
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/15296366/",
+      "title": "Reinold MM et al. (2004) EMG of the rotator cuff and deltoid during common shoulder external rotation exercises. J Orthop Sports Phys Ther 34(7):385-94",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (external rotation works the rotator cuff with the rear deltoid)",
+      "note": "Abstract only; cited from the research file [REI]."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "The main muscles are the rotator cuff (infraspinatus, teres minor), the catalogue's rotator_cuff word (added 23 Oct 2026, expansion research Q1; rear_delts was the stand-in before). The rear deltoid assists [Reinold 2004], so it is secondary."
+    },
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'horizontal_pull' (rear-shoulder work, like Face pull); the vocabulary has no rotation or prehab pattern."
+    },
+    {
+      "field": "defaultLoadConvention",
+      "note": "'bodyweight' (no load recorded) is the usual convention for bands; band tension is never invented as kg (rule 6)."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative shoulderExternalRotation means the forearm starts rotated in across the body."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

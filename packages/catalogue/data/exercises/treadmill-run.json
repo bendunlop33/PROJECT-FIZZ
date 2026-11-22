@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "treadmill-run",
+  "tier": "basic",
+  "name": "Treadmill run",
+  "aliases": ["Treadmill", "Treadmill running", "Treadmill jog", "Indoor run"],
+  "family": "run",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "hamstrings", "glutes", "calves"],
+  "secondaryMuscles": ["core"],
+  "compatibleEquipment": ["erg"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "cardio",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

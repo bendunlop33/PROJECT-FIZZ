@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-seal-row",
+  "tier": "rich",
+  "name": "Barbell seal row",
+  "aliases": ["Seal row (barbell)", "Barbell bench row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["upper_back", "lats"],
+  "secondaryMuscles": ["rear_delts", "traps", "biceps", "brachialis", "grip"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-11"
+  },
+  "cues": {
+    "setup": [
+      "Use a bench high enough for the plates to hang free",
+      "Lie face down, chest at the top edge",
+      "Overhand grip, a bit wider than your shoulders",
+      "Let the bar hang on straight arms"
+    ],
+    "execution": [
+      "Pull the bar up to the underside of the bench",
+      "Squeeze your shoulder blades together",
+      "Keep your chest down on the pad",
+      "Lower under control to straight arms"
+    ],
+    "faults": [
+      "Don't lift your chest off the bench",
+      "Don't shrug your shoulders to your ears",
+      "Don't drop or bounce the bar off the floor",
+      "Don't kick your legs to help the pull"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Check the bench is stable and rated for your bodyweight plus the bar before you lie on it; a home-made bench on boxes or plates must not rock.",
+      "Set the bar where you can reach it from the bench, and lower it to the floor or stands under control at the end of the set.",
+      "Climb on and off the bench carefully; the bar is under your face, so never let go of it mid-rep.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "Guided path and stack loading; no bar to handle from a high bench." },
+      { "key": "dumbbell-chest-supported-row", "name": "Chest-supported dumbbell row", "reason": "Same supported row on an incline bench with a pair of dumbbells; no tall bench needed." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Paused seal row", "reason": "A pause with the bar against the bench removes any swing." }
+    ],
+    "substitutions": [
+      { "key": null, "name": "Dumbbell seal row", "reason": "Same bench and position with a pair of dumbbells; load is each dumbbell and the range can be a bit longer." },
+      { "key": "dumbbell-chest-supported-row", "name": "Chest-supported dumbbell row", "reason": "Chest supported on an incline bench; load is each dumbbell." },
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "Supported row on a machine; easy to load in small steps." },
+      { "key": "barbell-bent-over-row", "name": "Barbell row", "reason": "Same bar and pull without support; more lower-back and hamstring demand." },
+      { "key": "cable-seated-row", "name": "Seated cable row", "reason": "Horizontal pull on a stack when no tall bench is free." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height. Bench along the floor line, figure lying face down with the head at the near end; the bar seen end-on under the chest. Plates must clear the floor at the bottom.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Lying prone on a tall flat bench, chest at the top edge, legs along the bench. Arms hang straight down holding the bar under the shoulders; plates just clear of the floor.",
+        "approxAnglesDeg": { "shoulderFlexion": 90, "elbowFlexion": 0 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Elbows bending and travelling up beside the body, bar rising in a near-vertical line. Chest stays on the pad.",
+        "approxAnglesDeg": { "shoulderFlexion": 45, "elbowFlexion": 70 }
+      },
+      {
+        "label": "Top",
+        "describe": "Bar touching or close to the underside of the bench. Elbows above the torso line, shoulder blades pulled together and down. Chest and hips still on the pad.",
+        "approxAnglesDeg": { "shoulderFlexion": -10, "elbowFlexion": 100 }
+      }
+    ],
+    "ikHints": [
+      "Torso fixed horizontal on the bench pad",
+      "Hands fixed to the bar about 1.2× shoulder width",
+      "Bar travels vertically under the shoulders"
+    ],
+    "barPath": "Close to vertical, from straight arms up to the underside of the bench",
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 1000 },
+    "props": ["barbell_loaded", "bench_tall_prone"],
+    "emphasise": [
+      "Chest stays on the bench throughout",
+      "Elbows lead the pull up past the torso",
+      "Bar stops at the underside of the bench"
+    ],
+    "doNotShow": ["Chest lifting off the bench", "Bar bouncing off the floor", "Legs kicking"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/seal-row/",
+      "title": "StrengthLog: Seal Row",
+      "checkedOn": "2026-10-11",
+      "supports": "compatibleEquipment (barbell); primaryMuscles; secondaryMuscles; cues.setup[1-3]; cues.execution[0,3]"
+    },
+    {
+      "url": "https://catalystathletics.com/exercise/807/Bench-Row/",
+      "title": "Catalyst Athletics Exercise Library: Bench Row (seal row, chest-supported row)",
+      "checkedOn": "2026-10-11",
+      "supports": "aliases; variations.substitutions[0] (dumbbells); cues.execution[1-3]; cues.faults[0-1,3]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "requiresStation",
+      "note": "A seal row needs a flat bench tall enough for the plates to hang clear of the floor (a dedicated seal-row bench, or a flat bench raised on stable blocks). There is no station value for that yet, so `bench` is used; the gym's ordinary flat bench is usually too low for a loaded barbell."
+    },
+    {
+      "field": "name",
+      "note": "\"Seal row\" alone is used for both the barbell and the dumbbell version (Catalyst lists both), so it is not an alias here: a FitNotes \"Seal Row\" is suggested as this entry for Ben to confirm, never matched. No dumbbell seal row entry yet."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Chest-supported barbell row\" and \"Prone barbell row\" are deliberately not aliases: both names are also used for a face-down row on an incline bench, with a different torso angle and range. An import shows them as a Check (never matched) and Ben chooses (review import-names-r2 S1)."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Shoulder flexion is measured from the arm hanging along the torso line; the torso is horizontal here."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,148 @@
+<title>Lifts Block Overall</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --canvas:#F6F3EF;--surface:#FFFFFF;--raised:#EEE9E3;--divider:#DDD6CE;--control:#857D75;
+  --t1:#15120F;--t2:#57504A;--t3:#6B645D;--accent:#15120F;--onaccent:#F6F3EF;--done:#1E7F45;--warn:#8A5A00;--page:#E9E4DD;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --canvas:#0D0C0B;--surface:#181615;--raised:#23201E;--divider:#302C29;--control:#75706A;
+  --t1:#F3EEE8;--t2:#B5ADA5;--t3:#948C84;--accent:#EDE5DA;--onaccent:#0D0C0B;--done:#5CC98A;--warn:#F2B84B;--page:#060505;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#0D0C0B;--surface:#181615;--raised:#23201E;--divider:#302C29;--control:#75706A;
+  --t1:#F3EEE8;--t2:#B5ADA5;--t3:#948C84;--accent:#EDE5DA;--onaccent:#0D0C0B;--done:#5CC98A;--warn:#F2B84B;--page:#060505;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--t1);font-family:Inter,-apple-system,"SF Pro Text",system-ui,sans-serif;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-wrap:wrap;gap:32px;justify-content:center;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px;max-width:100%}
+.col>h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);margin:0 4px;font-weight:600}
+.phone{width:100%;background:var(--canvas);border-radius:44px;padding:18px 20px 28px;border:1px solid var(--divider);box-shadow:0 30px 60px -30px rgba(0,0,0,.5)}
+.status{display:flex;justify-content:space-between;font-size:15px;font-weight:600;padding:4px 10px 10px;font-variant-numeric:tabular-nums}
+h1{font-size:34px;font-weight:700;letter-spacing:-.02em;margin:8px 0 14px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--raised);border-radius:999px;padding:3px;gap:3px}
+.seg span{text-align:center;font-size:15px;padding:7px 0;border-radius:999px;color:var(--t2)}
+.seg span.on{background:var(--surface);color:var(--t1);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.sub{display:flex;gap:18px;margin:16px 2px 0;font-size:15px}
+.sub span{color:var(--t3);padding-bottom:6px}
+.sub span.on{color:var(--t1);font-weight:600;border-bottom:2px solid var(--t1)}
+.period{display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:15px}
+.period .opts{display:flex;gap:4px}
+.period .opts span{padding:5px 9px;border-radius:999px;color:var(--t2);font-variant-numeric:tabular-nums}
+.period .opts span.on{background:var(--raised);color:var(--t1);font-weight:600}
+.period .nav{color:var(--t3);letter-spacing:6px}
+.head{display:flex;justify-content:space-between;align-items:baseline;margin:20px 2px 10px}
+.head b{font-size:20px}
+.head span{font-size:15px;color:var(--t2);font-variant-numeric:tabular-nums}
+.head a{color:var(--t1);text-decoration:underline;text-underline-offset:3px;font-size:15px}
+.card{background:var(--surface);border-radius:20px;overflow:hidden}
+.lift{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:13px 16px}
+.lift+.lift{border-top:1px solid var(--divider)}
+.lift .name{font-size:17px}
+.lift .chg{font-size:15px;font-variant-numeric:tabular-nums;text-align:right}
+.lift .chg.st{color:var(--warn);font-weight:600}
+.lift .meta{font-size:13px;color:var(--t2);font-variant-numeric:tabular-nums}
+.mini{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;grid-column:1/-1;align-items:end;height:26px}
+.mini i{display:block;border-radius:3px;background:var(--raised)}
+.mini i.up{background:var(--done)}
+.mini i.held{background:var(--t3)}
+.mini i.stall{background:var(--warn)}
+.mini i.dl{background:transparent;border:1px dashed var(--control)}
+.mini i.base{background:var(--t2)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:var(--t2);margin:10px 4px 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.chips{display:flex;gap:8px;overflow:hidden;margin-top:16px}
+.chip{border:1px solid var(--divider);border-radius:999px;padding:6px 12px;font-size:15px;white-space:nowrap}
+.chip.on{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}
+.chart{margin-top:12px;background:var(--surface);border-radius:20px;padding:14px 12px 8px}
+.chart svg{display:block;width:100%;height:auto}
+.stat{display:flex;justify-content:space-between;font-size:15px;padding:12px 4px 0;color:var(--t2);font-variant-numeric:tabular-nums}
+.stat b{color:var(--t1);font-weight:600}
+.notes{width:360px;max-width:100%;display:flex;flex-direction:column;gap:12px;font-size:15px;line-height:1.55}
+.notes h2{font-size:22px;margin:0;letter-spacing:-.01em}
+.notes h3{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin:10px 0 0}
+.notes p,.notes ul{margin:0;color:var(--t2)}
+.notes ul{padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.notes b{color:var(--t1);font-weight:600}
+.tabbar{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:10px;border-top:1px solid var(--divider);font-size:11px;letter-spacing:1px;text-transform:uppercase;text-align:center;color:var(--t3)}
+.tabbar .on{color:var(--t1);font-weight:600}
+</style>
+
+<div class="wrap">
+
+  <div class="col">
+    <h2>Lifts · Block</h2>
+    <div class="phone" aria-label="Mockup: Progress, Lifts, Block">
+      <div class="status"><span>14:07</span><span>●●● ▮</span></div>
+      <h1>Progress</h1>
+      <div class="seg"><span class="on">Lifts</span><span>Training</span><span>Body</span></div>
+      <div class="sub"><span class="on">Block</span><span>Overall</span></div>
+
+      <div class="head"><b>Week 3 of 6</b><a>Blocks ›</a></div>
+      <div class="card">
+        <div class="lift"><span class="name">Bench press</span><span class="chg">+5 kg</span>
+          <span class="meta">80 → 85 kg × 6</span><span></span>
+          <div class="mini"><i class="base" style="height:60%"></i><i class="up" style="height:75%"></i><i class="up" style="height:90%"></i><i></i><i></i><i class="dl" style="height:40%"></i></div></div>
+        <div class="lift"><span class="name">Back squat</span><span class="chg">+5 kg</span>
+          <span class="meta">100 → 105 kg × 6</span><span></span>
+          <div class="mini"><i class="base" style="height:60%"></i><i class="held" style="height:60%"></i><i class="up" style="height:85%"></i><i></i><i></i><i class="dl" style="height:40%"></i></div></div>
+        <div class="lift"><span class="name">Barbell row</span><span class="chg st">Stalled</span>
+          <span class="meta">70 kg × 8 · 3 weeks</span><span></span>
+          <div class="mini"><i class="base" style="height:70%"></i><i class="held" style="height:70%"></i><i class="stall" style="height:65%"></i><i></i><i></i><i class="dl" style="height:40%"></i></div></div>
+        <div class="lift"><span class="name">Overhead press</span><span class="chg">+2.5 kg</span>
+          <span class="meta">50 → 52.5 kg × 6</span><span></span>
+          <div class="mini"><i class="base" style="height:60%"></i><i class="up" style="height:72%"></i><i class="held" style="height:72%"></i><i></i><i></i><i class="dl" style="height:40%"></i></div></div>
+      </div>
+      <div class="legend"><span><i style="background:var(--done)"></i>Up</span><span><i style="background:var(--t3)"></i>Held</span><span><i style="background:var(--warn)"></i>Stalled</span><span><i style="border:1px dashed var(--control)"></i>Deload</span></div>
+
+      <div class="tabbar"><span>Today</span><span>Library</span><span class="on">Progress</span><span>Profile</span></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <h2>Lifts · Overall</h2>
+    <div class="phone" aria-label="Mockup: Progress, Lifts, Overall">
+      <div class="status"><span>14:07</span><span>●●● ▮</span></div>
+      <h1>Progress</h1>
+      <div class="seg"><span class="on">Lifts</span><span>Training</span><span>Body</span></div>
+      <div class="sub"><span>Block</span><span class="on">Overall</span></div>
+
+      <div class="period"><div class="opts"><span>W</span><span>M</span><span class="on">3M</span><span>6M</span><span>1Y</span></div><span class="nav">‹ ›</span></div>
+
+      <div class="chips"><span class="chip on">Bench press</span><span class="chip">Back squat</span><span class="chip">Row</span><span class="chip">More</span></div>
+      <div class="chart">
+        <svg viewBox="0 0 320 130" role="img" aria-label="Bench press, est. 1RM rising from 92 to 101 kg over 3 months">
+          <line x1="0" y1="110" x2="320" y2="110" stroke="var(--divider)"/>
+          <line x1="0" y1="60" x2="320" y2="60" stroke="var(--divider)" stroke-dasharray="2 4"/>
+          <polyline fill="none" stroke="var(--t1)" stroke-width="2" points="10,100 50,92 90,95 130,80 170,74 210,70 250,58 290,46"/>
+          <polyline fill="none" stroke="var(--t3)" stroke-width="2" stroke-dasharray="5 5" points="10,98 90,92 170,80 250,64 310,52"/>
+          <g fill="var(--t1)"><circle cx="10" cy="100" r="4"/><circle cx="50" cy="92" r="4"/><circle cx="90" cy="95" r="4"/><circle cx="130" cy="80" r="4"/><circle cx="170" cy="74" r="4"/><circle cx="210" cy="70" r="4"/><circle cx="250" cy="58" r="4"/><circle cx="290" cy="46" r="4"/></g>
+          <text x="0" y="126" font-size="11" fill="var(--t3)">Aug</text><text x="150" y="126" font-size="11" fill="var(--t3)">Sep</text><text x="292" y="126" font-size="11" fill="var(--t3)">Oct</text>
+        </svg>
+      </div>
+      <div class="stat"><span>Est. 1RM</span><span><b>101 kg</b> · +9 kg</span></div>
+
+      <div class="tabbar"><span>Today</span><span>Library</span><span class="on">Progress</span><span>Profile</span></div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>One strip, two views</h2>
+    <ul>
+      <li><b>Block | Overall</b> sits under Lifts as a plain text strip, not a second pill bar.</li>
+      <li><b>Block</b> (default while a plan runs): your main lifts this block, week by week, with what changed or <b>Stalled</b>. No period bar; the weeks are the period. Tap a lift for its block detail. <b>Blocks ›</b> for past ones.</li>
+      <li><b>Overall</b>: exactly what Lifts shows today, the period bar, chips, chart, table and records, without the block section on top.</li>
+      <li>No plan running: no strip, just Overall.</li>
+      <li>Training and Body keep their period bar.</li>
+    </ul>
+    <h3>Not changing</h3>
+    <p>Bottom tabs stay Today · Library · Progress · Profile. The calendar stays in Training › Month.</p>
+    <h3>Your call</h3>
+    <ul>
+      <li>Strip as underlined text (shown) or a second small pill bar?</li>
+      <li>Should Block open by default, or remember the last one you used?</li>
+    </ul>
+  </div>
+
+</div>

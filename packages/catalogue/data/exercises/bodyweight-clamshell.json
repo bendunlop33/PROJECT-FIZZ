@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-clamshell",
+  "tier": "rich",
+  "name": "Clamshell",
+  "aliases": ["Clamshells", "Clam shell", "Clams", "Side-lying clam", "Banded clamshell", "Clamshell exercise"],
+  "family": "hip_abduction",
+  "movementPattern": "lunge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abductors", "glutes"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["bodyweight_station", "band"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 30,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your side, head on your arm",
+      "Hips and knees bent, heels together",
+      "Stack your hips straight up and down",
+      "Optional mini-band just above the knees"
+    ],
+    "execution": [
+      "Keep your heels touching",
+      "Lift the top knee like a clam opening",
+      "Pause at the top, then lower slowly",
+      "Hips stay stacked, don't roll back"
+    ],
+    "faults": [
+      "Don't roll your top hip backward",
+      "Don't let your feet come apart",
+      "Don't rush the reps"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Lift only as far as you can without the pelvis rolling back; the range is small.",
+      "A band adds tension. It isn't logged as a weight; note the band if you want to track it.",
+      "Reps are per side.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the front of the hip",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Smaller range clamshell", "reason": "Open only part way while you learn to keep the hips stacked." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Banded clamshell", "reason": "A mini-band above the knees adds tension." },
+      { "key": null, "name": "Side-plank clamshell", "reason": "Done from a side plank on the knees; harder and adds trunk work." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-side-lying-hip-abduction", "name": "Side-lying hip abduction", "reason": "Straight-leg version; higher outer-hip activity in one EMG study." },
+      { "key": "machine-hip-abduction", "name": "Hip abduction machine", "reason": "Seated outer-hip work on a stack; easy to load." },
+      { "key": "cable-hip-abduction", "name": "Cable hip abduction", "reason": "Standing outer-hip work on a cable." },
+      { "key": null, "name": "Lateral band walk", "reason": "Outer-hip work with a mini-band while stepping." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Camera looking down at the front of the figure as it lies on its side, head to the left, so the top knee opening and the stacked hips are clear.",
+    "keyPositions": [
+      {
+        "label": "Closed",
+        "describe": "Lying on the side, head on the bottom arm. Hips bent about 45°, knees bent about 90°, knees and heels together. Hips stacked vertically.",
+        "approxAnglesDeg": { "hipFlexion": 45, "kneeFlexion": 90, "topHipAbduction": 0 }
+      },
+      {
+        "label": "Open",
+        "describe": "Top knee lifted, heels still together, so the legs open like a clam. Pelvis has not rolled back.",
+        "approxAnglesDeg": { "hipFlexion": 45, "kneeFlexion": 90, "topHipAbduction": 35 }
+      }
+    ],
+    "ikHints": ["Heels stay together", "Pelvis stays stacked; the trunk does not move"],
+    "tempo": { "downMs": 1500, "holdMs": 500, "upMs": 900 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Only the top knee moves",
+      "Heels together",
+      "Pelvis stays stacked"
+    ],
+    "doNotShow": ["Pelvis rolling back", "Feet separating"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/clamshells/",
+      "title": "StrengthLog: Clamshells",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-2]; cues.execution[0-2]"
+    },
+    {
+      "url": "https://catalystathletics.com/exercise/766/Clamshell/",
+      "title": "Catalyst Athletics exercise library: Clamshell",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[3] and variations.progressions[0] (mini-band above the knees); warm-up use",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://brookbushinstitute.com/article/gluteal-muscle-activation-during-common-therapeutic-exercises",
+      "title": "Brookbush Institute summary of DiStefano et al. (2009) gluteal activation in 12 exercises, J Orthop Sports Phys Ther 39(7):532-40",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.substitutions[0] (side-lying abduction had the highest glute-med EMG of the 12 exercises)",
+      "note": "Secondary summary of an EMG study (21 recreationally active adults). EMG activity is not growth or strength."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'lunge' to match the Hip abduction machine entry; no hip-abduction or prehab pattern exists."
+    },
+    {
+      "field": "guideBrief.view",
+      "note": "'front' means the camera faces the front of the lying figure. The guide-maker may prefer a top-down framing."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

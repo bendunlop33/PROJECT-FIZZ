@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-wrist-curl",
+  "tier": "rich",
+  "name": "Barbell wrist curl",
+  "aliases": ["Wrist curl", "Wrist curls", "BB wrist curl", "Seated wrist curl", "Palms-up wrist curl"],
+  "family": "wrist_curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["forearms"],
+  "secondaryMuscles": ["grip"],
+  "compatibleEquipment": ["barbell", "ez_bar"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Forearms on a bench or your thighs",
+      "Palms up, wrists just past the edge",
+      "Grip about shoulder width"
+    ],
+    "execution": [
+      "Let the bar lower, wrists bending back",
+      "Keep a firm hold of the bar",
+      "Curl your wrists up as high as they go",
+      "Forearms stay flat on the support"
+    ],
+    "faults": [
+      "Don't lift your forearms to help",
+      "Don't bounce at the bottom",
+      "Don't rush the reps"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a light bar and higher reps; small wrist muscles do the work.",
+      "Keep the bar under control at the bottom; letting it roll far down the fingers is optional and needs a secure grip.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Dumbbell wrist curl", "reason": "One light dumbbell per hand; each wrist works alone." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Behind-the-back wrist curl", "reason": "Standing with the bar behind you; allows heavier loads." }
+    ],
+    "substitutions": [
+      { "key": null, "name": "Dumbbell wrist curl", "reason": "Same movement; load is each dumbbell." },
+      { "key": null, "name": "Cable wrist curl", "reason": "Low pulley; stack load in small steps." },
+      { "key": "farmers-carry", "name": "Farmer's carry", "reason": "Heavy grip work for the forearms." },
+      { "key": "bodyweight-dead-hang", "name": "Dead hang", "reason": "Grip endurance with no load to set up." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Close side view at bench height, figure kneeling or seated with forearms along a flat bench, hands just past the edge on the right. Hands and forearms fill most of the frame.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Forearms flat along the bench, palms up, wrists over the edge. Wrists bent back so the bar hangs below the bench top, fingers still closed round the bar.",
+        "approxAnglesDeg": { "wristFlexion": -60, "elbowFlexion": 90 }
+      },
+      {
+        "label": "Top",
+        "describe": "Wrists curled up as far as they go, bar raised above the bench top. Forearms still flat on the bench.",
+        "approxAnglesDeg": { "wristFlexion": 60, "elbowFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Forearms fixed on the bench", "Only the wrists and hands move"],
+    "barPath": "A short arc around the wrists",
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 1000 },
+    "props": ["bench_flat", "barbell_light"],
+    "emphasise": [
+      "Only the wrists move",
+      "Full range from bent back to curled up",
+      "Forearms stay down"
+    ],
+    "doNotShow": ["Forearms lifting off the bench", "Bar dropping out of the fingers", "Heavy, bouncing reps"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/barbell-wrist-curl/",
+      "title": "StrengthLog: Barbell Wrist Curl",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1]; cues.execution[0,2]; primaryMuscles; variations.regressions[0]"
+    },
+    {
+      "url": "https://www.acefitness.org/exerciselibrary/30/dumbbell-wrist-curl-flexion",
+      "title": "ACE Exercise Library: Wrist Curl - Flexion",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1] (elbows on a bench, palms up); cues.execution[1] (squeeze; don't let it roll to the fingertips); cues.faults[2]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "safety.notes[1]",
+      "note": "StrengthLog lets the bar roll down the fingers; ACE says keep it in the palm. Keeping a firm grip is the default here."
+    },
+    {
+      "field": "key",
+      "note": "Barbell is the default because it logs one unambiguous total. The dumbbell version (per hand, one or both arms) is listed as a variation with no entry yet."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Negative wristFlexion means the wrist is bent back."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

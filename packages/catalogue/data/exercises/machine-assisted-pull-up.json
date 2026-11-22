@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-assisted-pull-up",
+  "tier": "basic",
+  "name": "Assisted pull-up",
+  "aliases": ["Assisted pull-up machine", "Machine-assisted pull-up", "Assisted pullup", "Assisted chin-up", "Gravitron"],
+  "family": "pull_up",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats"],
+  "secondaryMuscles": ["upper_back", "biceps", "brachialis", "rear_delts", "grip"],
+  "compatibleEquipment": ["assisted_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "assistance",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

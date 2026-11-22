@@ -1,0 +1,372 @@
+<title>Today Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one phone screen. Top: date + coach bar. A 7-day strip (3 days back, today, 3 ahead) mixing workouts, runs and plan days. Then one recommended workout card (collapsed; tap to expand). Then quick alternatives and "Build your own". Direction D tokens, single dark. */
+:root {
+  --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
+  --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --on-accent: #0D0C0B;
+  --done: #5CC98A; --done-sub: #15301F; --run: #7FB2E5; --run-sub: #172636; --warn: #F2B84B;
+  --page: #1B1917;
+  --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--text); font-family: var(--ui); margin: 0; }
+.wrap { padding: 24px max(16px, env(safe-area-inset-left, 0px)) 40px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 380px; line-height: 1.45; }
+.phone { width: 380px; max-width: 100%; height: 800px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 18px 16px 10px; display: flex; flex-direction: column; gap: 14px; position: relative; overflow: hidden; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 0; }
+.status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0; }
+.label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); }
+.hdr { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.askbar.sm { flex: none; min-height: 40px; padding: 0 14px; }
+.hdr .mic { width: 40px; height: 40px; }
+.askrow { display: flex; gap: 8px; }
+.askbar { flex: 1; display: flex; gap: 10px; align-items: center; min-height: 46px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font-size: 15px; font-family: inherit; cursor: pointer; text-align: left; }
+.askbar span:first-child { color: var(--text); }
+.mic { width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); cursor: pointer; display: grid; place-items: center; flex: none; }
+/* week strip */
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.day { background: var(--surface); border: 0; border-radius: 12px; padding: 6px 1px 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text); cursor: pointer; font-family: inherit; min-height: 70px; }
+.day .dn { font-size: 11px; color: var(--text2); letter-spacing: .06em; }
+.day .dd { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.day.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+.day.past { opacity: .9; }
+.pip { font-size: 9.5px; line-height: 1.2; padding: 3px 1px; border-radius: 6px; width: 100%; box-sizing: border-box; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.02em; }
+.pip.plift { background: rgba(92,201,138,.20); color: #D8F5E3; box-shadow: inset 0 0 0 1px rgba(92,201,138,.55); }
+.pip.pliftp { border: 1px dashed var(--text3); color: var(--text2); }
+.pip.prun { background: var(--run-sub); color: var(--run); }
+.pip.prunp { border: 1px dashed var(--run); color: var(--run); }
+.pip.prest { color: var(--text3); }
+.planline { display: flex; justify-content: space-between; color: var(--text2); font-size: 13px; padding: 0 2px; }
+.planline b { color: var(--text); font-weight: 600; }
+/* recommended card */
+.card { background: var(--surface); border-radius: 20px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.card .big { font-size: 28px; font-weight: 600; letter-spacing: -.01em; }
+.card .sub { color: var(--text2); font-size: 14px; margin-top: 2px; }
+.card .why { font-size: 13px; color: var(--text2); display: flex; gap: 6px; align-items: baseline; }
+.card .why i { font-style: normal; color: var(--warn); }
+.chev { color: var(--text3); font-size: 20px; padding: 4px; transition: transform .15s; }
+.card.open .chev { transform: rotate(90deg); }
+.exl { display: none; flex-direction: column; }
+.card.open .exl { display: flex; }
+.ex, .exh { display: grid; grid-template-columns: 22px 1fr 34px 56px; gap: 6px; align-items: center; }
+.exh { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); padding: 4px 0 6px; align-items: end; line-height: 1.3; }
+.exh span:nth-child(3), .exh span:nth-child(4), .ex .c { text-align: right; }
+.ex { padding: 8px 0; border-top: 1px solid var(--divider); font-size: 15px; }
+.ex .n { color: var(--text2); font-size: 13px; font-weight: 600; }
+.ex small { display: block; font-size: 12.5px; color: var(--text2); margin-top: 1px; }
+.ex .c { font-variant-numeric: tabular-nums; }
+.ssb { border: 1.5px solid var(--text3); border-radius: 12px; padding: 0 8px; margin: 6px -9px 2px; }
+.ssb .ex { position: relative; }
+.ssb .ex:first-child { border-top: 0; }
+.ssb .ex:not(:last-child)::after { content: ""; position: absolute; left: 7px; top: 30px; bottom: -14px; width: 2px; background: var(--text3); border-radius: 1px; }
+.ssb .ex .n { color: var(--text); position: relative; z-index: 1; }
+.notes { display: none; background: var(--raised); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; color: var(--text2); flex-direction: column; gap: 4px; }
+.card.open .notes { display: flex; }
+.notes b { color: var(--text); font-weight: 600; }
+.acts { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.pill { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 999px; min-height: 52px; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.ghost { background: none; color: var(--text); border: 1.5px solid var(--text3); border-radius: 999px; min-height: 52px; padding: 0 20px; font-size: 15px; cursor: pointer; font-family: inherit; }
+/* alternatives */
+.seg { display: grid; grid-template-columns: repeat(4, 1fr) 44px; gap: 4px; background: var(--surface); border-radius: 14px; padding: 4px; }
+.seg[role="tablist"] { margin-bottom: 8px; } /* gap above the session card so the tabs don't run into it (Ben, 22 Oct) */
+.sg { border: 0; background: none; color: #6E6761; border-radius: 10px; min-height: 48px; font-size: 14.5px; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+.sg i { font-style: normal; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); }
+.sg.on { background: var(--raised); color: var(--text); font-weight: 600; }
+.sg.on i { color: var(--accent); }
+.sg.more { font-size: 18px; }
+.types { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.ty { border: 1.5px solid #26221F; background: none; color: #7C746D; border-radius: 999px; padding: 8px 14px; min-height: 40px; font-size: 14px; font-family: inherit; cursor: pointer; }
+.ty.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.ctl { background: var(--raised); border-radius: 14px; margin: 2px 0; }
+.ctl .cr + .cr { border-top-color: #34302C; }
+.ctl .ty { border-color: #3A3532; }
+.ctl .mn { background: var(--surface); }
+.bdt { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; border-top: 1px solid var(--divider); color: var(--text); font-size: 15px; font-family: inherit; padding: 12px 2px 4px; cursor: pointer; }
+.mixrow.bd { display: none; }
+.card.open .mixrow.bd { display: flex; }
+.cr { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 8px; min-height: 38px; padding: 0 8px 0 12px; }
+.cr + .cr { border-top: 1px solid var(--divider); }
+.cr .k { font-size: 13px; color: var(--text2); }
+.cr .ty { min-height: 27px; padding: 2px 10px; font-size: 12.5px; }
+.cr .types { margin: 0; justify-content: flex-end; }
+.cr .sw { background: none; border: 0; justify-self: end; cursor: pointer; padding: 6px 0; }
+.cr .switch { width: 36px; height: 22px; border-radius: 11px; }
+.cr .switch i { width: 18px; height: 18px; }
+.switch { display: inline-flex; width: 51px; height: 31px; border-radius: 16px; padding: 2px; background: var(--raised); justify-content: flex-start; }
+.switch i { width: 27px; height: 27px; border-radius: 50%; background: var(--text3); display: block; }
+.switch.on { background: var(--accent); justify-content: flex-end; }
+.switch.on i { background: var(--on-accent); }
+.cr .val { display: flex; align-items: center; gap: 6px; justify-self: end; }
+.mn { width: 27px; height: 27px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); font-size: 15px; cursor: pointer; }
+.tv { min-width: 52px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.cr .k small.pl { display: block; font-size: 11px; color: var(--text3); }
+.whyd { display: none; font-size: 13.5px; color: var(--text2); }
+.card.open .whyd { display: block; }
+.whyd summary { cursor: pointer; color: var(--text); list-style: none; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; padding: 4px 0; }
+.whyd summary::-webkit-details-marker { display: none; }
+.whyd[open] { background: var(--raised); border-radius: 12px; padding: 8px 12px; }
+.whyd span { display: block; margin-top: 3px; }
+.card .top.tr2 { align-items: center; }
+.meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; color: var(--text2); text-align: right; }
+.mixrow small { color: var(--text3); font-size: 12px; }
+.mixrow b { color: var(--text); font-weight: 600; }
+.mixacts { display: flex; gap: 12px; flex: none; }
+.sg .oname { font-size: 12.5px; line-height: 1.1; }
+.seg { grid-template-columns: repeat(4, 1fr) minmax(44px, auto); }
+.two2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.two2 .ghost { min-height: 46px; padding: 0 10px; }
+.fitline { font-size: 13px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* always one line so the controls never move (Ben, 22 Oct) */
+.varline { font-size: 13.5px; color: var(--text2); margin: 0 4px 8px; }
+.link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; cursor: pointer; padding: 6px 0; font-family: inherit; }
+.mixrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text2); }
+.card .mv { color: var(--accent); }
+.day .pip.pliftp { transition: background .2s; }
+.card .lt { color: var(--text2); font-weight: 500; font-size: 22px; }
+.alts { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.alt { flex: none; min-width: 132px; background: var(--surface); border: 1.5px solid transparent; border-radius: 14px; padding: 10px 12px; text-align: left; color: var(--text); cursor: pointer; font-family: inherit; display: flex; flex-direction: column; gap: 3px; }
+.alt.sel { border-color: var(--accent); }
+.alt b { font-size: 15px; font-weight: 600; }
+.alt small { color: var(--text2); font-size: 12.5px; }
+.alt .tag { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); }
+.rowlinks { display: flex; gap: 8px; }
+.rowlinks button { flex: 1; min-height: 48px; border-radius: 14px; border: 1.5px dashed var(--divider); background: none; color: var(--text); font-size: 15px; cursor: pointer; font-family: inherit; }
+.tabs { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .12em; color: var(--text3); padding: 10px 6px 0; border-top: 1px solid var(--divider); }
+.tabs .on { color: var(--text); font-weight: 600; }
+/* sheet */
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 19; }
+.sheet { position: absolute; inset: auto 0 0 0; background: var(--surface); border-radius: 24px 24px 38px 38px; padding: 16px 16px 22px; display: flex; flex-direction: column; gap: 10px; z-index: 20; max-height: 75%; overflow-y: auto; }
+.sheet h3 { margin: 0 4px; font-size: 18px; }
+.sheet .it { background: var(--raised); border-radius: 12px; padding: 10px 12px; font-size: 14.5px; display: flex; justify-content: space-between; gap: 10px; }
+.sheet .it small { color: var(--text2); }
+.toast { position: absolute; left: 16px; right: 16px; bottom: 70px; background: var(--raised); border-radius: 12px; padding: 12px 14px; font-size: 14px; z-index: 25; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <div class="phone" id="app"></div>
+  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split; runs show only when you've logged them or told the coach, e.g. a long run Saturday). Pick the day (Next is the plan's), then main lift, Focused or Varied accessories, time, abs and supersets; the workout below adjusts. Tap Session breakdown for the exercises. ↻ Mix it up asks the coach for one fresh accessory today. ⋯ has saved variations and other workouts. Edit and Build your own open the builder.</div>
+</div>
+
+<script>
+(() => {
+  const WEEK = [
+    { dn: 'SAT', dd: 17, past: true, items: [{ k: 'lift', t: 'Shoulders' }], detail: ['Shoulders · 58 min · DB press 32.5 × 6'] },
+    { dn: 'SUN', dd: 18, past: true, items: [{ k: 'run', t: 'Run 12k' }], detail: ['Run 12 km · 1:02 · easy'] },
+    { dn: 'MON', dd: 19, past: true, items: [{ k: 'rest', t: 'Rest' }], detail: ['Rest day'] },
+    { dn: 'TUE', dd: 20, today: true, items: [], detail: [] },
+    { dn: 'WED', dd: 21, items: [{ k: 'runp', t: 'Run 8k' }], detail: ['Planned: run 8 km'] },
+    { dn: 'THU', dd: 22, items: [{ k: 'liftp', t: 'Legs' }], detail: ['Planned: Legs'] },
+    { dn: 'FRI', dd: 23, items: [{ k: 'liftp', t: 'Back' }], detail: ['Planned: Back'] },
+  ];
+  const WORKS = { 'Barbell bench press': 'Chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Cable crossover': 'Lower chest', 'Dips': 'Lower chest, triceps', 'Machine chest press': 'Chest, triceps', 'Triceps pushdown': 'Triceps', 'Overhead triceps extension': 'Triceps (long head)', 'Cable crunch': 'Upper abs', 'EZ-bar curl': 'Biceps', 'Hammer curl': 'Brachialis, forearms, biceps', 'Barbell row': 'Mid-back, lats, rear delts, biceps', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Seated cable row': 'Mid-back, lats, biceps', 'Straight-arm pulldown': 'Lats', 'Face pull': 'Rear delts, upper back', 'Back squat': 'Quads, glutes, adductors', 'Romanian deadlift': 'Hamstrings, glutes, lower back', 'Leg press': 'Quads, glutes', 'Leg curl': 'Hamstrings', 'Leg extension': 'Quads', 'Seated calf raise': 'Calves', 'Dumbbell shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Cable lateral raise': 'Side delts', 'Rear-delt fly': 'Rear delts', 'Bulgarian split squat': 'Quads, glutes', 'Pec deck': 'Chest', 'Dumbbell fly': 'Chest', 'Incline machine press': 'Upper chest, triceps', 'Low-incline barbell press': 'Upper chest, front delts, triceps', 'Single-arm dumbbell row': 'Lats, mid-back', 'Hack squat': 'Quads, glutes', 'Machine lateral raise': 'Side delts', 'Reverse pec deck': 'Rear delts' };
+  // Each plan day: main-lift options, accessories for Focused (2 × 3 sets) or Varied (3 × 2 sets, different angles),
+  // the other group's exercise, and what's added when there's spare time. [name, reps, kg, compound?]
+  const D = {
+    Chest: { mains: { Bench: ['Barbell bench press', 100], Incline: ['Incline barbell press', 82.5] },
+      focused: [['Incline dumbbell press', 8, 27.5, 1], ['Cable fly', 10, 15]],
+      varied: [['Incline dumbbell press', 8, 27.5, 1], ['Cable crossover', 12, 12.5], ['Dips', 10, null, 1]],
+      extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5, 0, 'extra'], ['Machine chest press', 8, 80, 1]] },
+    Back: { mains: { Row: ['Barbell row', 92.5], Pulldown: ['Lat pulldown', 65] },
+      focused: [['Lat pulldown', 8, 60, 1], ['Chest-supported row', 10, 22.5, 1]],
+      varied: [['Lat pulldown', 8, 60, 1], ['Seated cable row', 10, 60, 1], ['Face pull', 12, 22.5]],
+      extra: [['EZ-bar curl', 8, 30]], add: [['Hammer curl', 10, 14, 0, 'extra'], ['Straight-arm pulldown', 12, 25]] },
+    Legs: { mains: { Squat: ['Back squat', 117.5] }, warn: 'Long run Saturday: legs fit better Thursday',
+      focused: [['Romanian deadlift', 8, 105, 1], ['Leg press', 8, 195, 1]],
+      varied: [['Romanian deadlift', 8, 105, 1], ['Leg press', 10, 180, 1], ['Leg curl', 10, 47.5]],
+      extra: [['Seated calf raise', 12, 40]], add: [['Leg extension', 12, 50], ['Bulgarian split squat', 10, 16, 1]] },
+    Shoulders: { mains: { 'DB press': ['Dumbbell shoulder press', 32.5] },
+      focused: [['Lateral raise', 12, 10], ['Rear-delt fly', 12, 7.5]],
+      varied: [['Lateral raise', 12, 10], ['Face pull', 12, 22.5], ['Cable lateral raise', 15, 5]],
+      extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5, 0, 'extra'], ['Rear-delt fly', 12, 7.5]] },
+  };
+  const ABS = ['Cable crunch', 10, 40];
+  const PLAN_ABS = { Chest: true, Back: true, Legs: false, Shoulders: false, 'Full body': true, Upper: true, Lower: false, Push: true, Pull: true }; // the plan puts abs on two days a week
+  const absOn = () => s.abs ?? PLAN_ABS[s.day];
+  const PLANDAYS = ['Chest', 'Back', 'Legs', 'Shoulders'];
+  const NEXT = 'Chest';
+  const PLAN_MIN = 60;
+  // Mix it up shortlist per exercise: same muscles, different angle, same role (compound ↔ compound, isolation ↔ isolation),
+  // available here, not pain-flagged, not done in the last couple of sessions. [name, reps, kg]. The coach picks; offline, least recently done first.
+  const ALTS = {
+    'Cable fly': [['Cable crossover', 12, 12.5], ['Pec deck', 12, 45], ['Dumbbell fly', 12, 14]],
+    'Cable crossover': [['Cable fly', 10, 15], ['Pec deck', 12, 45], ['Dumbbell fly', 12, 14]],
+    'Incline dumbbell press': [['Incline machine press', 10, 60], ['Low-incline barbell press', 8, 72.5]],
+    'Chest-supported row': [['Seated cable row', 10, 60], ['Single-arm dumbbell row', 10, 32]],
+    'Seated cable row': [['Chest-supported row', 10, 22.5], ['Single-arm dumbbell row', 10, 32]],
+    'Leg press': [['Hack squat', 8, 100], ['Bulgarian split squat', 10, 16]],
+    'Lateral raise': [['Cable lateral raise', 15, 5], ['Machine lateral raise', 12, 30]],
+    'Rear-delt fly': [['Face pull', 12, 22.5], ['Reverse pec deck', 12, 35]],
+  };
+  const MIX_WHY = { 'Cable crossover': 'Lower-chest angle you haven\u2019t done in 3 weeks', 'Pec deck': 'Same stretch, machine path', 'Dumbbell fly': 'Free-weight stretch at the bottom', 'Incline machine press': 'Same angle, steadier path', 'Seated cable row': 'Different grip and line of pull', 'Hack squat': 'Quads, less back fatigue', 'Cable lateral raise': 'Tension at the bottom of the lift', 'Face pull': 'Rear delts plus upper back' };
+  // Session types outside the split (from ⋯). Pull and Lower aren't here: they're the same as your Back and Legs days.
+  // they use the same controls and the same fit-to-time rules.
+  const OTHER = [
+    { name: 'Full body', sub: 'Squat or bench, plus a pull and a hinge' },
+    { name: 'Upper', sub: 'Chest, back, shoulders, arms' },
+    { name: 'Push', sub: 'Chest, shoulders, triceps' },
+  ];
+  Object.assign(D, {
+    'Full body': { mains: { Squat: ['Back squat', 117.5], Bench: ['Barbell bench press', 100] }, focused: [['Barbell row', 8, 85, 1], ['Romanian deadlift', 8, 100, 1]], varied: [['Barbell row', 8, 85, 1], ['Romanian deadlift', 8, 100, 1], ['Dumbbell shoulder press', 10, 28, 1]], extra: [['EZ-bar curl', 10, 30]], add: [['Lateral raise', 12, 10], ['Leg curl', 10, 47.5]] },
+    Upper: { mains: { Bench: ['Barbell bench press', 100], Row: ['Barbell row', 92.5] }, focused: [['Lat pulldown', 8, 60, 1], ['Incline dumbbell press', 8, 27.5, 1]], varied: [['Lat pulldown', 8, 60, 1], ['Incline dumbbell press', 8, 27.5, 1], ['Lateral raise', 12, 10]], extra: [['Triceps pushdown', 8, 30]], add: [['EZ-bar curl', 10, 30, 0, 'extra'], ['Face pull', 12, 22.5]] },
+    Lower: { mains: { Squat: ['Back squat', 117.5], Deadlift: ['Romanian deadlift', 110] }, warn: 'Long run Saturday: legs fit better Thursday', focused: [['Leg press', 8, 195, 1], ['Leg curl', 10, 47.5]], varied: [['Leg press', 10, 180, 1], ['Leg curl', 10, 47.5], ['Leg extension', 12, 50]], extra: [['Seated calf raise', 12, 40]], add: [['Bulgarian split squat', 10, 16, 1]] },
+    Push: { mains: { Bench: ['Barbell bench press', 100], 'DB press': ['Dumbbell shoulder press', 32.5] }, focused: [['Incline dumbbell press', 8, 27.5, 1], ['Lateral raise', 12, 10]], varied: [['Incline dumbbell press', 8, 27.5, 1], ['Cable fly', 10, 15], ['Lateral raise', 12, 10]], extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5, 0, 'extra'], ['Dips', 10, null, 1]] },
+    Pull: { mains: { Row: ['Barbell row', 92.5], Pulldown: ['Lat pulldown', 65] }, focused: [['Lat pulldown', 8, 60, 1], ['Face pull', 12, 22.5]], varied: [['Lat pulldown', 8, 60, 1], ['Chest-supported row', 10, 22.5, 1], ['Face pull', 12, 22.5]], extra: [['EZ-bar curl', 8, 30]], add: [['Hammer curl', 10, 14, 0, 'extra'], ['Straight-arm pulldown', 12, 25]] },
+  });
+  const VARS = { Chest: [{ label: 'Bench · arms superset', extra: [['Triceps pushdown', 8, 30], ['EZ-bar curl', 8, 30]] }] };
+  let s = { day: NEXT, main: null, style: 'Focused', min: PLAN_MIN, ss: true, abs: null, mix: 0, v: null, open: false, sheet: null, toast: null };
+  const app = document.getElementById('app');
+  const MIC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+
+  // ── The session, built from the choices ──
+  function draft() {
+    const d = D[s.day]; const mk = s.main ?? Object.keys(d.mains)[0]; const [mn, mkg] = d.mains[mk];
+    const sets = s.style === 'Varied' ? 2 : 3;
+    let acc = (s.style === 'Varied' ? d.varied : d.focused).filter((x) => x[0] !== mn);
+    // Swap the accessory you've done most lately (prototype: the last accessory with options, as if done most lately); each tap moves to the next option.
+    let mixInfo = null;
+    if (s.mix) { const i = acc.map((x) => !!ALTS[x[0]]).lastIndexOf(true); if (i >= 0) { const opts = ALTS[acc[i][0]].filter((o) => !acc.some((y) => y[0] === o[0])); if (opts.length) { const o = opts[(s.mix - 1) % opts.length]; mixInfo = { from: acc[i][0], to: o[0], k: ((s.mix - 1) % opts.length) + 1, of: opts.length }; acc = acc.map((x, k) => (k === i ? [o[0], o[1], o[2], x[3]] : x)); } } }
+    let extra = s.v != null ? VARS[s.day][s.v].extra : d.extra;
+    // No abs with supersets on: the arm exercise gets an arm partner instead (same time, 2 arm exercises).
+    const PARTNER = { 'Triceps pushdown': ['EZ-bar curl', 10, 30], 'EZ-bar curl': ['Triceps pushdown', 10, 30] };
+    if (!absOn() && s.ss && extra.length === 1 && PARTNER[extra[0][0]]) extra = [...extra, PARTNER[extra[0][0]]];
+    const ex = [{ name: mn, kind: 'main', sets: 4, reps: 6, kg: mkg, rpe: 8, comp: 1 },
+      ...acc.map(([n, r, kg, c]) => ({ name: n, kind: 'acc', sets, reps: r, kg, rpe: 8, comp: !!c })),
+      ...extra.map(([n, r, kg]) => ({ name: n, kind: 'extra', sets: 3, reps: r, kg, rpe: 8 })),
+      ...(absOn() ? [{ name: ABS[0], kind: 'abs', sets: 3, reps: ABS[1], kg: ABS[2], rpe: 8 }] : [])];
+    return { mk, ex, add: d.add.filter((x) => !ex.some((e) => e.name === x[0])), warn: d.warn, mixInfo };
+  }
+  // Supersets: the other group's exercise with abs (or the two extras together); never the main lift or a heavy compound.
+  function blocks(ex) {
+    if (!s.ss) return ex.map((e) => [e]);
+    const out = []; const extras = ex.filter((e) => e.kind === 'extra'), abs = ex.find((e) => e.kind === 'abs');
+    const paired = new Set();
+    if (extras.length >= 2) { out.push([extras[0], extras[1]]); paired.add(extras[0]); paired.add(extras[1]); }
+    else if (extras.length === 1 && abs) { out.push([extras[0], abs]); paired.add(extras[0]); paired.add(abs); }
+    const singles = ex.filter((e) => !paired.has(e)).map((e) => [e]);
+    // keep order: main, accessories, then pairs, then leftovers
+    return [...singles.filter((b) => b[0].kind !== 'abs' && b[0].kind !== 'extra'), ...out, ...singles.filter((b) => b[0].kind === 'abs' || b[0].kind === 'extra')];
+  }
+  // Rest by level: 0 normal, 1 shorter, 2 shortest. Minutes.
+  const REST = [{ main: 3, comp: 2, iso: 1.5, round: 1.5 }, { main: 2.5, comp: 1.5, iso: 1.25, round: 1.25 }, { main: 2, comp: 1.25, iso: 1, round: 1 }];
+  function minutes(bl, lvl) {
+    const R = REST[lvl]; let m = 2;
+    for (const b of bl) {
+      const rs = Math.max(...b.map((e) => e.sets));
+      if (b.length > 1) m += rs * (b.length * 0.75 + R.round);
+      else { const e = b[0]; m += e.sets * (0.75 + (e.kind === 'main' ? R.main : e.comp ? R.comp : R.iso)); if (e.kind === 'main') m += 5; else if (e.comp) m += 1.5; }
+      m += 1;
+    }
+    return Math.round(m);
+  }
+  // Fit to the chosen time. Shorter: trim rests → push the last sets (RPE 9) → fewer accessory sets → drop exercises (last isolation first; never the main lift).
+  // Longer: back to normal rests, then add sets, then add an exercise.
+  function fit(dr, fillTo) {
+    let ex = dr.ex.map((e) => ({ ...e })); const notes = []; let lvl = 0; let bl = blocks(ex);
+    const t = s.min;
+    if (minutes(bl, 0) > t) {
+      while (lvl < 2 && minutes(bl, lvl) > t) lvl++;
+      if (lvl) notes.push(lvl === 1 ? 'shorter rests' : 'shortest rests');
+      if (minutes(bl, lvl) > t && lvl === 2) { ex.filter((e) => e.kind !== 'main').forEach((e) => { e.rpe = 9; }); notes.push('last sets pushed to RPE 9'); }
+      let cut = 0;
+      while (minutes(bl, lvl) > t) { const e = [...ex].reverse().find((x) => x.kind !== 'main' && x.sets > 2); if (!e) break; e.sets--; cut++; bl = blocks(ex); }
+      if (cut) notes.push(`${cut} set${cut > 1 ? 's' : ''} fewer`);
+      const dropped = [];
+      while (minutes(bl, lvl) > t) { const order = ['abs', 'extra', 'acc']; let e = null; for (const k of order) { e = [...ex].reverse().find((x) => x.kind === k && !x.comp); if (e) break; } e ??= [...ex].reverse().find((x) => x.kind !== 'main'); if (!e) break; ex = ex.filter((x) => x !== e); dropped.push(e.name); bl = blocks(ex); }
+      if (dropped.length) notes.push(`drops ${dropped.join(', ')}`);
+    } else if (fillTo - minutes(bl, 0) >= 4) {
+      // Time to spare beyond the plan's own buffer (longer time, or abs/supersets taken out): add exercises first, then sets.
+      const why = t > PLAN_MIN ? '' : ' in the time freed';
+      for (const [n, r, kg, c, kind] of dr.add) { if (fillTo - minutes(bl, 0) < 4) break; const cand = { name: n, kind: kind ?? 'acc', sets: kind === 'extra' ? 3 : (s.style === 'Varied' ? 2 : 3), reps: r, kg, rpe: 8, comp: !!c }; const nx = [...ex.filter((x) => x.kind === 'main' || x.kind === 'acc'), ...(kind === 'extra' ? [] : [cand]), ...ex.filter((x) => x.kind === 'extra'), ...(kind === 'extra' ? [cand] : []), ...ex.filter((x) => x.kind === 'abs')]; const bl2 = blocks(nx); if (minutes(bl2, 0) <= fillTo) { ex = nx; bl = bl2; notes.push(`adds ${n}${why}`); } }
+      let added = 0;
+      while (fillTo - minutes(bl, 0) >= 3) { const e = ex.find((x) => (x.kind === 'acc' || x.kind === 'extra') && x.sets < 4); if (!e) break; e.sets++; bl = blocks(ex); if (minutes(bl, 0) > fillTo) { e.sets--; bl = blocks(ex); break; } added++; }
+      if (added) notes.push(`+${added} set${added > 1 ? 's' : ''}`);
+    }
+    return { ex, bl, est: minutes(bl, lvl), notes, lvl };
+  }
+  function reflow() {
+    const order = ['Chest', 'Back', 'Legs', 'Shoulders']; const from = order.indexOf(NEXT);
+    const queue = [...order.slice(from), ...order.slice(0, from)].filter((d) => d !== s.day);
+    const thu = WEEK[5], fri = WEEK[6]; let a = queue[0], b = queue[1];
+    if (b === 'Legs') [a, b] = [b, a];
+    thu.items = [{ k: 'liftp', t: a }]; fri.items = [{ k: 'liftp', t: b }];
+    thu.detail = [`Planned: ${a}${a === 'Legs' ? ' (not Fri: long run Sat)' : ''}`]; fri.detail = [`Planned: ${b}`];
+    return s.day === NEXT ? null : `${NEXT} moves to ${a === NEXT ? 'Thu' : b === NEXT ? 'Fri' : 'next week'}`;
+  }
+  function view() {
+    const keep = app.querySelector('.scroll')?.scrollTop ?? 0;
+    const moved = reflow();
+    const dr = draft();
+    // The plan's own estimate (plan abs, supersets on) keeps its buffer; only time beyond that buffer gets filled.
+    const keepS = [s.abs, s.ss]; s.abs = null; s.ss = true; const planEst = minutes(blocks(draft().ex), 0); [s.abs, s.ss] = keepS;
+    const f = fit(dr, s.min - Math.max(0, PLAN_MIN - planEst)); const mains = Object.keys(D[s.day].mains);
+    let n = 0;
+    const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${e.kg ?? 'BW'}</span></div>`;
+    app.innerHTML = `
+    <div class="status"><span>09:41</span><span>●●● 82%</span></div>
+    <div class="scroll">
+      <div class="hdr"><h1>Tuesday</h1><div class="askrow"><button class="askbar sm" data-a="ask"><span>✦</span><span>Coach</span></button><button class="mic" data-a="ask" aria-label="Speak to the coach">${MIC}</button></div></div>
+      <div class="week">${WEEK.map((d, i) => `<button class="day${d.today ? ' today' : ''}${d.past ? ' past' : ''}" data-a="day" data-v="${i}" aria-label="${d.dn} ${d.dd}"><span class="dn">${d.today ? 'TODAY' : d.dn}</span><span class="dd">${d.dd}</span>${d.today ? `<span class="pip pliftp">${s.day}</span>` : d.items.map((it) => `<span class="pip p${it.k}">${it.t}</span>`).join('')}</button>`).join('')}</div>
+      <div>
+        <div class="label" style="margin:0 2px 8px">Today's session</div>
+        <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more${PLANDAYS.includes(s.day) ? '' : ' on'}" data-a="other" aria-label="Other sessions">${PLANDAYS.includes(s.day) ? '⋯' : `<span class="oname">${s.day}</span>`}</button></div>
+        <div class="card${s.open ? ' open' : ''}">
+          <div class="top tr2"><div class="big">${s.day}</div><div class="meta"><span>${f.ex.length} exercises · ~${f.est} min</span>${moved ? `<span class="mv">${moved}</span>` : ''}</div></div>
+          <div class="fitline">${f.notes.length ? `${s.min < PLAN_MIN ? 'To fit' : 'With'} ${s.min} min: ${f.notes.join(' · ')}` : '&nbsp;'}</div>
+          ${D[s.day].warn ? `<div class="why"><i>!</i><span>${D[s.day].warn}</span></div>` : ''}
+          <div class="ctl">
+            <div class="cr"><span class="k">Main lift</span><div class="types">${mains.map((m) => `<button class="ty${m === dr.mk ? ' on' : ''}" data-a="main" data-v="${m}">${m}</button>`).join('')}</div></div>
+            <div class="cr"><span class="k">Accessories</span><div class="types">${['Focused', 'Varied'].map((m) => `<button class="ty${m === s.style ? ' on' : ''}" data-a="style" data-v="${m}">${m}</button>`).join('')}</div></div>
+            <div class="cr"><span class="k">Time</span><div class="val"><button class="mn" data-a="min" data-v="-5" aria-label="5 minutes less">−</button><span class="tv">${s.min} min</span><button class="mn" data-a="min" data-v="5" aria-label="5 minutes more">+</button></div></div>
+            <div class="cr"><span class="k">Abs${s.abs != null && s.abs !== PLAN_ABS[s.day] ? `<small class="pl">plan: ${PLAN_ABS[s.day] ? 'on' : 'off'}</small>` : ''}</span><button class="sw" data-a="abs" role="switch" aria-checked="${absOn()}" aria-label="Abs"><span class="switch${absOn() ? ' on' : ''}"><i></i></span></button></div>
+            <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
+          </div>
+          ${s.v != null ? `<div class="varline">Variation: ${VARS[s.day][s.v].label} · <button class="link" data-a="unvar">Back to plan day</button></div>` : ''}
+          <button class="bdt" data-a="toggle" aria-expanded="${s.open}"><span>Session breakdown</span><span class="chev">›</span></button>
+          <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${f.bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
+          ${s.day === 'Chest' && dr.mk === 'Bench' ? `<details class="whyd"><summary>Why?</summary><span>· Plan: Chest is next</span><span>· Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again</span><span>· Last review: bench top set 102.5 kg once you hit 8 reps</span><span>· Goal: strength · bench target 110 kg</span><span>· Accessories ${s.style.toLowerCase()} · ${s.min} min</span></details>` : `<details class="whyd"><summary>Why?</summary><span>· ${s.day}${s.day === NEXT ? ' is next in your plan' : ' picked by you; the plan moves on'}</span><span>· Weights from your last ${s.day} session</span><span>· Accessories ${s.style.toLowerCase()} · ${s.min} min</span></details>`}
+          <div class="mixrow bd">${dr.mixInfo ? `<span>${dr.mixInfo.from} → <b>${dr.mixInfo.to}</b> · today only<br><small>${MIX_WHY[dr.mixInfo.to] ?? 'Same muscles, different angle'}</small></span><span class="mixacts"><button class="link" data-a="mix">Another (${dr.mixInfo.k}/${dr.mixInfo.of})</button><button class="link" data-a="unmix">Undo</button></span>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
+          <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
+        </div>
+      </div>
+      <div class="rowlinks"><button data-a="build">Build your own</button><button data-a="activity">＋ Activity</button></div>
+    </div>
+    <div class="tabs"><span class="on">TODAY</span><span>LIBRARY</span><span>PROGRESS</span><span>PROFILE</span></div>
+    ${s.sheet ? `<div class="scrim" data-a="close"></div><div class="sheet">${s.sheet}</div>` : ''}
+    ${s.toast ? `<div class="toast">${s.toast}</div>` : ''}`;
+    app.querySelector('.scroll').scrollTop = keep;
+  }
+  const IT = 'style="border:0;color:inherit;font:inherit;text-align:left;cursor:pointer"';
+  app.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-a]'); if (!t) return;
+    const a = t.dataset.a, v = t.dataset.v; s.toast = null;
+    if (a === 'toggle') s.open = !s.open;
+    if (a === 'dayp') { s.day = v; s.main = null; s.mix = 0; s.v = null; s.abs = null; s.sheet = null; }
+    if (a === 'main') { s.main = v; s.mix = 0; }
+    if (a === 'style') { s.style = v; s.mix = 0; }
+    if (a === 'min') s.min = Math.max(20, Math.min(120, s.min + Number(v)));
+    if (a === 'ss') s.ss = !s.ss;
+    if (a === 'abs') { const nv = !absOn(); s.abs = nv === PLAN_ABS[s.day] ? null : nv; }
+    if (a === 'mix') s.mix += 1;
+    if (a === 'unmix') s.mix = 0;
+    if (a === 'var') { s.v = Number(v); s.sheet = null; }
+    if (a === 'unvar') s.v = null;
+    if (a === 'other') s.sheet = `<h3>Other sessions</h3>${OTHER.map((x) => `<button class="it" data-a="dayp" data-v="${x.name}" ${IT}><span>${x.name}<br><small>${x.sub}</small></span><span>${s.day === x.name ? '✓' : ''}</span></button>`).join('')}<div class="two2"><button class="ghost" data-a="empty">Empty workout</button><button class="ghost" data-a="build">Build your own</button></div><button class="ghost" data-a="close">Close</button>`;
+    if (a === 'empty') { s.sheet = null; s.toast = 'Starts an empty workout'; }
+    if (a === 'day') { const d = WEEK[Number(v)]; s.sheet = d.today ? `<h3>Today</h3><div class="it"><span>${s.day}</span><small>Plan day 1 of 4</small></div><button class="ghost" data-a="close">Close</button>` : `<h3>${d.dn[0] + d.dn.slice(1).toLowerCase()} ${d.dd} Oct</h3>${d.detail.map((x) => `<div class="it"><span>${x}</span><small>${d.past ? '' : 'Planned'}</small></div>`).join('')}${d.past ? '' : '<button class="ghost" data-a="close">Move or change (coach)</button>'}<button class="ghost" data-a="close">Close</button>`; }
+    if (a === 'close') s.sheet = null;
+    if (a === 'start') s.toast = `Started ${s.day} (prototype)`;
+    if (a === 'edit') s.toast = 'Opens this workout in the builder to change it';
+    if (a === 'build') { s.sheet = null; s.toast = 'Opens the builder on its first page'; }
+    if (a === 'activity') s.toast = 'Log or plan a run, ride or other activity';
+    if (a === 'ask') s.toast = 'Opens the coach (type or speak): "legs, 45 min" fills this in';
+    view();
+  });
+  view();
+})();
+  function fitPips() { document.querySelectorAll(".pip").forEach((x) => { let f = 9.5; x.style.fontSize = ""; while (x.scrollWidth > x.clientWidth + 0.5 && f > 7) { f -= 0.25; x.style.fontSize = f + "px"; } }); }
+  new MutationObserver(() => requestAnimationFrame(fitPips)).observe(document.body, { childList: true, subtree: true }); requestAnimationFrame(fitPips);
+</script>

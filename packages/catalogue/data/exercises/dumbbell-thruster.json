@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-thruster",
+  "tier": "rich",
+  "name": "Dumbbell thruster",
+  "aliases": ["DB thruster", "Dumbbell thrusters", "DB thrusters"],
+  "family": "thruster",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes", "front_delts"],
+  "secondaryMuscles": ["triceps", "side_delts", "core", "upper_chest"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "implements": 2,
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Dumbbells at your shoulders, elbows forward",
+      "Feet about shoulder-width",
+      "Brace before you descend"
+    ],
+    "execution": [
+      "Squat to at least thighs level",
+      "Drive up hard through your feet",
+      "Let the leg drive push the bells overhead",
+      "Lower to the shoulders and go again"
+    ],
+    "faults": [
+      "Don't press before your legs straighten",
+      "Don't let your elbows drop in the squat",
+      "Don't arch your back at lockout"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Pick a weight you can press overhead with control; the press is the weak link.",
+      "Lower the dumbbells back to the shoulders under control, not onto the collarbones.",
+      "When tired, stop or rest rather than letting the back arch overhead.",
+      "Load is each dumbbell.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Chest pain, faintness or unusual breathlessness",
+      "Dizziness"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-goblet-squat", "name": "Goblet squat", "reason": "Learn the squat with one dumbbell before adding the press." },
+      { "key": "dumbbell-standing-shoulder-press", "name": "Standing dumbbell shoulder press", "reason": "Practise the press on its own." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Barbell thruster", "reason": "Heavier loads on a bar; load is total bar weight." },
+      { "key": null, "name": "Timed thruster intervals", "reason": "More reps in a set time for conditioning." }
+    ],
+    "substitutions": [
+      { "key": "wall-ball", "name": "Wall ball", "reason": "Squat and throw with a medicine ball; similar conditioning." },
+      { "key": "barbell-push-press", "name": "Push press", "reason": "Leg drive into an overhead press with a shorter dip." },
+      { "key": "kettlebell-swing", "name": "Kettlebell swing", "reason": "Full-body conditioning with a hinge." },
+      { "key": "bodyweight-burpee", "name": "Burpee", "reason": "No-equipment full-body conditioning." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right, headroom above for the overhead finish. Dumbbells seen end-on at the shoulders.",
+    "keyPositions": [
+      {
+        "label": "Rack",
+        "describe": "Standing tall, dumbbells resting on or just above the front of the shoulders, elbows forward.",
+        "approxAnglesDeg": { "hipFlexion": 0, "kneeFlexion": 0, "shoulderFlexion": 60, "elbowFlexion": 140 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Squatted with thighs about level, heels down, chest up, elbows still forward, dumbbells at the shoulders.",
+        "approxAnglesDeg": { "hipFlexion": 100, "kneeFlexion": 110, "shoulderFlexion": 60, "elbowFlexion": 140, "trunkLeanFromVertical": 30 }
+      },
+      {
+        "label": "Drive",
+        "describe": "Legs nearly straight from the drive, dumbbells starting to leave the shoulders.",
+        "approxAnglesDeg": { "hipFlexion": 10, "kneeFlexion": 10, "shoulderFlexion": 100, "elbowFlexion": 90 }
+      },
+      {
+        "label": "Lockout",
+        "describe": "Standing tall with arms straight overhead, dumbbells over the shoulders, ribs down.",
+        "approxAnglesDeg": { "hipFlexion": 0, "kneeFlexion": 0, "shoulderFlexion": 175, "elbowFlexion": 0 }
+      }
+    ],
+    "ikHints": ["Feet fixed", "Dumbbells stay over the mid-foot"],
+    "barPath": "Dumbbells move down with the squat, then straight up over the mid-foot",
+    "tempo": { "downMs": 1000, "holdMs": 100, "upMs": 900 },
+    "props": ["dumbbell_pair"],
+    "emphasise": [
+      "Legs finish the drive before the arms press",
+      "One smooth movement from squat to lockout",
+      "Ribs down at the top"
+    ],
+    "doNotShow": ["Pressing from the bottom of the squat", "Arched back overhead", "Elbows dropping in the squat"]
+  },
+  "sources": [
+    {
+      "url": "https://barbend.com/dumbbell-thruster/",
+      "title": "BarBend: Dumbbell thruster",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1]; cues.execution[0-3]; variations.progressions[1]",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://www.strengthlog.com/kettlebell-thrusters/",
+      "title": "StrengthLog: Kettlebell Thrusters",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (same squat-to-press pattern with kettlebells)"
+    },
+    {
+      "url": "https://www.fitandwell.com/how-to/dumbbell-thrusters",
+      "title": "Fit&Well: How to do dumbbell thrusters",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[2] (the hips power the press); cues.faults[0]",
+      "note": "Magazine article; seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "\"Dumbbell squat to press\" and \"Dumbbell squat and press\" were removed (23 Oct 2026): they made a FitNotes \"Dumbbell Squat\" suggest the thruster instead of the goblet squat."
+    },
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'conditioning' to match Wall ball; it is also a squat plus vertical push."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "smith-machine-calf-raise",
+  "tier": "rich",
+  "name": "Smith machine calf raise",
+  "aliases": ["Smith calf raise", "Smith machine standing calf raise", "Standing Smith calf raise", "Smith machine calf raises"],
+  "family": "calf_raise",
+  "movementPattern": "calves",
+  "mechanic": "isolation",
+  "primaryMuscles": ["calves"],
+  "secondaryMuscles": ["core"],
+  "compatibleEquipment": ["smith_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Put a block or plate under the bar",
+      "Set the bar at upper-chest height",
+      "Bar on your upper back, balls of feet on the block",
+      "Set the stops just below your bottom position"
+    ],
+    "execution": [
+      "Let your heels sink for a stretch",
+      "Rise as high as you can and pause",
+      "Lower slowly to the stretch",
+      "Knees soft and still the whole time"
+    ],
+    "faults": [
+      "Don't bounce out of the bottom",
+      "Don't bend your knees to help",
+      "Don't cut the range short"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Set the machine's safety stops just below the lowest bar position so the bar can't come down further if your feet slip.",
+      "Use a stable, non-slip block. Check your feet are set before you unhook the bar.",
+      "Smith bars differ in weight and some are counterbalanced. Log the plates added; numbers aren't comparable between gyms or with a free bar.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-calf-raise", "name": "Calf raise (bodyweight)", "reason": "Learn the full range with no bar." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Single-leg Smith calf raise", "reason": "One leg at a time under the bar; much harder at the same load." },
+      { "key": null, "name": "Longer pause at the top and bottom", "reason": "Removes bounce and makes a lighter load harder." }
+    ],
+    "substitutions": [
+      { "key": "machine-standing-calf-raise", "name": "Standing calf raise (machine)", "reason": "Same straight-knee raise on a dedicated machine." },
+      { "key": "barbell-standing-calf-raise", "name": "Standing barbell calf raise", "reason": "Free bar in a rack; more balance demand." },
+      { "key": "machine-seated-calf-raise", "name": "Seated calf raise", "reason": "Bent knees shift more work to the lower calf (soleus)." },
+      { "key": null, "name": "Leg-press calf raise", "reason": "Calves only with the back supported." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at knee-to-hip height so the ankle and the heel dropping below the block are clear. Smith frame drawn lightly; bar end-on on the upper back.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Standing tall under the bar, knees soft. Balls of the feet on the edge of a block, heels below it for a calf stretch.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "kneeFlexion": 5, "ankleDorsiflexion": 15 }
+      },
+      {
+        "label": "Top",
+        "describe": "Heels as high as possible, weight over the balls of the feet. The bar rises straight up on its track.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "kneeFlexion": 5, "ankleDorsiflexion": -30 }
+      }
+    ],
+    "barPath": "Vertical, fixed by the Smith track",
+    "tempo": { "downMs": 1600, "holdMs": 800, "upMs": 900 },
+    "props": ["smith_machine", "calf_block"],
+    "emphasise": [
+      "Only the ankles move",
+      "Heels drop below the block, then rise high",
+      "Pauses at the top and at the stretch"
+    ],
+    "doNotShow": ["Bouncing at the bottom", "Knees bending to drive", "Bar on the neck"]
+  },
+  "sources": [
+    {
+      "url": "https://fitbod.me/exercises/smith-machine-calf-raise",
+      "title": "Fitbod: Smith Machine Calf Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-2]",
+      "note": "Commercial app library; seen through a search listing."
+    },
+    {
+      "url": "https://www.strengthlog.com/barbell-standing-calf-raise/",
+      "title": "StrengthLog: Barbell Standing Calf Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.execution[0-1] (same straight-knee raise with the bar on the back)"
+    },
+    {
+      "url": "https://exrx.net/Kinesiology/CalfExercises",
+      "title": "ExRx: Calf exercises",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.substitutions[2] (bent-knee raises shift work to the soleus)",
+      "note": "Direct fetch blocked; search snippet only (research exercise-catalogue-expansion [E])."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Negative ankleDorsiflexion means the ankle is pointed."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}
