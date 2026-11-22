@@ -1,4 +1,4 @@
-import { healthActivityLine, healthSourceText, READ_WINDOW_WORD, sleepText, toMs, type HealthDailyValue, type LinkableWorkout } from '@fizz/domain';
+import { healthActivityLine, healthSourceText, READ_WINDOW_WORD, sleepText, summaryHealthLine, toMs, type HealthDailyValue, type LinkableWorkout } from '@fizz/domain';
 import type { Activity, HealthActivityProvenance, HealthReadWindow, HealthSettings, HealthWorkoutSample } from '@fizz/schemas';
 import type { HealthCapability } from '@fizz/providers';
 
@@ -194,6 +194,8 @@ export interface LinkedActivityView {
   accessibilityLabel: string;
   /** (Ben, 27 Oct) The workout's times differ from the watch's: offer `Use watch times` (never applied silently). */
   useWatchTimes?: boolean;
+  /** (Ben, 22 Nov; Summary v2) `Garmin · avg 128 bpm · 410 kcal`: only values the Health workout has; null with none. */
+  summaryLine: { text: string; spoken: string } | null;
 }
 
 /** One Health workout that can be linked: `Strength · Garmin · 17:40–18:35`. */
@@ -238,6 +240,7 @@ export function linkedActivityView(p: HealthActivityProvenance, linkVersion: num
     heartRate: hr,
     sheetTitle: `${p.label} · ${p.sourceName}`,
     sheetWhen: `${formatShortDate(start, tz, locale)} · ${formatTime(start, tz, locale)}–${formatTime(end, tz, locale)} · ${String(m)} min`,
+    summaryLine: summaryHealthLine(p, showHeartRate),
     accessibilityLabel: `Linked activity, ${p.label}, ${p.sourceName}, ${String(m)} minutes${hr === null ? '' : `, ${hr.replace('Avg HR', 'average heart rate').replace('Max', 'maximum')}`}, from Apple Health`,
   };
 }

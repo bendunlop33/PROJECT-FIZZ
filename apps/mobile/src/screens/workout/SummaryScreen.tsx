@@ -3,27 +3,26 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, startMoveWrite, summaryTimeBounds, summaryTimeline, timingUndoCommand, toIso, toMs, type StartMove, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, startMoveWrite, SUMMARY_VS_LAST_SHOWN, summaryHighlights, summaryPlanLine, summaryStats, summaryTimeBounds, summaryTimeline, timingUndoCommand, toIso, toMs, type StartMove, type SummaryHighlight, type WorkoutSummary } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
 
 import { coachConnectionPorts } from '../../ai/coach-connection-ports';
 import { summaryCoachView } from '../../ai/coach-connection-view';
-import { NEXT_LINE_COPY, nextTimeView, type NextTimeRowView, type NextTimeTap } from '../../coach/next-time-view';
+import { arrowParts, foldNextTime, NEXT_LINE_COPY, nextTimeView, unchangedText, type NextTimeRowView, type NextTimeTap } from '../../coach/next-time-view';
 import { FeelRow } from '../../reviews/FeelRow';
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
-import { formatCalendarDate, formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
+import { formatCalendarDate, formatShortDate, formatTime } from '../../format/dates';
 import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import type { WorkoutPresence } from '../../services/history-services';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
-import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatStrip, StatusLine, type StatItem, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
-import { useAx } from '../../progress/components';
-import { newBestLastLine, summaryDoneRows, summaryMenu, summarySavedLine, summaryShownRows, summaryStatItems, type SummaryMenuId } from '../../workout/summary-view';
+import { AppText, BottomBar, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatusLine, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
+import { summaryDoneRows, summaryMenu, summarySavedLine, summaryShownRows, type SummaryMenuId } from '../../workout/summary-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
@@ -51,7 +50,6 @@ export function SummaryScreen() {
   const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const ax = useAx();
   const { sessionId, back = false, justFinished: finishedNow = false, editTimes = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
   // (Ben, 27 Oct) `⋯ › Link activity from Health`: how many Health workouts could be linked, and the pick list.
   const [healthChoices, setHealthChoices] = useState(0);
@@ -73,8 +71,13 @@ export function SummaryScreen() {
   const reviewing = useRef(false);
   // `Keep for next time?`: one tap at a time (Apply then Skip can't race).
   const [keepBusy, setKeepBusy] = useState(false);
-  // (Ben, 27 Oct; redesign §E2) `Exercises · done` shows 3, then `N more`.
+  // (Ben, 27 Oct; redesign §E2) `Exercises · done` shows 3, then `N more`. (Ben, 22 Nov) Behind a tap on the title.
   const [showAll, setShowAll] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  // (Ben, 22 Nov; Summary v2) `+N more` on Highlights and Vs last time, `+N unchanged` on Next time.
+  const [moreHighlights, setMoreHighlights] = useState(false);
+  const [moreVsLast, setMoreVsLast] = useState(false);
+  const [showUnchanged, setShowUnchanged] = useState(false);
   const [data, reload] = useScreenData(async (s) => {
     // Keychain + settings file only, no network; a read failure counts as not connected.
     const coach = summaryCoachView(await readTextCoachState(coachConnectionPorts().ports).catch(() => null));
@@ -82,8 +85,8 @@ export function SummaryScreen() {
     // `Save to Workouts` (routines.md §A2.6): once saved from here, the link reads `Saved · Legs ›`.
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
-    const [coachRows, stale, availability, turnNote, ruleRows] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null), s.coach.ruleResets(sessionId).catch(() => [])]);
-    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, from: summary.nextFrom, coachRows, ruleRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
+    const [coachRows, stale, availability, turnNote, ruleRows, holdRows] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null), s.coach.ruleResets(sessionId).catch(() => []), s.coach.ruleHolds(sessionId).catch(() => [])]);
+    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, from: summary.nextFrom, coachRows, ruleRows, holdRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
     // A deleted (or purged) workout opens read-only with Restore (delete-workouts §3.2).
     // A presence read that fails offers no delete rather than one that would be refused (review r2 N2).
     const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
@@ -95,7 +98,9 @@ export function SummaryScreen() {
     const mainLift = await s.builder.keepMainLiftOf(sessionId).catch(() => null);
     // Progress v3 (Ben, 21 Oct): new PBs at the tracked reps, the Lifts chart's definition. Local only.
     const newBests = await s.reviews.sessionBests(sessionId).catch(() => []);
-    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange, keep, mainLift, newBests };
+    // (Ben, 22 Nov; Summary v2) The plan line and the volume arrow's comparable workout. Local only.
+    const extras = await s.workout.summaryExtras(sessionId).catch(() => ({ plan: null, previousVolumeKg: null }));
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange, keep, mainLift, newBests, extras };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
   // its small changes are saved when it answers, until a workout starts from this one (CA10).
@@ -239,6 +244,16 @@ export function SummaryScreen() {
 
   async function tapNext(row: NextTimeRowView, tap: NextTimeTap) {
     // (Ben, 23 Oct) The built-in rule's own reset: Apply / Skip, then Undo. Offline too.
+    // (Ben, 22 Nov) A built-in rule change's own Undo / Redo. Offline too; versioned, one op ID per tap.
+    const hold = row.hold;
+    if (hold !== undefined) {
+      const r = await services.coach.tapRuleHold(sessionId, hold, tap).catch(() => null);
+      if (r === null) setToast({ text: 'Couldn’t save.' });
+      else if (r.status === 'not_possible') setToast({ text: r.reason === 'used' ? 'Already used.' : 'Changed since. Check it again.' });
+      reload();
+      changed();
+      return;
+    }
     const reset = row.reset;
     if (reset !== undefined) {
       const r = await services.coach.tapRuleReset(sessionId, reset, tap).catch(() => null);
@@ -300,8 +315,16 @@ export function SummaryScreen() {
   };
 
   const pvd = data.value.planVsDone;
-  // (Ben, 27 Oct; redesign §E2) Time / Sets / Exercises.
-  const statItems: StatItem[] = summaryStatItems(sum.facts, pvd);
+  // (Ben, 22 Nov; Summary v2) Every value from the domain; the screen lays them out.
+  const stats = summaryStats({ activeMs: sum.facts.activeMs, workingSets: sum.facts.workingSets, volume: sum.volume, previousVolumeKg: data.value.extras.previousVolumeKg });
+  const planLine = summaryPlanLine(data.value.extras.plan);
+  const highlights = summaryHighlights({ order: sum.exercises, bests: data.value.newBests, records: sum.recordItems, plan: pvd?.rows ?? null });
+  const shownHighlights = moreHighlights ? [...highlights.shown, ...highlights.more] : highlights.shown;
+  const vsShown = moreVsLast ? sum.vsLast : sum.vsLast.slice(0, SUMMARY_VS_LAST_SHOWN);
+  const vsMore = moreVsLast ? 0 : sum.vsLast.length - vsShown.length;
+  const fold = foldNextTime(nextTime?.rows ?? []);
+  const nextRows = showUnchanged ? [...fold.changed, ...fold.unchanged] : fold.changed;
+  const unchanged = showUnchanged ? null : unchangedText(fold.unchanged.length);
   const doneRows = summaryShownRows(summaryDoneRows(sum.exercises, pvd?.rows ?? null), showAll);
   const flaggedHere = painFlags.filter((f) => sum.exercises.some((e) => e.exerciseId === f.exerciseId));
   const tz = sum.tz;
@@ -309,7 +332,6 @@ export function SummaryScreen() {
   const edited = sum.timingEdited.end ? ' (end time edited)' : sum.timingEdited.start ? ' (start time edited)' : '';
   const failed = backup.onPhone.state === 'failed';
   const savedLine = summarySavedLine(sum.endedAtUtc === null ? null : toMs(sum.endedAtUtc), (ms) => formatTime(ms, tz));
-  const bests = data.value.newBests;
   const mainLift = data.value.mainLift;
   const keep = data.value.keep;
   const nextOpen = nextTime !== null || mainLift !== null || keep !== null;
@@ -358,11 +380,22 @@ export function SummaryScreen() {
           <DelayedFade delayMs={finish.titleDelayMs} durationMs={finish.titleFadeMs}>
             <View style={{ gap: theme.space['1'] }}>
               {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
-              <HeroHeader
-                title={sum.title}
-                titleLines={2}
-                lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
-              />
+              {/* (Ben, 22 Nov; Summary v2) `Pull B done`; tap: what he did, exercise by exercise. */}
+              <Pressable
+                testID="summary-title"
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showDone }}
+                accessibilityHint="Shows the exercises done"
+                onPress={() => {
+                  setShowDone((v) => !v);
+                }}
+              >
+                <HeroHeader
+                  title={`${sum.title} done`}
+                  titleLines={2}
+                  lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), `${range}${edited}`, sum.gymName?.includes('→') === true ? sum.gymName : null]).filter(Boolean).join(' · '), planLine]}
+                />
+              </Pressable>
               {savedAs !== null ? (
                 <LinkLine
                   accessibilityLabel={`Saved to Workouts as ${savedAs.name}. Opens it.`}
@@ -401,52 +434,42 @@ export function SummaryScreen() {
           />
         ) : null}
 
-        {bests.length > 0 ? (
-          // (Ben, 27 Oct; redesign §E2) New best first: the tracked lifts' new PBs (the Lifts chart's definition), each
-          // with the best it beat.
-          <FadeIn motion={follow(0)}>
-            <Card>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-                <Icon name="star.fill" color="accent" size={14} />
-                <AppText variant="sectionLabel">New best</AppText>
-              </View>
-              {bests.map((b) => {
-                const last = newBestLastLine(b.last, (ms) => formatDayMonth(ms, tz));
-                return (
-                  <View key={b.exerciseId} accessible accessibilityLabel={[b.accessibilityLabel, last].filter((x): x is string => x !== null).join('. ')} style={{ gap: 2 }}>
-                    <AppText numeric style={{ fontSize: 26, lineHeight: 32, fontWeight: '600' }} maxFontSizeMultiplier={1.6}>
-                      {b.name !== undefined && b.set !== undefined ? `${b.name} ${b.set}` : b.text}
-                    </AppText>
-                    {last !== null ? (
-                      <AppText variant="callout" color="text.secondary" numeric>
-                        {last}
-                      </AppText>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </Card>
-          </FadeIn>
-        ) : null}
-
-        <FadeIn motion={follow(1)}>
-          <StatStrip ax={ax} accessibilityLabel={statItems.map((it) => `${it.label} ${it.value}`).join(', ')} items={statItems} />
-          {/* Progress v3: the reps behind This week's `Mon – 92%`, and what was short or skipped (extras can't hide it). */}
-          {pvd?.reps != null ? (
-            <View accessible accessibilityLabel={[pvd.reps.text, pvd.reps.short].filter((x): x is string => x !== null).join('. ')} style={{ paddingTop: theme.space['2'], gap: 2 }}>
-              <AppText variant="callout" color="text.secondary" numeric>
-                {pvd.reps.text}
-              </AppText>
-              {pvd.reps.short !== null ? (
-                <AppText variant="callout" color="text.secondary">
-                  {pvd.reps.short}
+        {/* (Ben, 22 Nov; Summary v2) Minutes, working sets, volume with its change against the comparable workout. */}
+        <FadeIn motion={follow(0)}>
+          <View testID="summary-stats" accessible accessibilityLabel={stats.map((x) => x.spoken).join(', ')} style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+            {stats.map((x) => (
+              <View key={x.key} style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, paddingVertical: theme.space['3'], paddingHorizontal: theme.space['3'], gap: 2 }}>
+                <AppText numeric style={{ fontSize: 26, lineHeight: 32, fontWeight: '600' }} maxFontSizeMultiplier={1.6} numberOfLines={1}>
+                  {x.value}
                 </AppText>
-              ) : null}
-            </View>
-          ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+                  <AppText variant="callout" color="text.secondary" style={SMALL}>
+                    {x.label}
+                  </AppText>
+                  {x.change !== null ? (
+                    <AppText variant="callout" numeric style={SMALL} color={x.change.dir === 'up' ? 'status.done' : 'text.secondary'}>
+                      {x.change.text}
+                    </AppText>
+                  ) : null}
+                </View>
+              </View>
+            ))}
+          </View>
         </FadeIn>
 
-        {doneRows.shown.length > 0 ? (
+        {/* (Ben, 27 Oct; apple-health.md §2.3; 22 Nov) The linked Health workout's real values, or `Link to this workout?`. */}
+        <LinkedActivityRow
+          sessionId={sessionId}
+          variant="summary"
+          pickerOpen={healthPicker}
+          onPickerClose={() => {
+            setHealthPicker(false);
+          }}
+          onChoices={setHealthChoices}
+          onTimesChanged={reload}
+        />
+
+        {showDone && doneRows.shown.length > 0 ? (
           // (Ben, 30 Oct; redesign §E2) What he just did, before Next time: one line per exercise.
           <View>
             <SectionHeader title="Exercises · done" />
@@ -493,13 +516,61 @@ export function SummaryScreen() {
           </View>
         ) : null}
 
+        {shownHighlights.length > 0 ? (
+          // (Ben, 22 Nov) New bests (green ring, Progress's definition) and anything cut short (amber dashed ring).
+          <FadeIn motion={follow(1)}>
+            <View style={{ gap: theme.space['1'] }}>
+              <SectionHeader title="Highlights" />
+              <SummaryCard>
+                {shownHighlights.map((h, i) => (
+                  <TwoLineRow key={h.key} first={i === 0} name={h.name} meta={h.meta} spoken={h.spoken} lead={<HighlightRing kind={h.ring} />} value={<AppText variant="callout" numeric numberOfLines={1} style={{ fontWeight: h.ring === 'best' ? '600' : '400' }}>{h.value}</AppText>} />
+                ))}
+                {!moreHighlights && highlights.more.length > 0 ? <MoreLink label={`+${String(highlights.more.length)} more`} onPress={() => { setMoreHighlights(true); }} /> : null}
+              </SummaryCard>
+            </View>
+          </FadeIn>
+        ) : null}
+
+        {vsShown.length > 0 ? (
+          // (Ben, 22 Nov) Each exercise's best set today against the last time; a plain change, no single verdict.
+          <View style={{ gap: theme.space['1'] }}>
+            <SectionHeader title="Vs last time" />
+            <SummaryCard>
+              {vsShown.map((r, i) => (
+                <TwoLineRow
+                  key={r.key}
+                  first={i === 0}
+                  name={r.name}
+                  meta={r.last}
+                  spoken={r.spoken}
+                  hint="Opens this exercise’s history"
+                  onPress={() => {
+                    navigation.navigate('ExerciseProgress', { exerciseId: r.exerciseId, sessionId, sessionExerciseId: r.sessionExerciseId, name: r.name });
+                  }}
+                  value={
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <AppText variant="callout" numeric numberOfLines={1} style={{ fontWeight: '600' }}>
+                        {r.today}
+                      </AppText>
+                      <AppText variant="callout" numeric numberOfLines={1} style={SMALL} color={r.tone === 'better' ? 'status.done' : r.tone === 'less' ? 'status.warning' : 'text.secondary'}>
+                        {r.change}
+                      </AppText>
+                    </View>
+                  }
+                />
+              ))}
+              {vsMore > 0 ? <MoreLink label={`+${String(vsMore)} more`} onPress={() => { setMoreVsLast(true); }} /> : null}
+            </SummaryCard>
+          </View>
+        ) : null}
+
         {nextOpen ? (
-          // (Ben, 27 Oct; redesign §E2) One Next time list: the targets (Why? / Undo; offers Skip / Apply), the
-          // coach's or the rule's offers to keep a change, Undo all at the top.
-          <View style={{ gap: theme.space['2'] }}>
+          // (Ben, 22 Nov; Summary v2) Only what changes, the new value bold, each row its own Undo; Why? behind a tap on
+          // the row. The rest fold into `+N unchanged`. The coach's or the rule's offers to keep a change stay here.
+          <View style={{ gap: theme.space['1'] }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
               <View style={{ flex: 1 }}>
-                <SectionHeader title={nextTime?.heading ?? 'Next time'} />
+                <SectionHeader title="Next time" />
               </View>
               {nextTime?.undoAll != null ? (
                 <TextButton
@@ -530,9 +601,14 @@ export function SummaryScreen() {
                 {nextTime.emptyText}
               </AppText>
             ) : null}
-            {(nextTime?.rows ?? []).map((r) => (
-              <NextRow key={r.key} row={r} onTap={(tap) => void tapNext(r, tap)} />
-            ))}
+            {nextRows.length > 0 || unchanged !== null ? (
+              <SummaryCard>
+                {nextRows.map((r, i) => (
+                  <NextRow key={r.key} first={i === 0} row={r} onTap={(tap) => void tapNext(r, tap)} />
+                ))}
+                {unchanged !== null ? <MoreLink label={unchanged} onPress={() => { setShowUnchanged(true); }} /> : null}
+              </SummaryCard>
+            ) : null}
             {mainLift !== null ? (
               <MainLiftRow
                 view={mainLift}
@@ -553,6 +629,9 @@ export function SummaryScreen() {
             ) : null}
           </View>
         ) : null}
+
+        {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}
+        <FeelRow sessionId={sessionId} />
 
         {sum.checkIn ? (
           <View style={{ gap: theme.space['1'] }}>
@@ -643,19 +722,6 @@ export function SummaryScreen() {
         {/* (Ben, 28 Oct) An imported or past-logged workout the plan couldn't place for sure: `Count as Pull?` once. */}
         <PlanDayAskRow sessionId={sessionId} onToast={setToast} />
 
-        {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}
-        <FeelRow sessionId={sessionId} />
-
-        {/* (Ben, 27 Oct; apple-health.md §2.3) The watch's actuals for this workout, or `Link to this workout?`; nothing otherwise. */}
-        <LinkedActivityRow
-          sessionId={sessionId}
-          pickerOpen={healthPicker}
-          onPickerClose={() => {
-            setHealthPicker(false);
-          }}
-          onChoices={setHealthChoices}
-          onTimesChanged={reload}
-        />
 
         <View style={{ gap: theme.space['1'] }}>
           {/* No orphan label (design pass 3.5): the heading only over a note. */}
@@ -877,20 +943,123 @@ function OneLineRow({ name, text, spoken, info = [], actions, trailing = null, l
   );
 }
 
-/**
- * One `Next time` row (D21; one line, Ben 30 Oct): `Bench press  100 → 102.5 kg  Why?  Undo`. The source, %, note and
- * reasons sit behind `Why?`. Values come from the saved rows (`nextTimeView`).
- */
-function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTap) => void }) {
+const SMALL = { fontSize: 13, lineHeight: 18 } as const;
+
+/** (Ben, 22 Nov; Summary v2) A card of ruled rows (Highlights, Vs last time, Next time). */
+function SummaryCard({ children }: { children: ReactNode }) {
+  const theme = useTheme();
+  return <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['3'] }}>{children}</View>;
+}
+
+/** A row's top rule (none on the first). */
+function useRule(first: boolean) {
+  const theme = useTheme();
+  return { borderTopWidth: first ? 0 : theme.dividerWidth, borderColor: theme.colors['border.divider'] } as const;
+}
+
+/** `+2 more`, `+3 unchanged`: shows the rest in place. */
+function MoreLink({ label, onPress }: { label: string; onPress: () => void }) {
+  const theme = useTheme();
   return (
-    <OneLineRow
-      name={row.exerciseName}
-      text={row.line.text}
-      spoken={row.line.spoken}
-      info={row.info}
-      trailing={row.trailing}
-      actions={row.actions.map((a) => ({ label: a.label, accessibilityLabel: a.accessibilityLabel, onPress: () => { onTap(a.tap); } }))}
-    />
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
+      <AppText variant="callout" color="text.secondary">
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
+/** A best's green ring (as on Progress) or a cut-short's amber dashed one. Never colour alone: the row says which. */
+function HighlightRing({ kind }: { kind: SummaryHighlight['ring'] }) {
+  const theme = useTheme();
+  const colour = theme.colors[kind === 'best' ? 'status.done' : 'status.warning'];
+  return (
+    <View testID={`ring-${kind}`} importantForAccessibility="no-hide-descendants" style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: colour, borderStyle: kind === 'best' ? 'solid' : 'dashed', alignItems: 'center', justifyContent: 'center' }}>
+      {kind === 'best' ? <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colour }} /> : null}
+    </View>
+  );
+}
+
+/** Name over a meta line on the left, the value on the right (Highlights, Vs last time). */
+function TwoLineRow({ first, name, meta, value, spoken, lead = null, onPress, hint }: { first: boolean; name: string; meta: string; value: ReactNode; spoken: string; lead?: ReactNode; onPress?: () => void; hint?: string }) {
+  const theme = useTheme();
+  const rule = useRule(first);
+  const body = (
+    <>
+      {lead}
+      <View style={{ flex: 1, flexShrink: 1, gap: 2 }}>
+        <AppText variant="body" numberOfLines={1} ellipsizeMode="tail">
+          {name}
+        </AppText>
+        <AppText variant="callout" color="text.secondary" numeric numberOfLines={1} style={SMALL}>
+          {meta}
+        </AppText>
+      </View>
+      <View style={{ flexShrink: 0, maxWidth: '55%' }}>{value}</View>
+    </>
+  );
+  const style = { ...rule, minHeight: theme.target.min.height, paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'] } as const;
+  if (onPress === undefined) {
+    return (
+      <View accessible accessibilityLabel={spoken} style={style}>
+        {body}
+      </View>
+    );
+  }
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={spoken} {...(hint !== undefined ? { accessibilityHint: hint } : {})} onPress={onPress} style={({ pressed }) => ({ ...style, opacity: pressed ? 0.6 : 1 })}>
+      {body}
+    </Pressable>
+  );
+}
+
+/**
+ * One `Next time` row (D21; Ben 22 Nov, Summary v2): `Cable crunch  80 → 85 kg  Undo`, the new value bold. A tap on the
+ * row shows `Why?` (the source, %, note and reasons) under it, never by default (Ben, 15 Nov). Values from the saved
+ * rows (`nextTimeView`).
+ */
+function NextRow({ row, first, onTap }: { row: NextTimeRowView; first: boolean; onTap: (tap: NextTimeTap) => void }) {
+  const theme = useTheme();
+  const rule = useRule(first);
+  const [why, setWhy] = useState(false);
+  const parts = arrowParts(row.line.text);
+  const hasWhy = row.info.length > 0;
+  return (
+    <View style={rule}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        <Pressable
+          accessibilityRole={hasWhy ? 'button' : 'text'}
+          accessibilityLabel={`${row.exerciseName}, ${row.line.spoken}`}
+          {...(hasWhy ? { accessibilityHint: NEXT_LINE_COPY.why, accessibilityState: { expanded: why } } : {})}
+          disabled={!hasWhy}
+          onPress={() => {
+            setWhy((w) => !w);
+          }}
+          style={({ pressed }) => ({ flex: 1, minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+        >
+          <AppText variant="body" numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, flexShrink: 1 }}>
+            {row.exerciseName}
+          </AppText>
+          <AppText variant="callout" numeric numberOfLines={1} style={{ flexShrink: 0 }}>
+            {parts === null ? row.line.text : parts.before}
+            {parts === null ? null : <AppText variant="callout" numeric style={{ fontWeight: '700' }}>{parts.after}</AppText>}
+          </AppText>
+        </Pressable>
+        {row.actions.map((a) => (
+          <CompactAction key={a.label} a={{ label: a.label, accessibilityLabel: a.accessibilityLabel, tone: 'secondary', onPress: () => { onTap(a.tap); } }} />
+        ))}
+        {row.actions.length === 0 && row.trailing !== null ? (
+          <AppText variant="callout" color="text.secondary" numberOfLines={1} style={{ flexShrink: 0 }}>
+            {row.trailing}
+          </AppText>
+        ) : null}
+      </View>
+      {why ? (
+        <AppText variant="callout" color="text.secondary" style={{ paddingBottom: theme.space['2'] }}>
+          {row.info.join(' · ')}
+        </AppText>
+      ) : null}
+    </View>
   );
 }
 

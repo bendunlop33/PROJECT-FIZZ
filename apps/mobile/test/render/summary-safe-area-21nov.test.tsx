@@ -28,7 +28,7 @@ describe('Summary respects the top safe area (Ben, 21 Nov)', () => {
     const s = launched.services;
     const gymId = await setUpGym(h, s);
     const sessionId = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 8 }] }]);
-    const r = await renderScreen(h, launched, SummaryScreen, { name: 'Summary', params: { sessionId } }, (t) => t.includes('Exercises · done'));
+    const r = await renderScreen(h, launched, SummaryScreen, { name: 'Summary', params: { sessionId } }, (t) => t.includes('How did it feel?'));
     expectHealthy(r);
     const root = r.all((n) => n.props.testID === 'summary-root')[0];
     const scroll = r.all((n) => n.props.testID === 'summary-scroll')[0];

@@ -20,13 +20,14 @@ type Ex = WorkoutSummary['exercises'][number];
 const ex = (n: number, over: Partial<Ex> = {}): Ex => ({ sessionExerciseId: `se${String(n)}`, exerciseId: `e${String(n)}`, name: `Exercise ${String(n)}`, setsText: '3 sets', results: '80×8 · 80×8 · 80×7', skipped: 0, sides: null, unitNote: '', line: null, ...over });
 
 describe('the order on screen', () => {
-  it('(Ben, 30 Oct) Saved, New best, the stat strip, Exercises · done, Next time, Feel, Health, Ask, Done', () => {
+  it('(Ben, 22 Nov; Summary v2) Saved, title, three numbers, Health, (Exercises · done behind the title), Highlights, Vs last time, Next time, Feel, Ask, Done', () => {
     const at = (needle: string) => {
       const i = body.indexOf(needle);
       expect(i, needle).toBeGreaterThanOrEqual(0);
       return i;
     };
-    const order = ['{savedLine}', '<HeroHeader', 'New best</AppText>', '<StatStrip', 'title="Exercises · done"', '<NextRow', '<MainLiftRow', '<KeepRow', '<PlanDayAskRow', '<FeelRow', '<LinkedActivityRow', 'label="Ask about this workout"', '<PrimaryButton label="Done"'];
+    const order = ['{savedLine}', '<HeroHeader', 'testID="summary-stats"', '<LinkedActivityRow', 'title="Exercises · done"', 'title="Highlights"', 'title="Vs last time"', '<NextRow', '<MainLiftRow', '<KeepRow', '<FeelRow', '<PlanDayAskRow', 'label="Ask about this workout"', '<PrimaryButton label="Done"'];
+    expect(body).not.toContain('New best</AppText>');
     const pos = order.map(at);
     expect([...pos].sort((x, y) => x - y)).toEqual(pos);
   });

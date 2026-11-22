@@ -19,7 +19,7 @@ import { AppText, BottomCard, DangerTextButton, Group, Icon, Row, StatusLine, Te
  * - `⋯ › Link activity from Health` (`pickerOpen`): the day before to the day after, any strength or `other` workout.
  * - Nothing: no row.
  */
-export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose, onChoices, onTimesChanged }: { sessionId: string; pickerOpen?: boolean; onPickerClose?: () => void; onChoices?: (n: number) => void; /** The workout's times changed (`Use watch times` or its Undo): the Summary reloads. */ onTimesChanged?: () => void }) {
+export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose, onChoices, onTimesChanged, variant = 'full' }: { sessionId: string; pickerOpen?: boolean; onPickerClose?: () => void; onChoices?: (n: number) => void; /** The workout's times changed (`Use watch times` or its Undo): the Summary reloads. */ onTimesChanged?: () => void; /** (Ben, 22 Nov) `summary`: the linked workout as one row of its real values (`Garmin · avg 128 bpm · 410 kcal`); none: no row. */ variant?: 'full' | 'summary' }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -157,6 +157,65 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
     );
   }
 
+  const sheetCard =
+    view.kind === 'linked' ? (
+      <BottomCard
+        visible={sheet}
+        onClose={() => {
+          setSheet(false);
+        }}
+        footer={
+          <>
+            {message !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={message} /> : null}
+            <DangerTextButton label={HEALTH_COPY.unpair} onPress={() => void unlink(view.healthUuid, view.linkVersion)} />
+          </>
+        }
+      >
+        <AppText variant="title2">{HEALTH_COPY.linkedActivity}</AppText>
+        <AppText variant="body">{view.sheetTitle}</AppText>
+        <AppText variant="callout" color="text.secondary" numeric>
+          {view.sheetWhen}
+        </AppText>
+        {view.heartRate !== null ? (
+          <AppText variant="body" numeric>
+            {view.heartRate.replace(/(Avg HR \d+|Max \d+)/g, '$1 bpm')}
+          </AppText>
+        ) : null}
+      </BottomCard>
+    ) : null;
+
+  if (view.kind === 'linked' && variant === 'summary') {
+    // (Ben, 22 Nov; Summary v2) Only values the Health workout has (rule 6); none: no row. Its sheet has Unpair.
+    const line = view.summaryLine;
+    return (
+      <>
+        {toastView}
+        {picker}
+        {line !== null ? (
+          <Pressable
+            testID="summary-health-row"
+            accessibilityRole="button"
+            accessibilityLabel={line.spoken}
+            onPress={() => {
+              setSheet(true);
+            }}
+            style={({ pressed }) => ({ minHeight: theme.target.min.height, borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['3'], justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+          >
+            <AppText variant="callout" numeric numberOfLines={1}>
+              {line.text}
+            </AppText>
+          </Pressable>
+        ) : null}
+        {view.useWatchTimes === true ? (
+          <View style={{ alignSelf: 'flex-start' }}>
+            <TextButton label={HEALTH_COPY.useWatchTimes} tone="secondary" onPress={() => void applyWatchTimes()} />
+          </View>
+        ) : null}
+        {sheetCard}
+      </>
+    );
+  }
+
   if (view.kind === 'linked') {
     return (
       <>
@@ -189,29 +248,7 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
             <TextButton label={HEALTH_COPY.useWatchTimes} tone="secondary" onPress={() => void applyWatchTimes()} />
           </View>
         ) : null}
-        <BottomCard
-          visible={sheet}
-          onClose={() => {
-            setSheet(false);
-          }}
-          footer={
-            <>
-              {message !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={message} /> : null}
-              <DangerTextButton label={HEALTH_COPY.unpair} onPress={() => void unlink(view.healthUuid, view.linkVersion)} />
-            </>
-          }
-        >
-          <AppText variant="title2">{HEALTH_COPY.linkedActivity}</AppText>
-          <AppText variant="body">{view.sheetTitle}</AppText>
-          <AppText variant="callout" color="text.secondary" numeric>
-            {view.sheetWhen}
-          </AppText>
-          {view.heartRate !== null ? (
-            <AppText variant="body" numeric>
-              {view.heartRate.replace(/(Avg HR \d+|Max \d+)/g, '$1 bpm')}
-            </AppText>
-          ) : null}
-        </BottomCard>
+        {sheetCard}
       </>
     );
   }

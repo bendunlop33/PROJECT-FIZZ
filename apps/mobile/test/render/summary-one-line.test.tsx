@@ -47,8 +47,8 @@ afterEach(async () => {
   await h.cleanup();
 });
 
-describe('Summary: Exercises done first, one line per Next time change (Ben, 30 Oct)', () => {
-  it('order, one-line rows, Why? behind a tap, Undo per row', async () => {
+describe('Summary: one line per Next time change (Ben, 30 Oct; v2 22 Nov)', () => {
+  it('order, one-line rows, Why? behind a tap on the row, Undo per row', async () => {
     const launched = await h.launch();
     const s = launched.services;
     const gymId = await setUpGym(h, s);
@@ -71,48 +71,78 @@ describe('Summary: Exercises done first, one line per Next time change (Ben, 30 
     expectHealthy(r);
     const text = r.text();
 
-    // 1. Order: the stat strip, Exercises · done, Next time, Ask about this workout.
+    // 1. (Ben, 22 Nov; Summary v2) Order: the title, the three numbers, Next time, Ask about this workout.
     const at = (needle: string) => text.indexOf(needle);
-    expect(at('Exercises')).toBeGreaterThanOrEqual(0);
-    expect(at('Exercises · done')).toBeLessThan(at('Next time'));
+    expect(at(' done|')).toBeGreaterThanOrEqual(0);
+    expect(at('sets')).toBeLessThan(at('Next time'));
     expect(at('Next time')).toBeLessThan(at('Ask about this workout'));
 
-    // 3. Exercises done: one line each, the sets said once.
-    expect(text).toContain('Bench press|8, 7, 6 @ 60 kg');
-    expect(text).toContain('Lat pulldown|2×10 @ 59 kg');
+    // 3. Exercises done sit behind a tap on the title: one line each, the sets said once.
+    expect(text).not.toContain('Exercises · done');
+    const title = r.all((n) => n.props.testID === 'summary-title' && typeof n.props.onPress === 'function')[0];
+    await act(async () => {
+      (title?.props.onPress as () => void)();
+      await Promise.resolve();
+    });
+    expect(r.text()).toContain('Bench press|8, 7, 6 @ 60 kg');
+    expect(r.text()).toContain('Lat pulldown|2×10 @ 59 kg');
 
-    // 2. One line per change: name, from → to, Why?, Undo; no tag or reason on the line.
+    // 2. One line per change: name, from → the new value (bold), Undo; no tag, reason or Why? button on the line.
     const next = text.slice(at('Next time'));
-    expect(next).toContain('Bench press|60 → 57.5 kg|Why?|Undo');
+    expect(next).toContain('Bench press|60 → |57.5 kg|Undo');
     expect(next).not.toContain('Every set was RPE 10');
+    expect(next).not.toContain('Why?');
     expect(next).not.toContain('Coach|');
     expect(next).not.toContain('Target ');
-    // VoiceOver: the name and the change, then each button.
-    const line = r.all((n) => n.props.accessibilityLabel === 'Bench press, 60 to 57.5 kilograms');
+    // VoiceOver: the name and the change (the row; a tap shows why), then each button.
+    const line = r.all((n) => n.props.accessibilityLabel === 'Bench press, 60 to 57.5 kilograms' && typeof n.props.onPress === 'function');
     expect(line).toHaveLength(1);
-    expect(r.all((n) => n.props.accessibilityRole === 'button' && n.props.accessibilityLabel === 'Why?').length).toBeGreaterThanOrEqual(1);
 
-    // Why? shows the source, % and reason as one info line; tapped again it hides. (Bench is the second row.)
+    // A tap on the row shows the source, % and reason as one info line; tapped again it hides.
     const benchWhy = async () => {
-      const whys = r.all((n) => n.props.accessibilityRole === 'button' && n.props.accessibilityLabel === 'Why?' && typeof n.props.onPress === 'function');
-      const press = whys[1]?.props.onPress as (() => void) | undefined;
-      if (press === undefined) throw new Error('no Why? on the bench row');
+      const press = r.all((n) => n.props.accessibilityLabel === 'Bench press, 60 to 57.5 kilograms' && typeof n.props.onPress === 'function')[0]?.props.onPress as (() => void) | undefined;
+      if (press === undefined) throw new Error('no bench row');
       await act(async () => {
         press();
         await Promise.resolve();
       });
     };
     await benchWhy();
-    expect(r.text()).toMatch(/Bench press\|60 → 57\.5 kg\|Why\?\|Undo\|Coach · −4\.2% · “Every set was RPE 10\.”/);
+    expect(r.text()).toMatch(/Bench press\|60 → \|57\.5 kg\|Undo\|Coach · −4\.2% · “Every set was RPE 10\.”/);
     await benchWhy();
     expect(r.text()).not.toContain('Every set was RPE 10.”');
 
-    // Undo on the row: the rule's line comes back, with Redo.
-    await r.press('Undo');
+    const tapLabel = async (label: string) => {
+      const press = r.all((n) => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function')[0]?.props.onPress as (() => void) | undefined;
+      if (press === undefined) throw new Error(`nothing labelled ${label}`);
+      await act(async () => {
+        press();
+        await Promise.resolve();
+      });
+    };
+
+    // Undo on the coach's row: the rule's line comes back, with Redo.
+    await tapLabel('Undo');
     await r.waitFor((t) => t.includes('Redo'), 'the undone row');
-    expect(r.text()).not.toContain('60 → 57.5 kg');
+    expect(r.text()).not.toContain('60 → |57.5 kg');
     const rows = await s.coach.nextTargets(sessionId);
     expect(rows[0]?.status).toBe('undone');
+
+    // (Ben, 22 Nov) The built-in rule's change has its own Undo too: next time keeps today's 59 kg, with Redo.
+    expect(r.text()).toContain('Lat pulldown|59 → |60 kg|Undo');
+    await tapLabel('Undo: keep Lat pulldown as it was');
+    await r.waitFor((t) => t.includes('Lat pulldown|Same · 2×10 @ 59 kg') || /Lat pulldown\|Same · [^|]*59/.test(t), 'the held row');
+    const holds = await s.coach.ruleHolds(sessionId);
+    expect(holds).toHaveLength(1);
+    expect(holds[0]?.status).toBe('applied');
+    expect(holds[0]?.target.load?.value).toBe(59);
+    expect(holds[0]?.builtIn?.load?.value).toBe(60);
+    // The coach's own rows never include it.
+    expect((await s.coach.nextTargets(sessionId)).some((x) => x.origin === 'hold')).toBe(false);
+    // Redo puts the rule's change back.
+    await tapLabel(r.all((n) => typeof n.props.accessibilityLabel === 'string' && (n.props.accessibilityLabel).startsWith('Redo: Lat pulldown'))[0]?.props.accessibilityLabel as string);
+    await r.waitFor((t) => t.includes('Lat pulldown|59 → |60 kg|Undo'), 'the rule row again');
+    expect((await s.coach.ruleHolds(sessionId))[0]?.status).toBe('proposed');
     expect(r.errors).toEqual([]);
     await r.unmount();
   });

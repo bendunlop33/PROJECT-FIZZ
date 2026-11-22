@@ -45,9 +45,11 @@ describe('summaryPlanLine', () => {
 });
 
 describe('SummaryScreen layout (source checks)', () => {
-  it('uses the shared StatStrip, not the tile grid, and caps the hero title at 2 lines', () => {
-    expect(src).toContain('<StatStrip');
+  it('(Ben, 22 Nov; Summary v2) three numbers from the domain (`summaryStats`), no tile grid; the hero title at 2 lines', () => {
+    expect(src).toContain('summaryStats({');
+    expect(src).toContain('testID="summary-stats"');
     expect(src).not.toContain('<StatGrid');
+    expect(src).not.toContain('<StatStrip');
     expect(src).toContain('titleLines={2}');
   });
 
