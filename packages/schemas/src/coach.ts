@@ -2002,9 +2002,12 @@ export const NextSessionTargetRecordSchema = RecordMetaSchema.extend({
   /**
    * (Ben, 23 Oct; review v5offers SP2) `rule`: not the coach's target but Ben's answer to the built-in rule's own stall
    * reset (`Reset to … ?` on the Summary): `applied` (the rule lowers the load next time), `not_applied` (Skip: it
-   * holds), `proposed` (his Apply undone: offered again). Its `target` is the reset load. Absent: the coach's row.
+   * holds), `proposed` (his Apply undone: offered again). Its `target` is the reset load.
+   * (Ben, 22 Nov) `hold`: Ben's `Undo` of the built-in rule's change on one Summary `Next time` row: `applied` (next
+   * time keeps today's target, its `target`; the rule's is `builtIn`), `proposed` (his `Redo`: the rule's change is back).
+   * Absent: the coach's row.
    */
-  origin: z.literal('rule').optional(),
+  origin: z.enum(['rule', 'hold']).optional(),
 });
 export type NextSessionTargetRecord = z.infer<typeof NextSessionTargetRecordSchema>;
 export type NextSessionTargetStatus = NextSessionTargetRecord['status'];

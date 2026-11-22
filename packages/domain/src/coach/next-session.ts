@@ -397,9 +397,23 @@ export function isRuleResetRow(r: Pick<NextSessionTargetRecord, 'origin'>): bool
   return r.origin === 'rule';
 }
 
-/** The coach's own next-session rows: never Ben's answers to the rule's reset. */
+/** (Ben, 22 Nov) Ben's per-row `Undo` of the built-in rule's change on the Summary (`origin: 'hold'`). */
+export function isRuleHoldRow(r: Pick<NextSessionTargetRecord, 'origin'>): boolean {
+  return r.origin === 'hold';
+}
+
+/**
+ * The rows that can plan the next workout as a target (Start, Your workout, Today's card): the coach's own and Ben's
+ * holds of the rule's change (`isRuleHoldRow`: today's target kept, used like any standing row); never his answers to
+ * the rule's reset (the rule itself plans those, `acceptReset`).
+ */
 export function coachTargetRows<T extends Pick<NextSessionTargetRecord, 'origin'>>(rows: readonly T[]): T[] {
   return rows.filter((r) => !isRuleResetRow(r));
+}
+
+/** The coach's own next-session rows: never Ben's answers to the rule's reset nor his holds of the rule's change. */
+export function coachOwnRows<T extends Pick<NextSessionTargetRecord, 'origin'>>(rows: readonly T[]): T[] {
+  return rows.filter((r) => r.origin === undefined);
 }
 
 /**

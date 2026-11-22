@@ -1,5 +1,5 @@
 import {
-  coachTargetRows,
+  coachOwnRows,
   isFromRoutine,
   libraryChangesView,
   liveRoutines,
@@ -84,7 +84,7 @@ export function createLibraryChangesService(deps: LibraryChangesDeps) {
     const inputs: NextTimeChangeInput[] = [];
     const records: Record<string, NextSessionTargetRecord> = {};
     for (const s of await sources(ownerId)) {
-      const rows = coachTargetRows(await repos().coach.listNextTargets(ownerId, s.sessionId).catch(() => [] as NextSessionTargetRecord[]));
+      const rows = coachOwnRows(await repos().coach.listNextTargets(ownerId, s.sessionId).catch(() => [] as NextSessionTargetRecord[]));
       if (rows.length === 0) continue;
       const source = await repos()
         .sessions.get(s.sessionId)

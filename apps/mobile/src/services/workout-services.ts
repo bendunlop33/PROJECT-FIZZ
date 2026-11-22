@@ -49,6 +49,10 @@ import {
   type PlanDueWorkout,
   workoutGroupsOf,
   pbBlockOfPlan,
+  pbBlockStartUtc,
+  comparableWorkoutRef,
+  workoutVolume,
+  type SummaryPlanInput,
   pbMoveWeek,
   pbSkipsOf,
   pbWeekEditsOf,
@@ -4105,6 +4109,41 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const aggregate = await repos().sessions.get(sessionId).catch(() => null);
       if (!p || !aggregate || aggregate.session.ownerId !== p.id || aggregate.session.source === 'import') return null;
       return plannedVsDone(aggregate);
+    },
+
+    /**
+     * (Ben, 22 Nov; Summary v2) What the Summary's plan line and volume arrow need, local reads only: the plan in use's
+     * block as of this workout's end (`Week 4 of 6 · 4 of 5 days done`; null: no builder plan in use then), and the
+     * volume of the comparable workout before it (the same plan day, else the same saved workout; null: none, no arrow).
+     * A failed read is null, never a guess.
+     */
+    async summaryExtras(sessionId: string): Promise<{ plan: SummaryPlanInput | null; previousVolumeKg: number | null }> {
+      const none = { plan: null, previousVolumeKg: null };
+      const p = await ctx.profile();
+      const a = await repos().sessions.get(sessionId).catch(() => null);
+      if (!p || !a || a.session.ownerId !== p.id || a.session.source === 'import') return none;
+      const tz = p.timezone;
+      const startMs = toMs(a.session.startedAt.utc);
+      const endMs = toMs(a.session.endedAt?.utc ?? ctx.now().utc);
+      const plan = await (async (): Promise<SummaryPlanInput | null> => {
+        const applied = await repos().planDrafts.applied(p.id);
+        const builder = pbAppliedBuilder(applied);
+        const blockStart = pbBlockStartUtc(applied);
+        // The plan in use when this workout was done (its block's first week, lead-in included).
+        if (applied !== null && builder !== null && blockStart !== null && startMs >= localWeekBounds(toMs(blockStart), tz).startMs) {
+          const block = pbBlockOfPlan(applied, await planRefs(ctx.store(), { ownerId: p.id, plan: applied, nowMs: endMs }, 400), endMs, tz);
+          if (block !== null) return { week: block.week, of: block.of, done: block.done, leadIn: block.leadIn !== undefined, daysDone: block.daysDone.at(-1)?.length ?? 0, days: builder.version.days.length };
+        }
+        return null;
+      })().catch(() => null);
+      const previousVolumeKg = await (async () => {
+        const refs = await repos().sessions.listFinishedRefs(p.id, 400);
+        const ref = comparableWorkoutRef(refs, { sessionId, routineId: a.session.routineId, startedAtUtc: a.session.startedAt.utc, planDay: a.session.planDay ?? null });
+        const prev = ref === null ? null : await repos().sessions.get(ref.sessionId);
+        const v = prev === null ? null : workoutVolume(prev);
+        return v !== null && v.loadedSets > 0 ? v.kg : null;
+      })().catch(() => null);
+      return { plan, previousVolumeKg };
     },
 
     /** `coach`: the coach's state from the AI connection (Keychain, read by the caller); it only changes the source tag. */

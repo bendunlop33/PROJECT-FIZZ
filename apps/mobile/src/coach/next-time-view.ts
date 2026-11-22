@@ -54,6 +54,21 @@ export interface NextTimeRowView {
     /** (Review ben-8-decisions S1) Ben's Apply no longer fits the workout (a set corrected since): asked again. */
     again?: true;
   };
+  /**
+   * (Ben, 22 Nov; Summary v2) A built-in rule change Ben can undo on its own row (`coach.tapRuleHold`): today's target
+   * kept next time (`hold`) instead of the rule's (`rule`), and his hold so far (null: none yet). `Undo` holds, `Redo`
+   * puts the rule's change back. Absent: not a rule change, or the caller doesn't offer it.
+   */
+  hold?: {
+    exerciseId: string;
+    exerciseName: string;
+    hold: CoachTarget;
+    rule: CoachTarget;
+    sets: number | null;
+    row: NextSessionTargetRecord | null;
+    /** His hold no longer fits the workout (a set corrected since): a new one, at the row's version. */
+    again?: true;
+  };
 }
 
 export interface NextTimeView {
@@ -74,6 +89,7 @@ function setsPart(sets: number | null): string {
 export const NEXT_LINE_COPY = {
   same: 'Same',
   why: 'Why?',
+  undo: 'Undo',
   /** (Ben, 30 Oct) `Use coach target` as a compact trailing action; VoiceOver keeps the full name. */
   redo: 'Redo',
   useCoach: 'Use coach target',
@@ -170,8 +186,29 @@ export const NEXT_TIME_COPY = {
  * `Skip` / `Apply` (offered, or offered again after an Undo); once applied the row is the reset with `Undo`; skipped,
  * the hold with no buttons. A workout started from this one since: no buttons (`Used`).
  */
-function ruleRow(b: NextTimeRow, sourceTag: string, answer: NextSessionTargetRecord | null): NextTimeRowView {
-  return withInfo(ruleRowBase(b, sourceTag, answer));
+function ruleRow(b: NextTimeRow, sourceTag: string, answer: NextSessionTargetRecord | null, hold: { row: NextSessionTargetRecord | null; stale: boolean } | null): NextTimeRowView {
+  const base = ruleRowBase(b, sourceTag, answer);
+  return withInfo(hold === null ? base : holdable(b, base, hold.row, hold.stale));
+}
+
+/**
+ * (Ben, 22 Nov; Summary v2) A built-in rule change with its own `Undo`: a load or reps change (not a stall reset, not a
+ * top set + back-offs lift, whose back-offs the hold can't say), with both sides known. Held (his `Undo`, standing): the
+ * row reads today's target (`Same · …`) with `Redo`; used by a workout since: no buttons. A hold that no longer fits
+ * the workout is asked again. Values from the summary's own `from` / `to`; nothing here decides a target.
+ */
+function holdable(b: NextTimeRow, base: Omit<NextTimeRowView, 'info' | 'trailing'>, row: NextSessionTargetRecord | null, stale: boolean): Omit<NextTimeRowView, 'info' | 'trailing'> {
+  if (b.kind !== 'change' || b.resetOffer !== undefined || b.resetApplied === true || b.topBackoff !== undefined || b.from === null || b.to === null || base.reset !== undefined) return base;
+  if (fromToLine(b.from, b.to).same) return base;
+  const hold = { exerciseId: b.exerciseId, exerciseName: b.exerciseName, hold: b.from.target, rule: b.to.target, sets: b.to.sets, row };
+  const used = row?.usedBySessionId != null;
+  if (row !== null && row.status === 'applied' && !stale) {
+    const kept = sameOr(fromToLine(b.from, b.from));
+    return { ...base, line: kept, why: [`Rule: ${ruleLine(b).text}`], note: used ? 'Used' : null, actions: used ? [] : [{ label: NEXT_LINE_COPY.redo, tap: 'use_coach', accessibilityLabel: `${NEXT_LINE_COPY.redo}: ${b.exerciseName} ${ruleLine(b).spoken}` }], hold };
+  }
+  if (used) return { ...base, note: 'Used', hold };
+  const again = row !== null && row.status === 'applied' && stale ? { again: true as const } : {};
+  return { ...base, actions: [{ label: NEXT_LINE_COPY.undo, tap: 'undo', accessibilityLabel: `${NEXT_LINE_COPY.undo}: keep ${b.exerciseName} as it was` }], hold: { ...hold, ...again } };
 }
 
 function ruleRowBase(b: NextTimeRow, sourceTag: string, answer: NextSessionTargetRecord | null): Omit<NextTimeRowView, 'info' | 'trailing'> {
@@ -204,6 +241,11 @@ export interface NextTimeInput {
   stale?: ReadonlySet<string>;
   /** (Ben, 23 Oct) Ben's answers to the rule's own stall resets (`ruleResets`). */
   ruleRows?: readonly NextSessionTargetRecord[];
+  /**
+   * (Ben, 22 Nov) Ben's holds of the rule's changes (`ruleHolds`). Given (even empty): each rule change has its own
+   * `Undo`. Absent: none offered (a caller that can't write them).
+   */
+  holdRows?: readonly NextSessionTargetRecord[];
   availability: CoachAvailability;
   reviewing: boolean;
   /** (Ben, 30 Oct) `WorkoutSummary.nextFrom`: what each coach change is measured from, for its one line. */
@@ -221,7 +263,10 @@ export function nextTimeView(input: NextTimeInput): NextTimeView | null {
     seen.add(b.exerciseId);
     if (c !== undefined) rows.push(coachRow(c, b, stale.has(c.id), input.from?.[c.exerciseId]));
     // One short line (Ben, 18 Oct): the rule's facts stay stored and in the coach's context, not on screen (review B3).
-    else rows.push(ruleRow(b, input.builtIn.sourceTag, input.ruleRows?.find((r) => r.exerciseId === b.exerciseId) ?? null));
+    else {
+      const held = input.holdRows === undefined ? null : (input.holdRows.find((r) => r.exerciseId === b.exerciseId) ?? null);
+      rows.push(ruleRow(b, input.builtIn.sourceTag, input.ruleRows?.find((r) => r.exerciseId === b.exerciseId) ?? null, input.holdRows === undefined ? null : { row: held, stale: held !== null && stale.has(held.id) }));
+    }
   }
   // Coach rows for exercises the built-in rule didn't list (it held them).
   for (const c of input.coachRows) if (!seen.has(c.exerciseId)) rows.push(coachRow(c, undefined, stale.has(c.id), input.from?.[c.exerciseId]));
@@ -235,6 +280,22 @@ export function nextTimeView(input: NextTimeInput): NextTimeView | null {
     emptyText: rows.length === 0 ? input.builtIn.emptyText : null,
     undoAll: live.length >= 2 && only !== undefined ? { actionId: only, rows: live } : null,
   };
+}
+
+/**
+ * (Ben, 22 Nov; Summary v2) `Next time` shows only what changes: a row whose line moves (`80 → 85 kg`) or that has a
+ * button (an offer, an Undo or Redo). Rows that stay the same with nothing to tap fold into `+N unchanged`.
+ */
+export function foldNextTime(rows: readonly NextTimeRowView[]): { changed: NextTimeRowView[]; unchanged: NextTimeRowView[] } {
+  const changed: NextTimeRowView[] = [];
+  const unchanged: NextTimeRowView[] = [];
+  for (const r of rows) (r.actions.length === 0 && r.line.text.startsWith(`${NEXT_LINE_COPY.same} · `) ? unchanged : changed).push(r);
+  return { changed, unchanged };
+}
+
+/** `+3 unchanged`; null with none. */
+export function unchangedText(n: number): string | null {
+  return n === 0 ? null : `+${String(n)} unchanged`;
 }
 
 /** Words too common in exercise names to say which one a sentence is about. */
@@ -283,4 +344,11 @@ export function summaryNoteSentences(sentences: readonly string[], exerciseNames
     const said = new Set(saved.flatMap((r) => (r === undefined ? [] : rowNumbers(r))));
     return targetNumbers(s).every((n) => said.has(n));
   });
+}
+
+/** (Ben, 22 Nov; Summary v2) A line's new value, to be shown bold: `80 → ` and `85 kg`; null: no arrow (nothing moves). */
+export function arrowParts(text: string): { before: string; after: string } | null {
+  const i = text.indexOf(' → ');
+  if (i < 0) return null;
+  return { before: text.slice(0, i + 3), after: text.slice(i + 3) };
 }

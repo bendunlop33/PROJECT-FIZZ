@@ -755,6 +755,68 @@ export function ruleResetWrite(input: {
   return { kind: 'next_session_targets', action: record, rows: [row], sourceVersion: input.source.session.version, sourceBasis: basis, answerAt: input.expectedVersion ?? null };
 }
 
+/** (Ben, 22 Nov) Ben's hold of the rule's change has its own row per source workout and exercise (like the reset's). */
+export const ruleHoldRowId = (sourceSessionId: string, exerciseId: string): string => deriveId(`rule-hold:${sourceSessionId}:${exerciseId}`);
+
+/**
+ * (Ben, 22 Nov; Summary v2) Ben's first `Undo` on a built-in rule row of `Next time`: next time keeps today's target
+ * for that one exercise (`hold`, its working target as the Summary measured the change from) instead of the rule's
+ * (`rule`). His own record (author `ben`, no turn) and the row (`origin: 'hold'`, `applied`), in one write checked
+ * against the source workout as it is (rule 5); a stale view is refused, never applied to newer sets. Later taps
+ * (`Redo`, `Undo` again) move the row through `nextTargetTapRecord`. Start reads it like any standing row.
+ */
+export function ruleHoldWrite(input: {
+  ownerId: string;
+  source: SessionAggregate;
+  exerciseId: string;
+  exerciseName: string;
+  /** Today's working target: what next time keeps. */
+  hold: CoachTarget;
+  /** The rule's change being undone. */
+  rule: CoachTarget;
+  /** The plan's working sets (both sides), or null. */
+  sets: number | null;
+  opId: string;
+  now: ZonedTimestamp;
+  /** The hold row's version Ben saw (a hold that no longer fits the workout, asked again); null: his first. */
+  expectedVersion?: number | null;
+}): CoachWrite {
+  const ctx = { turnId: '', opId: input.opId, now: input.now };
+  const detail: ActionDetail = {
+    kind: 'set_next_session_targets',
+    sourceSessionId: input.source.session.id,
+    workoutLabel: (input.source.session.routineName ?? input.exerciseName).slice(0, 120),
+    rows: [{ exerciseId: input.exerciseId, exerciseName: input.exerciseName, before: input.rule, after: input.hold, setsBefore: input.sets, setsAfter: input.sets, size: 'small' }],
+  };
+  const record = { ...newActionRecord(ctx, detail, { author: 'ben' }), turnId: null };
+  const basis = nextTargetSourceBasis(input.source);
+  const row: NextSessionTargetRecord = {
+    id: ruleHoldRowId(input.source.session.id, input.exerciseId),
+    ownerId: input.ownerId,
+    version: 1,
+    createdAtUtc: input.now.utc,
+    updatedAtUtc: input.now.utc,
+    sourceSessionId: input.source.session.id,
+    sourceVersion: input.source.session.version,
+    sourceBasis: basis,
+    exerciseId: input.exerciseId,
+    exerciseName: input.exerciseName,
+    actionId: record.actionId,
+    target: input.hold,
+    sets: null,
+    builtIn: input.rule,
+    builtInSets: input.sets,
+    size: 'small',
+    status: 'applied',
+    reason: null,
+    guardNotes: [],
+    pctChange: null,
+    usedBySessionId: null,
+    origin: 'hold',
+  };
+  return { kind: 'next_session_targets', action: record, rows: [row], sourceVersion: input.source.session.version, sourceBasis: basis, answerAt: input.expectedVersion ?? null };
+}
+
 /**
  * The record of Ben's tap on a `Next time` row (his own action, author
  * `ben`): Undo is an undo of the coach's target for that exercise; `Use
@@ -764,7 +826,7 @@ export function nextTargetTapRecord(row: NextSessionTargetRecord, tap: NextTarge
   const ctx = { turnId: '', opId: input.opId, now: input.now };
   const label = row.exerciseName;
   if (tap === 'undo' || tap === 'not_now') {
-    const what = row.origin === 'rule' ? `the built-in reset of ${label} for next time` : `the coach's ${label} target for next time`;
+    const what = row.origin === 'rule' ? `the built-in reset of ${label} for next time` : row.origin === 'hold' ? `keeping ${label} as it was for next time` : `the coach's ${label} target for next time`;
     const detail: ActionDetail = { kind: 'undo', undoneActionId: row.actionId, what, restored: [], alreadyLogged: [] };
     return { status: tap === 'undo' ? (row.status === 'applied' ? 'proposed' : 'undone') : 'not_applied', record: { ...newActionRecord(ctx, detail, { author: 'ben' }), turnId: null } };
   }

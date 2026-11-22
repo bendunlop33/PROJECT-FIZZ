@@ -35,6 +35,7 @@ import {
   describeCoachContext,
   nextTargetTapOpId,
   nextTargetTapRecord,
+  ruleHoldWrite,
   ruleResetWrite,
   recoverCoachTurns,
   runCoachTurn,
@@ -210,7 +211,8 @@ import {
   nextSessionBases,
   nextTargetFitsSource,
   nextTargetSourceBasis,
-  coachTargetRows,
+  coachOwnRows,
+  isRuleHoldRow,
   isRuleResetRow,
   painFlagChoices,
   ruleTargetRpes,
@@ -2584,7 +2586,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const [source, rows] = await Promise.all([repos().sessions.get(sessionId).catch(() => null), coachStore().listNextTargets(p.id, sessionId).catch(() => [])]);
       const names = [...new Set((source?.exercises ?? []).map((e) => e.exerciseName))];
       const fits = source === null ? null : { version: source.session.version, basis: nextTargetSourceBasis(source) };
-      const coachRows = coachTargetRows(rows);
+      const coachRows = coachOwnRows(rows);
       const text = summaryNoteSentences(sentences, names, fits === null ? coachRows : coachRows.filter((r) => nextTargetFitsSource(r, fits))).join(' ');
       return text === '' ? null : text;
     },
@@ -2621,7 +2623,40 @@ export function createCoachService(deps: CoachServiceDeps) {
     /** The coach's own next-session rows for a workout (never Ben's answers to the rule's reset: `ruleResets`). */
     async nextTargets(sessionId: string): Promise<NextSessionTargetRecord[]> {
       const p = await owner();
-      return coachTargetRows(await coachStore().listNextTargets(p.id, sessionId));
+      return coachOwnRows(await coachStore().listNextTargets(p.id, sessionId));
+    },
+
+    /** (Ben, 22 Nov) Ben's holds of the built-in rule's changes on this workout's Summary (per-row `Undo`). */
+    async ruleHolds(sessionId: string): Promise<NextSessionTargetRecord[]> {
+      const p = await owner();
+      return (await coachStore().listNextTargets(p.id, sessionId)).filter(isRuleHoldRow);
+    },
+
+    /**
+     * (Ben, 22 Nov; Summary v2) A tap on a built-in rule row's own `Undo` / `Redo`. The first Undo saves Ben's hold with
+     * its record (`ruleHoldWrite`): next time keeps today's target for that exercise. `Redo` (`use_coach`) puts the
+     * rule's change back (the hold row to `proposed`); Undo again re-applies it. A hold that no longer fits the workout
+     * (a set corrected since) is written again at the version he saw. Offline: works (no coach call). One op ID per row
+     * version and tap; a stale row is refused (rule 5).
+     */
+    async tapRuleHold(sessionId: string, hold: { exerciseId: string; exerciseName: string; hold: CoachTarget; rule: CoachTarget; sets: number | null; row: NextSessionTargetRecord | null; again?: true }, tap: NextTargetTap): Promise<{ status: 'written' | 'replayed' } | { status: 'not_possible'; reason: string }> {
+      const p = await owner();
+      if (tap !== 'undo' && tap !== 'use_coach') return { status: 'not_possible', reason: 'missing' };
+      const row = hold.row;
+      if (row !== null && hold.again !== true) {
+        // Undo on a Redo'd hold applies it again; Redo moves an applied hold back to the rule.
+        const rowTap: NextTargetTap = tap === 'undo' ? 'apply' : 'undo';
+        if ((tap === 'undo') !== (row.status !== 'applied')) return { status: 'not_possible', reason: 'changed_since' };
+        const { status, record } = nextTargetTapRecord(row, rowTap, { opId: nextTargetTapOpId(row, rowTap), now: deps.now() });
+        const r = await coachStore().setNextTargetStatus(p.id, { rowId: row.id, expectedVersion: row.version, status, record });
+        return r.status === 'not_possible' ? { status: 'not_possible', reason: r.reason } : { status: r.status };
+      }
+      if (tap !== 'undo') return { status: 'not_possible', reason: 'missing' };
+      const source = await repos().sessions.get(sessionId).catch(() => null);
+      if (source === null || source.session.ownerId !== p.id) return { status: 'not_possible', reason: 'missing' };
+      const opId = deriveId(`rule-hold:undo:${sessionId}:${hold.exerciseId}${row === null ? '' : `:v${String(row.version)}`}`);
+      const w = await coachStore().commit(p.id, ruleHoldWrite({ ownerId: p.id, source, exerciseId: hold.exerciseId, exerciseName: hold.exerciseName, hold: hold.hold, rule: hold.rule, sets: hold.sets, opId, now: deps.now(), expectedVersion: row?.version ?? null }));
+      return w.status === 'conflict' ? { status: 'not_possible', reason: w.reason === 'stale_version' ? 'changed_since' : w.reason } : { status: w.status };
     },
 
     /** (Ben, 23 Oct) Ben's answers to the built-in rule's stall resets on this workout's Summary. */
