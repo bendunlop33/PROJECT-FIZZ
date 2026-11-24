@@ -160,7 +160,7 @@ describe('provenance carries SF facts', () => {
     });
     expect(plain(earlierWorkWhy(ew))).toBe('After dumbbell shoulder press ×3 · compared with 1 Oct (after 1.5 chest sets)');
     expect(earlierWorkFact(ew ?? (null as never))).toBe(
-      `before: dumbbell shoulder press 3 (shoulders direct; chest, triceps secondary) · P 1.5 chest · ref ${new Date(T0_MS - 7 * DAY).toISOString().slice(0, 10)} P 1.5, like for like · SF3 no`,
+      `before: dumbbell shoulder press 3 (shoulders direct; chest, triceps secondary) · P 1.5 chest · ref ${new Date(T0_MS - 7 * DAY).toISOString().slice(0, 10)} P 1.5, like for like · no cushion`,
     );
   });
 
@@ -169,14 +169,14 @@ describe('provenance carries SF facts', () => {
     expect(r.result.sets.filter((s) => s.setType !== 'warmup').map((s) => [s.load?.value, s.reps.min])).toEqual([0, 1, 2].map(() => [100, 5]));
     expect(ew).toMatchObject({ p: 3, basis: 'cushion', cushion: { reps: 1, stepDown: false }, reference: { p: 0 } });
     expect(plain(earlierWorkWhy(ew))).toBe('After dumbbell shoulder press ×6 · no session like it: 1 rep fewer · est.');
-    expect(earlierWorkFact(ew ?? (null as never))).toMatch(/· P 3 chest · ref \S+ P 0, not like for like · SF3 yes: −1 rep, est\.$/);
+    expect(earlierWorkFact(ew ?? (null as never))).toMatch(/· P 3 chest · ref \S+ P 0, not like for like · cushion applied \(no load increase today\): −1 rep, est\.$/);
   });
 
   it('no earlier work: recorded for the coach, no Why? line', () => {
     const { ew } = provenanceOf([exposure(1, 7, 100, [6, 6, 6], FIRST)], FIRST);
     expect(ew).toMatchObject({ p: 0, muscle: null, before: [], basis: 'comparable' });
     expect(earlierWorkWhy(ew)).toBeNull();
-    expect(earlierWorkFact(ew ?? (null as never))).toMatch(/^nothing before it shares its muscles · P 0 · ref \S+ P 0, like for like · SF3 no$/);
+    expect(earlierWorkFact(ew ?? (null as never))).toMatch(/^nothing before it shares its muscles · P 0 · ref \S+ P 0, like for like · no cushion$/);
   });
 
   it('earlier work on bench’s secondary muscles only (pushdowns, laterals) counts ½ (SF1 amended 21 Nov): triceps 3 × ½ = 1.5 sets P', () => {
@@ -185,7 +185,7 @@ describe('provenance carries SF facts', () => {
     // Triceps 3 × 1 × ½ = 1.5; front/side delts (Shoulders) 2 × 1 × ½ = 1; chest 0.
     expect(ew).toMatchObject({ p: 1.5, muscle: 'Triceps', muscleRole: 'secondary', basis: 'comparable', before: [{ name: 'Triceps pushdown', sets: 3, direct: ['Triceps'] }, { name: 'Lateral raise', sets: 2, direct: ['Shoulders'] }] });
     expect(plain(earlierWorkWhy(ew))).toBe('After triceps pushdown ×3, lateral raise ×2 · triceps · compared with 1 Oct (done first)');
-    expect(earlierWorkFact(ew ?? (null as never))).toMatch(/· P 1\.5 triceps \(secondary\) · ref \S+ P 0, like for like · SF3 no$/);
+    expect(earlierWorkFact(ew ?? (null as never))).toMatch(/· P 1\.5 triceps \(secondary\) · ref \S+ P 0, like for like · no cushion$/);
   });
 
   it('a lot of secondary-only work with no history like it: SF3 from the halved count (5 pushdowns → P 2.5 vs 0, 1 rep fewer)', () => {
@@ -308,6 +308,6 @@ describe('SF1 amended (Ben, 21 Nov): the target’s secondary muscles count at �
   it('stored provenance from before 21 Nov (no muscleRole) still passes the schema and reads as before', () => {
     const old = { p: 1.5, muscle: 'Chest', before: [], reference: null, basis: 'comparable' as const };
     expect(TargetEarlierWorkSchema.parse(old)).toEqual(old);
-    expect(earlierWorkFact(old)).toBe('nothing before it shares its muscles · P 1.5 chest · no ref · SF3 no');
+    expect(earlierWorkFact(old)).toBe('nothing before it shares its muscles · P 1.5 chest · no ref · no cushion');
   });
 });

@@ -60,7 +60,7 @@ function howWords(b: TargetEarlierWork['before'][number]): string {
 
 /**
  * The coach's fact for one exercise (SF7b), terse to keep the context small:
- * `before: dumbbell shoulder press 3 (shoulders direct; chest, triceps secondary) · P 1.5 chest · ref 8 Nov P 1.5, like for like · SF3 no`.
+ * `before: dumbbell shoulder press 3 (shoulders direct; chest, triceps secondary) · P 1.5 chest · ref 8 Nov P 1.5, like for like · no cushion`.
  * P counts this exercise's primary muscles in full and its secondary ones at ½ (SF1 amended 21 Nov); `(secondary)`
  * marks a P set by a secondary mover.
  */
@@ -68,7 +68,7 @@ export function earlierWorkFact(ew: TargetEarlierWork): string {
   const before = ew.before.length === 0 ? 'nothing before it shares its muscles' : `before: ${ew.before.map((b) => `${b.name === null ? 'unnamed' : lowerFirst(b.name)} ${setsText(b.sets)} (${howWords(b)})`).join(', ')}`;
   const p = `P ${setsText(ew.p)}${ew.muscle === null ? '' : ` ${ew.muscle.toLowerCase()}${ew.muscleRole === 'secondary' ? ' (secondary)' : ''}`}`;
   const ref = ew.reference === null ? 'no ref' : `ref ${ew.reference.performedAt.utc.slice(0, 10)} P ${setsText(ew.reference.p)}${ew.reference.sameMuscleSuperset ? ' superset' : ''}, ${ew.basis === 'comparable' ? 'like for like' : 'not like for like'}`;
-  const sf3 = ew.basis === 'cushion' && ew.cushion !== undefined ? `SF3 yes: ${ew.cushion.reps > 0 ? `−${String(ew.cushion.reps)} rep${ew.cushion.reps === 1 ? '' : 's'}` : 'no load step'}${ew.cushion.stepDown ? ', 1 step lighter' : ''}, est.` : 'SF3 no';
+  const sf3 = ew.basis === 'cushion' && ew.cushion !== undefined ? `cushion applied (no load increase today): ${ew.cushion.reps > 0 ? `−${String(ew.cushion.reps)} rep${ew.cushion.reps === 1 ? '' : 's'}` : 'no load step'}${ew.cushion.stepDown ? ', 1 step lighter' : ''}, est.` : 'no cushion';
   return `${before} · ${p} · ${ref} · ${sf3}${ew.staleLower === true ? ' · stale ref, lower load' : ''}`.replaceAll(NBSP, ' ');
 }
 

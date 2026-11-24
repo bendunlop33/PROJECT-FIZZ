@@ -35,7 +35,7 @@ describe('coach context: the SF fact on the exercise’s target (SF7b)', () => {
   it('the bench row says what came before it, P, the reference and whether SF3 applied', async () => {
     const { s, benchRowId } = await fixture();
     const bench = workoutView(s, 'Main').exercises.find((e) => e.sessionExerciseId === benchRowId);
-    expect(bench?.earlierToday).toBe('before: dumbbell shoulder press 3 (shoulders direct; chest, triceps secondary) · P 1.5 chest · ref 2026-11-08 P 1.5, like for like · SF3 no');
+    expect(bench?.earlierToday).toBe('before: dumbbell shoulder press 3 (shoulders direct; chest, triceps secondary) · P 1.5 chest · ref 2026-11-08 P 1.5, like for like · no cushion');
     // Tiny: one line per exercise.
     expect(bench?.earlierToday?.length).toBeLessThan(160);
   });

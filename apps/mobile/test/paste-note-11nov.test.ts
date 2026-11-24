@@ -129,7 +129,7 @@ describe('Paste from Notes, offline (no coach)', () => {
 
     const opened = await s.notes.open({ preview: p, picks: {}, gymId: p.gym?.id ?? gymId, opId: 'paste-1' });
     if (!opened.ok) throw new Error(opened.message);
-    // A double tap is the same workout, nothing logged twice.
+    // 32 typed is the rack's 32.5 (24 Nov). A double tap is the same workout, nothing logged twice.
     const again = await s.notes.open({ preview: p, picks: {}, gymId, opId: 'paste-1' });
     expect(again).toEqual(opened);
     const a = (await s.workout.load(opened.sessionId))?.aggregate;
@@ -146,8 +146,8 @@ describe('Paste from Notes, offline (no coach)', () => {
         .map((x) => `${x.status === 'completed' ? '' : 'NOT DONE '}${x.setType} ${String(x.actual?.load?.value ?? '-')}${x.actual?.load ? ` ${x.actual.load.convention}` : ''}×${String(x.actual?.reps)}`);
     };
     expect(done('Bench press')).toEqual(['warmup 60 total×6', 'warmup 60 total×6', 'warmup 80 total×4', 'working 110 total×5', 'working 110 total×5', 'working 100 total×8']);
-    expect(done('Dumbbell shoulder press')).toEqual(['warmup 22.5 per_hand×6', 'warmup 27.5 per_hand×4', 'working 32 per_hand×8', 'working 32 per_hand×8', 'working 32 per_hand×8']);
-    expect(done('Dumbbell fly')).toEqual(['warmup 16 per_hand×6', 'working 18 per_hand×10', 'working 18 per_hand×10']);
+    expect(done('Dumbbell shoulder press')).toEqual(['warmup 22.5 per_hand×6', 'warmup 27.5 per_hand×4', 'working 32.5 per_hand×8', 'working 32.5 per_hand×8', 'working 32.5 per_hand×8']);
+    expect(done('Dumbbell fly')).toEqual(['warmup 16 per_hand×6', 'working 17.5 per_hand×10', 'working 17.5 per_hand×10']);
     expect(done('Dumbbell overhead triceps extension')).toEqual(['working 20 per_hand×10', 'working 20 per_hand×10']);
     expect(done('Dip')).toEqual(['working -×6', 'working -×6']);
 

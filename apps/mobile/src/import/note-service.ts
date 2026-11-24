@@ -17,6 +17,7 @@ import {
   parseNoteWorkout,
   rankNoteCandidates,
   roundToStep,
+  snapTypedLoad,
   toIso,
   toMs,
   type CommandOutcome,
@@ -306,7 +307,8 @@ export function createNoteService(deps: NoteServiceDeps) {
           const equipmentId = await equipmentFor(p, exercise, state);
           const unit = equipmentId === null ? p.preferredUnit : (currentGymEquipment(state.session).find((e) => e.id === equipmentId)?.unit ?? p.preferredUnit);
           const convention = equipmentId === null ? exercise.defaultLoadConvention : (currentGymEquipment(state.session).find((e) => e.id === equipmentId)?.loadConvention ?? exercise.defaultLoadConvention);
-          const plan = row.sets.map((s) => ({ setType: s.setType, planned: { load: loadFor(s, unit, convention), reps: { min: s.reps, max: s.reps }, durationS: null, rpe: null, rir: null } }));
+          const item = equipmentId === null ? null : (currentGymEquipment(state.session).find((e) => e.id === equipmentId) ?? null);
+          const plan = row.sets.map((s) => ({ setType: s.setType, planned: { load: snapped(loadFor(s, unit, convention), item), reps: { min: s.reps, max: s.reps }, durationS: null, rpe: null, rir: null } }));
           const added = await deps.workout.addExercise({ sessionId, exerciseId, equipmentId, opId: addOp, plan, warmupsAsGiven: true });
           if (!added.ok) return { ok: false, message: NOTE_COPY.failed };
           state = added.aggregate;
@@ -318,7 +320,7 @@ export function createNoteService(deps: NoteServiceDeps) {
         for (const [k, set] of sets.entries()) {
           const s = row.sets[k];
           if (s === undefined || set.status === 'completed') continue;
-          const values = { load: loadFor(s, ex.unit, ex.loadConvention), reps: s.reps, durationS: null, rpe: null, rir: null };
+          const values = { load: snapped(loadFor(s, ex.unit, ex.loadConvention), currentGymEquipment(state.session).find((e) => e.id === ex.equipmentId) ?? null), reps: s.reps, durationS: null, rpe: null, rir: null };
           const logged = await deps.workout.dispatch(sessionId, { type: 'log_set', at: deps.now(), opId: `${req.opId}:log:${String(n)}:${String(k)}`, setId: set.id, values, restTimerId: deriveId(`${set.id}:rest`) });
           if (!logged.ok) return { ok: false, message: NOTE_COPY.failed };
           state = logged.aggregate;
@@ -338,6 +340,11 @@ export function createNoteService(deps: NoteServiceDeps) {
     const used = latest?.exercises.find((e) => e.exerciseId === exercise.id)?.equipmentId ?? null;
     return here.find((e) => e.id === used)?.id ?? here[0]?.id ?? null;
   }
+}
+
+/** A typed load a hair off the item's real loads is the item's nearest one (32 → 32.5, 24 Nov). */
+function snapped(load: Load | null, item: Parameters<typeof snapTypedLoad>[1]): Load | null {
+  return load === null ? null : snapTypedLoad(load, item).load;
 }
 
 /** A note set's load in the row's unit and convention, as written (converted only across units, to 0.01). */

@@ -122,7 +122,7 @@ describe('cards: every status has an icon and a word; text from the record', () 
       reason: '“Set 2 was RPE 10.”',
       checks: ['Rounded to 97.5 kg: nearest your bar and plates allow.'],
       notChanged: ['Not changed: set 2 is already done.'],
-      notKnown: ['Nothing missing for this question.'],
+      notKnown: [],
     });
   });
 });

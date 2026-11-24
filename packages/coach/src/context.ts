@@ -57,7 +57,15 @@ export interface CatalogueCue {
   cues: readonly string[];
 }
 
+/** (24 Nov) Most changes of this chat in context, newest first. */
+export const CHANGES_THIS_CHAT_MAX = 6;
+
 export interface CoachContextInput {
+  /**
+   * (24 Nov) This chat's saved changes, one app line each with its time and whether undone (from the action ledger), so
+   * the coach never contradicts a card Ben can see. App text; the ledger is the source.
+   */
+  changesThisChat?: readonly string[];
   turnKind: CoachTurnKind;
   /** The workout in context: the active one, or the finished one for a summary turn. */
   session: SessionAggregate | null;
@@ -541,6 +549,8 @@ export interface LoggedSetView {
 }
 
 export interface YourData {
+  /** (24 Nov) Changes already made in this chat (cards Ben sees), newest first. Absent: none. */
+  changesThisChat?: string[];
   turnKind: CoachTurnKind;
   workout: {
     sessionId: string;
@@ -743,6 +753,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
     ...(input.week === undefined ? {} : { week: JSON.parse(JSON.stringify(input.week)) as WeekContextView }),
     ...(input.builderDraft === undefined ? {} : { builderDraft: { name: input.builderDraft.name, aboutMinutes: input.builderDraft.aboutMinutes, exercises: [...input.builderDraft.exercises], started: false as const } }),
+    ...(input.changesThisChat === undefined || input.changesThisChat.length === 0 ? {} : { changesThisChat: input.changesThisChat.slice(0, CHANGES_THIS_CHAT_MAX).map((l) => l.slice(0, 300)) }),
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
     ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),

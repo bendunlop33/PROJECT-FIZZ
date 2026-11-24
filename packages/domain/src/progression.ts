@@ -842,7 +842,8 @@ function feasibleHold(ctx: Ctx, value: number | null): number | null {
   }
   const load = { value, unit: ctx.unit, convention: ctx.convention };
   if (isLoadAchievable(load, eq)) return value;
-  const r = roundToAvailableLoad(load, eq, 'easier');
+  // Nearest, never always easier: a last load a hair off the rack (32 kg on a 30/32.5 rack) is its neighbour, not a step back (24 Nov).
+  const r = roundToAvailableLoad(load, eq, 'nearest');
   if (!r.ok) {
     ctx.infeasible = true;
     pushFact(ctx, `${eq.name} has no achievable loads with its current settings (check its min and max), so no load is prescribed.`);

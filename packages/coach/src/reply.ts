@@ -2,7 +2,7 @@ import { setNumbersText } from '@fizz/domain';
 import type { HiddenLine } from '@fizz/schemas';
 import { BUILD_ASK_LINE, BUILD_OFFER_LINE, claimsNoBuildTool, claimsWorkoutBuilt } from './build-ask';
 import { checkReplyClaims, isChangeClaim, type TurnLedger } from './claims';
-import { mergeFacts, collectFacts, verifiedRecordStatement, verifySentence, type NumberFacts } from './numbers';
+import { mergeFacts, collectFacts, numericClaims, verifiedRecordStatement, verifySentence, type NumberFacts } from './numbers';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
@@ -341,6 +341,7 @@ export interface ReplyFilterOptions {
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
   const buffer = new SentenceBuffer();
   const hidden: HiddenLineDraft[] = [];
+  const soft = new Set<HiddenLineDraft>();
   const said: string[] = [];
   let askLineShown = false;
   let noTodayToolHidden = false;
@@ -438,7 +439,10 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       const raw = checkReplyClaims(tokens.plainText, claimLedger, cited);
       const facts = options.facts === undefined ? null : factsWithCards(options.facts(), ledger, options.surface);
       // Coach v3: a checked statement of a record or past result ("Your heaviest bench is 102.5 kg × 6") isn't a change claim.
-      const check: typeof raw = !raw.keep && raw.reason === 'no_action' && actions.length === 0 && facts !== null && verifiedRecordStatement(tokens.plainText, facts) ? { keep: true, claim: false, matchedActionIds: [] } : raw;
+      const asRecord = !raw.keep && raw.reason === 'no_action' && actions.length === 0 && facts !== null && verifiedRecordStatement(tokens.plainText, facts);
+      // (24 Nov) Explaining how things stand is kept when it claims no change and its numbers are in the context.
+      const asExplanation = !raw.keep && raw.reason === 'no_action' && actions.length === 0 && isExplanationOfState(tokens.plainText, facts);
+      const check: typeof raw = asRecord || asExplanation ? { keep: true, claim: false, matchedActionIds: [] } : raw;
       const numbers = check.keep && facts !== null ? verifySentence(tokens.plainText, facts) : ({ ok: true } as const);
       if (!numbers.ok) {
         hidden.push({ sentence: tokens.plainText, reason: 'unverified_number', detail: numbers.detail });
@@ -459,7 +463,12 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       // what the whole ledger says about it, or that it restated a saved change without citing it.
       const full = claimLedger === ledger ? check : checkReplyClaims(tokens.plainText, ledger, cited);
       if (full.keep) hidden.push({ sentence: tokens.plainText, reason: 'mismatch', detail: CARD_ONLY_DETAIL });
-      else hidden.push({ sentence: tokens.plainText, reason: full.reason, detail: full.detail });
+      else {
+        const draft: HiddenLineDraft = { sentence: tokens.plainText, reason: full.reason, detail: full.detail };
+        hidden.push(draft);
+        // (24 Nov) Hidden but claiming no change in the coach's voice: the note only counts it, never "Nothing changed".
+        if (full.reason === 'no_action' && !CHANGE_VOICE.test(tokens.plainText.replace(/[‘’]/g, "'")) && actions.length === 0) soft.add(draft);
+      }
     }
     // App lines for cited actions are always true, so they show even when the words around them were hidden.
     for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
@@ -480,7 +489,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       return noTodayToolHidden;
     },
     note() {
-      const numberHidden = hidden.filter((h) => h.reason === 'unverified_number').length;
+      const numberHidden = hidden.filter((h) => h.reason === 'unverified_number' || soft.has(h)).length;
       // (Ben, 31 Oct, build 493: "Only the changes shown were made · 1 line hidden") A true restatement of this turn's
       // saved change is hidden (its card says it) but never counted: the note is for lines that weren't true.
       const restated = hidden.filter((h) => h.detail === CARD_ONLY_DETAIL).length;
@@ -502,6 +511,22 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
 function factsWithCards(facts: NumberFacts, ledger: TurnLedger, surface: RenderSurface): NumberFacts {
   if (ledger.entries.length === 0) return facts;
   return mergeFacts(facts, collectFacts(ledger.entries.map((e) => ({ text: renderActionResult(e.record, surface, { earlier: e.origin === 'earlier' }).text, setsDone: false }))));
+}
+
+/**
+ * (24 Nov, Ben's Push B report) A sentence that explains how things stand ("Today's press is 30 kg each × 8 because your
+ * last session started with shoulder press") is not a change claim. It is kept when it reasons (a reason word), claims no
+ * change (no change verb in the coach's voice, "now", "done", "will be"), says nothing the claim backstop guards without a
+ * number (holds, flags, memory, plan structure), and every number in it is in the context. Pure.
+ */
+const EXPLAINS = /\b(?:because|since|so|as|but|reason|history|last (?:time|session|week)|previous(?:ly)?|compared|earlier|already|today|your (?:log|sets|last|previous)|you (?:did|hit|logged|managed|lifted)|based on|rules?|explain|why|than)\b/i;
+const CHANGE_VOICE = /\b(?:i|we)(?:'ve| have| just| then| also| had)? ?(?:changed|lowered|raised|dropped|increased|decreased|reduced|bumped|updated|adjusted|set|saved|applied|removed|added|swapped|switched|replaced|moved|made|logged|reverted|undid|cut|put|fixed|flagged|noted|stored|kept|told)\b|\b(?:is|are) now\b|\bnow (?:at|reads|shows|set|down|up|on)\b|^(?:(?:ok|okay|right|great|sure|all) )*done\b|\ball done\b|\b(?:will|'ll) (?:now )?(?:be|show|read|have)\b|\bi(?:'ll| will)\b|\b(?:has|have|was|were|been) (?:been )?(?:changed|updated|applied|saved|lowered|raised|reduced|increased|removed|added|swapped)\b|\bfrom now on\b|\bgoing forward\b|\bmade (?:the|that|a) (?:change|adjustment)\b/i;
+const GUARDED_STATE = /\b(?:on hold|paused|frozen|parked|flag(?:ged|s)?|memory|memories|playbook|remember(?:ed)?|replaces?|instead of|opens? with|leads? with|swapp?(?:ed|s)?|next (?:time|session|week))\b/i;
+
+export function isExplanationOfState(sentence: string, facts: NumberFacts | null): boolean {
+  const t = sentence.replace(/[‘’]/g, "'");
+  if (/\?\s*$/.test(t) || !EXPLAINS.test(t) || CHANGE_VOICE.test(t) || GUARDED_STATE.test(t)) return false;
+  return facts === null ? numericClaims(sentence).length === 0 : verifySentence(sentence, facts).ok;
 }
 
 /** Stamp drafts for storage (`HiddenLine`, Your data). */

@@ -2048,6 +2048,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (prefsTool && deps.exercisePrefs !== undefined) Object.assign(executors, createExercisePrefExecutors({ store: coachStore(), prepare: deps.exercisePrefs.prepare }));
     const rebalanceTool = inUse !== null && deps.rebalance !== undefined;
     if (rebalanceTool && deps.rebalance !== undefined) Object.assign(executors, createRebalanceExecutor({ store: coachStore(), prepare: deps.rebalance.prepare }));
+    // (24 Nov) The cards already in this chat, so a reply never contradicts them ("I didn't make a change" beside Applied).
+    const changesThisChat = (await repos().coach.listRecentActions(p.id, { sessionId: recentActionsScope(req.entry), limit: 8 }).catch(() => [] as ActionRecord[]))
+      .filter((r) => r.status === 'committed')
+      .map((r) => `${r.undoneBy === null ? 'Applied' : 'Undone'}: ${renderActionResult(r, 'sheet', { earlier: true }).text}`);
     try {
       const result = await runCoachTurn(
         {
@@ -2060,7 +2064,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           // Coach v3 (Ben 18 Oct): his lighter mid-workout model, if he chose one; `think_harder` returns to the main one.
           ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
-          context: { ...ctx.input, ...(draftHere !== null && draftSummary !== null ? { builderDraft: { name: draftHere.name, ...draftSummary, started: false as const } } : {}), ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(swapView === null || swapView.notPreferred.length === 0 ? {} : { notPreferred: swapView.notPreferred }), ...(weekView === null ? {} : { week: weekView }), ...(build?.behind == null ? {} : { behind: build.behind }) },
+          context: { ...ctx.input, ...(changesThisChat.length === 0 ? {} : { changesThisChat }), ...(draftHere !== null && draftSummary !== null ? { builderDraft: { name: draftHere.name, ...draftSummary, started: false as const } } : {}), ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(swapView === null || swapView.notPreferred.length === 0 ? {} : { notPreferred: swapView.notPreferred }), ...(weekView === null ? {} : { week: weekView }), ...(build?.behind == null ? {} : { behind: build.behind }) },
           structuralSignals: await structuralSignalsFor(p, own).catch(() => []),
           // ADR 0038: a general thread stays general when today's workout is in its context.
           ...(liveHere !== null ? { threadSessionId: own === null ? null : own.session.id } : {}),

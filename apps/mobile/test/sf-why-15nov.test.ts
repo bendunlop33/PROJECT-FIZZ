@@ -85,7 +85,7 @@ describe('Ben’s Push B: was the shoulder press factored into bench?', () => {
     const req = model.requests[0];
     if (req === undefined) throw new Error('no request');
     const bench = contextWorkout(req).exercises.find((e) => e.name === BENCH);
-    expect(bench?.earlierToday).toMatch(/^before: dumbbell shoulder press 3 \(shoulders direct; chest, triceps secondary\) · P 1\.5 chest · ref 2026-11-15 P 1\.5, like for like · SF3 no$/);
+    expect(bench?.earlierToday).toMatch(/^before: dumbbell shoulder press 3 \(shoulders direct; chest, triceps secondary\) · P 1\.5 chest · ref 2026-11-15 P 1\.5, like for like · no cushion$/);
   });
 });
 

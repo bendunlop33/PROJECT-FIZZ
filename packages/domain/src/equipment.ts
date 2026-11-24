@@ -387,3 +387,19 @@ export function compareDifficulty(a: number, b: number, direction: LoadDirection
 export function loadsByDifficulty(achievable: AchievableLoads): number[] {
   return achievable.direction === 'resistance' ? [...achievable.loads] : [...achievable.loads].reverse();
 }
+
+/** A typed past load this close (kg-equivalent, or 2 %) to an achievable one is read as that one (24 Nov: "32" for 32.5). */
+export const TYPED_LOAD_TOLERANCE_KG = 0.5;
+
+/**
+ * An imported or pasted load as the item can make it: unchanged when achievable; else the nearest achievable load when
+ * it is within 0.5 kg or 2 % of what was typed (`snapped` true: show "32 → 32.5"); else unchanged. Never past the max.
+ */
+export function snapTypedLoad(load: Load, eq: EquipmentInstance | null): { load: Load; snapped: boolean } {
+  if (eq === null || load.convention !== eq.loadConvention || isLoadAchievable(load, eq)) return { load, snapped: false };
+  const r = roundToAvailableLoad(load, eq, 'nearest');
+  if (!r.ok || r.bounded !== null || r.load.unit !== load.unit) return { load, snapped: false };
+  const diff = Math.abs(r.load.value - load.value);
+  const tol = Math.max(load.unit === 'kg' ? TYPED_LOAD_TOLERANCE_KG : TYPED_LOAD_TOLERANCE_KG * 2.2046, load.value * 0.02);
+  return diff <= tol + 1e-9 ? { load: r.load, snapped: true } : { load, snapped: false };
+}

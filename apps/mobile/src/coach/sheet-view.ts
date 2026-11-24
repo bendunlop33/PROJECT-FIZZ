@@ -446,7 +446,7 @@ export interface WhyView {
   reason: string | null;
   checks: string[];
   notChanged: string[];
-  /** Always present; says so when nothing was missing. */
+  /** Only what is missing; empty (and not shown) when nothing is (24 Nov). */
   notKnown: string[];
 }
 
@@ -465,7 +465,7 @@ export function whyView(r: ActionRecord, notAvailable: readonly string[] = []): 
       ...(r.detail.kind === 'add_playbook_candidate' ? ['Not in use until you approve it.'] : []),
     ],
     notChanged: [...r.guardNotes.filter((n) => NOT_CHANGED_KINDS.has(n.kind)).map((n) => n.text), ...(r.failure === null ? [] : [r.failure.charAt(0).toUpperCase() + r.failure.slice(1) + '.'])],
-    notKnown: notAvailable.length > 0 ? [...notAvailable] : ['Nothing missing for this question.'],
+    notKnown: [...notAvailable],
   };
 }
 
