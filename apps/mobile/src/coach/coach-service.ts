@@ -2050,7 +2050,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (rebalanceTool && deps.rebalance !== undefined) Object.assign(executors, createRebalanceExecutor({ store: coachStore(), prepare: deps.rebalance.prepare }));
     // (24 Nov) The cards already in this chat, so a reply never contradicts them ("I didn't make a change" beside Applied).
     const changesThisChat = (await repos().coach.listRecentActions(p.id, { sessionId: recentActionsScope(req.entry), limit: 8 }).catch(() => [] as ActionRecord[]))
-      .filter((r) => r.status === 'committed')
+      // Rule 10: a chat rule for the playbook is Coaching knowledge, never listed in Your data.
+      .filter((r) => r.status === 'committed' && r.detail.kind !== 'add_playbook_candidate')
       .map((r) => `${r.undoneBy === null ? 'Applied' : 'Undone'}: ${renderActionResult(r, 'sheet', { earlier: true }).text}`);
     try {
       const result = await runCoachTurn(
